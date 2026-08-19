@@ -318,7 +318,6 @@ auto run_scenario(TrafficScenario scenario, int ticks) -> int {
             << " one_progress_streak=" << model.one_progress_streak()
             << " longest_one_progress=" << model.longest_one_progress_streak()
             << " max_searches=" << model.max_planning_queries()
-            << " estimated_memory_bytes=" << model.estimated_memory_bytes()
             << " elapsed_ms=" << elapsed_ms << '\n';
   return model.max_planning_queries() <= 8 ? 0 : 1;
 }

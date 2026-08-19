@@ -14,14 +14,20 @@
   publication floors are 20/200/2,000 samples for p50/p95/p99. These numbers
   are advisory and have no CI authority.
 
-  Update time and conservative resident-memory estimate:
+  Update time:
 
-  | Scenario | p50 µs | p95 µs | p99 µs | max µs | Memory |
-  | --- | ---: | ---: | ---: | ---: | ---: |
-  | aligned | 135.83 | 172.25 | 240.46 | 567.21 | 28.6 MiB |
-  | shuffled-crossing | 127.29 | 159.25 | 179.17 | 249.17 | 28.6 MiB |
-  | funnel | 41,607.00 | 45,918.62 | 47,724.38 | 50,977.17 | 28.6 MiB |
-  | multi-gate | 4,705.25 | 9,412.33 | 9,783.46 | 12,769.88 | 28.6 MiB |
+  | Scenario | p50 µs | p95 µs | p99 µs | max µs |
+  | --- | ---: | ---: | ---: | ---: |
+  | aligned | 135.83 | 172.25 | 240.46 | 567.21 |
+  | shuffled-crossing | 127.29 | 159.25 | 179.17 | 249.17 |
+  | funnel | 41,607.00 | 45,918.62 | 47,724.38 | 50,977.17 |
+  | multi-gate | 4,705.25 | 9,412.33 | 9,783.46 | 12,769.88 |
+
+  The original table's 28.6 MiB "conservative resident-memory estimate" is
+  withdrawn. It was a synthetic model-storage allowance that omitted reusable
+  path scratch and runtime capacities, so neither "resident" nor
+  "conservative" was supported. A later fresh-page capture records exact Wasm
+  linear-memory allocation instead.
 
   Planning time:
 
@@ -62,11 +68,14 @@
   cause is claimed.
 - **Browser pass:** one Chrome session at a 1,665×984 CSS-pixel viewport
   captured the first samples after each reset; buffers stop at 4,096 rather
-  than overwriting startup work. Frame time covers the JavaScript animation
-  callback, not asynchronous paint completion. Render and frame timing are
-  milliseconds:
+  than overwriting startup work. The historical frame endpoint preceded
+  measurement bookkeeping, the metrics DOM update, and final animation-frame
+  scheduling. These values therefore cover only partial synchronous callback
+  work and are retained as baseline history, not as full-callback evidence.
+  They do not include asynchronous paint completion. Render and partial-frame
+  timing are milliseconds:
 
-  | Scenario | Frames | Render p99/max | Frame p50/p95/p99 | Frame max | Catch-up frames |
+  | Scenario | Frames | Render p99/max | Partial frame p50/p95/p99 | Partial frame max | Catch-up frames |
   | --- | ---: | ---: | ---: | ---: | ---: |
   | aligned | 4,096 | 1.0 / 7.3 | 0.5 / 1.2 / 1.7 | 7.5 | 0 |
   | shuffled-crossing | 3,269 | 0.8 / 4.1 | 0.4 / 1.2 / 1.6 | 4.3 | 0 |
@@ -83,9 +92,9 @@
   simulation period. Multi-gate has a 9.8 ms update p99. All timing runs kept
   the eight-search ceiling, and deterministic counter runs explain the
   scenario difference without mixing instrumented wall time into the result.
-  Browser rendering itself stays below 1.3 ms at p99, while funnel and
-  multi-gate frame-callback p99 values miss a 16.7 ms display budget. Funnel
-  can enter a catch-up cascade with an observed 1.29 s callback.
+  Browser rendering itself stays below 1.3 ms at p99. The historical partial
+  frame values are insufficient to decide full animation-callback budget.
+  Funnel entered a catch-up cascade with an observed 1.29 s partial sample.
 - **Decision:** retain 1024×512 and the full-map overview for version one. Do
   not introduce 1024², zoom/pan, or a more complex renderer. Keep timing
   advisory; deterministic scenario and search-budget checks remain blocking.
@@ -97,6 +106,7 @@
   CPU executes them at a given rate, and its measurements are not benchmark
   timings. Browser figures come from one foreground session and are not paint
   completion or a cross-device calibration; timer resolution produces visible
-  quantization. Reconsider 1024² only after a concrete experiment needs the
+  quantization. Their partial frame endpoint is superseded by the corrected
+  guided capture. Reconsider 1024² only after a concrete experiment needs the
   extra area and both native planning tails and browser frame tails fit their
   stated budgets.

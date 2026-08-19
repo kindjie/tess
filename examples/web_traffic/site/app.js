@@ -10,6 +10,17 @@ const measurementButton = document.getElementById('measurement-snapshot');
 const measurementOutput = document.getElementById('measurement-output');
 const message = document.getElementById('message');
 const metrics = document.getElementById('metrics');
+const query = new URLSearchParams(window.location.search);
+const requestedScenario = query.get('scenario');
+const scenarioValues = {
+  aligned: '0',
+  'shuffled-crossing': '1',
+  funnel: '2',
+  'multi-gate': '3',
+};
+if (Object.hasOwn(scenarioValues, requestedScenario)) {
+  scenario.value = scenarioValues[requestedScenario];
+}
 
 let api = null;
 let module = null;
@@ -21,8 +32,7 @@ let emaUpdateUs = 0;
 let emaPlanningUs = 0;
 let emaRenderMs = 0;
 let emaFrameMs = 0;
-const measurementEnabled =
-    new URLSearchParams(window.location.search).get('measure') === '1';
+const measurementEnabled = query.get('measure') === '1';
 const measurementCapacity = 4096;
 
 class BoundedSamples {
@@ -79,6 +89,7 @@ function summarizeSamples(samples) {
 function measurementSnapshot() {
   return {
     scenario: Number(scenario.value),
+    wasmMemoryBytes: module.HEAPU8.buffer.byteLength,
     capacity: measurementCapacity,
     catchupFrames: measurement.catchupFrames,
     updateUs: summarizeSamples(measurement.updateUs),
@@ -198,12 +209,9 @@ function frame(timestamp) {
     message.textContent = pending > 0 ?
         `Planning ${pending} remaining routes` :
         `${arrived}/${count} agents arrived`;
-    const memoryMiB = api.memoryBytes() / (1024 * 1024);
-    const frameMs = performance.now() - frameBegin;
-    emaFrameMs = smooth(emaFrameMs, frameMs);
+    const memoryMiB = module.HEAPU8.buffer.byteLength / (1024 * 1024);
     if (measurement) {
       measurement.renderMs.push(renderMs);
-      measurement.frameMs.push(frameMs);
       if (fixedTicks === 1) {
         measurement.updateUs.push(updateUs);
         measurement.planningUs.push(api.planningUs());
@@ -212,8 +220,10 @@ function frame(timestamp) {
         measurement.catchupFrames += 1;
       }
     }
+    const captureCount = measurement ? Math.min(
+      measurement.frameMs.count + 1, measurement.frameMs.capacity) : 0;
     const captureText = measurement ?
-        ` · capture ${measurement.frameMs.count} frames (measure=1)` : '';
+        ` · capture ${captureCount} frames (measure=1)` : '';
     metrics.textContent =
         `C++ update ${emaUpdateUs.toFixed(0)} µs · ` +
         `planning ${emaPlanningUs.toFixed(0)} µs · ` +
@@ -221,13 +231,18 @@ function frame(timestamp) {
         `frame ${emaFrameMs.toFixed(2)} ms · ` +
         `${waits} waits · ${blocked} blocked · ${advanced} moved · ` +
         `one-agent streak ${streak} (max ${longest}) · ` +
-        `${memoryMiB.toFixed(1)} MiB estimated${captureText}`;
+        `${memoryMiB.toFixed(1)} MiB Wasm memory${captureText}`;
+    window.requestAnimationFrame(frame);
+    const frameMs = performance.now() - frameBegin;
+    emaFrameMs = smooth(emaFrameMs, frameMs);
+    if (measurement) {
+      measurement.frameMs.push(frameMs);
+    }
   } catch (error) {
     document.documentElement.dataset.tessTraffic = 'failed';
     message.textContent = `Traffic Lab failed: ${error}`;
     return;
   }
-  window.requestAnimationFrame(frame);
 }
 
 createTessTraffic()
@@ -262,8 +277,6 @@ createTessTraffic()
             'tess_traffic_one_progress_streak', 'number', []),
         longestOneProgressStreak: instance.cwrap(
             'tess_traffic_longest_one_progress_streak', 'number', []),
-        memoryBytes: instance.cwrap(
-            'tess_traffic_memory_bytes', 'number', []),
       };
       width = api.width();
       height = api.height();

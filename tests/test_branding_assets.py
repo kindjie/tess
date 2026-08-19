@@ -595,6 +595,10 @@ def test_traffic_lab_has_large_grid_diagnostics_and_browser_evidence():
   pages = read(".github/workflows/pages.yml")
   browser_test = read("tools/test_web_demo_interactions.py")
   measurement = read("tools/measure_traffic_lab.py")
+  decision = read(
+    "docs/decisions/changelog.d/"
+    "2026-08-19-caller-planned-agent-replans.md"
+  )
 
   assert "traffic_width = 1024" in header
   assert "traffic_height = 512" in header
@@ -606,7 +610,14 @@ def test_traffic_lab_has_large_grid_diagnostics_and_browser_evidence():
   assert "kSearchBudget = 8" in model
   assert "first.max_planning_queries() != 8" in native
   assert "scenario is not deterministic" in native
-  assert "estimated_memory_bytes" in header
+  assert "qualifies the exact-only queue rationale" in decision
+  assert "remain the exact helpers" in decision
+  for source in (header, model, native, wasm, build, app):
+    assert "estimated_memory_bytes" not in source
+    assert "traffic_memory_bytes" not in source
+  assert "runtime.reserve_requests" not in model
+  assert "runtime.reserve_search_nodes" not in model
+  assert "runtime.reserve_path_nodes" not in model
   assert "planning_queries_last_tick" in header
   assert "planning_touched_nodes_last_tick" in header
   assert '"--samples"' in native
@@ -664,6 +675,11 @@ def test_traffic_lab_has_large_grid_diagnostics_and_browser_evidence():
   assert "% this.capacity" not in app
   assert "maximum: values.length > 0" in app
   assert "window.tessTrafficMetrics" in app
+  assert "wasmMemoryBytes: module.HEAPU8.buffer.byteLength" in app
+  assert "MiB Wasm memory" in app
+  assert "scenarioValues" in app
+  assert "query.get('scenario')" in app
+  assert "wasmMemoryBytes" in browser_test
   assert "fixedTicksLastCall" in app
   assert "Snapshot latency" in html
   assert "measurement-output" in app
@@ -676,6 +692,16 @@ def test_traffic_lab_has_large_grid_diagnostics_and_browser_evidence():
   assert "1920, 1080" in browser_test
   assert "Traffic Lab measurement mode did not collect samples" in browser_test
   assert "Traffic Lab measurement snapshot was not readable" in browser_test
+
+  frame = app.split("function frame(timestamp) {", 1)[1].split(
+    "createTessTraffic()", 1
+  )[0]
+  endpoint = frame.index(
+    "const frameMs = performance.now() - frameBegin;"
+  )
+  assert frame.index("metrics.textContent =") < endpoint
+  assert frame.index("window.requestAnimationFrame(frame);") < endpoint
+  assert frame.index("measurement.frameMs.push(frameMs);") > endpoint
 
 
 def test_traffic_lab_self_checks_are_sliced_by_scenario():

@@ -146,16 +146,32 @@
   and reconstructed 1,274,336 nodes; multi-gate performed 1,057,152 and
   1,061,120 respectively. This is direct-segment work, not a displaced heap
   tail.
-- **Browser and behavior result:** a fresh-origin Chrome capture of the rebuilt
-  Wasm used a 1920x1080 viewport. Every scenario recorded zero catch-up frames;
-  render p99 was 1.2--1.3 ms and frame-callback p99 was 2.0--2.1 ms. The canvas
-  remained exactly 2:1, fit horizontally, and caused no horizontal overflow at
-  both 1366x768 and 1920x1080. Fixed-tick browser families had only 260--585
-  samples, so browser update p99 remained suppressed and the native campaign
-  retains authority. The browser artifact preserves summarized output and
-  rebuilt Wasm, loader, and app hashes, but not raw browser samples or the
-  browser version; its percentiles are therefore not independently
-  recomputable. Exhaustive native validation matched direct compound-class
+- **Browser and behavior result:** Chrome 151.0.7922.138 captured one fresh
+  headless page per requested initial scenario at 1920x1080. The corrected
+  frame endpoint covers synchronous measurement bookkeeping, the metrics DOM
+  update, and final `requestAnimationFrame` scheduling; it inherently excludes
+  its own timestamp and bounded-sample commit, and does not include
+  asynchronous paint. Every scenario filled 4,096 frame samples and recorded
+  zero catch-up frames:
+
+  | Scenario | Render p99/max ms | Frame p50/p95/p99 ms | Frame max ms | Wasm linear memory |
+  | --- | ---: | ---: | ---: | ---: |
+  | aligned | 0.2 / 0.4 | 0.1 / 0.4 / 0.5 | 0.8 | 71.5 MiB |
+  | shuffled-crossing | 0.3 / 1.2 | 0.2 / 0.6 / 0.8 | 1.7 | 71.5 MiB |
+  | funnel | 0.3 / 0.4 | 0.2 / 0.7 / 2.0 | 4.7 | 71.5 MiB |
+  | multi-gate | 0.2 / 0.4 | 0.1 / 0.5 / 0.6 | 0.8 | 71.5 MiB |
+
+  The 74,973,184-byte value is the complete Wasm linear-memory allocation,
+  not native RSS or model-owned heap. Removing three unused
+  `PathRequestRuntime` reservations reduced the aligned fresh-page allocation
+  from the separately observed 464,715,776 bytes (443.2 MiB) by 83.9%. The
+  canvas remained exactly 2:1, fit horizontally, and caused no horizontal
+  overflow at both 1366x768 and 1920x1080. Fixed-tick browser families had
+  only 682--683 samples, so browser update p99 remained suppressed and the
+  native campaign retains authority. The browser artifact preserves summarized
+  output and rebuilt Wasm, loader, and app hashes, but not raw browser samples;
+  its percentiles are therefore not independently recomputable. Exhaustive
+  native validation matched direct compound-class
   weighted status and optimal cost for all 2,048 guided requests, checked
   every node and edge, selected-gate crossing, repeat determinism, and
   whole-map legacy/compound predicate equivalence. The 512- and 1,600-tick
@@ -167,6 +183,6 @@
   `tess-traffic-lab-browser-guided.json`. Their SHA-256 values are respectively
   `15e42cbeda92e881f0fce37ca00924c988cbef3d7946a8d80a605864f428883d`,
   `a79fa7a9057e3e09df21dc7aec9405293876c3ae97d500017644b3f8efe926ff`, and
-  `147f2a53ba4179cabde2aff3b6d599e1e054b550e7e005237bb0c0198c23e4b1`.
+  `a3d2937226085afd24ad37a38e3b30a2e1f190bdad78d58cf54a86050fb61bea`.
   These remain untracked machine-local evidence; the maintained record keeps
   the portable method and accepted conclusions.

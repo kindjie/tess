@@ -87,10 +87,6 @@ TESS_TRAFFIC_EXPORT int tess_traffic_one_progress_streak() {
 TESS_TRAFFIC_EXPORT int tess_traffic_longest_one_progress_streak() {
   return model ? model->longest_one_progress_streak() : 0;
 }
-TESS_TRAFFIC_EXPORT double tess_traffic_memory_bytes() {
-  return model ? static_cast<double>(model->estimated_memory_bytes()) : 0.0;
-}
-
 }  // extern "C"
 
 #ifdef __EMSCRIPTEN__

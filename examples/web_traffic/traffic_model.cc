@@ -212,10 +212,6 @@ struct TrafficModel::Impl {
     replan_product.reserve_path_nodes(static_cast<std::size_t>(traffic_width) +
                                       traffic_height);
     replan_product.reserve_dependencies(world.chunks().size());
-    runtime.reserve_requests(count * 2);
-    runtime.reserve_search_nodes(static_cast<std::size_t>(traffic_width) *
-                                 traffic_height);
-    runtime.reserve_path_nodes(count * static_cast<std::size_t>(traffic_width));
     for (std::size_t i = 0; i < agents.size(); ++i) {
       agents[i].position = start_tile(selected_scenario, i);
       world.field<OccupancyTag>(agents[i].position) = true;
@@ -419,21 +415,6 @@ struct TrafficModel::Impl {
                                 .count();
     return granted == 0 ? -1.0 : elapsed_us / static_cast<double>(granted);
   }
-
-  auto estimated_memory_bytes() const noexcept -> std::uint64_t {
-    const auto terrain_bytes = static_cast<std::uint64_t>(traffic_width) *
-                               traffic_height *
-                               (sizeof(bool) * 4 + sizeof(std::uint32_t));
-    const auto agent_bytes =
-        static_cast<std::uint64_t>(agents.capacity()) *
-            sizeof(tess::PathAgentState) +
-        static_cast<std::uint64_t>(current_xy.capacity() +
-                                   previous_xy.capacity()) *
-            sizeof(std::int16_t);
-    return terrain_bytes + agent_bytes + terrain_shadow.capacity() +
-           static_cast<std::uint64_t>(traffic_agents) * traffic_width *
-               sizeof(tess::Coord3);
-  }
 };
 
 auto scenario_name(TrafficScenario scenario) noexcept -> const char* {
@@ -574,10 +555,6 @@ auto TrafficModel::longest_one_progress_streak() const noexcept -> int {
 
 auto TrafficModel::max_planning_queries() const noexcept -> int {
   return static_cast<int>(impl_->maximum_planning_queries);
-}
-
-auto TrafficModel::estimated_memory_bytes() const noexcept -> std::uint64_t {
-  return impl_->estimated_memory_bytes();
 }
 
 auto TrafficModel::agent_state_hash() const noexcept -> std::uint64_t {

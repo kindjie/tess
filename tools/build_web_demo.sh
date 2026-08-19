@@ -154,8 +154,7 @@ traffic_exports+=',"_tess_traffic_planning_pending"'
 traffic_exports+=',"_tess_traffic_advanced","_tess_traffic_waits"'
 traffic_exports+=',"_tess_traffic_blocked","_tess_traffic_arrived"'
 traffic_exports+=',"_tess_traffic_one_progress_streak"'
-traffic_exports+=',"_tess_traffic_longest_one_progress_streak"'
-traffic_exports+=',"_tess_traffic_memory_bytes"]'
+traffic_exports+=',"_tess_traffic_longest_one_progress_streak"]'
 
 em++ \
   -std=c++20 \

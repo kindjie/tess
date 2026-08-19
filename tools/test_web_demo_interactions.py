@@ -30,51 +30,65 @@ class BrowserPage:
   ) -> None:
     """Launch a page at the requested viewport."""
     self.deadline = time.monotonic() + timeout
-    self.profile_dir = tempfile.TemporaryDirectory(
-      prefix="tess-browser-test-", ignore_cleanup_errors=True
-    )
-    profile = Path(self.profile_dir.name)
-    self.process = subprocess.Popen(
-      [
-        browser,
-        "--headless=new",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--no-sandbox",
-        "--disable-gpu",
-        "--remote-debugging-port=0",
-        f"--user-data-dir={profile}",
-        f"--window-size={width},{height}",
-        url,
-      ],
-      stdout=subprocess.DEVNULL,
-    )
-    port = browser_state._wait_for_debug_port(
-      self.process, profile, self.deadline
-    )
-    websocket = browser_state._wait_for_page(
-      self.process, port, url, self.deadline
-    )
-    self.connection = browser_state.DevToolsConnection.connect(
-      websocket, self.deadline
-    )
-    self.command(
-      "Emulation.setDeviceMetricsOverride",
-      {
-        "width": width,
-        "height": height,
-        "deviceScaleFactor": 1,
-        "mobile": False,
-      },
-    )
-    self.command("Page.reload", {"ignoreCache": True})
+    self.profile_dir = None
+    self.process = None
+    self.connection = None
+    try:
+      self.profile_dir = tempfile.TemporaryDirectory(
+        prefix="tess-browser-test-", ignore_cleanup_errors=True
+      )
+      profile = Path(self.profile_dir.name)
+      self.process = subprocess.Popen(
+        [
+          browser,
+          "--headless=new",
+          "--no-first-run",
+          "--no-default-browser-check",
+          "--no-sandbox",
+          "--disable-gpu",
+          "--remote-debugging-port=0",
+          f"--user-data-dir={profile}",
+          f"--window-size={width},{height}",
+          url,
+        ],
+        stdout=subprocess.DEVNULL,
+      )
+      port = browser_state._wait_for_debug_port(
+        self.process, profile, self.deadline
+      )
+      websocket = browser_state._wait_for_page(
+        self.process, port, url, self.deadline
+      )
+      self.connection = browser_state.DevToolsConnection.connect(
+        websocket, self.deadline
+      )
+      self.command(
+        "Emulation.setDeviceMetricsOverride",
+        {
+          "width": width,
+          "height": height,
+          "deviceScaleFactor": 1,
+          "mobile": False,
+        },
+      )
+      self.command("Page.reload", {"ignoreCache": True})
+    except BaseException:
+      try:
+        self.close()
+      except BaseException:
+        pass
+      raise
 
   def evaluate(self, expression: str) -> object:
     """Evaluate JavaScript and return a serialized value."""
+    if self.connection is None:
+      raise RuntimeError("DevTools connection is not available")
     return browser_state._evaluate(self.connection, expression, self.deadline)
 
   def command(self, method: str, params: dict[str, object]) -> None:
     """Run one DevTools command and reject protocol errors."""
+    if self.connection is None:
+      raise RuntimeError("DevTools connection is not available")
     response = self.connection.command(method, params, self.deadline)
     if "error" in response:
       raise RuntimeError(f"DevTools {method} failed: {response['error']}")
@@ -96,15 +110,35 @@ class BrowserPage:
 
   def close(self) -> None:
     """Close DevTools and terminate the owned browser."""
-    self.connection.close()
-    if self.process.poll() is None:
-      self.process.terminate()
+    failure = None
+    connection, self.connection = self.connection, None
+    process, self.process = self.process, None
+    profile_dir, self.profile_dir = self.profile_dir, None
+    if connection is not None:
       try:
-        self.process.wait(timeout=5)
-      except subprocess.TimeoutExpired:
-        self.process.kill()
-        self.process.wait()
-    self.profile_dir.cleanup()
+        connection.close()
+      except BaseException as error:
+        failure = error
+    if process is not None:
+      try:
+        if process.poll() is None:
+          process.terminate()
+          try:
+            process.wait(timeout=5)
+          except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+      except BaseException as error:
+        if failure is None:
+          failure = error
+    if profile_dir is not None:
+      try:
+        profile_dir.cleanup()
+      except BaseException as error:
+        if failure is None:
+          failure = error
+    if failure is not None:
+      raise failure
 
 
 @contextmanager
@@ -242,10 +276,11 @@ def test_traffic_layout(
   base_url: str,
   width: int,
   height: int,
+  scenario: str,
   timeout: float,
 ) -> None:
   """Verify the Traffic Lab full-map layout at one viewport."""
-  url = f"{base_url.rstrip('/')}/traffic/?measure=1"
+  url = f"{base_url.rstrip('/')}/traffic/?measure=1&scenario={scenario}"
   with open_page(browser, url, width, height, timeout) as page:
     page.wait_for("document.documentElement.dataset.tessTraffic === 'ready'")
     page.wait_for(
@@ -257,10 +292,24 @@ def test_traffic_layout(
       not isinstance(measurement, dict)
       or measurement["frameMs"]["samples"] < 3
       or measurement["renderMs"]["samples"] < 3
+      or measurement["scenario"] != (0 if scenario == "aligned" else 3)
     ):
       raise RuntimeError(
         "Traffic Lab measurement mode did not collect samples"
       )
+    memory = page.evaluate(
+      "(() => {"
+      "const bytes = module.HEAPU8.buffer.byteLength;"
+      "return {bytes, text: document.querySelector('#metrics').textContent,"
+      "label: `${(bytes / (1024 * 1024)).toFixed(1)} MiB Wasm memory`};"
+      "})()"
+    )
+    if (
+      not isinstance(memory, dict)
+      or measurement["wasmMemoryBytes"] != memory["bytes"]
+      or memory["label"] not in memory["text"]
+    ):
+      raise RuntimeError(f"Traffic Lab Wasm memory metric diverged: {memory}")
     page.evaluate("document.querySelector('#measurement-snapshot').click()")
     summary = page.evaluate(
       "JSON.parse(document.querySelector('#measurement-output').textContent)"
@@ -303,8 +352,12 @@ def main() -> int:
   args = parser.parse_args()
 
   test_colony(args.browser, args.base_url, args.timeout)
-  test_traffic_layout(args.browser, args.base_url, 1366, 768, args.timeout)
-  test_traffic_layout(args.browser, args.base_url, 1920, 1080, args.timeout)
+  test_traffic_layout(
+    args.browser, args.base_url, 1366, 768, "aligned", args.timeout
+  )
+  test_traffic_layout(
+    args.browser, args.base_url, 1920, 1080, "multi-gate", args.timeout
+  )
   print("web demo interactions: ok")
   return 0
 

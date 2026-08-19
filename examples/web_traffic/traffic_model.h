@@ -59,7 +59,6 @@ class TrafficModel {
   [[nodiscard]] auto one_progress_streak() const noexcept -> int;
   [[nodiscard]] auto longest_one_progress_streak() const noexcept -> int;
   [[nodiscard]] auto max_planning_queries() const noexcept -> int;
-  [[nodiscard]] auto estimated_memory_bytes() const noexcept -> std::uint64_t;
   [[nodiscard]] auto agent_state_hash() const noexcept -> std::uint64_t;
   [[nodiscard]] auto validate_planner() const -> bool;
 
