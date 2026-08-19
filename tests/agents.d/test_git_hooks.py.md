@@ -6,9 +6,10 @@
   diff-scoped clang-tidy timeout is pinned to its large-surface budget. The
   `tests/agents.d/` gate is an exact bidirectional mirror: missing or orphaned
   fragments, empty bodies, and byte-inexact headings all fail against the real
-  tree. The hook-backstop invocation is matched to the `tests/test_*.py` glob
-  in both directions, so a new suite cannot disappear from CI's enumerated
-  command.
+  tree. The Dev example-smoke count must match the literal executable targets
+  declared by the examples build. The hook-backstop invocation is matched to
+  the `tests/test_*.py` glob in both directions, so a new suite cannot
+  disappear from CI's enumerated command.
 - Release workflow coverage pins an empty CMake compiler launcher on every
   ccache-free job, bounds the three-core Xcode floor build, and requires Conan
   creation in C++20 mode. Release-floor coverage pins the Visual Studio 2022

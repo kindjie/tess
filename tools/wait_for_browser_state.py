@@ -107,38 +107,45 @@ class DevToolsConnection:
       (parsed.hostname, parsed.port or 80),
       timeout=_socket_timeout(deadline, "DevTools WebSocket connect"),
     )
-    key = base64.b64encode(secrets.token_bytes(16))
-    target = parsed.path or "/"
-    if parsed.query:
-      target += f"?{parsed.query}"
-    request = (
-      f"GET {target} HTTP/1.1\r\n"
-      f"Host: {parsed.hostname}:{parsed.port or 80}\r\n"
-      "Upgrade: websocket\r\n"
-      "Connection: Upgrade\r\n"
-      f"Sec-WebSocket-Key: {key.decode('ascii')}\r\n"
-      "Sec-WebSocket-Version: 13\r\n\r\n"
-    )
-    stream.settimeout(
-      _socket_timeout(deadline, "DevTools WebSocket handshake")
-    )
-    stream.sendall(request.encode("ascii"))
-    response = bytearray()
-    while not response.endswith(b"\r\n\r\n"):
-      response.extend(_recv_exact(stream, 1, deadline))
-      if len(response) > 16 * 1024:
-        raise RuntimeError("oversized DevTools WebSocket handshake")
-    # RFC 6455 mandates SHA-1 for this handshake checksum. It does not protect
-    # data or credentials, and the connection is localhost-only.
-    expected = base64.b64encode(
-      hashlib.sha1(key + WEBSOCKET_GUID, usedforsecurity=False).digest()
-    ).decode("ascii")
-    headers = response.decode("latin-1")
-    if not headers.startswith("HTTP/1.1 101 "):
-      raise RuntimeError("DevTools rejected the WebSocket handshake")
-    if f"Sec-WebSocket-Accept: {expected}".lower() not in headers.lower():
-      raise RuntimeError("DevTools returned an invalid WebSocket accept key")
-    return cls(stream)
+    try:
+      key = base64.b64encode(secrets.token_bytes(16))
+      target = parsed.path or "/"
+      if parsed.query:
+        target += f"?{parsed.query}"
+      request = (
+        f"GET {target} HTTP/1.1\r\n"
+        f"Host: {parsed.hostname}:{parsed.port or 80}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key.decode('ascii')}\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n"
+      )
+      stream.settimeout(
+        _socket_timeout(deadline, "DevTools WebSocket handshake")
+      )
+      stream.sendall(request.encode("ascii"))
+      response = bytearray()
+      while not response.endswith(b"\r\n\r\n"):
+        response.extend(_recv_exact(stream, 1, deadline))
+        if len(response) > 16 * 1024:
+          raise RuntimeError("oversized DevTools WebSocket handshake")
+      # RFC 6455 mandates SHA-1 for this handshake checksum. It does not
+      # protect data or credentials, and the connection is localhost-only.
+      expected = base64.b64encode(
+        hashlib.sha1(key + WEBSOCKET_GUID, usedforsecurity=False).digest()
+      ).decode("ascii")
+      headers = response.decode("latin-1")
+      if not headers.startswith("HTTP/1.1 101 "):
+        raise RuntimeError("DevTools rejected the WebSocket handshake")
+      if f"Sec-WebSocket-Accept: {expected}".lower() not in headers.lower():
+        raise RuntimeError("DevTools returned an invalid WebSocket accept key")
+      return cls(stream)
+    except BaseException:
+      try:
+        stream.close()
+      except BaseException:
+        pass
+      raise
 
   def close(self) -> None:
     """Close the DevTools socket."""

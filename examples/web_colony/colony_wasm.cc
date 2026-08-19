@@ -28,8 +28,8 @@ TESS_COLONY_EXPORT int tess_colony_reset(int agent_count) {
   return model->agent_count();
 }
 
-TESS_COLONY_EXPORT int tess_colony_set_wall(int x, int y) {
-  return model && model->queue_wall(x, y) ? 1 : 0;
+TESS_COLONY_EXPORT int tess_colony_set_wall(int x, int y, int built) {
+  return model && model->set_wall(x, y, built != 0) ? 1 : 0;
 }
 
 TESS_COLONY_EXPORT void tess_colony_set_strategy(int replan_each_tick) {

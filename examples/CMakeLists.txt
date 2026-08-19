@@ -87,6 +87,108 @@ add_library(tess_web_colony_wasm_adapter OBJECT web_colony/colony_wasm.cc)
 target_link_libraries(tess_web_colony_wasm_adapter PRIVATE tess::tess)
 tess_apply_project_options(tess_web_colony_wasm_adapter)
 
+add_executable(
+  tess_web_traffic_model
+  web_traffic/traffic_model.cc
+  web_traffic/traffic_native.cc
+)
+target_link_libraries(tess_web_traffic_model PRIVATE tess::tess)
+tess_apply_project_options(tess_web_traffic_model)
+if(BUILD_TESTING)
+  set(traffic_model_labels
+    "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+  )
+  # The exhaustive funnel oracle exceeded 600 seconds on hosted Linux ASan.
+  # Keep the tighter hung-test bound for every other configuration.
+  set(traffic_funnel_timeout 600)
+  if(TESS_ENABLE_SANITIZERS)
+    string(REPLACE "," ";" traffic_sanitizer_list "${TESS_SANITIZERS}")
+    if("address" IN_LIST traffic_sanitizer_list)
+      set(traffic_funnel_timeout 1200)
+    endif()
+  endif()
+  add_test(
+    NAME tess_web_traffic_catalog
+    COMMAND tess_web_traffic_model --self-check-catalog
+  )
+  set_tests_properties(tess_web_traffic_catalog PROPERTIES
+    LABELS "${traffic_model_labels}"
+    TIMEOUT 60
+  )
+  add_test(
+    NAME tess_web_traffic_aligned
+    COMMAND tess_web_traffic_model --self-check aligned
+  )
+  set_tests_properties(tess_web_traffic_aligned PROPERTIES
+    LABELS "${traffic_model_labels}"
+    TIMEOUT 240
+  )
+  add_test(
+    NAME tess_web_traffic_shuffled_crossing
+    COMMAND tess_web_traffic_model --self-check shuffled-crossing
+  )
+  set_tests_properties(tess_web_traffic_shuffled_crossing PROPERTIES
+    LABELS "${traffic_model_labels}"
+    TIMEOUT 240
+  )
+  add_test(
+    NAME tess_web_traffic_funnel
+    COMMAND tess_web_traffic_model --self-check funnel
+  )
+  set_tests_properties(tess_web_traffic_funnel PROPERTIES
+    LABELS "${traffic_model_labels};config:tsan-exempt"
+    TIMEOUT ${traffic_funnel_timeout}
+  )
+  add_test(
+    NAME tess_web_traffic_multi_gate
+    COMMAND tess_web_traffic_model --self-check multi-gate
+  )
+  set_tests_properties(tess_web_traffic_multi_gate PROPERTIES
+    LABELS "${traffic_model_labels};config:tsan-exempt"
+    TIMEOUT 300
+  )
+  add_test(
+    NAME tess_web_traffic_measurement
+    COMMAND tess_web_traffic_model
+            --scenario aligned --ticks 20 --samples
+  )
+  set_tests_properties(
+    tess_web_traffic_measurement
+    PROPERTIES
+      LABELS "${traffic_model_labels}"
+      PASS_REGULAR_EXPRESSION "aligned,19,"
+  )
+endif()
+
+add_library(tess_web_traffic_wasm_adapter OBJECT
+            web_traffic/traffic_wasm.cc)
+target_link_libraries(tess_web_traffic_wasm_adapter PRIVATE tess::tess)
+tess_apply_project_options(tess_web_traffic_wasm_adapter)
+
+add_executable(
+  tess_web_traffic_diagnostics_model
+  web_traffic/traffic_model.cc
+  web_traffic/traffic_native.cc
+)
+target_link_libraries(tess_web_traffic_diagnostics_model PRIVATE tess::tess)
+target_compile_definitions(
+  tess_web_traffic_diagnostics_model PRIVATE TESS_ENABLE_DIAGNOSTICS
+)
+tess_apply_project_options(tess_web_traffic_diagnostics_model)
+if(BUILD_TESTING)
+  add_test(
+    NAME tess_web_traffic_diagnostics
+    COMMAND tess_web_traffic_diagnostics_model
+            --scenario aligned --ticks 1 --samples
+  )
+  set_tests_properties(
+    tess_web_traffic_diagnostics
+    PROPERTIES
+      LABELS "target:tess_web_traffic_diagnostics_model;subsystem:path"
+      PASS_REGULAR_EXPRESSION ",0,0,0,[1-9][0-9]*,[1-9][0-9]*"
+  )
+endif()
+
 add_executable(tess_web_pathfinder_model web_pathfinder/pathfinder.cc)
 target_link_libraries(tess_web_pathfinder_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_pathfinder_model)

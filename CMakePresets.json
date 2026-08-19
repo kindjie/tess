@@ -353,6 +353,11 @@
       "name": "dev-tsan",
       "inherits": "test-base",
       "configurePreset": "dev-tsan",
+      "filter": {
+        "exclude": {
+          "label": "^config:tsan-exempt$"
+        }
+      },
       "environment": {
         "TSAN_OPTIONS": "halt_on_error=1 second_deadlock_stack=1"
       },

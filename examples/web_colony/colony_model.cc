@@ -114,11 +114,11 @@ ColonyModel::ColonyModel(int agent_count)
 
 ColonyModel::~ColonyModel() = default;
 
-auto ColonyModel::queue_wall(int x, int y) -> bool {
+auto ColonyModel::set_wall(int x, int y, bool built) -> bool {
   if (x < kWallMinX || x > kWallMaxX || y < 0 || y >= kHeight) {
     return false;
   }
-  return impl_->queue_wall(tess::Coord3{x, y, 0});
+  return impl_->set_wall(tess::Coord3{x, y, 0}, built);
 }
 
 void ColonyModel::set_replan_each_tick(bool enabled) noexcept {

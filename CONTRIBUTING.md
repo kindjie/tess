@@ -266,7 +266,11 @@ otherwise easy to read as "my pull request was checked by all of this":
 - **[PR when triggered]** **[main]** TSan build and tests
   (`TSAN_OPTIONS=halt_on_error=1`): preset `dev-tsan`. On a pull request
   this runs only when `tools/ci_changes.py` classifies the diff as
-  concurrency-sensitive; on main it always runs
+  concurrency-sensitive; on main it always runs. The preset excludes tests
+  labeled `config:tsan-exempt`: these are single-threaded, CPU-heavy checks
+  with no race surface. All targets still compile under TSan. The Dev,
+  GCC 12/14, ASan, and Windows gates retain their full correctness evidence.
+  Remove the exemption if concurrency enters an exempt model or harness.
 - **[main]** Release build and tests: preset `release`
 - **[main]** macOS build, tests, and install smoke on `macos-15`: presets `dev` and
   `dev-asan` (no benchmark gates there; thresholds are Linux-calibrated)

@@ -132,6 +132,47 @@ em++ \
   -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","HEAP16"]' \
   -o "$colony/tess-colony.js"
 
+# Traffic Lab: a separate large-grid specialization with static scenario
+# terrain and 1,024 moving agents, published under $output/traffic/.
+traffic="$output/traffic"
+mkdir -p "$traffic"
+cp "$root/examples/web_traffic/site/index.html" "$traffic/"
+cp "$root/examples/web_traffic/site/style.css" "$traffic/"
+cp "$root/examples/web_traffic/site/app.js" "$traffic/"
+cp "$root/examples/web_colony/site/favicon.svg" "$traffic/"
+cp "$root/docs/assets/tess-logo-dark.svg" "$traffic/logo.svg"
+
+traffic_exports='["_main","_tess_traffic_width","_tess_traffic_height"'
+traffic_exports+=',"_tess_traffic_agent_count","_tess_traffic_reset"'
+traffic_exports+=',"_tess_traffic_tick","_tess_traffic_terrain"'
+traffic_exports+=',"_tess_traffic_agents","_tess_traffic_previous_agents"'
+traffic_exports+=',"_tess_traffic_interpolation_alpha"'
+traffic_exports+=',"_tess_traffic_planning_us"'
+traffic_exports+=',"_tess_traffic_planning_queries"'
+traffic_exports+=',"_tess_traffic_fixed_ticks"'
+traffic_exports+=',"_tess_traffic_planning_pending"'
+traffic_exports+=',"_tess_traffic_advanced","_tess_traffic_waits"'
+traffic_exports+=',"_tess_traffic_blocked","_tess_traffic_arrived"'
+traffic_exports+=',"_tess_traffic_one_progress_streak"'
+traffic_exports+=',"_tess_traffic_longest_one_progress_streak"]'
+
+em++ \
+  -std=c++20 \
+  -O3 \
+  -DNDEBUG \
+  -I"$root/include" \
+  -I"$config/generated/include" \
+  "$root/examples/web_traffic/traffic_model.cc" \
+  "$root/examples/web_traffic/traffic_wasm.cc" \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sENVIRONMENT=web \
+  -sFILESYSTEM=0 \
+  -sMODULARIZE=1 \
+  -sEXPORT_NAME=createTessTraffic \
+  -sEXPORTED_FUNCTIONS="$traffic_exports" \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","HEAP16"]' \
+  -o "$traffic/tess-traffic.js"
+
 # Reference diagnostics integration: tess remains dependency-free, while this
 # one Pages artifact fetches the exact Dear ImGui revision that it compiles.
 diagnostics="$output/diagnostics"

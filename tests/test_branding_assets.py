@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -483,7 +484,15 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   # decides admission, and JavaScript persists only requests it accepted.
   assert "world.field<OccupancyTag>(coord)" in model
   assert "occupied wall request was accepted" in native
-  assert "if (api.setWall(x, y) === 1)" in app
+  assert "set_wall(int x, int y, bool built)" in model_header
+  assert "api.setWall(x, y, built ? 1 : 0)" in app
+  assert "const rememberedWalls = Array.from(walls)" in app
+  assert "api.setWall(key % width, Math.floor(key / width), 1) === 1" in app
+  assert "strokeBuilt = !walls.has" in app
+  assert "paintLine(lastCell, at, strokeBuilt)" in app
+  assert "Drag open space to draw; drag from a wall to erase." in html
+  assert "wall removal did not recover route" in native
+  assert "idempotent add rebuilt topology" in native
 
   # A durable verdict is decided by search, not by a retry clock, so the
   # page cannot report a merely congested convoy as permanently stuck. Three
@@ -571,6 +580,214 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   assert "class ColonyModel" in model_header
   assert "run_native_self_check" not in model_header
   assert "run_native_self_check" in native
+
+
+def test_traffic_lab_has_large_grid_diagnostics_and_browser_evidence():
+  header = read("examples/web_traffic/traffic_model.h")
+  model = read("examples/web_traffic/traffic_model.cc")
+  native = read("examples/web_traffic/traffic_native.cc")
+  wasm = read("examples/web_traffic/traffic_wasm.cc")
+  html = read("examples/web_traffic/site/index.html")
+  app = read("examples/web_traffic/site/app.js")
+  style = read("examples/web_traffic/site/style.css")
+  cmake = read("examples/CMakeLists.txt")
+  build = read("tools/build_web_demo.sh")
+  pages = read(".github/workflows/pages.yml")
+  browser_test = read("tools/test_web_demo_interactions.py")
+  measurement = read("tools/measure_traffic_lab.py")
+  decision = read(
+    "docs/decisions/changelog.d/"
+    "2026-08-19-caller-planned-agent-replans.md"
+  )
+
+  assert "traffic_width = 1024" in header
+  assert "traffic_height = 512" in header
+  assert "traffic_agents = 1024" in header
+  for scenario in ("Aligned", "ShuffledCrossing", "Funnel", "MultiGate"):
+    assert scenario in header
+  for name in ("aligned", "shuffled-crossing", "funnel", "multi-gate"):
+    assert name in native
+  assert "kSearchBudget = 8" in model
+  assert "first.max_planning_queries() != 8" in native
+  assert "scenario is not deterministic" in native
+  assert "qualifies the exact-only queue rationale" in decision
+  assert "remain the exact helpers" in decision
+  for source in (header, model, native, wasm, build, app):
+    assert "estimated_memory_bytes" not in source
+    assert "traffic_memory_bytes" not in source
+  assert "runtime.reserve_requests" not in model
+  assert "runtime.reserve_search_nodes" not in model
+  assert "runtime.reserve_path_nodes" not in model
+  assert "planning_queries_last_tick" in header
+  assert "planning_touched_nodes_last_tick" in header
+  assert '"--samples"' in native
+  assert '"--profile-repetitions"' in native
+
+  # Measurement-grade timing stays in the example harness. The native tool
+  # emits one fixed-tick row, while the campaign runner owns fresh processes,
+  # percentile sample floors, and advisory artifacts.
+  assert "PERCENTILE_MINIMUMS" in measurement
+  assert '"p99": 2000' in measurement
+  assert "subprocess.run" in measurement
+  assert '"authority": "advisory"' in measurement
+
+  assert "tess_web_traffic_model" in cmake
+  assert "tess_web_traffic_diagnostics_model" in cmake
+  assert "TESS_ENABLE_DIAGNOSTICS" in cmake
+  assert "tess_web_traffic_wasm_adapter" in cmake
+  assert "traffic_model.cc" in build
+  assert "traffic_wasm.cc" in build
+  assert "createTessTraffic" in build
+  for metric in (
+    "planning_us",
+    "planning_queries",
+    "fixed_ticks",
+    "planning_pending",
+    "advanced",
+    "waits",
+    "blocked",
+    "one_progress_streak",
+    "longest_one_progress_streak",
+  ):
+    assert f"tess_traffic_{metric}" in wasm
+    assert f"_tess_traffic_{metric}" in build
+
+  assert 'width="1024" height="512"' in html
+  assert "aspect-ratio: 2 / 1" in style
+  assert "const terrainLayer = document.createElement('canvas')" in app
+  assert "terrainCtx.putImageData" in app
+  assert "ctx.drawImage(terrainLayer" in app
+  for label in (
+    "C++ update",
+    "planning",
+    "render",
+    "frame",
+    "waits",
+    "blocked",
+    "one-agent streak",
+  ):
+    assert label in app
+
+  assert "new URLSearchParams(window.location.search)" in app
+  assert "measure=1" in app
+  assert "Float64Array" in app
+  assert "if (this.count === this.capacity)" in app
+  assert "% this.capacity" not in app
+  assert "maximum: values.length > 0" in app
+  assert "window.tessTrafficMetrics" in app
+  assert "wasmMemoryBytes: module.HEAPU8.buffer.byteLength" in app
+  assert "MiB Wasm memory" in app
+  assert "scenarioValues" in app
+  assert "query.get('scenario')" in app
+  assert "wasmMemoryBytes" in browser_test
+  assert "fixedTicksLastCall" in app
+  assert "Snapshot latency" in html
+  assert "measurement-output" in app
+
+  assert "tools/test_web_demo_interactions.py" in pages
+  assert "open-cell click did not add a wall" in browser_test
+  assert "draw stroke changed mode" in browser_test
+  assert "fast drag did not interpolate" in browser_test
+  assert "1366, 768" in browser_test
+  assert "1920, 1080" in browser_test
+  assert "Traffic Lab measurement mode did not collect samples" in browser_test
+  assert "Traffic Lab measurement snapshot was not readable" in browser_test
+
+  frame = app.split("function frame(timestamp) {", 1)[1].split(
+    "createTessTraffic()", 1
+  )[0]
+  endpoint = frame.index(
+    "const frameMs = performance.now() - frameBegin;"
+  )
+  assert frame.index("metrics.textContent =") < endpoint
+  assert frame.index("window.requestAnimationFrame(frame);") < endpoint
+  assert frame.index("measurement.frameMs.push(frameMs);") > endpoint
+
+
+def test_traffic_lab_self_checks_are_sliced_by_scenario():
+  native = read("examples/web_traffic/traffic_native.cc")
+  cmake = read("examples/CMakeLists.txt")
+  presets = json.loads(read("CMakePresets.json"))
+  traffic_cmake = cmake.split("add_executable(\n  tess_web_traffic_model", 1)[1]
+
+  assert '"--self-check-catalog"' in native
+  assert '"--self-check"' in native
+  for name in (
+    "tess_web_traffic_catalog",
+    "tess_web_traffic_aligned",
+    "tess_web_traffic_shuffled_crossing",
+    "tess_web_traffic_funnel",
+    "tess_web_traffic_multi_gate",
+  ):
+    assert f"NAME {name}" in cmake
+  assert "tess_web_traffic_catalog PROPERTIES" in cmake
+  assert "tess_web_traffic_aligned PROPERTIES" in cmake
+  assert "tess_web_traffic_shuffled_crossing PROPERTIES" in cmake
+  assert "tess_web_traffic_funnel PROPERTIES" in cmake
+  assert "tess_web_traffic_multi_gate PROPERTIES" in cmake
+  traffic_tests = {
+    "tess_web_traffic_catalog",
+    "tess_web_traffic_aligned",
+    "tess_web_traffic_shuffled_crossing",
+    "tess_web_traffic_funnel",
+    "tess_web_traffic_multi_gate",
+  }
+  property_blocks = {
+    name: cmake.split(
+      f"set_tests_properties({name} PROPERTIES", 1
+    )[1].split("\n  )", 1)[0]
+    for name in traffic_tests
+  }
+  assert (
+    'set(traffic_funnel_timeout 600)\n'
+    '  if(TESS_ENABLE_SANITIZERS)\n'
+    '    string(REPLACE "," ";" traffic_sanitizer_list '
+    '"${TESS_SANITIZERS}")\n'
+    '    if("address" IN_LIST traffic_sanitizer_list)\n'
+    '      set(traffic_funnel_timeout 1200)\n'
+    "    endif()\n"
+    "  endif()"
+  ) in traffic_cmake
+  assert (
+    property_blocks["tess_web_traffic_funnel"].count(
+      "TIMEOUT ${traffic_funnel_timeout}"
+    ) == 1
+  )
+  assert "TIMEOUT 300" not in property_blocks["tess_web_traffic_funnel"]
+  assert (
+    property_blocks["tess_web_traffic_multi_gate"].count("TIMEOUT 300") == 1
+  )
+  assert (
+    "TIMEOUT ${traffic_funnel_timeout}"
+    not in property_blocks["tess_web_traffic_multi_gate"]
+  )
+  assert (
+    'set(traffic_model_labels\n'
+    '    "target:tess_web_traffic_model;subsystem:path;subsystem:sim"\n'
+    "  )"
+  ) in traffic_cmake
+  assert cmake.count('LABELS "${traffic_model_labels}"') == 4
+  assert cmake.count(
+    'LABELS "${traffic_model_labels};config:tsan-exempt"'
+  ) == 2
+
+  tsan_exempt = set()
+  for name, block in property_blocks.items():
+    if "config:tsan-exempt" in block:
+      tsan_exempt.add(name)
+  assert tsan_exempt == {
+    "tess_web_traffic_funnel",
+    "tess_web_traffic_multi_gate",
+  }
+  assert cmake.count("config:tsan-exempt") == 2
+
+  dev_tsan = next(
+    preset for preset in presets["testPresets"]
+    if preset["name"] == "dev-tsan"
+  )
+  assert dev_tsan["filter"] == {
+    "exclude": {"label": "^config:tsan-exempt$"}
+  }
 
 
 def test_wasm_diagnostics_demo_has_real_accessible_integration_contract():

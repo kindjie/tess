@@ -98,6 +98,11 @@ struct BuildAck {
   std::size_t tiles = 0;
 };
 
+struct WallEdit {
+  tess::Coord3 coord;
+  bool built = false;
+};
+
 // Convoy layout: batch k = i / kHeight walks row y = i % kHeight between
 // columns 16 - 2k (home) and 125 - 2k (away). Its middle-row agent parks in a
 // sparse outer column instead. That leaves row 64 as a cross-cut through every
@@ -134,7 +139,7 @@ struct ColonyModel::Impl {
   tess::RegionGraph graph;
   tess::FrameOps ops;
   tess::DeltaCollector deltas;
-  std::vector<tess::Coord3> pending_walls;
+  std::vector<WallEdit> pending_walls;
   std::vector<std::uint8_t> merge_claims;
   std::vector<tess::ChunkKey> dirty_scratch;
   std::vector<std::uint8_t> shadow;  // 0 open, 1 wall, per tile.
@@ -173,6 +178,7 @@ struct ColonyModel::Impl {
   std::size_t last_movement_waits = 0;
   std::size_t max_recovery_probes = 0;
   std::size_t max_planning_queries = 0;
+  std::size_t topology_rebuilds = 0;
 
   struct BuildTaskFn {
     Impl* demo;
@@ -180,7 +186,8 @@ struct ColonyModel::Impl {
     void operator()(View& view, BuildAck& ack) const {
       auto passable = view.template field_span<PassableTag>();
       auto construction = view.template field_span<ConstructionTag>();
-      for (const auto& coord : demo->pending_walls) {
+      for (const auto& edit : demo->pending_walls) {
+        const auto coord = edit.coord;
         const auto key =
             tess::chunk_key<Shape>(tess::chunk_coord<Shape>(coord));
         if (key != view.key()) {
@@ -188,14 +195,24 @@ struct ColonyModel::Impl {
         }
         const auto local =
             tess::local_tile_id<Shape>(tess::local_coord<Shape>(coord));
-        const auto newly_constructed = !construction[local.value];
-        passable[local.value] = false;
-        construction[local.value] = true;
+        const auto was_constructed = construction[local.value] != 0;
+        if (was_constructed == edit.built) {
+          continue;
+        }
+        passable[local.value] = !edit.built;
+        construction[local.value] = edit.built;
+        const auto newly_constructed = edit.built;
         if (newly_constructed && coord.x < kWallMinX + kApproachGuardColumns) {
           ++demo->left_approach_wall_tiles;
         }
+        if (!newly_constructed && coord.x < kWallMinX + kApproachGuardColumns) {
+          --demo->left_approach_wall_tiles;
+        }
         if (newly_constructed && coord.x > kWallMaxX - kApproachGuardColumns) {
           ++demo->right_approach_wall_tiles;
+        }
+        if (!newly_constructed && coord.x > kWallMaxX - kApproachGuardColumns) {
+          --demo->right_approach_wall_tiles;
         }
         ++ack.tiles;
       }
@@ -240,6 +257,7 @@ struct ColonyModel::Impl {
           TESS_ASSERT(false);
           return {};
         }
+        ++demo->topology_rebuilds;
         // A topology revision ends any older seeded snapshot. Canonical work
         // owns the new revision immediately; a fresh seed becomes eligible
         // only after pointer painting has remained idle for a short window.
@@ -656,7 +674,7 @@ struct ColonyModel::Impl {
   // in reverse declaration order, and the non-owning Schedule must go first.
   tess::Schedule schedule;
 
-  [[nodiscard]] auto queue_wall(tess::Coord3 coord) -> bool {
+  [[nodiscard]] auto set_wall(tess::Coord3 coord, bool built) -> bool {
     // Example: queue a world edit. Admission is synchronous, but mutation is
     // deferred to the PreUpdate AutoExec task so dirty publication, topology,
     // and movement retain one deterministic schedule order.
@@ -664,10 +682,23 @@ struct ColonyModel::Impl {
     // an agent between this admission check and the next PreUpdate build. Keep
     // the invariant every other colony writer already follows -- construction
     // never turns an occupied source into impassable terrain.
-    if (world.field<OccupancyTag>(coord)) {
+    const auto pending = std::find_if(
+        pending_walls.begin(), pending_walls.end(),
+        [coord](const WallEdit& edit) { return edit.coord == coord; });
+    const auto effective = pending != pending_walls.end()
+                               ? pending->built
+                               : world.field<ConstructionTag>(coord) != 0;
+    if (effective == built) {
+      return true;
+    }
+    if (built && world.field<OccupancyTag>(coord)) {
       return false;
     }
-    pending_walls.push_back(coord);
+    if (pending != pending_walls.end()) {
+      pending->built = built;
+      return true;
+    }
+    pending_walls.push_back(WallEdit{coord, built});
     const auto key = tess::chunk_key<Shape>(tess::chunk_coord<Shape>(coord));
     (void)ops.update_field(
         tess::DomainDesc::explicit_chunks({&key, 1}),

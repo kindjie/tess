@@ -429,13 +429,15 @@ stateDiagram-v2
   forward to the runtime's precheck gate; when supplied, goals the region graph
   proves unreachable are resolved without A* and surfaced in
   `PathAgentFrameStats::precheck_ruled_out`.
-- `PathAgentReplanQueue` is an opt-in, caller-owned FIFO for exact replans.
-  Pending agent indices deduplicate; `process_unit_path_agent_replans` and
-  `process_weighted_path_agent_replans` solve at most
-  `PathAgentReplanOptions::max_requests`, copy results into retained routes,
-  and preserve the selected `MissingChunkPolicy`. This bounds request count,
-  not one search's expansions or wall time. Queue, agents, routes, and scratch
-  are externally synchronized; independent owners may run independently.
+- `PathAgentReplanQueue` is an opt-in, caller-owned FIFO for replans. Pending
+  agent indices deduplicate. `process_path_agent_replans` invokes a synchronous
+  caller planner at most its supplied request count and copies each borrowed
+  result into retained routes; the generic drain deliberately does not certify
+  path legality or optimality. `process_unit_path_agent_replans` and
+  `process_weighted_path_agent_replans` retain exact-search semantics and pass
+  through `PathAgentReplanOptions`. This bounds request count, not one search's
+  expansions or wall time. Queue, agents, routes, and planner scratch are
+  externally synchronized; independent owners may run independently.
 
 ### Path-Agent Tick
 
