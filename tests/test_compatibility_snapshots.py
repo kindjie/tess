@@ -653,8 +653,8 @@ def test_archive_format_must_be_an_integer(tmp_path, archive_format):
   )
 
 
-def git(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-  return subprocess.run(
+def git(root: Path, *arguments: str) -> None:
+  subprocess.run(
       ["git", *arguments], cwd=root, check=True, capture_output=True, text=True
   )
 
@@ -669,6 +669,7 @@ def initialize_git_snapshot(root: Path) -> tuple[Path, Path]:
   git(root, "config", "core.hooksPath", "/dev/null")
   git(root, "add", ".")
   git(root, "commit", "-m", "snapshot")
+  git(root, "branch", "-m", "baseline")
   git(root, "tag", "v1.0.0-rc.1")
   return header_path, snapshot_root
 
@@ -702,14 +703,13 @@ def test_released_snapshot_directory_cannot_be_deleted(tmp_path):
 
 def test_future_unmerged_tag_does_not_require_its_snapshot(tmp_path):
   _, snapshot_root = initialize_git_snapshot(tmp_path)
-  initial_branch = git(tmp_path, "branch", "--show-current").stdout.strip()
   git(tmp_path, "switch", "--orphan", "future")
   future = tmp_path / "future.txt"
   future.write_text("future\n", encoding="utf-8")
   git(tmp_path, "add", "future.txt")
   git(tmp_path, "commit", "-m", "future")
   git(tmp_path, "tag", "v1.1.0")
-  git(tmp_path, "switch", initial_branch)
+  git(tmp_path, "switch", "baseline")
 
   assert snapshots.check_snapshot_immutability(
       tmp_path, snapshot_root, "1.0.1"
