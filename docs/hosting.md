@@ -55,7 +55,10 @@ CI runs `mkdocs build --strict`, builds the `tess_docs` target with the pinned
 Doxygen release, checks authored-site links, validates every Mermaid fence
 against the self-hosted runtime (`tools/check_mermaid.py` — parse failures
 are invisible to `--strict` and would otherwise ship as raw diagram source),
-and loads the WebAssembly demo in headless Chrome. It then copies the
-generated API HTML into `build/site/api`. Doxygen warnings, broken
-authored-site links, an invalid diagram, or a demo that does not reach its
-ready state block deployment.
+and loads the WebAssembly demos in headless Chrome. The pathfinding strategy
+smoke also checks C++-derived cache, batch, and reachable-field values after
+real-time readiness, not just successful module loading. The workflow then
+copies the generated API
+HTML into `build/site/api`. Doxygen warnings, broken authored-site links, an
+invalid diagram, or a demo that does not reach its ready state block
+deployment.

@@ -72,6 +72,7 @@ nav:
       - Residency: guide/residency.md
       - Writes: guide/writes.md
       - Pathfinding strategy: guide/pathfinding.md
+      - Interactive comparison: pathfinding-strategy-comparison.md
       - Topology and precheck: guide/topology.md
       - Entities and ECS: guide/entities.md
       - Presentation: guide/presentation.md
@@ -95,7 +96,6 @@ nav:
       - Diagnostics architecture: architecture/diagnostics.md
       - GPU interface: architecture/gpu.md
   - API reference: https://tess.owx.dev/api/
-  - Pathfinding comparison: pathfinding-strategy-comparison.md
   - Performance: performance.md
   - Use cases: use-cases.md
   - Project:

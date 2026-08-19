@@ -21,8 +21,9 @@ Published on the documentation site:
 - [Performance](performance.md): adopter-facing benchmark expectations and
   the trend snapshot.
 - [Pathfinding strategy comparison](pathfinding-strategy-comparison.md):
-  paired API mechanics and benchmark workload references for A*, route caches,
-  weighted batches, and distance fields.
+  paired API mechanics, an embedded C++/WebAssembly call-shape demo, and
+  benchmark workload references for A*, route caches, weighted batches, and
+  distance fields.
 - [Roadmap](roadmap.md): released vs landed-but-unreleased vs release-gated,
   deferred, and out-of-scope work.
 - [Support](support.md): adopter help, issue, and compatibility guidance;

@@ -110,9 +110,24 @@ add_executable(tess_path_agents path_agents.cc)
 target_link_libraries(tess_path_agents PRIVATE tess::tess)
 tess_apply_project_options(tess_path_agents)
 
-add_executable(tess_pathfinding_strategies pathfinding_strategies.cc)
+add_executable(
+  tess_pathfinding_strategies
+  pathfinding_strategies_model.cc
+  pathfinding_strategies.cc
+)
 target_link_libraries(tess_pathfinding_strategies PRIVATE tess::tess)
 tess_apply_project_options(tess_pathfinding_strategies)
+
+# Compile the browser adapter under native warnings and diff clang-tidy while
+# keeping the pathfinding calls in the shared model above.
+add_library(
+  tess_pathfinding_strategies_wasm_adapter OBJECT
+  web_pathfinding_strategies/strategies_wasm.cc
+)
+target_link_libraries(
+  tess_pathfinding_strategies_wasm_adapter PRIVATE tess::tess
+)
+tess_apply_project_options(tess_pathfinding_strategies_wasm_adapter)
 
 add_executable(tess_custom_ecs_min custom_ecs_min.cc)
 target_link_libraries(tess_custom_ecs_min PRIVATE tess::tess)
