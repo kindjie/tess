@@ -669,6 +669,7 @@ def initialize_git_snapshot(root: Path) -> tuple[Path, Path]:
   git(root, "config", "core.hooksPath", "/dev/null")
   git(root, "add", ".")
   git(root, "commit", "-m", "snapshot")
+  git(root, "branch", "-m", "baseline")
   git(root, "tag", "v1.0.0-rc.1")
   return header_path, snapshot_root
 
@@ -708,7 +709,7 @@ def test_future_unmerged_tag_does_not_require_its_snapshot(tmp_path):
   git(tmp_path, "add", "future.txt")
   git(tmp_path, "commit", "-m", "future")
   git(tmp_path, "tag", "v1.1.0")
-  git(tmp_path, "switch", "master")
+  git(tmp_path, "switch", "baseline")
 
   assert snapshots.check_snapshot_immutability(
       tmp_path, snapshot_root, "1.0.1"
