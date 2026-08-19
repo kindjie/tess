@@ -209,8 +209,8 @@ struct TrafficModel::Impl {
     replan_scratch.reserve_nodes(static_cast<std::size_t>(traffic_width) *
                                  traffic_height);
     replan_product.reserve_waypoints(3);
-    replan_product.reserve_path_nodes(
-        static_cast<std::size_t>(traffic_width + traffic_height));
+    replan_product.reserve_path_nodes(static_cast<std::size_t>(traffic_width) +
+                                      traffic_height);
     replan_product.reserve_dependencies(world.chunks().size());
     runtime.reserve_requests(count * 2);
     runtime.reserve_search_nodes(static_cast<std::size_t>(traffic_width) *
@@ -325,8 +325,8 @@ struct TrafficModel::Impl {
     tess::WeightedPortalRouteProduct second_product;
     for (auto* product : {&first_product, &second_product}) {
       product->reserve_waypoints(3);
-      product->reserve_path_nodes(
-          static_cast<std::size_t>(traffic_width + traffic_height));
+      product->reserve_path_nodes(static_cast<std::size_t>(traffic_width) +
+                                  traffic_height);
       product->reserve_dependencies(world.chunks().size());
     }
 
