@@ -129,12 +129,18 @@ def check_repository(repo_root: Path = REPO_ROOT) -> list[str]:
         f"{expected_requirement}, not {actual_requirement}"
       )
 
+  # The README may keep installation at the decision level and omit a
+  # FetchContent example. The packaging guide is the required command-level
+  # authority; any tag shown in either document must identify the release.
   expected_tag = str(release)
-  for label, text in (("README.md", readme), ("docs/packaging.md", packaging)):
+  for label, text, required in (
+    ("README.md", readme, False),
+    ("docs/packaging.md", packaging, True),
+  ):
     tags = {
       str(Version.from_match(match)) for match in FETCH_TAG_RE.finditer(text)
     }
-    if tags != {expected_tag}:
+    if (required and not tags) or tags - {expected_tag}:
       rendered = ", ".join(sorted(f"v{tag}" for tag in tags)) or "none"
       failures.append(
         f"{label}: release FetchContent tag must be v{release}; "

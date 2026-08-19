@@ -150,6 +150,55 @@ def test_check_repository_accepts_readme_without_find_package(tmp_path):
   assert cdv.check_repository(tmp_path) == []
 
 
+def test_check_repository_accepts_readme_without_fetch_tag(tmp_path):
+  write_fixture(tmp_path)
+  readme = tmp_path / "README.md"
+  readme.write_text(
+    "\n".join(
+      line
+      for line in readme.read_text(encoding="utf-8").splitlines()
+      if "GIT_TAG" not in line
+    )
+    + "\n",
+    encoding="utf-8",
+  )
+
+  assert cdv.check_repository(tmp_path) == []
+
+
+def test_check_repository_rejects_stale_readme_fetch_tag(tmp_path):
+  write_fixture(tmp_path)
+  readme = tmp_path / "README.md"
+  readme.write_text(
+    readme.read_text(encoding="utf-8").replace(
+      "GIT_TAG v0.3.0", "GIT_TAG v0.2.0"
+    ),
+    encoding="utf-8",
+  )
+
+  assert cdv.check_repository(tmp_path) == [
+    "README.md: release FetchContent tag must be v0.3.0; found v0.2.0"
+  ]
+
+
+def test_check_repository_rejects_packaging_without_fetch_tag(tmp_path):
+  write_fixture(tmp_path)
+  packaging = tmp_path / "docs" / "packaging.md"
+  packaging.write_text(
+    "\n".join(
+      line
+      for line in packaging.read_text(encoding="utf-8").splitlines()
+      if "GIT_TAG" not in line
+    )
+    + "\n",
+    encoding="utf-8",
+  )
+
+  assert cdv.check_repository(tmp_path) == [
+    "docs/packaging.md: release FetchContent tag must be v0.3.0; found none"
+  ]
+
+
 def test_check_repository_accepts_release_checkout(tmp_path):
   write_release_fixture(tmp_path)
 

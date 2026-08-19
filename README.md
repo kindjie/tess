@@ -8,188 +8,177 @@
   </picture>
 </p>
 
-# C++20 grid pathfinding and simulation library
+# Pathfinding and Simulation for 2D and 3D Grid Worlds
 
-[![CI](https://github.com/kindjie/tess/actions/workflows/ci.yml/badge.svg)](https://github.com/kindjie/tess/actions/workflows/ci.yml)
+[![CI](https://github.com/kindjie/tess/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/kindjie/tess/actions/workflows/ci.yml?query=branch%3Amain+event%3Apush)
 [![Release](https://img.shields.io/github/v/release/kindjie/tess)](https://github.com/kindjie/tess/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/kindjie/tess)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-tess.owx.dev-673ab7)](https://tess.owx.dev/)
 
-`tess` is a performance-first, header-only C++20 grid pathfinding and
-deterministic simulation library. It composes small spatial pieces into large,
-structured worlds for fast routing, topology, and tile-based simulation.
+`tess` is a fast, header-only C++20 library for pathfinding and deterministic
+simulation in 2D and 3D grid worlds. It handles tile storage, paths, agent
+movement, and change tracking while your application owns rendering, physics,
+and game logic.
 
-Use tess when a simulation needs bounded grid storage, topology-aware routing,
-or deterministic queued updates without committing to an engine. It is a good
-fit for games, colony simulations, robotics prototypes, and headless spatial
-models. It is not a renderer, physics engine, navigation-mesh generator, or
-drop-in ECS.
+Use it for games, colony simulations, robotics prototypes, and headless
+systems. tess is not an engine, renderer, physics system, navigation-mesh
+library, or entity-component system.
 
-The latest release is `v0.12.0`; this checkout documents the `v0.12.0` release
-and unreleased changes already landed on `main`. The
-[roadmap](https://tess.owx.dev/roadmap/) distinguishes them. tess is pre-1.0 —
-see
-[support and compatibility](https://tess.owx.dev/support/) for the stability
-policy. Release notes live in [`CHANGELOG.md`](CHANGELOG.md).
+[See A*, route caching, batches, and distance fields in
+action →](https://tess.owx.dev/pathfinding-strategy-comparison/)
 
-## Quickstart
+## Capabilities
 
-Declare a world shape and field schema, open some tiles, and run A*:
+- **[2D and 3D worlds][getting-started]** — use the same shape and coordinate
+  model for top-down grids, vertical cross-sections, and full 3D spaces.
+- **[Pathfinding][pathfinding-guide]** — run unit-cost or weighted A*, define
+  custom movement rules, and reject unreachable routes before doing a full
+  search.
+- **[Reusable path work][strategy-comparison]** — share exact route caches,
+  batches, and distance fields across repeated queries and groups of agents.
+- **[Small or very large worlds][residency-guide]** — keep every chunk in
+  memory or load chunks on demand within a fixed memory budget.
+- **[Deterministic simulation][simulation-concepts]** — queue changes,
+  schedule systems, move agents, and resolve conflicts in a repeatable order.
+- **[Spatial data and persistence][concepts]** — store typed tile fields, run
+  [spatial queries][query-concepts], and save
+  [versioned world archives][persistence-concepts].
+- **[Engine integration][examples]** — use the dependency-free core alone or
+  add optional EnTT, Flecs, Dear ImGui, and WebGPU adapters.
+- **[Rendering and diagnostics][presentation-guide]** — send versioned change
+  sets to an external renderer and enable
+  [instrumentation][diagnostics-guide] when it is needed.
 
-<!-- tess-snippet: quickstart source=examples/quickstart.cc -->
+[getting-started]: https://tess.owx.dev/getting-started/
+[pathfinding-guide]: https://tess.owx.dev/guide/pathfinding/
+[strategy-comparison]: https://tess.owx.dev/pathfinding-strategy-comparison/
+[residency-guide]: https://tess.owx.dev/guide/residency/
+[simulation-concepts]: https://tess.owx.dev/architecture/simulation/
+[concepts]: https://tess.owx.dev/architecture/
+[query-concepts]: https://tess.owx.dev/architecture/query/
+[persistence-concepts]: https://tess.owx.dev/architecture/persistence/
+[examples]: https://tess.owx.dev/examples/
+[presentation-guide]: https://tess.owx.dev/guide/presentation/
+[diagnostics-guide]: https://tess.owx.dev/guide/diagnostics/
+
+## Start with A*
+
+After including `<tess/pathfinding.h>` and the optional stream helpers in
+`<tess/io.h>`, define a small world, open its tiles, and inspect the result
+of an A* query. This excerpt comes from a complete example that is compiled
+and run in CI:
+
+<!-- tess-snippet: readme-astar source=examples/quickstart.cc -->
 ```cpp
-#include <tess/core/config.h>
-#include <tess/tess.h>
+#include <tess/io.h>
+#include <tess/pathfinding.h>
 
 #include <cstdint>
-#include <exception>
 #include <iostream>
 
+// 1. Define a 4x4 2D grid and the data stored for each tile.
 struct PassableTag {};
-
-using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
+using Shape = tess::Shape<tess::Extent3{4, 4, 1}, tess::Extent3{4, 4, 1}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
-int main() {
-#if TESS_HAS_EXCEPTIONS
-  try {
-#endif
-    World world;  // Zero-initialized: every tile starts blocked.
-    for (int y = 0; y < 8; ++y) {
-      for (int x = 0; x < 8; ++x) {
-        world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
-      }
+auto run_example() -> int {
+  // 2. Create the world and mark the tiles that can be crossed.
+  World world;  // Zero-initialized: every tile starts blocked.
+  for (int y = 0; y < 4; ++y) {
+    for (int x = 0; x < 4; ++x) {
+      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
     }
+  }
 
-    tess::PathScratch scratch;
-    const auto result = tess::astar_path<World, PassableTag>(
-        world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}},
-        scratch);
-    if (result.status != tess::PathStatus::Found) {
-      std::cerr << "path not found\n";
-      return 1;
-    }
+  // 3. Reuse this scratch storage for repeated path queries.
+  tess::PathScratch scratch;
+  const auto result = tess::astar_path<World, PassableTag>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{2, 1, 0}},
+      scratch);
 
-    std::cout << "path cost: " << result.cost << "\n";
-    std::cout << "expanded nodes: " << result.expanded_nodes << "\n";
-#if TESS_HAS_EXCEPTIONS
-  } catch (const std::exception& error) {
-    std::cerr << "quickstart failed: " << error.what() << "\n";
+  // 4. Check the status, then print the path coordinates and total cost.
+  if (result.status != tess::PathStatus::Found || result.path.empty()) {
+    std::cerr << "path query failed: " << result.status << '\n';
     return 1;
   }
-#endif
+
+  std::cout << "path: " << result.path << '\n';
+  std::cout << "cost: " << result.cost << '\n';
   return 0;
 }
 ```
 <!-- /tess-snippet -->
 
-Build and run it, along with every other dependency-free example:
-
-```sh
-cmake --preset examples
-cmake --build --preset examples
-./build/examples/examples/tess_quickstart
-```
-
-Expected output:
+The query prints:
 
 <!-- tess-output: quickstart source=examples/quickstart.cc -->
 ```text
-path cost: 14
-expanded nodes: 15
+path: [Coord3{0, 0, 0}, Coord3{1, 0, 0}, Coord3{2, 0, 0}, Coord3{2, 1, 0}]
+cost: 3
 ```
 <!-- /tess-output -->
 
-Chunk dimensions must be powers of two that evenly divide the world
-dimensions. From here, the
-[getting-started tutorial](https://tess.owx.dev/getting-started/) walks the
-full concept ladder up to the schedule loop and render bridge.
+`result.path` is a read-only view of `tess::Coord3` values. It borrows the
+scratch storage and remains valid only until that scratch is reused. The
+[complete quickstart](examples/quickstart.cc) includes the executable error
+boundary; the
+[getting-started tutorial](https://tess.owx.dev/getting-started/) builds from
+shapes and schemas through the schedule loop and render bridge.
 
 ## Use in your project
 
-tess is header-only and needs a C++20 compiler. The portable headers assets
-published with releases containing this capability need no CMake or package
-manager: verify `SHA256SUMS`, extract
-`tess-<version>-headers.tar.gz` or `.zip`, and add the resulting `include`
-directory to your compiler search path:
+tess is header-only and requires a C++20 compiler. Choose the integration that
+fits your project.
 
-```sh
-c++ -std=c++20 -Ivendor/tess/include main.cc -o app
-```
+- **Portable archive:** For releases that provide one, download the `.zip` or
+  `.tar.gz`, extract it anywhere, and add its `include` directory to your
+  compiler search path.
+- **CMake:** Pin tess with `FetchContent`, vendor it with `add_subdirectory`,
+  or use an installed copy with `find_package`; then link `tess::tess`.
+- **Package managers:** The repository includes a Conan 2 recipe and a vcpkg
+  overlay for local use. Publication in their central registries is planned
+  after 1.0.
 
-The dependency-free core is complete in that archive. Optional EnTT, Flecs,
-Dear ImGui, and WebGPU headers still require their corresponding
-consumer-provided dependency. Raw repository source archives are not the
-portable package because `tess/version.h` is materialized in the tested release
-asset.
+The [installation guide](https://tess.owx.dev/packaging/) has the exact
+commands and archive verification steps.
 
-CMake 3.25 or newer remains the one-block source-integration path:
-
-```cmake
-include(FetchContent)
-FetchContent_Declare(
-  tess
-  GIT_REPOSITORY https://github.com/kindjie/tess.git
-  GIT_TAG v0.12.0
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(tess)
-target_link_libraries(my_target PRIVATE tess::tess)
-```
-
-For archive checksums, an installed `find_package` package, install prefixes,
-include-surface guidance, and package-manager status, see
-[Installation](https://tess.owx.dev/packaging/).
-
-## Documentation
-
-- [tess.owx.dev](https://tess.owx.dev/) — the documentation site, including
-  the interactive WebAssembly pathfinding demo.
-- [Getting started](https://tess.owx.dev/getting-started/) — tutorial from
-  shapes and schemas to the schedule loop and render bridge.
-- [API reference](https://tess.owx.dev/api/) — generated documentation for
-  the supported C++ surface.
-- [Examples](https://tess.owx.dev/examples/) — the annotated catalog of
-  self-checking example programs.
-
-## Examples
-
-- [`examples/quickstart.cc`](examples/quickstart.cc) — the complete program
-  shown above.
-- [`examples/colony_2d.cc`](examples/colony_2d.cc) — the flagship
-  composition: queued construction edits, an OnDirty topology rebuild,
-  movement-class agents routing around the new wall, and a DeltaFrame render
-  consumer, all in one `tess::Schedule` loop.
-- [`examples/web_pathfinder`](examples/web_pathfinder) — the interactive
-  WebAssembly pathfinder, [live on the documentation
-  site](https://tess.owx.dev/demo/).
-
-Every example is annotated in the
-[example catalog](https://tess.owx.dev/examples/).
+The latest release is `v0.12.0`. This checkout documents the `v0.12.0` release
+and unreleased changes already on `main`; that release predates the portable
+archives. Before 1.0, public APIs may change between minor versions. See
+[support and compatibility](https://tess.owx.dev/support/) and the
+[roadmap](https://tess.owx.dev/roadmap/).
 
 ## Performance
 
-Representative medians on an Apple M3 Max (single-threaded), enforced by
-calibrated CI ceilings:
+Representative single-threaded medians on an Apple M3 Max:
 
-- A* across an open 512x512 grid, corner to corner: ~2.1 us.
-- One clean tick of 100 path agents with retained routes: ~330 ns.
-- One `weighted_path_batch` plan of 100 near-goal requests on a 512x512
-  grid: ~50 us.
+- Open 512x512 A*, corner to corner: ~2.1 us.
+- Clean tick for 100 agents with retained routes: ~330 ns.
+- Weighted batch of 100 near-goal requests on a 512x512 grid: ~50 us.
 
-Details and trend snapshots: [Performance](https://tess.owx.dev/performance/).
+The [performance page](https://tess.owx.dev/performance/) records the benchmark
+protocol, calibrated CI ceilings, and trend snapshots.
+
+## Learn more
+
+- [Choose your architecture](https://tess.owx.dev/guide/) — residency,
+  writes, path strategy, topology, entities, presentation, and diagnostics.
+- [Compare pathfinding
+  strategies](https://tess.owx.dev/pathfinding-strategy-comparison/)
+  — see A*, route caching, weighted batches, and distance fields operate over
+  the same obstacle map.
+- [Examples](https://tess.owx.dev/examples/) — annotated, self-checking
+  programs from the quickstart to the flagship colony simulation.
+- [API reference](https://tess.owx.dev/api/) — the supported C++ surface.
+- [Roadmap](https://tess.owx.dev/roadmap/) — implemented, planned, and
+  deliberately excluded work.
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the developer workflow:
-presets, quality gates, benchmarks, and documentation tooling. Install the
-local git hooks first with `python3 tools/git_hooks.py install`.
-
-## Name
-
-`tess` is named after tesserae and tessellation: small spatial pieces composed
-into large, structured worlds for fast simulation, topology, and pathfinding.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for presets, quality gates,
+benchmarks, and documentation tooling. Install the local hooks first with
+`python3 tools/git_hooks.py install`.
 
 ## License
 

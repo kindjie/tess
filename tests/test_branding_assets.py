@@ -159,11 +159,13 @@ def test_docs_search_metadata_establishes_tess_site_identity():
     )
 
   assert readme.startswith("<p align=\"center\">")
-  assert "# C++20 grid pathfinding and simulation library" in readme
   assert (
-    "`tess` is a performance-first, header-only C++20 grid pathfinding "
-    "and\n"
-    "deterministic simulation library"
+    "# Pathfinding and Simulation for 2D and 3D Grid Worlds" in readme
+  )
+  assert (
+    "`tess` is a fast, header-only C++20 library for pathfinding and "
+    "deterministic\n"
+    "simulation in 2D and 3D grid worlds"
     in readme
   )
   assert robots == (
