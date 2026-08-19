@@ -166,7 +166,7 @@ These primary papers motivate experiments or provide external oracles; none is
 a dependency recommendation. Select and pin any implementation reference only
 inside the bounded prototype that needs it, after license review.
 
-- Portal hierarchy and indexing:
+- Precomputed path indexing:
   [ENLSVG](https://arxiv.org/abs/1702.01524).
 - PIBT tie-breaking:
   [Lightweight and Effective Preference Construction in PIBT](https://ojs.aaai.org/index.php/SOCS/article/view/35982).
@@ -176,7 +176,8 @@ inside the bounded prototype that needs it, after license review.
   [Improving Jump Point Search](https://ojs.aaai.org/index.php/ICAPS/article/view/13633).
 - Execution uncertainty:
   [Time-Independent Planning for Multiple Moving Agents](https://ojs.aaai.org/index.php/AAAI/article/view/17347),
-  [Agile Multi-Agent Path Finding](https://www.nature.com/articles/s44182-026-00083-2),
+  [Concrete multi-agent path planning enabling kinodynamically aggressive
+  maneuvers](https://www.nature.com/articles/s44182-026-00083-2),
   and [SMART](https://arxiv.org/abs/2503.04798).
 - Fungible targets:
   [Solving Simultaneous Target Assignment and Path Planning Efficiently with
