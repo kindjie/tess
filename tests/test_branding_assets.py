@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -680,6 +681,8 @@ def test_traffic_lab_has_large_grid_diagnostics_and_browser_evidence():
 def test_traffic_lab_self_checks_are_sliced_by_scenario():
   native = read("examples/web_traffic/traffic_native.cc")
   cmake = read("examples/CMakeLists.txt")
+  presets = json.loads(read("CMakePresets.json"))
+  traffic_cmake = cmake.split("add_executable(\n  tess_web_traffic_model", 1)[1]
 
   assert '"--self-check-catalog"' in native
   assert '"--self-check"' in native
@@ -698,6 +701,43 @@ def test_traffic_lab_self_checks_are_sliced_by_scenario():
   assert "tess_web_traffic_multi_gate PROPERTIES" in cmake
   assert "TIMEOUT 600" in cmake
   assert "TIMEOUT 300" in cmake
+  assert (
+    'set(traffic_model_labels\n'
+    '    "target:tess_web_traffic_model;subsystem:path;subsystem:sim"\n'
+    "  )"
+  ) in traffic_cmake
+  assert cmake.count('LABELS "${traffic_model_labels}"') == 4
+  assert cmake.count(
+    'LABELS "${traffic_model_labels};config:tsan-exempt"'
+  ) == 2
+
+  traffic_tests = {
+    "tess_web_traffic_catalog",
+    "tess_web_traffic_aligned",
+    "tess_web_traffic_shuffled_crossing",
+    "tess_web_traffic_funnel",
+    "tess_web_traffic_multi_gate",
+  }
+  tsan_exempt = set()
+  for name in traffic_tests:
+    block = cmake.split(
+      f"set_tests_properties({name} PROPERTIES", 1
+    )[1].split("\n  )", 1)[0]
+    if "config:tsan-exempt" in block:
+      tsan_exempt.add(name)
+  assert tsan_exempt == {
+    "tess_web_traffic_funnel",
+    "tess_web_traffic_multi_gate",
+  }
+  assert cmake.count("config:tsan-exempt") == 2
+
+  dev_tsan = next(
+    preset for preset in presets["testPresets"]
+    if preset["name"] == "dev-tsan"
+  )
+  assert dev_tsan["filter"] == {
+    "exclude": {"label": "^config:tsan-exempt$"}
+  }
 
 
 def test_wasm_diagnostics_demo_has_real_accessible_integration_contract():

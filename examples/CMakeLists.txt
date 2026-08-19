@@ -95,12 +95,15 @@ add_executable(
 target_link_libraries(tess_web_traffic_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_traffic_model)
 if(BUILD_TESTING)
+  set(traffic_model_labels
+    "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+  )
   add_test(
     NAME tess_web_traffic_catalog
     COMMAND tess_web_traffic_model --self-check-catalog
   )
   set_tests_properties(tess_web_traffic_catalog PROPERTIES
-    LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+    LABELS "${traffic_model_labels}"
     TIMEOUT 60
   )
   add_test(
@@ -108,7 +111,7 @@ if(BUILD_TESTING)
     COMMAND tess_web_traffic_model --self-check aligned
   )
   set_tests_properties(tess_web_traffic_aligned PROPERTIES
-    LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+    LABELS "${traffic_model_labels}"
     TIMEOUT 240
   )
   add_test(
@@ -116,7 +119,7 @@ if(BUILD_TESTING)
     COMMAND tess_web_traffic_model --self-check shuffled-crossing
   )
   set_tests_properties(tess_web_traffic_shuffled_crossing PROPERTIES
-    LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+    LABELS "${traffic_model_labels}"
     TIMEOUT 240
   )
   add_test(
@@ -124,7 +127,7 @@ if(BUILD_TESTING)
     COMMAND tess_web_traffic_model --self-check funnel
   )
   set_tests_properties(tess_web_traffic_funnel PROPERTIES
-    LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+    LABELS "${traffic_model_labels};config:tsan-exempt"
     TIMEOUT 600
   )
   add_test(
@@ -132,7 +135,7 @@ if(BUILD_TESTING)
     COMMAND tess_web_traffic_model --self-check multi-gate
   )
   set_tests_properties(tess_web_traffic_multi_gate PROPERTIES
-    LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+    LABELS "${traffic_model_labels};config:tsan-exempt"
     TIMEOUT 300
   )
   add_test(
@@ -143,7 +146,7 @@ if(BUILD_TESTING)
   set_tests_properties(
     tess_web_traffic_measurement
     PROPERTIES
-      LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+      LABELS "${traffic_model_labels}"
       PASS_REGULAR_EXPRESSION "aligned,19,"
   )
 endif()

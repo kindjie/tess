@@ -10,8 +10,10 @@
   compile-time shape, deterministic scenarios, bounded planning, cached
   terrain, diagnostics, real-browser interaction/layout harness, bounded
   browser measurement, scenario-sharded native self-check registration, and
-  native percentile campaign seam without making wall-clock timing
-  authoritative. It also covers the comparison article's
+  the exact TSan exemption boundary for serial-only guided checks. The full
+  correctness evidence remains blocking in the other compiler and sanitizer
+  gates. It also pins the native percentile campaign seam without making
+  wall-clock timing authoritative. It covers the comparison article's
   scoped algorithm/strategy status contract, documentation navigation,
   dependencies, licensing, accessibility, readiness, and browser-smoke
   contracts. Assertions intentionally inspect source text so hook-backstop CI
