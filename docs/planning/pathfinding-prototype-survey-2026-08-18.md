@@ -11,9 +11,10 @@ The [roadmap](../roadmap.md) remains the authority for released, release-gated,
 deferred, and out-of-scope work. The maintained
 [path](../architecture/path.md) and
 [simulation](../architecture/simulation.md) notes remain the authority for
-current behavior. In particular, request-count budgets do not bound the
-expansions or wall time of one synchronous A*, and target fungibility remains
-caller knowledge.
+current behavior. They state that request-count budgets do not bound the
+expansions or wall time of one synchronous A*. The
+[local movement screening study](local-movement-resolution.md) records the
+separate layering conclusion that target fungibility remains caller knowledge.
 
 ## How to use this brief
 
@@ -164,22 +165,27 @@ wins and only as a separate experiment.
 These references motivate experiments or provide external oracles; none is a
 dependency recommendation.
 
-- Portal hierarchy and indexing: [QuadtreePathfinding](https://github.com/hit9/QuadtreePathfinding),
+- Portal hierarchy and indexing:
+  [QuadtreePathfinding](https://github.com/hit9/QuadtreePathfinding),
   [Recast/Detour](https://github.com/recastnavigation/recastnavigation), and
   [ENLSVG](https://github.com/Ohohcakester/ENLSVG-Pathfinding).
 - PIBT tie-breaking: the
   [reference implementation](https://github.com/HirokiNagai-39/pibt-tiebreaking)
-  and [hindrance/regret paper](https://ojs.aaai.org/index.php/SOCS/article/download/35982/38137/40054).
+  and
+  [hindrance/regret paper](https://ojs.aaai.org/index.php/SOCS/article/view/35982).
   The small [LaCAM](https://github.com/Kei18/lacam0) implementation is a
   secondary reference for PIBT refinements.
-- Resumable work controls: [Leopard-C/PathFinding](https://github.com/Leopard-C/PathFinding)
+- Resumable work controls:
+  [Leopard-C/PathFinding](https://github.com/Leopard-C/PathFinding)
   and [RRTPlanner](https://github.com/naiveHobo/RRTPlanner) demonstrate explicit
   stop or work-budget controls, not algorithms Tess should adopt.
-- JPS: the [original paper](https://ojs.aaai.org/index.php/AAAI/article/view/7994),
+- JPS: the
+  [original paper](https://ojs.aaai.org/index.php/AAAI/article/view/7994),
   [Improving JPS](https://ojs.aaai.org/index.php/ICAPS/article/view/13633),
   [cJumpPointSearch](https://github.com/Bio2hazard/cJumpPointSearch), and
   [fudge_pathfinding](https://github.com/silmerusse/fudge_pathfinding).
-- Execution uncertainty: [Causal-PIBT](https://ojs.aaai.org/index.php/AAAI/article/view/17347),
+- Execution uncertainty:
+  [Causal-PIBT](https://ojs.aaai.org/index.php/AAAI/article/view/17347),
   [time-independent planning](https://github.com/Kei18/time-independent-planning),
   [Agile MAPF](https://github.com/proroklab/agile-mapf), and
   [SMART](https://github.com/smart-mapf/smart).
@@ -191,7 +197,8 @@ dependency recommendation.
   [CBS](https://github.com/baharsevket/Conflict-Based-Search-for-Multi-Agent-Pathfinding),
   [w9-pathfinding](https://github.com/andreyd41/w9-pathfinding), and
   [BCP-MAPF-CPP](https://github.com/lijucheng809/BCP-MAPF-CPP).
-- Clearance and continuous duration: [AA-SIPP-m](https://github.com/PathPlanning/AA-SIPP-m)
+- Clearance and continuous duration:
+  [AA-SIPP-m](https://github.com/PathPlanning/AA-SIPP-m)
   and its [paper](https://ojs.aaai.org/index.php/ICAPS/article/view/13856).
 - Broader references with deliberately limited transfer:
   [Lazy Theta*](https://github.com/lapinozz/Lazy-Theta-with-optimization-any-angle-pathfinding),
