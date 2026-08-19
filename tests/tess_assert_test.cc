@@ -192,6 +192,8 @@ TEST(TessFailFastDeathTest, ScheduleRejectsInvalidPhaseValues) {
       {
         tess::Schedule schedule;
         auto desc = tess::ScheduleTaskDesc{};
+        // Deliberately exercise the runtime guard for an out-of-domain value.
+        // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
         desc.phase = static_cast<tess::SimPhase>(255);
         static_cast<void>(schedule.add_task(desc, nullptr, idle_task));
       },
@@ -211,6 +213,8 @@ TEST(TessFailFastDeathTest, ScheduleRejectsInvalidCadenceValues) {
       {
         tess::Schedule schedule;
         auto desc = tess::ScheduleTaskDesc{};
+        // Deliberately exercise the runtime guard for an out-of-domain value.
+        // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
         desc.cadence.kind = static_cast<tess::CadenceKind>(255);
         static_cast<void>(schedule.add_task(desc, nullptr, idle_task));
       },
