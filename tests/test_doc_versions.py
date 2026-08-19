@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import check_doc_versions as cdv  # noqa: E402
@@ -178,6 +180,25 @@ def test_check_repository_rejects_stale_readme_fetch_tag(tmp_path):
 
   assert cdv.check_repository(tmp_path) == [
     "README.md: release FetchContent tag must be v0.3.0; found v0.2.0"
+  ]
+
+
+@pytest.mark.parametrize("invalid_tag", ["main", "v0.2", "v0.3.0-rc1"])
+def test_check_repository_rejects_malformed_readme_fetch_tag(
+  tmp_path, invalid_tag
+):
+  write_fixture(tmp_path)
+  readme = tmp_path / "README.md"
+  readme.write_text(
+    readme.read_text(encoding="utf-8").replace(
+      "GIT_TAG v0.3.0", f"GIT_TAG {invalid_tag}"
+    ),
+    encoding="utf-8",
+  )
+
+  assert cdv.check_repository(tmp_path) == [
+    "README.md: release FetchContent tag must be v0.3.0; "
+    f"found {invalid_tag}"
   ]
 
 

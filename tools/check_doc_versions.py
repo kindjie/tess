@@ -15,7 +15,8 @@ LATEST_RELEASE_RE = re.compile(
 )
 CHANGELOG_RELEASE_RE = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\]", re.MULTILINE)
 FIND_PACKAGE_RE = re.compile(r"find_package\(tess\s+([0-9][0-9.]*)")
-FETCH_TAG_RE = re.compile(r"GIT_TAG\s+v(\d+)\.(\d+)\.(\d+)")
+FETCH_TAG_TOKEN_RE = re.compile(r"\bGIT_TAG\b")
+FETCH_TAG_VALUE_RE = re.compile(r"\bGIT_TAG\b[ \t]+([^\s`]+)")
 
 
 @dataclass(frozen=True, order=True)
@@ -132,16 +133,16 @@ def check_repository(repo_root: Path = REPO_ROOT) -> list[str]:
   # The README may keep installation at the decision level and omit a
   # FetchContent example. The packaging guide is the required command-level
   # authority; any tag shown in either document must identify the release.
-  expected_tag = str(release)
+  expected_tag = f"v{release}"
   for label, text, required in (
     ("README.md", readme, False),
     ("docs/packaging.md", packaging, True),
   ):
-    tags = {
-      str(Version.from_match(match)) for match in FETCH_TAG_RE.finditer(text)
-    }
-    if (required and not tags) or tags - {expected_tag}:
-      rendered = ", ".join(sorted(f"v{tag}" for tag in tags)) or "none"
+    tag_values = FETCH_TAG_VALUE_RE.findall(text)
+    tags = set(tag_values)
+    malformed = len(FETCH_TAG_TOKEN_RE.findall(text)) != len(tag_values)
+    if (required and not tags) or malformed or tags - {expected_tag}:
+      rendered = ", ".join(sorted(tags)) or "none"
       failures.append(
         f"{label}: release FetchContent tag must be v{release}; "
         f"found {rendered}"
