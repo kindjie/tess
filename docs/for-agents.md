@@ -27,8 +27,8 @@ Expected stdout, byte-exact (CI enforces this against
 
 <!-- tess-output: quickstart source=examples/quickstart.cc -->
 ```text
-path cost: 14
-expanded nodes: 15
+path: [Coord3{0, 0, 0}, Coord3{1, 0, 0}, Coord3{2, 0, 0}, Coord3{2, 1, 0}]
+cost: 3
 ```
 <!-- /tess-output -->
 
