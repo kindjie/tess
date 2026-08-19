@@ -95,12 +95,45 @@ add_executable(
 target_link_libraries(tess_web_traffic_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_traffic_model)
 if(BUILD_TESTING)
-  add_test(NAME tess_web_traffic_model COMMAND tess_web_traffic_model)
-  set_tests_properties(
-    tess_web_traffic_model
-    PROPERTIES
-      LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
-      TIMEOUT 240
+  add_test(
+    NAME tess_web_traffic_catalog
+    COMMAND tess_web_traffic_model --self-check-catalog
+  )
+  set_tests_properties(tess_web_traffic_catalog PROPERTIES
+    LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+    TIMEOUT 60
+  )
+  add_test(
+    NAME tess_web_traffic_aligned
+    COMMAND tess_web_traffic_model --self-check aligned
+  )
+  set_tests_properties(tess_web_traffic_aligned PROPERTIES
+    LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+    TIMEOUT 240
+  )
+  add_test(
+    NAME tess_web_traffic_shuffled_crossing
+    COMMAND tess_web_traffic_model --self-check shuffled-crossing
+  )
+  set_tests_properties(tess_web_traffic_shuffled_crossing PROPERTIES
+    LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+    TIMEOUT 240
+  )
+  add_test(
+    NAME tess_web_traffic_funnel
+    COMMAND tess_web_traffic_model --self-check funnel
+  )
+  set_tests_properties(tess_web_traffic_funnel PROPERTIES
+    LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+    TIMEOUT 600
+  )
+  add_test(
+    NAME tess_web_traffic_multi_gate
+    COMMAND tess_web_traffic_model --self-check multi-gate
+  )
+  set_tests_properties(tess_web_traffic_multi_gate PROPERTIES
+    LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+    TIMEOUT 300
   )
   add_test(
     NAME tess_web_traffic_measurement

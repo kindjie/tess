@@ -178,62 +178,81 @@ auto check_crowd_outcome(TrafficScenario scenario) -> bool {
   return matches_checkpoint(model, waits, advanced, expected.tick_1600);
 }
 
-auto run_self_check() -> int {
+auto check_catalog() -> bool {
+  auto previous_terrain_hash = std::uint64_t{0};
+  auto previous_agent_hash = std::uint64_t{0};
+  for (const auto scenario : kScenarios) {
+    TrafficModel model{scenario};
+    const auto terrain_hash =
+        hash_bytes(model.terrain(),
+                   static_cast<std::size_t>(traffic_width) * traffic_height);
+    const auto agent_hash = hash_agents(model.current_agents());
+    if (scenario != TrafficScenario::ShuffledCrossing &&
+        terrain_hash == previous_terrain_hash &&
+        agent_hash == previous_agent_hash) {
+      std::cerr << "web traffic model: scenarios are not distinct: "
+                << scenario_name(scenario) << '\n';
+      return false;
+    }
+    previous_terrain_hash = terrain_hash;
+    previous_agent_hash = agent_hash;
+  }
+  return true;
+}
+
+auto check_scenario(TrafficScenario scenario) -> bool {
+  TrafficModel first{scenario};
+  TrafficModel second{scenario};
+  const auto terrain_hash =
+      hash_bytes(first.terrain(),
+                 static_cast<std::size_t>(traffic_width) * traffic_height);
+  const auto agent_hash = hash_agents(first.current_agents());
+  if (terrain_hash !=
+          hash_bytes(second.terrain(), static_cast<std::size_t>(traffic_width) *
+                                           traffic_height) ||
+      agent_hash != hash_agents(second.current_agents()) ||
+      wall_count(first) != expected_wall_count(scenario) ||
+      !first.validate_planner()) {
+    std::cerr << "web traffic model: scenario is not deterministic: "
+              << scenario_name(scenario) << '\n';
+    return false;
+  }
+  if (first.tick(0.05) < 0.0 || second.tick(0.05) < 0.0 ||
+      hash_agents(first.current_agents()) !=
+          hash_agents(second.current_agents()) ||
+      first.max_planning_queries() != 8 || second.max_planning_queries() != 8 ||
+      first.planning_queries_last_tick() != 8 ||
+      first.guided_queries_last_tick() !=
+          ((scenario == TrafficScenario::Funnel ||
+            scenario == TrafficScenario::MultiGate)
+               ? 8
+               : 0) ||
+      first.fixed_ticks_last_call() != 1 ||
+      first.planning_pending() != traffic_agents - 8 ||
+      second.planning_pending() != traffic_agents - 8) {
+    std::cerr << "web traffic model: bounded planning diverged: "
+              << scenario_name(scenario) << '\n';
+    return false;
+  }
+  if ((scenario == TrafficScenario::Funnel ||
+       scenario == TrafficScenario::MultiGate) &&
+      !check_crowd_outcome(scenario)) {
+    std::cerr << "web traffic model: crowd outcome diverged: "
+              << scenario_name(scenario) << '\n';
+    return false;
+  }
+  return true;
+}
+
+template <typename Check>
+auto run_checked(Check check, std::string_view success) -> int {
 #if TESS_HAS_EXCEPTIONS
   try {
 #endif
-    auto previous_terrain_hash = std::uint64_t{0};
-    auto previous_agent_hash = std::uint64_t{0};
-    for (const auto scenario : kScenarios) {
-      TrafficModel first{scenario};
-      TrafficModel second{scenario};
-      const auto terrain_hash =
-          hash_bytes(first.terrain(),
-                     static_cast<std::size_t>(traffic_width) * traffic_height);
-      const auto agent_hash = hash_agents(first.current_agents());
-      if (terrain_hash != hash_bytes(second.terrain(),
-                                     static_cast<std::size_t>(traffic_width) *
-                                         traffic_height) ||
-          agent_hash != hash_agents(second.current_agents()) ||
-          wall_count(first) != expected_wall_count(scenario) ||
-          !first.validate_planner()) {
-        std::cerr << "web traffic model: scenario is not deterministic: "
-                  << scenario_name(scenario) << '\n';
-        return 1;
-      }
-      if ((scenario != TrafficScenario::ShuffledCrossing &&
-           terrain_hash == previous_terrain_hash &&
-           agent_hash == previous_agent_hash) ||
-          first.tick(0.05) < 0.0 || second.tick(0.05) < 0.0 ||
-          hash_agents(first.current_agents()) !=
-              hash_agents(second.current_agents()) ||
-          first.max_planning_queries() != 8 ||
-          second.max_planning_queries() != 8 ||
-          first.planning_queries_last_tick() != 8 ||
-          first.guided_queries_last_tick() !=
-              ((scenario == TrafficScenario::Funnel ||
-                scenario == TrafficScenario::MultiGate)
-                   ? 8
-                   : 0) ||
-          first.fixed_ticks_last_call() != 1 ||
-          first.planning_pending() != traffic_agents - 8 ||
-          second.planning_pending() != traffic_agents - 8) {
-        std::cerr << "web traffic model: bounded planning diverged: "
-                  << scenario_name(scenario) << '\n';
-        return 1;
-      }
-      previous_terrain_hash = terrain_hash;
-      previous_agent_hash = agent_hash;
+    if (!check()) {
+      return 1;
     }
-    for (const auto scenario :
-         {TrafficScenario::Funnel, TrafficScenario::MultiGate}) {
-      if (!check_crowd_outcome(scenario)) {
-        std::cerr << "web traffic model: crowd outcome diverged: "
-                  << scenario_name(scenario) << '\n';
-        return 1;
-      }
-    }
-    std::cout << "web traffic model: ok\n";
+    std::cout << success << '\n';
 #if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "web traffic model: " << error.what() << '\n';
@@ -241,6 +260,31 @@ auto run_self_check() -> int {
   }
 #endif
   return 0;
+}
+
+auto run_self_check() -> int {
+  return run_checked(
+      [] {
+        if (!check_catalog()) {
+          return false;
+        }
+        for (const auto scenario : kScenarios) {
+          if (!check_scenario(scenario)) {
+            return false;
+          }
+        }
+        return true;
+      },
+      "web traffic model: ok");
+}
+
+auto run_catalog_self_check() -> int {
+  return run_checked(check_catalog, "web traffic catalog: ok");
+}
+
+auto run_scenario_self_check(TrafficScenario scenario) -> int {
+  return run_checked([scenario] { return check_scenario(scenario); },
+                     "web traffic scenario: ok");
 }
 
 auto run_scenario(TrafficScenario scenario, int ticks) -> int {
@@ -353,6 +397,14 @@ int main(int argc, char** argv) {
   if (argc == 1) {
     return run_self_check();
   }
+  if (argc == 2 && std::string_view{argv[1]} == "--self-check-catalog") {
+    return run_catalog_self_check();
+  }
+  if (argc == 3 && std::string_view{argv[1]} == "--self-check") {
+    auto scenario = TrafficScenario::Aligned;
+    return parse_scenario(argv[2], scenario) ? run_scenario_self_check(scenario)
+                                             : 2;
+  }
   const auto samples = argc == 6 && std::string_view{argv[5]} == "--samples";
   const auto profiling =
       argc == 7 && std::string_view{argv[5]} == "--profile-repetitions";
@@ -361,7 +413,10 @@ int main(int argc, char** argv) {
       std::string_view{argv[3]} != "--ticks") {
     std::cerr << "usage: tess_web_traffic_model --scenario "
                  "<aligned|shuffled-crossing|funnel|multi-gate> --ticks N "
-                 "[--samples | --profile-repetitions N]\n";
+                 "[--samples | --profile-repetitions N]\n"
+                 "       tess_web_traffic_model --self-check-catalog\n"
+                 "       tess_web_traffic_model --self-check "
+                 "<aligned|shuffled-crossing|funnel|multi-gate>\n";
     return 2;
   }
   auto scenario = TrafficScenario::Aligned;

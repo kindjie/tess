@@ -9,8 +9,9 @@
   model/native/Wasm seams. Traffic Lab checks pin its
   compile-time shape, deterministic scenarios, bounded planning, cached
   terrain, diagnostics, real-browser interaction/layout harness, bounded
-  browser measurement, and native percentile campaign seam without making
-  wall-clock timing authoritative. It also covers the comparison article's
+  browser measurement, scenario-sharded native self-check registration, and
+  native percentile campaign seam without making wall-clock timing
+  authoritative. It also covers the comparison article's
   scoped algorithm/strategy status contract, documentation navigation,
   dependencies, licensing, accessibility, readiness, and browser-smoke
   contracts. Assertions intentionally inspect source text so hook-backstop CI

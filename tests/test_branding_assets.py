@@ -677,6 +677,29 @@ def test_traffic_lab_has_large_grid_diagnostics_and_browser_evidence():
   assert "Traffic Lab measurement snapshot was not readable" in browser_test
 
 
+def test_traffic_lab_self_checks_are_sliced_by_scenario():
+  native = read("examples/web_traffic/traffic_native.cc")
+  cmake = read("examples/CMakeLists.txt")
+
+  assert '"--self-check-catalog"' in native
+  assert '"--self-check"' in native
+  for name in (
+    "tess_web_traffic_catalog",
+    "tess_web_traffic_aligned",
+    "tess_web_traffic_shuffled_crossing",
+    "tess_web_traffic_funnel",
+    "tess_web_traffic_multi_gate",
+  ):
+    assert f"NAME {name}" in cmake
+  assert "tess_web_traffic_catalog PROPERTIES" in cmake
+  assert "tess_web_traffic_aligned PROPERTIES" in cmake
+  assert "tess_web_traffic_shuffled_crossing PROPERTIES" in cmake
+  assert "tess_web_traffic_funnel PROPERTIES" in cmake
+  assert "tess_web_traffic_multi_gate PROPERTIES" in cmake
+  assert "TIMEOUT 600" in cmake
+  assert "TIMEOUT 300" in cmake
+
+
 def test_wasm_diagnostics_demo_has_real_accessible_integration_contract():
   build_script = read("tools/build_web_demo.sh")
   model = read("examples/web_diagnostics/diagnostics_model.cc")
