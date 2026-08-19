@@ -159,7 +159,7 @@ def test_docs_search_metadata_establishes_tess_site_identity():
     )
 
   assert readme.startswith("<p align=\"center\">")
-  assert "# tess: C++20 grid pathfinding and simulation library" in readme
+  assert "# C++20 grid pathfinding and simulation library" in readme
   assert (
     "`tess` is a performance-first, header-only C++20 grid pathfinding "
     "and\n"
@@ -245,6 +245,12 @@ def test_mkdocs_navigation_includes_persistence_architecture():
   config = read("mkdocs.yml")
 
   assert "Persistence: architecture/persistence.md" in config
+  assert "      - Interactive comparison: pathfinding-strategy-comparison.md" in (
+    config
+  )
+  assert "  - Pathfinding comparison: pathfinding-strategy-comparison.md" not in (
+    config
+  )
 
 
 def test_branding_controls_meet_non_text_contrast_minimum():
@@ -268,6 +274,146 @@ def test_web_demo_uses_brand_logo_and_compact_favicon():
   assert 'src="logo.svg"' in html
   assert "tess-logo-dark.svg" in build_script
   assert "Raised destination tile" in favicon
+
+
+def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
+  model = read("examples/pathfinding_strategies_model.cc")
+  model_header = read("examples/pathfinding_strategies_model.h")
+  native = read("examples/pathfinding_strategies.cc")
+  wasm = read("examples/web_pathfinding_strategies/strategies_wasm.cc")
+  html = read("examples/web_pathfinding_strategies/site/index.html")
+  app = read("examples/web_pathfinding_strategies/site/app.js")
+  css = read("examples/web_pathfinding_strategies/site/style.css")
+  site_css = read("docs/stylesheets/extra.css")
+  build_script = read("tools/build_web_demo.sh")
+  cmake = read("examples/CMakeLists.txt")
+  article = read("docs/pathfinding-strategy-comparison.md")
+  pages = read(".github/workflows/pages.yml")
+
+  for call in (
+    "astar_path",
+    "cached_astar_path",
+    "weighted_path_batch",
+    "build_distance_field",
+    "distance_field_path",
+  ):
+    assert call in model
+    assert call not in wasm
+
+  assert "std::array<PathPoint, path_capacity>" in model_header
+  assert "std::optional" in model_header
+  assert "enum class StrategyKind : std::uint8_t" in model_header
+  assert "enum class BrowserPathStatus : std::uint8_t" in model_header
+  assert "static_cast<std::size_t>(y) *" in model
+  assert "verify_copied_paths_after_scratch_reuse" in native
+  assert "verify_obstacle_map" in native
+  assert "verify_invalid_checked_reads" in native
+  assert "same_copied_path" in model
+  assert "pathfinding_strategies_model.cc" in cmake
+  assert "tess_pathfinding_strategies_wasm_adapter OBJECT" in cmake
+  assert "web_pathfinding_strategies/strategies_wasm.cc" in cmake
+  assert "pathfinding_strategies_model.cc" in build_script
+  assert "strategies_wasm.cc" in build_script
+
+  assert "std::int32_t" in wasm
+  assert "kInvalid = -1" in wasm
+  assert "size_t" not in wasm
+  assert "PathStatus" not in wasm
+  assert "tess_strategies_cell_passable" in wasm
+  assert "_tess_strategies_cell_passable" in build_script
+  assert "tess_strategies_field_reached_nodes" in wasm
+  assert "_tess_strategies_field_reached_nodes" in build_script
+  assert "dataset.tessStrategies" in app
+  assert 'data-tess-strategies="loading"' not in html
+  assert 'dataset.tessStrategies = "ready"' in app
+  assert 'dataset.tessStrategies = "failed"' in app
+  assert "async function initializeStrategies()" in app
+  assert "await createTessStrategies()" in app
+  assert "void initializeStrategies();" in app
+  assert "validateSnapshot" in app
+  assert "Cache hits: 1" in app
+  assert "Cache misses: 1" in app
+  assert "Field builds: 1" in app
+  assert "A* fallbacks: 0" in app
+  assert "api.cellPassable" in app
+  assert "api.fieldReachedNodes" in app
+  assert 'tile.classList.add("blocked")' in app
+  assert 'tile.classList.toggle("field-covered"' in app
+
+  assert 'id="strategy-results"></tbody>' in html
+  assert 'aria-live="polite"' in html
+  assert 'aria-pressed="false"' in html
+  assert 'id="replay" type="button" disabled' in html
+  assert 'id="pause" type="button" aria-pressed="false" disabled' in html
+  assert 'root.dataset.tessStrategies !== "ready"' in app
+  assert "replay.disabled = false" in app
+  assert 'class="tile-grid"' in html
+  assert "Comparable requests intentionally match" in html
+  assert "The routes intentionally match" not in html
+  for topology in (
+    'data-topology="astar"',
+    'data-topology="cache"',
+    'data-topology="batch"',
+    'data-topology="field"',
+  ):
+    assert topology in html
+  assert 'aria-label="Call topology"' in html
+  assert "updateTopology" in app
+  assert "fieldRevealCounts" in app
+  assert "animationStage >= 3" in app
+  assert "pause.hidden = reducedMotion.matches" in app
+  assert "topology-step" in css
+  assert "prefers-reduced-motion" in app
+  assert "overflow-x: hidden" in css
+  assert "@media (max-width: 520px)" in css
+  assert ".strategy-grid { grid-template-columns: 1fr; }" in css
+
+  assert 'class="strategy-demo-frame"' in article
+  assert 'src="../demo/strategies/"' in article
+  assert 'loading="lazy"' in article
+  assert 'title="Interactive pathfinding strategy comparison"' in article
+  assert "comparable requests return the same routes" in article
+  assert "returned routes are intentionally identical across cards" not in article
+  assert "Open the strategy demo in a separate page" in article
+  assert "[complete self-checking example][strategy-main]" in article
+  assert "[strategy-main]:" in article
+  assert "## Algorithm and strategy status" in article
+  assert "four peer algorithms" in article
+  assert "Unit-cost A\\* and weighted A\\*" in article
+  assert '<div class="strategy-status-table" markdown="1">' in article
+  assert "@media (max-width: 40rem)" in site_css
+  assert ".strategy-status-table tr" in site_css
+  assert ".strategy-status-table thead" in site_css
+  for status_class in (
+    "strategy-status--released",
+    "strategy-status--designed",
+    "strategy-status--boundary",
+    "strategy-status--rejected",
+  ):
+    assert status_class in article
+    assert f".{status_class}" in site_css
+  assert '<details class="strategy-alternatives" markdown="1">' in article
+  assert "<summary>Why some alternatives were not promoted</summary>" in article
+  assert ".strategy-alternatives" in site_css
+  assert "JPS, bidirectional A\\*, Theta\\*, and D\\* Lite" in article
+  assert "no maintained roadmap or" in article
+  assert "rejection decision in this repository" in article
+  assert "2026-08-10-quad-heap-rejected.md" in article
+  assert "2026-08-17-colony-balanced-waypoints-rejected.md" in article
+  assert "2026-08-17-colony-wide-merge-second-wave.md" in article
+  assert "planning/local-movement-resolution.md" in article
+
+  assert "demo/strategies/" in pages
+  strategy_smoke = pages.split("demo/strategies/", maxsplit=1)[1]
+  assert "wait_for_browser_state.py" in strategy_smoke
+  assert "data-cache-hits=\"1\"" in strategy_smoke
+  assert "data-cache-misses=\"1\"" in strategy_smoke
+  assert "data-batch-field-builds=\"1\"" in strategy_smoke
+  assert "data-batch-fallbacks=\"0\"" in strategy_smoke
+  assert "data-field-reached-nodes=\"211\"" in strategy_smoke
+  assert "data-blocked-cells-per-grid=\"45\"" in strategy_smoke
+  assert "data-distance-field-covered-cells=\"211\"" in strategy_smoke
+  assert "data-distance-field-third-route=\"ready\"" in strategy_smoke
 
 
 def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():

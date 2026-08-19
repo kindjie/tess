@@ -8,7 +8,7 @@
   </picture>
 </p>
 
-# tess: C++20 grid pathfinding and simulation library
+# C++20 grid pathfinding and simulation library
 
 [![CI](https://github.com/kindjie/tess/actions/workflows/ci.yml/badge.svg)](https://github.com/kindjie/tess/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/kindjie/tess)](https://github.com/kindjie/tess/releases/latest)

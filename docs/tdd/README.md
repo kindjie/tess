@@ -17,6 +17,8 @@ When implementation diverges from a TDD:
 
 ## Documents
 
+- [Pathfinding strategy comparison demo](pathfinding-strategy-demo.md)
+  (implemented)
 - [1.0 stabilization](v1-stabilization.md) (proposed)
 - [Blocked-agent recovery scheduling](blocked-agent-recovery.md) (proposed)
 - [Budgeted path-agent replanning](budgeted-agent-replanning.md) (proposed)

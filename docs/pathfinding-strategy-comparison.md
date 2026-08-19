@@ -13,7 +13,7 @@ for those shapes so a caller can pay for reuse only when a measured workload
 has reuse to exploit.
 
 This comparison uses one 16x16 world and three requests. The
-[complete self-checking example][strategy-source] compiles and runs in CI; each
+[complete self-checking example][strategy-main] compiles and runs in CI; each
 excerpt below is copied from that source and rejected by CI if it drifts.
 Timing evidence comes from the benchmark suite instead of from this teaching
 program.
@@ -33,12 +33,91 @@ different, dense-only family. The
 [pathfinding decision guide](guide/pathfinding.md) covers that residency
 boundary and the full API selection tree.
 
+## Algorithm and strategy status
+
+The four choices in the short answer are not four peer algorithms. A* and the
+reverse field builders perform graph search; caches, batches, and retained
+products decide when to reuse that work; movement coordination resolves tile
+conflicts after routes have been planned.
+
+<div class="strategy-status-table" markdown="1">
+
+| Layer | Capability | Status and boundary |
+| --- | --- | --- |
+| Search | Unit-cost A\* and weighted A\* | <span class="strategy-status strategy-status--released">Released</span> Exact, deterministic per-request routes over orthogonal, diagonal, and axial-hex movement models. |
+| Search | Reverse BFS, reverse Dijkstra, and bounded-cost bucket search | <span class="strategy-status strategy-status--released">Released</span> Shared-goal distance labels: regular unit-cost models use BFS, weighted or non-unit models use Dijkstra, and small bounded integer costs can use an exact Dial-style queue. |
+| Reuse | Exact/suffix route cache, weighted batch, and field-product cache | <span class="strategy-status strategy-status--released">Released</span> Workload policies layered over the searches above; they do not introduce another route-quality objective. |
+| Topology | Reachability precheck, coarse region/portal routes, and chunk corridors | <span class="strategy-status strategy-status--released">Released</span> Coarse products can rule out known disconnection or guide exact segments; the automatic chunk-portal builder does not claim globally optimal portal selection. |
+| Coordination | Joint movement and PIBT | <span class="strategy-status strategy-status--released">Released</span> Resolve contention between independently planned routes. They are movement algorithms, not globally optimal multi-agent pathfinding. |
+| Future fields | Flow, congestion, and influence products | <span class="strategy-status strategy-status--designed">Designed, not shipped</span> The [roadmap](roadmap.md#future-and-deferred-extensions) keeps these explicit; today, callers can express congestion through a weighted cost field. |
+| Application layer | Continuous steering, formations, and globally optimal multi-agent planning | <span class="strategy-status strategy-status--boundary">Out of scope</span> tess supplies the spatial substrate while applications retain these semantics. |
+
+</div>
+
+The [path architecture](architecture/path.md) specifies the search and reuse
+contracts. The [simulation architecture](architecture/simulation.md) separates
+route planning from joint movement and PIBT.
+
+<details class="strategy-alternatives" markdown="1">
+<summary>Why some alternatives were not promoted</summary>
+
+These decisions are deliberately scoped. A rejected browser policy or
+internal data structure is not a rejection of the broader research idea.
+
+- **Four-ary open-list heap** —
+  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
+  It helped a few A* cells but substantially regressed weighted field builds
+  and failed the second-platform non-regression gate
+  ([evidence][quad-heap-rejection]).
+- **Dynamic congestion prices in the colony demo** —
+  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
+  The tested policies reduced some waits but produced incomplete arrivals,
+  violating the demo's terminal-outcome contract
+  ([evidence][congestion-rejection]). This does not reject future local
+  congestion fields.
+- **Balanced gate waypoints** —
+  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
+  Assigning equal cohorts to exact crossing tiles synchronized agents onto
+  capacity hotspots, increased waits, and lost arrivals
+  ([evidence][waypoint-rejection]).
+- **Eight-step WHCA-style space-time planning** —
+  <span class="strategy-status strategy-status--boundary">Not promoted</span>
+  The screening result was 30–90x the cheap resolver's per-tick cost and
+  degraded at dense bottlenecks whose queues exceeded the fixed horizon
+  ([screening study][movement-screening]).
+
+JPS, bidirectional A\*, Theta\*, and D\* Lite have no maintained roadmap or
+rejection decision in this repository. Their absence is not a verdict.
+
+</details>
+
+## See the call shapes
+
+The embedded demo runs the same C++ model as the self-checking example. Its
+animation shows call order and reuse; it deliberately does not time
+WebAssembly or draw a search frontier that the APIs do not report.
+The obstacle course is shared, and comparable requests return the same routes.
+The cache card instead repeats its first request to expose reuse. Compare the
+operation chain and data-product label above each map to see whether tess
+repeats searches, retains a route, groups a batch, or labels the reachable map
+for later reads.
+
+<iframe class="strategy-demo-frame"
+        src="../demo/strategies/"
+        loading="lazy"
+        title="Interactive pathfinding strategy comparison"></iframe>
+
+[Open the strategy demo in a separate page](../demo/strategies/).
+
 ## One world, one request set
 
-The example gives every open tile unit passability and cost. That keeps the
-returned costs comparable while the call shapes change.
+The example uses three solid vertical walls with alternating single-tile gaps.
+Every open tile has unit passability and cost, so each strategy must solve the
+same visible obstacle course and the returned costs remain comparable. The
+demo model copies each borrowed path before the next scratch mutation so the
+browser reads stable C++ result snapshots.
 
-<!-- tess-snippet: strategy-world source=examples/pathfinding_strategies.cc -->
+<!-- tess-snippet: strategy-world source=examples/pathfinding_strategies_model.cc -->
 ```cpp
 struct PassableTag {};
 struct CostTag {};
@@ -50,7 +129,25 @@ using World = tess::AlwaysResidentWorld<Shape, Schema>;
 ```
 <!-- /tess-snippet -->
 
-<!-- tess-snippet: strategy-requests source=examples/pathfinding_strategies.cc -->
+<!-- tess-snippet: strategy-obstacles source=examples/pathfinding_strategies_model.cc -->
+```cpp
+[[nodiscard]] constexpr auto demo_cell_passable(std::int64_t x, std::int64_t y)
+    -> bool {
+  if (x == 4) {
+    return y == 4;
+  }
+  if (x == 8) {
+    return y == 11;
+  }
+  if (x == 12) {
+    return y == 6;
+  }
+  return true;
+}
+```
+<!-- /tess-snippet -->
+
+<!-- tess-snippet: strategy-requests source=examples/pathfinding_strategies_model.cc -->
 ```cpp
 constexpr auto kGoal = tess::Coord3{15, 15, 0};
 
@@ -62,17 +159,21 @@ constexpr auto kRequests = std::array{
 ```
 <!-- /tess-snippet -->
 
-## One-off A*: the default
+## Independent A*: the default
 
-Plain A* is the baseline for a request that does not share useful work with
-other requests. Reuse the scratch object between calls, but do not introduce a
-cache or field until measurements show repeated structure.
+Plain A* is the baseline when requests do not share useful work. The example
+runs all three requests independently and reuses only scratch storage; it does
+not reuse search results. Do not introduce a cache or field until measurements
+show repeated structure.
 
-<!-- tess-snippet: strategy-astar source=examples/pathfinding_strategies.cc -->
+<!-- tess-snippet: strategy-astar source=examples/pathfinding_strategies_model.cc -->
 ```cpp
 tess::PathScratch scratch;
-const auto result =
-    tess::astar_path<World, PassableTag>(world, kRequests.front(), scratch);
+for (std::size_t index = 0; index < kRequests.size(); ++index) {
+  const auto result =
+      tess::astar_path<World, PassableTag>(world, kRequests[index], scratch);
+  snapshot.requests[index] = copy_result(result);
+}
 ```
 <!-- /tess-snippet -->
 
@@ -85,14 +186,16 @@ already below the application budget.
 `cached_astar_path` stores exact routes and same-goal suffixes. A first request
 still performs A*; a repeat can return without expanding search nodes.
 
-<!-- tess-snippet: strategy-cache source=examples/pathfinding_strategies.cc -->
+<!-- tess-snippet: strategy-cache source=examples/pathfinding_strategies_model.cc -->
 ```cpp
 tess::PathScratch scratch;
 tess::RouteCacheScratch cache;
 const auto first = tess::cached_astar_path<World, PassableTag>(
     world, kRequests.front(), scratch, cache);
+snapshot.requests[0] = copy_result(first);
 const auto repeated = tess::cached_astar_path<World, PassableTag>(
     world, kRequests.front(), scratch, cache);
+snapshot.requests[1] = copy_result(repeated);
 ```
 <!-- /tess-snippet -->
 
@@ -108,12 +211,15 @@ bounded weighted field; distinct goals fall back to per-request weighted A*.
 The API therefore preserves one result per input request while choosing the
 strategy inside the batch.
 
-<!-- tess-snippet: strategy-batch source=examples/pathfinding_strategies.cc -->
+<!-- tess-snippet: strategy-batch source=examples/pathfinding_strategies_model.cc -->
 ```cpp
 tess::WeightedPathBatchScratch scratch;
 const auto results =
     tess::weighted_path_batch<World, PassableTag, CostTag, /*MaxCost=*/32>(
         world, kRequests, scratch);
+for (std::size_t index = 0; index < results.size(); ++index) {
+  snapshot.requests[index] = copy_result(results[index]);
+}
 ```
 <!-- /tess-snippet -->
 
@@ -125,15 +231,15 @@ verify that a real request set contains the reuse the batch was meant to find.
 A reverse distance field builds one goal-rooted search tree. Every matching
 start then reconstructs a path from that field instead of running another A*.
 
-<!-- tess-snippet: strategy-distance-field source=examples/pathfinding_strategies.cc -->
+<!-- tess-snippet: strategy-distance-field source=examples/pathfinding_strategies_model.cc -->
 ```cpp
 tess::DistanceFieldScratch scratch;
 const auto field =
     tess::build_distance_field<World, PassableTag>(world, kGoal, scratch);
-std::array<tess::PathResult, kRequests.size()> results{};
 for (std::size_t index = 0; index < kRequests.size(); ++index) {
-  results[index] = tess::distance_field_path<World, PassableTag>(
+  const auto result = tess::distance_field_path<World, PassableTag>(
       world, kRequests[index], scratch);
+  snapshot.requests[index] = copy_result(result);
 }
 ```
 <!-- /tess-snippet -->
@@ -193,5 +299,10 @@ The decision is workload-specific: compare paired names with the same suffix,
 inspect their counters, and retain the simpler API when the measured benefit
 does not justify another invalidation or grouping lifecycle.
 
-[strategy-source]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies.cc
+[strategy-source]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies_model.cc
+[strategy-main]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies.cc
 [benchmark-source]: https://github.com/kindjie/tess/tree/main/bench
+[quad-heap-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-10-quad-heap-rejected.md
+[congestion-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-wide-merge-second-wave.md
+[waypoint-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-balanced-waypoints-rejected.md
+[movement-screening]: https://github.com/kindjie/tess/blob/main/docs/planning/local-movement-resolution.md#evidence

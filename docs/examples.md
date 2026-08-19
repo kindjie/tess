@@ -22,6 +22,10 @@ cmake --build --preset examples
 - [Live pathfinder](https://tess.owx.dev/demo/) — the interactive
   WebAssembly demo, built from the same C++20 headers as the library and
   published with this site.
+- [Live strategy comparison](https://tess.owx.dev/demo/strategies/) — the
+  native pathfinding-strategy model compiled to WebAssembly: four call shapes,
+  a shared obstacle course, C++-reported paths and reuse counters, and distinct
+  route, batch, and map-wide field data products without browser timing claims.
 - [Live colony](https://tess.owx.dev/demo/colony/) — the scale demo:
   up to 1,024 agents shuttling between the edges and replanning around
   walls you draw (walls survive resets), with completed and crowd-turnaround
@@ -42,9 +46,9 @@ cmake --build --preset examples
 
 - [`mvp_path.cc`][mvp_path] — a small end-to-end queued-edit plus A*
   pathfinding prototype.
-- [`pathfinding_strategies.cc`][pathfinding_strategies] — one small world
-  comparing plain A*, exact route caching, weighted batches, and shared-goal
-  distance fields; its named regions feed the
+- [`pathfinding_strategies_model.cc`][pathfinding_strategies] — one small
+  world comparing plain A*, exact route caching, weighted batches, and
+  shared-goal distance fields; its named regions feed the
   [strategy comparison](pathfinding-strategy-comparison.md).
 - [`stairs_3d.cc`][stairs_3d] — the `StairTransitions` provider connecting
   two z-levels, with reachability, the path-runtime precheck, and an
@@ -100,7 +104,7 @@ The fractional coordinates never return to simulation state.
 [quickstart]: https://github.com/kindjie/tess/blob/main/examples/quickstart.cc
 [colony_2d]: https://github.com/kindjie/tess/blob/main/examples/colony_2d.cc
 [mvp_path]: https://github.com/kindjie/tess/blob/main/examples/mvp_path.cc
-[pathfinding_strategies]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies.cc
+[pathfinding_strategies]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies_model.cc
 [path_agents]: https://github.com/kindjie/tess/blob/main/examples/path_agents.cc
 [stairs_3d]: https://github.com/kindjie/tess/blob/main/examples/stairs_3d.cc
 [ant_farm]: https://github.com/kindjie/tess/blob/main/examples/ant_farm_vertical.cc

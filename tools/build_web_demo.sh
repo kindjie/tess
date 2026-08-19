@@ -43,6 +43,52 @@ em++ \
   -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
   -o "$output/tess-demo.js"
 
+# Pathfinding strategy comparison: the native example's shared C++ model with
+# a read-only browser adapter, published under $output/strategies/.
+strategies="$output/strategies"
+mkdir -p "$strategies"
+cp "$root/examples/web_pathfinding_strategies/site/index.html" "$strategies/"
+cp "$root/examples/web_pathfinding_strategies/site/style.css" "$strategies/"
+cp "$root/examples/web_pathfinding_strategies/site/app.js" "$strategies/"
+cp "$root/examples/web_pathfinder/site/favicon.svg" "$strategies/"
+
+strategies_exports='["_main","_tess_strategies_readiness"'
+strategies_exports+=',"_tess_strategies_width","_tess_strategies_height"'
+strategies_exports+=',"_tess_strategies_count"'
+strategies_exports+=',"_tess_strategies_cell_passable"'
+strategies_exports+=',"_tess_strategies_request_count"'
+strategies_exports+=',"_tess_strategies_path_status"'
+strategies_exports+=',"_tess_strategies_path_cost"'
+strategies_exports+=',"_tess_strategies_path_expansions"'
+strategies_exports+=',"_tess_strategies_path_size"'
+strategies_exports+=',"_tess_strategies_path_x"'
+strategies_exports+=',"_tess_strategies_path_y"'
+strategies_exports+=',"_tess_strategies_cache_hits"'
+strategies_exports+=',"_tess_strategies_cache_misses"'
+strategies_exports+=',"_tess_strategies_batch_unique_goals"'
+strategies_exports+=',"_tess_strategies_batch_field_builds"'
+strategies_exports+=',"_tess_strategies_batch_fallbacks"'
+strategies_exports+=',"_tess_strategies_field_builds"'
+strategies_exports+=',"_tess_strategies_field_expansions"'
+strategies_exports+=',"_tess_strategies_field_reached_nodes"]'
+
+em++ \
+  -std=c++20 \
+  -O3 \
+  -DNDEBUG \
+  -I"$root/include" \
+  -I"$config/generated/include" \
+  "$root/examples/pathfinding_strategies_model.cc" \
+  "$root/examples/web_pathfinding_strategies/strategies_wasm.cc" \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sENVIRONMENT=web \
+  -sFILESYSTEM=0 \
+  -sMODULARIZE=1 \
+  -sEXPORT_NAME=createTessStrategies \
+  -sEXPORTED_FUNCTIONS="$strategies_exports" \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
+  -o "$strategies/tess-strategies.js"
+
 # Colony demo: colony_2d in the browser, published under $output/colony/.
 colony="$output/colony"
 mkdir -p "$colony"

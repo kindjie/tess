@@ -142,6 +142,39 @@ jobs:
             http://127.0.0.1:8000/demo/ >build/web-demo-dom.html
           grep -q 'data-tess-demo="ready"' build/web-demo-dom.html
           grep -q '>Route found<' build/web-demo-dom.html
+          python3 tools/wait_for_browser_state.py \
+            --browser google-chrome \
+            --url http://127.0.0.1:8000/demo/strategies/ \
+            --dataset tessStrategies \
+            --expected ready \
+            --timeout 30 \
+            -- \
+            --no-sandbox \
+            --disable-gpu
+          google-chrome \
+            --headless=new \
+            --no-sandbox \
+            --disable-gpu \
+            --virtual-time-budget=5000 \
+            --dump-dom \
+            http://127.0.0.1:8000/demo/strategies/ \
+            >build/web-strategies-dom.html
+          grep -q 'data-tess-strategies="ready"' \
+            build/web-strategies-dom.html
+          grep -q 'data-cache-hits="1"' build/web-strategies-dom.html
+          grep -q 'data-cache-misses="1"' build/web-strategies-dom.html
+          grep -q 'data-batch-field-builds="1"' \
+            build/web-strategies-dom.html
+          grep -q 'data-batch-fallbacks="0"' \
+            build/web-strategies-dom.html
+          grep -q 'data-field-reached-nodes="211"' \
+            build/web-strategies-dom.html
+          grep -q 'data-blocked-cells-per-grid="45"' \
+            build/web-strategies-dom.html
+          grep -q 'data-distance-field-covered-cells="211"' \
+            build/web-strategies-dom.html
+          grep -q 'data-distance-field-third-route="ready"' \
+            build/web-strategies-dom.html
           google-chrome \
             --headless=new \
             --no-sandbox \
