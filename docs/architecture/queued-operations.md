@@ -564,8 +564,10 @@ use the existing dirty/active metadata scans as the baseline and do not add
 coalescing scheduler handles or long-lived maintenance tasks.
 
 The persistent worker pool is current production behavior. Alternative
-external pool libraries were evaluated and not adopted; coalesced maintenance
-was implemented experimentally and rejected on sparse overhead. See
+external pool libraries were evaluated and not adopted. The original queued
+coalescing maintenance candidate was rejected on sparse overhead; the later
+registered `DirtyBitScheduler` passed its experimental gates and is the
+preferred candidate for a future external maintenance adapter. See
 `docs/planning/optimization-log.md` for evidence and retry conditions, and the
 historical `docs/tdd/tdd_addendum_concurrent_tile_world.md` for design intent.
 

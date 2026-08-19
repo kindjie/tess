@@ -681,7 +681,7 @@ TEST(TessQueuedResults, ResumableWorkRejectsReentrantQueueMutation) {
         static_cast<void>(queue.submit(work));
         static_cast<void>(queue.advance(tess::AsyncWorkBudget{1}));
       },
-      "queue mutation during advance");
+      "ResumableWorkQueue.*during advance");
 }
 #endif
 

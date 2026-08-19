@@ -19,9 +19,11 @@ When implementation diverges from a TDD:
 
 - [Pathfinding strategy comparison demo](pathfinding-strategy-demo.md)
   (implemented)
+- [Failure diagnostics and implementation-state accuracy](failure-diagnostics.md)
+  (implemented)
 - [1.0 stabilization](v1-stabilization.md) (proposed)
-- [Blocked-agent recovery scheduling](blocked-agent-recovery.md) (proposed)
-- [Budgeted path-agent replanning](budgeted-agent-replanning.md) (proposed)
+- [Blocked-agent recovery scheduling](blocked-agent-recovery.md) (implemented)
+- [Budgeted path-agent replanning](budgeted-agent-replanning.md) (implemented)
 - [Project design](project-design.md)
 - [Core shape, coordinate, and key system](core-shape-coordinate-key-system.md)
 - [Core chunk storage](core-chunk-storage.md)
@@ -36,7 +38,7 @@ When implementation diverges from a TDD:
 - [GPU backend interface](gpu-backend-interface.md)
 - [Diagnostics and tooling](diagnostics-and-tooling.md)
 - [Modern C++ / compile-time safety](modern-cpp-compile-time-safety.md)
-- [Exception-free build support](no-exceptions-support.md) (proposed)
+- [Exception-free build support](no-exceptions-support.md) (implemented)
 - [Lattices and the resolved transition model](lattice-and-transition-model.md)
 - [External grid benchmark data and the scenario oracle][benchmark-data]
   (network-free harness shipped; external acquisition gated)

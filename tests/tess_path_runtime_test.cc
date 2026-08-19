@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <random>
 #include <set>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -43,6 +44,74 @@ void mark_cost(World& world, tess::Coord3 coord, std::uint32_t cost) {
   world.template field<CostTag>(coord) = cost;
   world.mark_dirty(tess::chunk_key<Runtime2D>(tess::tile_key<Runtime2D>(coord)),
                    1u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+}
+
+struct ThrowAfterTrivialRequestProvider {
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3, Sink&&) const {
+    throw std::runtime_error("provider stopped the processing pass");
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3, Sink&&) const {
+    throw std::runtime_error("provider stopped the processing pass");
+  }
+};
+
+TEST(TessPathRuntime, CheckedTicketLookupRequiresPublishedResults) {
+  World world;
+  fill_world(world);
+
+  tess::PathRequestRuntime runtime;
+  const auto ticket = runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}});
+
+  EXPECT_FALSE(runtime.try_result(ticket).has_value());
+  EXPECT_FALSE(
+      runtime.try_result(tess::PathTicket{7, ticket.generation}).has_value());
+
+  const auto results = runtime.process_unit_cached<World, PassableTag>(world);
+  ASSERT_EQ(results.size(), 1u);
+  ASSERT_TRUE(runtime.try_result(ticket).has_value());
+  EXPECT_EQ(runtime.try_result(ticket)->status, tess::PathStatus::Found);
+  EXPECT_EQ(runtime.try_result(ticket)->path.size(), 2u);
+
+  runtime.clear_requests();
+  EXPECT_FALSE(runtime.try_result(ticket).has_value());
+}
+
+TEST(TessPathRuntime, InterruptedPassPublishesNoPartialResults) {
+  World world;
+  fill_world(world);
+
+  tess::PathRequestRuntime runtime;
+  const auto trivial = runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{0, 0, 0}});
+  const auto interrupted = runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{2, 0, 0}});
+
+  const auto published = runtime.process_unit_cached<World, PassableTag>(world);
+  ASSERT_EQ(published.size(), 2u);
+  ASSERT_TRUE(runtime.try_result(trivial).has_value());
+  ASSERT_TRUE(runtime.try_result(interrupted).has_value());
+  EXPECT_EQ(runtime.stats().completed, 2u);
+
+  // Prevent the earlier successful route from bypassing the throwing
+  // provider through the retained exact-route cache.
+  runtime.clear_caches();
+
+  EXPECT_THROW(
+      static_cast<void>(runtime.process_unit_cached<World, PassableTag>(
+          world, {}, nullptr, ThrowAfterTrivialRequestProvider{})),
+      std::runtime_error);
+  EXPECT_TRUE(runtime.results().empty());
+  EXPECT_FALSE(runtime.try_result(trivial).has_value());
+  EXPECT_FALSE(runtime.try_result(interrupted).has_value());
+  const auto stats = runtime.stats();
+  EXPECT_EQ(stats.completed, 0u);
+  EXPECT_EQ(stats.found, 0u);
+  EXPECT_EQ(stats.no_path, 0u);
+  EXPECT_EQ(stats.path_nodes, 0u);
 }
 
 TEST(TessPathRuntime, UnitCachedRequestsReuseAndInvalidateRoutes) {

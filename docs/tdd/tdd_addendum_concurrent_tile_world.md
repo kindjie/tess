@@ -5,8 +5,10 @@
 Historical proposed addendum. Lane 1, the persistent worker pool, partitioned
 dirty reduction, and the generation-aware dirty protocol shipped during the
 initial milestone; maintained architecture documents describe that behavior.
-Lane 2 coalescing maintenance remains planned. Statements below that describe
-the pool as future work preserve the document's original design-time tense.
+Lane 2 produced experimental scheduler backends, and the registered dirty-bit
+candidate passed its gates. The external world/storage maintenance adapter
+remains planned. Statements below that describe the pool as future work
+preserve the document's original design-time tense.
 
 ## Context
 

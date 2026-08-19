@@ -2,9 +2,10 @@
 
 `include/tess/experimental/maintenance.h` contains an opt-in experiment for
 derived-state maintenance. It does not alter world construction, authoritative
-storage, exact event handling, or simulation command execution. The header is
-reachable from the compatibility umbrella `tess/tess.h` so installed consumers
-can compile the experiment, but no world or scheduler adopts it implicitly.
+storage, exact event handling, or simulation command execution. Consumers opt
+in with `#include <tess/experimental/maintenance.h>`; the stable compatibility
+umbrella `tess/tess.h` deliberately does not include experimental headers. No
+world or scheduler adopts the experiment implicitly.
 
 ## Experimental Surface
 

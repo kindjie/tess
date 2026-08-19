@@ -570,6 +570,12 @@ flowchart TB
   exact payload before notifying its mask;
   `run_tick(clock)` advances the clock and dispatches, returning
   `ScheduleTickStats`; `task_stats(id)` reports per-task counters.
+- Lifecycle misuse that otherwise looks like an idle task fails fast in every
+  build: registration or capacity reservation after `seal()`, null callbacks,
+  invalid phase or cadence values, unknown task ids, running before `seal()`,
+  and reentrant ticks.
+  Background tasks may not report more items than their offered budget, and
+  non-background tasks must report zero `items_done`.
 - In diagnostics builds, an active trace receives an inclusive
   `Scheduler/schedule_tick` duration and one nested duration named after each
   executed task. When allocation counters are active, those duration records
@@ -587,12 +593,16 @@ flowchart TB
   monotonic sequence and simulation-tick stamps in `TickStampedEvent<T>`.
   Overflow is rejected rather than overwritten. The scheduler mask is only a
   coalesced wakeup; an OnEvent task drains the separate stream according to
-  application policy.
+  application policy. Reserve and flow-accounting attachment are setup-only on
+  an empty stream; assignment cannot overwrite attached outstanding inventory.
 - `ResumableWorkTask<T>` maps `ScheduleTaskContext::budget_items` to a
   `ResumableWorkQueue<T>` and maps remaining pending tickets back to
   `more_work`, retaining deterministic cooperative jobs across ticks. When
   the queue becomes empty the Background task disarms; a later queue
-  submission must be paired with `request_run(id)` to re-arm it.
+  submission must be paired with `request_run(id)` to re-arm it. Queue mutation
+  and flow-tick observation during `advance()` fail fast in every build; a
+  callback that overreports completed items instead settles its ticket as
+  `Failed`, the queue's existing operation outcome.
 - Allocation contract: `reserve_tasks` + registration happen at setup;
   `run_tick`, trigger notification, and `request_run` never allocate after
   `seal()`. Reserved event streams and resumable queues also perform no

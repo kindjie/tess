@@ -10,6 +10,7 @@
 namespace {
 
 struct TerrainTag {};
+struct PassableTag {};
 
 using TopDown2D =
     tess::Shape<tess::Extent3{128, 64, 1}, tess::Extent3{32, 16, 1}>;
@@ -18,20 +19,10 @@ using TerrainField = tess::Field<TerrainTag, std::uint16_t>;
 using Schema = tess::FieldSchema<TerrainField>;
 using World = tess::AlwaysResidentWorld<TopDown2D, Schema>;
 
-#if TESS_ENABLE_ASSERTS
-
-struct PassableTag {};
-
 using PathSchema = tess::FieldSchema<tess::Field<PassableTag, bool>>;
 using PathWorld = tess::AlwaysResidentWorld<TopDown2D, PathSchema>;
 
-void fill_passable(PathWorld& world) {
-  for (auto& page : world.chunks()) {
-    for (auto& tile : page.template field_span<PassableTag>()) {
-      tile = true;
-    }
-  }
-}
+#if TESS_ENABLE_ASSERTS
 
 constexpr auto kAssertDeathMessage = "tess assertion failed";
 
@@ -118,31 +109,6 @@ TEST(TessAssertDeathTest, TileKeyRejectsCoordinateOutsideShape) {
       kAssertDeathMessage);
 }
 
-TEST(TessAssertDeathTest, RuntimeResultRejectsOutOfRangeTicket) {
-  tess::PathRequestRuntime runtime;
-  EXPECT_DEATH(static_cast<void>(runtime.result(tess::PathTicket{7})),
-               kAssertDeathMessage);
-}
-
-TEST(TessAssertDeathTest, RuntimeResultRejectsStaleTicketGeneration) {
-  PathWorld world;
-  fill_passable(world);
-  tess::PathRequestRuntime runtime;
-
-  const auto stale = runtime.submit(
-      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}});
-  (void)runtime.process_unit_cached<PathWorld, PassableTag>(world);
-  ASSERT_EQ(runtime.result(stale).status, tess::PathStatus::Found);
-
-  // Same-size resubmission: the stale ticket aliases the new request's
-  // slot, so a range check alone cannot catch the reuse.
-  runtime.clear_requests();
-  (void)runtime.submit(
-      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{2, 0, 0}});
-  (void)runtime.process_unit_cached<PathWorld, PassableTag>(world);
-  EXPECT_DEATH(static_cast<void>(runtime.result(stale)), kAssertDeathMessage);
-}
-
 #endif  // TESS_ENABLE_ASSERTS
 
 // Deliberately outside the TESS_ENABLE_ASSERTS guard above. These three
@@ -164,6 +130,364 @@ TEST(TessFailFastDeathTest, ScheduleTaskStatsRejectsUnknownId) {
 TEST(TessFailFastDeathTest, ScheduleSetEnabledRejectsUnknownId) {
   tess::Schedule schedule;
   EXPECT_DEATH(schedule.set_enabled(0, false), "unknown TaskId");
+}
+
+TEST(TessFailFastDeathTest, RuntimeResultRejectsUnpublishedResult) {
+  tess::PathRequestRuntime runtime;
+  const auto ticket = runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}});
+  EXPECT_DEATH(static_cast<void>(runtime.result(ticket)),
+               "no published result batch");
+}
+
+TEST(TessFailFastDeathTest, RuntimeResultRejectsOutOfRangeTicket) {
+  PathWorld world;
+  tess::PathRequestRuntime runtime;
+  (void)runtime.process_unit_cached<PathWorld, PassableTag>(world);
+  EXPECT_DEATH(static_cast<void>(runtime.result(tess::PathTicket{7, 0})),
+               "out-of-range PathTicket");
+}
+
+TEST(TessFailFastDeathTest, RuntimeResultRejectsStaleTicketGeneration) {
+  tess::PathRequestRuntime runtime;
+  const auto stale = runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}});
+  runtime.clear_requests();
+  EXPECT_DEATH(static_cast<void>(runtime.result(stale)), "stale PathTicket");
+}
+
+[[nodiscard]] auto idle_task(void*, const tess::ScheduleTaskContext&)
+    -> tess::ScheduleTaskResult {
+  return {};
+}
+
+TEST(TessFailFastDeathTest, ScheduleRequestRunRejectsUnknownId) {
+  tess::Schedule schedule;
+  EXPECT_DEATH(schedule.request_run(0), "request_run.*unknown TaskId");
+}
+
+TEST(TessFailFastDeathTest, ScheduleRejectsRegistrationAfterSeal) {
+  tess::Schedule schedule;
+  schedule.seal();
+  const auto desc = tess::ScheduleTaskDesc{};
+  EXPECT_DEATH(static_cast<void>(schedule.add_task(desc, nullptr, idle_task)),
+               "add_task.*after seal");
+}
+
+TEST(TessFailFastDeathTest, ScheduleRejectsReservationAfterSeal) {
+  tess::Schedule schedule;
+  schedule.seal();
+  EXPECT_DEATH(schedule.reserve_tasks(1), "reserve_tasks.*after seal");
+}
+
+TEST(TessFailFastDeathTest, ScheduleRejectsNullCallback) {
+  tess::Schedule schedule;
+  EXPECT_DEATH(static_cast<void>(schedule.add_task(tess::ScheduleTaskDesc{},
+                                                   nullptr, nullptr)),
+               "add_task.*null callback");
+}
+
+TEST(TessFailFastDeathTest, ScheduleRejectsInvalidPhaseValues) {
+  EXPECT_DEATH(
+      {
+        tess::Schedule schedule;
+        auto desc = tess::ScheduleTaskDesc{};
+        desc.phase = static_cast<tess::SimPhase>(255);
+        static_cast<void>(schedule.add_task(desc, nullptr, idle_task));
+      },
+      "invalid SimPhase");
+  EXPECT_DEATH(
+      {
+        tess::Schedule schedule;
+        auto desc = tess::ScheduleTaskDesc{};
+        desc.phase = tess::SimPhase::Count;
+        static_cast<void>(schedule.add_task(desc, nullptr, idle_task));
+      },
+      "invalid SimPhase");
+}
+
+TEST(TessFailFastDeathTest, ScheduleRejectsInvalidCadenceValues) {
+  EXPECT_DEATH(
+      {
+        tess::Schedule schedule;
+        auto desc = tess::ScheduleTaskDesc{};
+        desc.cadence.kind = static_cast<tess::CadenceKind>(255);
+        static_cast<void>(schedule.add_task(desc, nullptr, idle_task));
+      },
+      "invalid CadenceKind");
+  EXPECT_DEATH(
+      {
+        tess::Schedule schedule;
+        auto desc = tess::ScheduleTaskDesc{};
+        desc.cadence.kind = tess::CadenceKind::EveryN;
+        desc.cadence.every_n = 0;
+        static_cast<void>(schedule.add_task(desc, nullptr, idle_task));
+      },
+      "EveryN cadence requires every_n");
+  EXPECT_DEATH(
+      {
+        tess::Schedule schedule;
+        auto desc = tess::ScheduleTaskDesc{};
+        desc.cadence.kind = tess::CadenceKind::Background;
+        desc.cadence.budget.max_items = 0;
+        static_cast<void>(schedule.add_task(desc, nullptr, idle_task));
+      },
+      "Background cadence requires a nonzero budget");
+}
+
+TEST(TessFailFastDeathTest, ScheduleRejectsRunBeforeSeal) {
+  tess::Schedule schedule;
+  auto clock = tess::SimClock{};
+  EXPECT_DEATH(static_cast<void>(schedule.run_tick(clock)),
+               "run_tick.*before seal");
+}
+
+struct ReentrantScheduleTask {
+  tess::Schedule* schedule = nullptr;
+  tess::SimClock* clock = nullptr;
+
+  [[nodiscard]] auto operator()(const tess::ScheduleTaskContext&) const
+      -> tess::ScheduleTaskResult {
+    static_cast<void>(schedule->run_tick(*clock));
+    return {};
+  }
+};
+
+TEST(TessFailFastDeathTest, ScheduleRejectsReentrantRun) {
+  tess::Schedule schedule;
+  auto clock = tess::SimClock{};
+  auto task = ReentrantScheduleTask{&schedule, &clock};
+  static_cast<void>(schedule.add_task(tess::ScheduleTaskDesc{}, task));
+  schedule.seal();
+  EXPECT_DEATH(static_cast<void>(schedule.run_tick(clock)),
+               "reentrant run_tick");
+}
+
+[[nodiscard]] auto overreported_background(void*,
+                                           const tess::ScheduleTaskContext&)
+    -> tess::ScheduleTaskResult {
+  return {.items_done = 2};
+}
+
+[[nodiscard]] auto nonbackground_items(void*, const tess::ScheduleTaskContext&)
+    -> tess::ScheduleTaskResult {
+  return {.items_done = 1};
+}
+
+TEST(TessFailFastDeathTest, ScheduleRejectsBackgroundOverreport) {
+  tess::Schedule schedule;
+  const auto desc = tess::ScheduleTaskDesc{
+      .cadence = tess::Cadence::background(tess::BackgroundBudget{1})};
+  const auto id = schedule.add_task(desc, nullptr, overreported_background);
+  schedule.request_run(id);
+  schedule.seal();
+  auto clock = tess::SimClock{};
+  EXPECT_DEATH(static_cast<void>(schedule.run_tick(clock)),
+               "reported more background items than offered");
+}
+
+TEST(TessFailFastDeathTest, ScheduleRejectsItemsFromNonbackgroundTask) {
+  tess::Schedule schedule;
+  static_cast<void>(schedule.add_task(tess::ScheduleTaskDesc{}, nullptr,
+                                      nonbackground_items));
+  schedule.seal();
+  auto clock = tess::SimClock{};
+  EXPECT_DEATH(static_cast<void>(schedule.run_tick(clock)),
+               "non-background task reported background items");
+}
+
+[[nodiscard]] auto pending_work(void*, tess::AsyncWorkBudget, std::uint32_t&)
+    -> tess::AsyncWorkStep {
+  return {tess::AsyncStepState::Pending, 0, {}};
+}
+
+[[nodiscard]] auto overreporting_work(void*, tess::AsyncWorkBudget budget,
+                                      std::uint32_t&) -> tess::AsyncWorkStep {
+  return {tess::AsyncStepState::Ready, budget.max_items + 1, {}};
+}
+
+TEST(TessFailFastDeathTest, QueueRejectsNullRawCallback) {
+  tess::ResumableWorkQueue<std::uint32_t> queue;
+  EXPECT_DEATH(static_cast<void>(queue.submit(nullptr, nullptr)),
+               "ResumableWorkQueue::submit received a null callback");
+}
+
+TEST(TessFailFastDeathTest, QueueRejectsAccountingRebindWithRetainedWork) {
+  tess::ResumableWorkQueue<std::uint32_t> queue;
+  tess::diagnostics::FlowAccounting accounting;
+  static_cast<void>(queue.submit(nullptr, pending_work));
+  EXPECT_DEATH(queue.set_flow_accounting(&accounting),
+               "set_flow_accounting requires an empty queue");
+}
+
+enum class ReentrantQueueOperation {
+  Advance,
+  ObserveTick,
+  Reserve,
+  Submit,
+  SubmitImmediate,
+  Cancel,
+  Supersede,
+  Fail,
+  MarkStale,
+  MarkStaleIfVersion,
+  Clear,
+};
+
+struct ReentrantQueueWork {
+  tess::ResumableWorkQueue<std::uint32_t>* queue = nullptr;
+  tess::AsyncTicket ticket{};
+  ReentrantQueueOperation operation = ReentrantQueueOperation::Advance;
+
+  [[nodiscard]] auto operator()(tess::AsyncWorkBudget, std::uint32_t&) const
+      -> tess::AsyncWorkStep {
+    switch (operation) {
+      case ReentrantQueueOperation::Advance:
+        static_cast<void>(queue->advance(tess::AsyncWorkBudget{1}));
+        break;
+      case ReentrantQueueOperation::ObserveTick:
+        queue->observe_flow_tick(2);
+        break;
+      case ReentrantQueueOperation::Reserve:
+        queue->reserve_tickets(2);
+        break;
+      case ReentrantQueueOperation::Submit:
+        static_cast<void>(queue->submit(nullptr, pending_work));
+        break;
+      case ReentrantQueueOperation::SubmitImmediate:
+        static_cast<void>(queue->submit_immediate(1));
+        break;
+      case ReentrantQueueOperation::Cancel:
+        static_cast<void>(queue->cancel(ticket));
+        break;
+      case ReentrantQueueOperation::Supersede:
+        static_cast<void>(queue->supersede(ticket));
+        break;
+      case ReentrantQueueOperation::Fail:
+        static_cast<void>(queue->fail(ticket));
+        break;
+      case ReentrantQueueOperation::MarkStale:
+        static_cast<void>(queue->mark_stale(ticket));
+        break;
+      case ReentrantQueueOperation::MarkStaleIfVersion:
+        static_cast<void>(
+            queue->mark_stale_if_version(ticket, tess::AsyncVersion{1}));
+        break;
+      case ReentrantQueueOperation::Clear:
+        queue->clear();
+        break;
+    }
+    return {tess::AsyncStepState::Ready, 1, {}};
+  }
+};
+
+class QueueReentrancyDeathTest
+    : public ::testing::TestWithParam<ReentrantQueueOperation> {};
+
+[[nodiscard]] auto queue_operation_name(
+    const ::testing::TestParamInfo<ReentrantQueueOperation>& info) -> const
+    char* {
+  switch (info.param) {
+    case ReentrantQueueOperation::Advance:
+      return "Advance";
+    case ReentrantQueueOperation::ObserveTick:
+      return "ObserveTick";
+    case ReentrantQueueOperation::Reserve:
+      return "Reserve";
+    case ReentrantQueueOperation::Submit:
+      return "Submit";
+    case ReentrantQueueOperation::SubmitImmediate:
+      return "SubmitImmediate";
+    case ReentrantQueueOperation::Cancel:
+      return "Cancel";
+    case ReentrantQueueOperation::Supersede:
+      return "Supersede";
+    case ReentrantQueueOperation::Fail:
+      return "Fail";
+    case ReentrantQueueOperation::MarkStale:
+      return "MarkStale";
+    case ReentrantQueueOperation::MarkStaleIfVersion:
+      return "MarkStaleIfVersion";
+    case ReentrantQueueOperation::Clear:
+      return "Clear";
+  }
+  return "Unknown";
+}
+
+TEST_P(QueueReentrancyDeathTest, RejectsMutationDuringAdvance) {
+  tess::ResumableWorkQueue<std::uint32_t> queue;
+  tess::diagnostics::FlowAccounting accounting;
+  queue.set_flow_accounting(&accounting);
+  auto work = ReentrantQueueWork{&queue, {}, GetParam()};
+  work.ticket = queue.submit(work);
+  EXPECT_DEATH(static_cast<void>(queue.advance(tess::AsyncWorkBudget{1})),
+               "ResumableWorkQueue.*during advance");
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllMutations, QueueReentrancyDeathTest,
+    ::testing::Values(
+        ReentrantQueueOperation::Advance, ReentrantQueueOperation::ObserveTick,
+        ReentrantQueueOperation::Reserve, ReentrantQueueOperation::Submit,
+        ReentrantQueueOperation::SubmitImmediate,
+        ReentrantQueueOperation::Cancel, ReentrantQueueOperation::Supersede,
+        ReentrantQueueOperation::Fail, ReentrantQueueOperation::MarkStale,
+        ReentrantQueueOperation::MarkStaleIfVersion,
+        ReentrantQueueOperation::Clear),
+    queue_operation_name);
+
+TEST(TessAsyncWork, OverreportedProgressSettlesFailedInEveryBuild) {
+  tess::ResumableWorkQueue<std::uint32_t> queue;
+  const auto ticket = queue.submit(nullptr, overreporting_work);
+  const auto stats = queue.advance(tess::AsyncWorkBudget{1});
+  EXPECT_EQ(queue.state(ticket), tess::AsyncResultState::Failed);
+  EXPECT_EQ(stats.failed, 1u);
+  EXPECT_EQ(stats.items_done, 0u);
+}
+
+TEST(TessFailFastDeathTest, EventStreamRejectsReserveWithRetainedEvents) {
+  tess::EventStream<int> stream;
+  stream.reserve_events(1);
+  ASSERT_TRUE(stream.publish(0, 1));
+  EXPECT_DEATH(stream.reserve_events(2),
+               "reserve_events requires an empty stream");
+}
+
+TEST(TessFailFastDeathTest, EventStreamRejectsAccountingRebindWithEvents) {
+  tess::EventStream<int> stream;
+  tess::diagnostics::FlowAccounting accounting;
+  stream.reserve_events(1);
+  ASSERT_TRUE(stream.publish(0, 1));
+  EXPECT_DEATH(stream.set_flow_accounting(&accounting),
+               "set_flow_accounting requires an empty stream");
+}
+
+TEST(TessFailFastDeathTest, EventStreamRejectsCopyOverOutstandingAccounting) {
+  tess::EventStream<int> source;
+  source.reserve_events(1);
+  ASSERT_TRUE(source.publish(0, 1));
+
+  tess::EventStream<int> destination;
+  tess::diagnostics::FlowAccounting accounting;
+  destination.reserve_events(1);
+  destination.set_flow_accounting(&accounting);
+  ASSERT_TRUE(destination.publish(0, 2));
+  EXPECT_DEATH(destination = source,
+               "copy assignment would orphan outstanding accounting");
+}
+
+TEST(TessFailFastDeathTest, EventStreamRejectsMoveOverOutstandingAccounting) {
+  tess::EventStream<int> source;
+  source.reserve_events(1);
+  ASSERT_TRUE(source.publish(0, 1));
+
+  tess::EventStream<int> destination;
+  tess::diagnostics::FlowAccounting accounting;
+  destination.reserve_events(1);
+  destination.set_flow_accounting(&accounting);
+  ASSERT_TRUE(destination.publish(0, 2));
+  EXPECT_DEATH(destination = std::move(source),
+               "move assignment would orphan outstanding accounting");
 }
 
 // `IntentPayloadView::as<T>` is the one place the typed-intent surface

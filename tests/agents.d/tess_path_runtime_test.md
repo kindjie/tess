@@ -9,3 +9,7 @@
   cache growth; an identical warm frame allocates nothing. A movement-class
   field edit announced only through `mark_content_changed` invalidates cached
   routes without leaving dirty work behind.
+- Checked ticket lookup returns values only from a fully published processing
+  pass. The throwing-provider fixture first completes a trivial request, then
+  interrupts the next one to prove neither a partial result nor an uninstalled
+  borrowed path becomes visible.

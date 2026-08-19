@@ -117,10 +117,18 @@ class BlockScratch {
 
   template <typename T>
   [[nodiscard]] auto allocate(std::size_t count) noexcept -> std::span<T> {
-    static_assert(!std::is_void_v<T>);
-    static_assert(alignof(T) <= alignof(std::max_align_t));
-    static_assert(std::is_trivially_default_constructible_v<T>);
-    static_assert(std::is_trivially_destructible_v<T>);
+    static_assert(!std::is_void_v<T>,
+                  "BlockScratch::allocate<T> requires an object type");
+    static_assert(
+        alignof(T) <= alignof(std::max_align_t),
+        "BlockScratch::allocate<T> does not support over-aligned types");
+    static_assert(
+        std::is_trivially_default_constructible_v<T>,
+        "BlockScratch::allocate<T> requires T to be trivially default "
+        "constructible");
+    static_assert(std::is_trivially_destructible_v<T>,
+                  "BlockScratch::allocate<T> requires T to be trivially "
+                  "destructible");
 
     if (count == 0) {
       return {};
