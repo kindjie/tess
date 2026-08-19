@@ -56,6 +56,47 @@ function(tess_add_test test_name target)
     "${test_name}" PROPERTIES TIMEOUT 60 LABELS "${labels}")
 endfunction()
 
+# Compile-fail fixtures protect the stable Tess-authored part of public
+# template diagnostics. Compiler framing and instantiation traces vary, so the
+# contract deliberately matches only the library message substring.
+function(tess_expect_compile_diagnostic name source expected)
+  try_compile(
+    compiled
+    "${CMAKE_CURRENT_BINARY_DIR}/compile-fail/${name}"
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/compile_fail/${source}"
+    CMAKE_FLAGS
+      "-DCMAKE_CXX_STANDARD=20"
+      "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+      "-DINCLUDE_DIRECTORIES=${PROJECT_SOURCE_DIR}/include"
+    OUTPUT_VARIABLE output
+  )
+  if(compiled)
+    message(FATAL_ERROR
+      "compile-fail fixture ${name} unexpectedly compiled")
+  endif()
+  string(FIND "${output}" "${expected}" diagnostic_position)
+  if(diagnostic_position EQUAL -1)
+    message(FATAL_ERROR
+      "compile-fail fixture ${name} omitted '${expected}':\n${output}")
+  endif()
+endfunction()
+
+tess_expect_compile_diagnostic(
+  block_scratch_nontrivial
+  block_scratch_nontrivial.cc
+  "BlockScratch::allocate<T> requires T to be trivially default constructible"
+)
+tess_expect_compile_diagnostic(
+  resumable_work_bad_callback
+  resumable_work_bad_callback.cc
+  "ResumableWorkQueue::submit requires Work(AsyncWorkBudget, T&) to return AsyncWorkStep"
+)
+tess_expect_compile_diagnostic(
+  bounded_weighted_zero_cost
+  bounded_weighted_zero_cost.cc
+  "bounded weighted pathfinding requires MaxCost greater than zero"
+)
+
 add_executable(
   tess_allocation_counter_test
   allocation_counter.cc

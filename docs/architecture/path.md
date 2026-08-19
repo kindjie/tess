@@ -294,9 +294,16 @@ flowchart TB
   result paths for weighted batch planning.
 - `PathRequestRuntime` owns a small deterministic request/result lifecycle for
   simulation callers. `submit(request)` returns a `PathTicket`, processing
-  methods copy stable result paths into runtime-owned storage, and
-  `result(ticket)` returns the latest result for that submitted request.
-  Tickets remain valid until `clear_requests()` starts a new request set.
+  methods copy stable result paths into runtime-owned storage, and publish the
+  complete result batch only after every borrowed path span has been installed.
+  `try_result(ticket)` returns no value for a detectable stale, out-of-range,
+  or unpublished lookup; `result(ticket)` fails fast for those same conditions
+  rather than manufacturing `NoPath`. A throwing provider leaves the new batch
+  unpublished, including its result-status and path-node counters. Cache
+  counters continue to describe the retained cache state. Tickets remain valid
+  until `clear_requests()` starts a new request set. Tickets do not carry
+  runtime identity, so passing a ticket from another runtime remains an
+  unenforceable precondition when its index and generation happen to match.
   `clear_requests()` starts a new request set without dropping long-lived
   caches; `clear_caches()` drops the owned unit route cache, shared
   unit/weighted field-product cache, and weighted portal segment cache.

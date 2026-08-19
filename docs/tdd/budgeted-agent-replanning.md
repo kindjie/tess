@@ -1,6 +1,9 @@
 # Budgeted path-agent replanning
 
-Status: proposed
+Status: **implemented**. This document records historical design intent; the
+maintained [path](../architecture/path.md) and
+[simulation](../architecture/simulation.md) notes describe the shipped
+contract.
 
 ## Problem
 

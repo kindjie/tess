@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/fail_fast.h>
 #include <tess/diagnostics/diagnostics.h>
 
 #include <cstddef>
@@ -104,7 +105,9 @@ struct AsyncAdvanceStats {
 /// their terminal states.
 template <typename T>
 class ResumableWorkQueue {
-  static_assert(std::is_default_constructible_v<T>);
+  static_assert(std::is_default_constructible_v<T>,
+                "ResumableWorkQueue<T> requires T to be default "
+                "constructible");
 
  public:
   using WorkFn = AsyncWorkStep (*)(void*, AsyncWorkBudget, T&);
@@ -123,7 +126,10 @@ class ResumableWorkQueue {
    * identity starts true; the accountant must outlive the attachment.
    */
   void set_flow_accounting(diagnostics::FlowAccounting* accounting) noexcept {
-    TESS_ASSERT(slots_.empty());
+    if (!slots_.empty()) {
+      detail::fail_fast(
+          "ResumableWorkQueue::set_flow_accounting requires an empty queue");
+    }
     accounting_ = accounting;
   }
 
@@ -135,6 +141,9 @@ class ResumableWorkQueue {
    * outstanding age from per-slot submission stamps.
    */
   void observe_flow_tick(std::uint64_t tick) noexcept {
+    if (reject_reentrant_mutation()) {
+      return;
+    }
     if (accounting_ == nullptr) {
       return;
     }
@@ -165,7 +174,9 @@ class ResumableWorkQueue {
       std::source_location source = std::source_location::current())
       -> AsyncTicket {
     static_assert(
-        std::is_invocable_r_v<AsyncWorkStep, Work&, AsyncWorkBudget, T&>);
+        std::is_invocable_r_v<AsyncWorkStep, Work&, AsyncWorkBudget, T&>,
+        "ResumableWorkQueue::submit requires Work(AsyncWorkBudget, T&) to "
+        "return AsyncWorkStep");
     return submit(
         static_cast<void*>(&work),
         [](void* context, AsyncWorkBudget budget, T& value) -> AsyncWorkStep {
@@ -182,8 +193,13 @@ class ResumableWorkQueue {
       account_rejected_offer();
       return {};
     }
-    TESS_ASSERT(work != nullptr);
-    TESS_ASSERT(slots_.size() <= std::numeric_limits<std::uint32_t>::max());
+    if (work == nullptr) {
+      detail::fail_fast("ResumableWorkQueue::submit received a null callback");
+    }
+    if (slots_.size() > std::numeric_limits<std::uint32_t>::max()) {
+      detail::fail_fast(
+          "ResumableWorkQueue::submit exhausted the AsyncTicket index space");
+    }
     const auto index = static_cast<std::uint32_t>(slots_.size());
     slots_.push_back(Slot{});
     auto& slot = slots_.back();
@@ -208,7 +224,11 @@ class ResumableWorkQueue {
       account_rejected_offer();
       return {};
     }
-    TESS_ASSERT(slots_.size() <= std::numeric_limits<std::uint32_t>::max());
+    if (slots_.size() > std::numeric_limits<std::uint32_t>::max()) {
+      detail::fail_fast(
+          "ResumableWorkQueue::submit_immediate exhausted the AsyncTicket "
+          "index space");
+    }
     const auto index = static_cast<std::uint32_t>(slots_.size());
     // Build the slot before storing it so a throwing value move admits
     // nothing and leaves no Unbound slot behind.
@@ -229,8 +249,8 @@ class ResumableWorkQueue {
 
   [[nodiscard]] auto advance(AsyncWorkBudget budget) -> AsyncAdvanceStats {
     if (in_advance_) {
-      TESS_ASSERT_MSG(!in_advance_, "reentrant queue advance");
-      return {};
+      detail::fail_fast(
+          "ResumableWorkQueue::advance rejected mutation during advance");
     }
     struct AdvanceGuard {
       bool& active;
@@ -259,7 +279,6 @@ class ResumableWorkQueue {
           slot.work(slot.context, AsyncWorkBudget{remaining}, slot.value);
       ++stats.invoked;
       --invocations_remaining;
-      TESS_ASSERT(step.items_done <= remaining);
       if (step.items_done > remaining) {
         slot.state = AsyncResultState::Failed;
         account_terminal(slot);
@@ -348,9 +367,8 @@ class ResumableWorkQueue {
    * - the ticket is unknown or retired (`state()` is `Unbound`);
    * - the slot is no longer `Pending`, so some earlier call already
    *   settled it (`state()` names that outcome);
-   * - the call arrived during `advance()`, which is a contract
-   *   violation, not an outcome. Assertions abort on it; a release build
-   *   returns `false` and changes nothing.
+   * - the call arrived during `advance()`, which is a contract violation and
+   *   terminates in every build rather than becoming a `false` outcome.
    */
   [[nodiscard]] bool cancel(AsyncTicket ticket) noexcept {
     return set_terminal(ticket, AsyncResultState::Cancelled);
@@ -456,8 +474,7 @@ class ResumableWorkQueue {
     if (!in_advance_) {
       return false;
     }
-    TESS_ASSERT_MSG(!in_advance_, "queue mutation during advance");
-    return true;
+    detail::fail_fast("ResumableWorkQueue rejected mutation during advance");
   }
 
   void account_rejected_offer() noexcept {

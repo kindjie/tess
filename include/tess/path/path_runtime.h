@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/fail_fast.h>
 #include <tess/path/field_product_cache.h>
 #include <tess/path/path.h>
 #include <tess/path/portal_route.h>
@@ -11,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -316,24 +318,51 @@ class PathRequestRuntime {
    * Borrows the current result array until the next process or clear operation.
    */
   [[nodiscard]] auto results() const noexcept -> std::span<const PathResult> {
-    return results_;
+    return results_published_ ? std::span<const PathResult>{results_}
+                              : std::span<const PathResult>{};
   }
 
   /**
-   * Returns a result by ticket.
+   * Checks for a published result by ticket.
    *
-   * The ticket must originate from this runtime. Stale and out-of-range
-   * tickets assert in debug builds and return `PathStatus::NoPath` in release
-   * builds. The returned result's path view follows the runtime result lifetime
-   * documented on the class.
+   * The ticket must originate from this runtime; the ticket representation
+   * cannot distinguish another runtime with a matching index and generation.
+   * Returns no value for a stale generation, an out-of-range index, or while
+   * the latest processing pass has not completed. A successful result follows
+   * the runtime result lifetime documented on the class.
+   */
+  [[nodiscard]] auto try_result(PathTicket ticket) const noexcept
+      -> std::optional<PathResult> {
+    if (ticket.generation != generation_ || !results_published_ ||
+        ticket.value >= results_.size()) {
+      return std::nullopt;
+    }
+    return results_[ticket.value];
+  }
+
+  /**
+   * Returns a published result by ticket.
+   *
+   * The ticket must originate from this runtime. Detectable stale,
+   * out-of-range, and unpublished-result tickets terminate in every build;
+   * uncertain callers should use `try_result()`. The returned result's path
+   * view follows the runtime result lifetime documented on the class.
    */
   [[nodiscard]] auto result(PathTicket ticket) const noexcept -> PathResult {
-    TESS_ASSERT(ticket.generation == generation_);
-    TESS_ASSERT(ticket.value < results_.size());
-    if (ticket.generation != generation_ || ticket.value >= results_.size()) {
-      auto stale = PathResult{};
-      stale.status = PathStatus::NoPath;
-      return stale;
+    if (ticket.generation != generation_) {
+      detail::fail_fast(
+          "PathRequestRuntime::result received a stale PathTicket; use "
+          "try_result() for uncertain lookup");
+    }
+    if (!results_published_) {
+      detail::fail_fast(
+          "PathRequestRuntime::result has no published result batch; process "
+          "requests first or use try_result()");
+    }
+    if (ticket.value >= results_.size()) {
+      detail::fail_fast(
+          "PathRequestRuntime::result received an out-of-range PathTicket; "
+          "use try_result() for uncertain lookup");
     }
     return results_[ticket.value];
   }
@@ -364,11 +393,28 @@ class PathRequestRuntime {
   [[nodiscard]] auto stats() const noexcept -> PathRuntimeStats {
     auto stats = stats_;
     stats.submitted = requests_.size();
-    stats.completed = results_.size();
-    stats.path_nodes = paths_.size();
+    if (results_published_) {
+      stats.completed = results_.size();
+      stats.path_nodes = paths_.size();
+    } else {
+      stats.completed = 0;
+      stats.found = 0;
+      stats.invalid_start = 0;
+      stats.invalid_goal = 0;
+      stats.no_path = 0;
+      stats.indeterminate = 0;
+      stats.cost_overflow = 0;
+      stats.precheck_ruled_out = 0;
+      stats.path_nodes = 0;
+      stats.field_product_candidate_groups = 0;
+      stats.field_product_used_groups = 0;
+      stats.field_product_skipped_groups = 0;
+      stats.portal_replan = {};
+    }
     stats.route_cache = unit_route_cache_.stats();
     stats.field_product_cache = unit_field_product_cache_.stats();
-    stats.weighted_batch = weighted_batch_.stats();
+    stats.weighted_batch =
+        results_published_ ? weighted_batch_.stats() : WeightedPathBatchStats{};
     stats.portal_segment_cache = portal_segment_cache_.stats();
     stats.cache_clears = cache_clears_;
     stats.class_cache_invalidations = class_cache_invalidations_;
@@ -428,6 +474,7 @@ class PathRequestRuntime {
       record_status(result.status);
     }
     refresh_result_spans();
+    results_published_ = true;
     return results_;
   }
 
@@ -463,6 +510,7 @@ class PathRequestRuntime {
       record_status(result.status);
     }
     refresh_result_spans();
+    results_published_ = true;
     return results_;
   }
 
@@ -491,7 +539,10 @@ class PathRequestRuntime {
       const World& world, PathRuntimeCachePolicy policy,
       const RegionGraphT<typename World::residency_type>* graph,
       const Provider& provider) -> std::span<const PathResult> {
-    static_assert(std::derived_from<Class, movement::movement_class_tag>);
+    static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                  "process_weighted_batch<World, Class, MaxCost> requires a "
+                  "MovementClass; legacy tag pairs go through the "
+                  "<World, PassableTag, CostTag, MaxCost> overload.");
     return process_weighted_batch_impl<World, Class, MaxCost, Class>(
         world, policy, graph, provider);
   }
@@ -591,6 +642,7 @@ class PathRequestRuntime {
       record_status(batch[s].status);
     }
     refresh_result_spans();
+    results_published_ = true;
     return results_;
   }
 
@@ -769,6 +821,7 @@ class PathRequestRuntime {
   }
 
   void clear_results() noexcept {
+    results_published_ = false;
     results_.clear();
     offsets_.clear();
     sizes_.clear();
@@ -1169,6 +1222,7 @@ class PathRequestRuntime {
   std::vector<std::size_t> sizes_;
   std::vector<std::uint8_t> processed_;
   std::vector<Coord3> paths_;
+  bool results_published_ = false;
   // Optional pre-A* topology precheck: reused BFS scratch plus the survivor
   // partition (surviving requests and their original slot indices) that lets
   // the monolithic weighted batch skip proven-unreachable requests.

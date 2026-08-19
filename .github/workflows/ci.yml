@@ -131,7 +131,7 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: Dev Build And Tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       CC: clang
       CXX: clang++

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/fail_fast.h>
 #include <tess/diagnostics/diagnostics.h>
 
 #include <algorithm>
@@ -34,7 +35,9 @@ class EventStream {
   using event_type = TickStampedEvent<T>;
 
   void reserve_events(std::size_t count) {
-    TESS_ASSERT(events_.empty());
+    if (!events_.empty()) {
+      detail::fail_fast("EventStream::reserve_events requires an empty stream");
+    }
     max_events_ = count;
     events_.reserve(count);
   }
@@ -100,7 +103,10 @@ class EventStream {
    * admits, and `consume_all`/`discard_all`/`clear` terminalize.
    */
   void set_flow_accounting(diagnostics::FlowAccounting* accounting) noexcept {
-    TESS_ASSERT(events_.empty());
+    if (!events_.empty()) {
+      detail::fail_fast(
+          "EventStream::set_flow_accounting requires an empty stream");
+    }
     accounting_ = accounting;
   }
 
@@ -134,7 +140,11 @@ class EventStream {
         rejected_events_{other.rejected_events_} {}
   auto operator=(const EventStream& other) -> EventStream& {
     if (this != &other) {
-      TESS_ASSERT(accounting_ == nullptr || events_.empty());
+      if (accounting_ != nullptr && !events_.empty()) {
+        detail::fail_fast(
+            "EventStream copy assignment would orphan outstanding "
+            "accounting");
+      }
       events_ = other.events_;
       max_events_ = other.max_events_;
       next_sequence_ = other.next_sequence_;
@@ -159,7 +169,11 @@ class EventStream {
   }
   auto operator=(EventStream&& other) noexcept -> EventStream& {
     if (this != &other) {
-      TESS_ASSERT(accounting_ == nullptr || events_.empty());
+      if (accounting_ != nullptr && !events_.empty()) {
+        detail::fail_fast(
+            "EventStream move assignment would orphan outstanding "
+            "accounting");
+      }
       events_ = std::move(other.events_);
       max_events_ = other.max_events_;
       next_sequence_ = other.next_sequence_;

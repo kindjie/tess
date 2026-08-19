@@ -39,15 +39,17 @@ SOURCE_PREFIXES = ("tests/", "examples/")
 # introduce coverage the full tree never had.
 EXCLUDED_PREFIXES = ("bench/", "tests/webgpu_stub/")
 # Sources deliberately outside the dev preset's compilation database:
-# standalone consumer-smoke projects and the real-WebGPU example (whole
-# directories), plus exact files for the Emscripten-only host, opt-in
-# libFuzzer harness, bench-preset-only data test, and exception-free-only
-# runtime test.
+# compile-fail fixtures, standalone consumer-smoke projects, and the
+# real-WebGPU example (whole directories), plus exact files for the
+# Emscripten-only host, opt-in libFuzzer harness, bench-preset-only data test,
+# and exception-free-only runtime test. Compile-fail fixtures are validated by
+# CMake try_compile and cannot be ordinary compilation-database entries.
 # Anything else missing from the database fails the gate — a new or
 # renamed source must not silently evade the only blocking pull-request
 # clang-tidy job.
 GATED_SOURCE_DIRECTORIES = (
   "examples/webgpu_compute/",
+  "tests/compile_fail/",
   "tests/fetchcontent_consumer/",
   "tests/install_consumer/",
 )

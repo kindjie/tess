@@ -358,7 +358,9 @@ class FieldProductCache {
   [[nodiscard]] auto lookup_weighted(const World& world, const GoalSet& goals,
                                      const Provider& provider)
       -> const DistanceFieldProduct* {
-    static_assert(std::derived_from<Class, movement::movement_class_tag>);
+    static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                  "FieldProductCache::lookup_weighted requires Class to be "
+                  "a MovementClass");
     for (std::size_t i = 0; i < entries_.size(); ++i) {
       auto& entry = entries_[i];
       if (!key_matches_class<World, Class, Provider>(entry.key, goals.goals(),
@@ -459,7 +461,9 @@ class FieldProductCache {
   template <typename World, typename Class, typename Provider>
   auto store_weighted(DistanceFieldProduct&& product, const Provider& provider)
       -> bool {
-    static_assert(std::derived_from<Class, movement::movement_class_tag>);
+    static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                  "FieldProductCache::store_weighted requires Class to be a "
+                  "MovementClass");
     if (product.status() != PathStatus::Found) {
       return false;
     }
@@ -477,7 +481,10 @@ class FieldProductCache {
   auto store_weighted_reusing(DistanceFieldProduct& product,
                               const Provider& provider)
       -> const DistanceFieldProduct* {
-    static_assert(std::derived_from<Class, movement::movement_class_tag>);
+    static_assert(
+        std::derived_from<Class, movement::movement_class_tag>,
+        "FieldProductCache::store_weighted_reusing requires Class to be a "
+        "MovementClass");
     if (product.status() != PathStatus::Found) {
       return nullptr;
     }
@@ -1011,7 +1018,9 @@ template <typename World, typename Class, typename Provider>
     const World& world, const GoalSet& goals, DistanceFieldProduct& product,
     DistanceFieldScratch& scratch, const Provider& provider)
     -> DistanceFieldResult {
-  static_assert(std::derived_from<Class, movement::movement_class_tag>);
+  static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                "build_weighted_distance_field_product requires Class to be a "
+                "MovementClass");
   static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
                 "weighted distance-field products are dense-only");
   using Shape = typename World::shape_type;
@@ -1282,7 +1291,9 @@ template <typename World, typename Class, typename Provider>
 [[nodiscard]] auto weighted_distance_field_product_path(
     const World& world, Coord3 start, const DistanceFieldProduct& product,
     DistanceFieldScratch& scratch, const Provider& provider) -> PathResult {
-  static_assert(std::derived_from<Class, movement::movement_class_tag>);
+  static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                "weighted_distance_field_product_path requires Class to be a "
+                "MovementClass");
   static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
                 "weighted distance-field products are dense-only");
   using Shape = typename World::shape_type;

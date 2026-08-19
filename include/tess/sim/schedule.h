@@ -28,9 +28,10 @@
 //
 // Reentrancy: task bodies may call notify_dirty, notify_events, request_run,
 // and set_enabled (field writes on stable storage, with the documented
-// immediate-merge semantics). They must NOT call add_task or run_tick --
-// registration after seal() would reallocate the task array mid-iteration
-// and a nested tick would double-advance every cadence; both are asserted.
+// immediate-merge semantics). They must NOT call add_task, reserve_tasks, or
+// run_tick -- registration/capacity changes after seal() could invalidate the
+// task array mid-iteration, and a nested tick would double-advance every
+// cadence. These violations fail fast in every build.
 namespace tess {
 
 /// Selects the deterministic trigger policy for a scheduled task.
@@ -193,6 +194,9 @@ class Schedule {
   // Setup-time capacity; add_task within it never reallocates, and run_tick
   // never allocates at all.
   void reserve_tasks(std::size_t count) {
+    if (sealed_) {
+      detail::fail_fast("Schedule::reserve_tasks called after seal()");
+    }
     tasks_.reserve(count);
     phase_order_.reserve(count);
     dirty_task_ids_.reserve(count);
@@ -295,10 +299,10 @@ class Schedule {
   // OnDirty task poked this way runs with pending_dirty == 0: treat a
   // zero mask as a full-run request, not a no-op.
   void request_run(TaskId id) noexcept {
-    TESS_ASSERT(id < tasks_.size());
-    if (id < tasks_.size()) {
-      tasks_[id].run_requested = true;
+    if (id >= tasks_.size()) {
+      detail::fail_fast("Schedule::request_run called with an unknown TaskId");
     }
+    tasks_[id].run_requested = true;
   }
 
   // Merges external dirty bits into the pending masks that can consume
@@ -349,8 +353,12 @@ class Schedule {
     diagnostics::ScopedTimer tick_timer{diagnostics::TraceCategory::Scheduler,
                                         "schedule_tick"};
 #endif
-    TESS_ASSERT(sealed_);
-    TESS_ASSERT(!in_run_);
+    if (!sealed_) {
+      detail::fail_fast("Schedule::run_tick called before seal()");
+    }
+    if (in_run_) {
+      detail::fail_fast("Schedule::run_tick rejected a reentrant run_tick");
+    }
     // Scope guard rather than a trailing store: a throwing task callback
     // must not leave the schedule latched "in run", or every subsequent
     // tick would fail the reentrancy assert (audit 2026-07-11 C2).
@@ -417,13 +425,31 @@ class Schedule {
   auto add_task_record(const ScheduleTaskDesc& desc, void* ctx,
                        ScheduleTaskFn fn, ScheduleNoThrowTaskFn no_throw_fn)
       -> TaskId {
-    TESS_ASSERT(!sealed_);
-    TESS_ASSERT(fn != nullptr || no_throw_fn != nullptr);
-    TESS_ASSERT(desc.phase != SimPhase::Count);
-    TESS_ASSERT(desc.cadence.kind != CadenceKind::EveryN ||
-                desc.cadence.every_n != 0);
-    TESS_ASSERT(desc.cadence.kind != CadenceKind::Background ||
-                desc.cadence.budget.max_items != 0);
+    if (sealed_) {
+      detail::fail_fast("Schedule::add_task called after seal()");
+    }
+    if (fn == nullptr && no_throw_fn == nullptr) {
+      detail::fail_fast("Schedule::add_task received a null callback");
+    }
+    if (static_cast<std::uint8_t>(desc.phase) >=
+        static_cast<std::uint8_t>(SimPhase::Count)) {
+      detail::fail_fast("Schedule::add_task received an invalid SimPhase");
+    }
+    if (static_cast<std::uint8_t>(desc.cadence.kind) >
+        static_cast<std::uint8_t>(CadenceKind::Manual)) {
+      detail::fail_fast("Schedule::add_task received an invalid CadenceKind");
+    }
+    if (desc.cadence.kind == CadenceKind::EveryN && desc.cadence.every_n == 0) {
+      detail::fail_fast(
+          "Schedule::add_task EveryN cadence requires every_n > 0; use "
+          "Cadence::every_ticks() to normalize input");
+    }
+    if (desc.cadence.kind == CadenceKind::Background &&
+        desc.cadence.budget.max_items == 0) {
+      detail::fail_fast(
+          "Schedule::add_task Background cadence requires a nonzero budget; "
+          "use Cadence::background() to normalize input");
+    }
     auto record = TaskRecord{};
     record.desc = desc;
     record.ctx = ctx;
@@ -546,8 +572,16 @@ class Schedule {
       result = task.fn(task.ctx, context);
     }
 #endif
-    TESS_ASSERT(task.desc.cadence.kind != CadenceKind::Background ||
-                result.items_done <= budget);
+    if (task.desc.cadence.kind == CadenceKind::Background &&
+        result.items_done > budget) {
+      detail::fail_fast(
+          "Schedule task reported more background items than offered");
+    }
+    if (task.desc.cadence.kind != CadenceKind::Background &&
+        result.items_done != 0) {
+      detail::fail_fast(
+          "Schedule non-background task reported background items");
+    }
 
     task.in_progress =
         task.desc.cadence.kind == CadenceKind::Background && result.more_work;

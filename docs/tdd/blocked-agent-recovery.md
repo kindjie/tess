@@ -1,6 +1,9 @@
 # Blocked-agent recovery scheduling
 
-Status: **proposed** (2026-08-14).
+Status: **implemented** (2026-08-14). This document records historical design
+intent; the maintained [path](../architecture/path.md) and
+[simulation](../architecture/simulation.md) notes describe the shipped
+contract.
 
 ## Problem
 

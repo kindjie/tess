@@ -81,6 +81,17 @@ What is **not** guaranteed:
   runtime in every configuration. Define `TESS_ENABLE_ASSERTS=1`
   explicitly if you want the checks in an optimised build.
 
+Some lifecycle and ownership violations are stronger than unchecked hot-path
+preconditions: continuing would publish a plausible but false result, orphan
+retained accounting, or mutate an object during its own dispatch. Those APIs
+call Tess's unconditional fail-fast path in every build and name the violated
+contract on stderr. Examples include detectable invalid
+`PathRequestRuntime::result` tickets, invalid schedule registration or
+dispatch state, reentrant `ResumableWorkQueue` mutation, and rebinding a
+nonempty flow-accounted queue or event stream. Checked alternatives remain the
+right choice where uncertainty is expected, such as
+`PathRequestRuntime::try_result`.
+
 **Build-wide macros must be build-wide.** `TESS_ENABLE_ASSERTS` changes the
 bodies of inline functions — 14 in `storage/world.h` alone — and
 `TESS_ENABLE_DIAGNOSTICS` changes public *types*: `PathCounters`,
@@ -255,11 +266,12 @@ validated. Names there may change or be removed in any release, including
 a patch release, and they are excluded from whatever compatibility promise
 a future 1.0 makes. Today that is the maintenance-scheduler layer.
 
-Within it, the supported spellings are the documented aliases —
-`FifoScheduler` and `CoalescingScheduler`. The template they alias,
-`detail::QueuedScheduler<Coalescing>`, is not a supported name: it lives in
-`detail`, which `docs/style.md` excludes from source compatibility, and it
-is spelled that way deliberately so the alias can be repointed without
+The documented public classes are `ImmediateScheduler` and
+`DirtyBitScheduler`; the documented queued spellings are the
+`FifoScheduler` and `CoalescingScheduler` aliases. The template behind those
+aliases, `detail::QueuedScheduler<Coalescing>`, is not a supported name: it
+lives in `detail`, which `docs/style.md` excludes from source compatibility,
+and it is spelled that way deliberately so an alias can be repointed without
 breaking callers who used the documented name.
 
 ## Residency coverage

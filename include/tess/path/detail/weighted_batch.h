@@ -15,7 +15,9 @@ template <typename World, typename Class, std::uint32_t MaxCost>
                 "build_bounded_weighted_distance_field<World, Class, MaxCost> "
                 "requires a MovementClass; legacy tag pairs go through the "
                 "<World, PassableTag, CostTag, MaxCost> overload.");
-  static_assert(MaxCost > 0);
+  static_assert(
+      MaxCost > 0,
+      "bounded weighted pathfinding requires MaxCost greater than zero");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
   using Model = ResolvedTransitionModel<World, Class>;

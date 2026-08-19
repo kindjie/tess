@@ -207,6 +207,7 @@ def test_sources_in_the_database_are_checked():
   (
     "examples/web_diagnostics/diagnostics_wasm.cc",
     "examples/webgpu_compute/webgpu_compute.cc",
+    "tests/compile_fail/invalid_template.cc",
     "tests/fetchcontent_consumer/main.cc",
     "tests/fuzz/tess_world_archive_fuzzer.cc",
     "tests/install_consumer/main.cc",
@@ -225,6 +226,8 @@ def test_gated_sources_outside_the_database_are_skipped(path):
   "path",
   (
     "tests/tess_new_feature_test.cc",
+    # Similar text outside the exact gated directory must still fail.
+    "tests/compile_failures/invalid_template.cc",
     # A name sharing a gated file's prefix must not ride its exclusion.
     "tests/tess_grid_benchmark_data_unwired.cc",
   ),
