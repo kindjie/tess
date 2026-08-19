@@ -59,6 +59,7 @@ CONCURRENCY_SENSITIVE_TEST_PREFIXES = (
   "tests/tess_no_exceptions",
   "tests/tess_path_agent_tick",
   "tests/tess_phase_executor",
+  "tests/tess_portal_memo",
   "tests/tess_queued",
   "tests/tess_sim_auto_exec",
   "tests/tess_sim_schedule",

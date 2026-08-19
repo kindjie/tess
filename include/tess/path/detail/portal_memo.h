@@ -1,5 +1,4 @@
-#ifndef TESS_PATH_DETAIL_PORTAL_MEMO_H
-#define TESS_PATH_DETAIL_PORTAL_MEMO_H
+#pragma once
 
 #include <tess/core/shape.h>
 
@@ -229,5 +228,3 @@ class PortalMemoScope {
 };
 
 }  // namespace tess::detail
-
-#endif  // TESS_PATH_DETAIL_PORTAL_MEMO_H
