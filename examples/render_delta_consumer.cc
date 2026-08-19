@@ -18,7 +18,7 @@ namespace {
 
 struct GlyphTag {};
 
-using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
+using Shape = tess::Shape<tess::Extent3{16, 8}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<tess::Field<GlyphTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
@@ -71,7 +71,7 @@ struct Consumer {
           for (auto x = box.origin.x;
                x < box.origin.x + static_cast<std::int64_t>(box.extent.x);
                ++x) {
-            repaint(tess::Coord3{x, y, 0});
+            repaint(tess::Coord2{x, y});
           }
         }
       }
@@ -109,7 +109,7 @@ auto run() -> int {
   Consumer consumer;
 
   // Late join: the first delta frame is rejected, the baseline seeds us.
-  paint(world, tess::Coord3{1, 1, 0}, '#');
+  paint(world, tess::Coord2{1, 1}, '#');
   tess::collect_tile_deltas(collector, world, kGlyphBit);
   if (consumer.apply(collector.publish(), world)) {
     std::cerr << "a fresh consumer must not accept a delta frame\n";
@@ -123,7 +123,7 @@ auto run() -> int {
   }
   consumer.print();
 
-  auto entity_tile = tess::Coord3{2, 2, 0};
+  tess::Coord3 entity_tile = tess::Coord2{2, 2};
   for (std::uint64_t tick = 1; tick <= 6; ++tick) {
     // Sim work: one wall painted, the marker entity walks right.
     collector.begin_tick(tick);

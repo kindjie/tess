@@ -11,7 +11,7 @@ struct PassableTag {};
 
 constexpr std::uint32_t DirtyPassability = 1u << 0u;
 
-using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
+using Shape = tess::Shape<tess::Extent3{8, 8}, tess::Extent3{4, 4}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
@@ -47,7 +47,7 @@ auto run() -> int {
   scratch.reserve_nodes(Shape::size.x * Shape::size.y * Shape::size.z);
 
   const auto path = tess::astar_path<World, PassableTag>(
-      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}},
+      world, tess::PathRequest{tess::Coord2{0, 0}, tess::Coord2{3, 0}},
       scratch);
   if (path.status != tess::PathStatus::Found) {
     std::cerr << "path failed\n";

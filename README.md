@@ -78,23 +78,19 @@ and run in CI:
 
 // 1. Define a 4x4 2D grid and the data stored for each tile.
 struct PassableTag {};
-using Shape = tess::Shape<tess::Extent3{4, 4, 1}, tess::Extent3{4, 4, 1}>;
+using Shape = tess::Shape<tess::Extent3{4, 4}, tess::Extent3{4, 4}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
 auto run_example() -> int {
   // 2. Create the world and mark the tiles that can be crossed.
   World world;  // Zero-initialized: every tile starts blocked.
-  for (int y = 0; y < 4; ++y) {
-    for (int x = 0; x < 4; ++x) {
-      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
-    }
-  }
+  world.fill_field<PassableTag>(1);  // Open every tile for this example.
 
   // 3. Reuse this scratch storage for repeated path queries.
   tess::PathScratch scratch;
   const auto result = tess::astar_path<World, PassableTag>(
-      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{2, 1, 0}},
+      world, tess::PathRequest{tess::Coord2{0, 0}, tess::Coord2{2, 1}},
       scratch);
 
   // 4. Check the status, then print the path coordinates and total cost.

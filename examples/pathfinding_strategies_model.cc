@@ -15,19 +15,19 @@ namespace {
 struct PassableTag {};
 struct CostTag {};
 
-using Shape = tess::Shape<tess::Extent3{16, 16, 1}, tess::Extent3{8, 8, 1}>;
+using Shape = tess::Shape<tess::Extent3{16, 16}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
                                  tess::Field<CostTag, std::uint32_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 // [strategy-world]
 
 // [strategy-requests]
-constexpr auto kGoal = tess::Coord3{15, 15, 0};
+constexpr auto kGoal = tess::Coord2{15, 15};
 
 constexpr auto kRequests = std::array{
-    tess::PathRequest{tess::Coord3{0, 0, 0}, kGoal},
-    tess::PathRequest{tess::Coord3{0, 1, 0}, kGoal},
-    tess::PathRequest{tess::Coord3{0, 2, 0}, kGoal},
+    tess::PathRequest{tess::Coord2{0, 0}, kGoal},
+    tess::PathRequest{tess::Coord2{0, 1}, kGoal},
+    tess::PathRequest{tess::Coord2{0, 2}, kGoal},
 };
 // [strategy-requests]
 
@@ -96,12 +96,12 @@ constexpr auto kRequests = std::array{
 
 void configure_world(World& world,
                      std::array<std::uint8_t, path_capacity>& passable) {
+  world.fill_field<CostTag>(1);
   for (std::int64_t y = 0; y < static_cast<std::int64_t>(Shape::size.y); ++y) {
     for (std::int64_t x = 0; x < static_cast<std::int64_t>(Shape::size.x);
          ++x) {
       const auto is_passable = demo_cell_passable(x, y);
-      world.field<PassableTag>(tess::Coord3{x, y, 0}) = is_passable ? 1U : 0U;
-      world.field<CostTag>(tess::Coord3{x, y, 0}) = 1;
+      world.field<PassableTag>(tess::Coord2{x, y}) = is_passable ? 1U : 0U;
       const auto index = static_cast<std::size_t>(y * width + x);
       passable[index] = is_passable ? 1U : 0U;
     }

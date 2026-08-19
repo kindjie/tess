@@ -20,7 +20,7 @@
 namespace {
 
 // [getting-shape]
-using Shape = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
+using Shape = tess::Shape<tess::Extent3{32, 32}, tess::Extent3{8, 8}>;
 // [getting-shape]
 
 // [getting-schema]
@@ -41,16 +41,16 @@ constexpr std::uint32_t kTerrainDirty = 1u << 0u;
 
 void write_one_tile(World& world) {
   // [getting-direct-write]
-  world.field<PassableTag>(tess::Coord3{4, 2, 0}) = 1;
+  world.field<PassableTag>(tess::Coord2{4, 2}) = 1;
   // [getting-direct-write]
 }
 
 auto find_path(World& world) -> bool {
   for (std::int64_t x = 0; x < static_cast<std::int64_t>(Shape::size.x); ++x) {
-    world.field<PassableTag>(tess::Coord3{x, 0, 0}) = 1;
+    world.field<PassableTag>(tess::Coord2{x, 0}) = 1;
   }
-  const auto start = tess::Coord3{0, 0, 0};
-  const auto goal = tess::Coord3{Shape::size.x - 1, 0, 0};
+  const auto start = tess::Coord2{0, 0};
+  const auto goal = tess::Coord2{Shape::size.x - 1, 0};
 
   // [getting-astar]
   tess::PathScratch scratch;
@@ -70,8 +70,8 @@ using Walker = tess::movement::MovementClass<
 // [getting-movement-class]
 
 auto check_topology(World& world) -> bool {
-  const auto start = tess::Coord3{0, 0, 0};
-  const auto goal = tess::Coord3{Shape::size.x - 1, 0, 0};
+  const auto start = tess::Coord2{0, 0};
+  const auto goal = tess::Coord2{Shape::size.x - 1, 0};
   tess::RegionGraphScratch precheck_scratch;
 
   // [getting-topology]
@@ -207,20 +207,15 @@ auto access_chunk_metadata() -> bool {
 }
 
 auto plan_weighted_batch(World& world) -> bool {
-  for (std::int64_t y = 0; y < static_cast<std::int64_t>(Shape::size.y); ++y) {
-    for (std::int64_t x = 0; x < static_cast<std::int64_t>(Shape::size.x);
-         ++x) {
-      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
-      world.field<CostTag>(tess::Coord3{x, y, 0}) = 1;
-    }
-  }
+  world.fill_field<PassableTag>(1);
+  world.fill_field<CostTag>(1);
 
   // [path-batch]
   tess::WeightedPathBatchScratch scratch;
   const auto requests = std::array{
-      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}},
-      tess::PathRequest{tess::Coord3{0, 1, 0}, tess::Coord3{31, 31, 0}},
-      tess::PathRequest{tess::Coord3{0, 2, 0}, tess::Coord3{31, 31, 0}},
+      tess::PathRequest{tess::Coord2{0, 0}, tess::Coord2{31, 31}},
+      tess::PathRequest{tess::Coord2{0, 1}, tess::Coord2{31, 31}},
+      tess::PathRequest{tess::Coord2{0, 2}, tess::Coord2{31, 31}},
   };
   const auto results =
       tess::weighted_path_batch<World, PassableTag, CostTag, /*MaxCost=*/128>(
@@ -244,7 +239,7 @@ auto reuse_cached_route(World& world) -> bool {
   tess::PathScratch scratch;
   tess::RouteCacheScratch cache;
   const auto request =
-      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}};
+      tess::PathRequest{tess::Coord2{0, 0}, tess::Coord2{31, 31}};
 
   const auto miss = tess::cached_astar_path<World, PassableTag>(world, request,
                                                                 scratch, cache);
@@ -260,8 +255,8 @@ auto reuse_cached_route(World& world) -> bool {
 auto share_field_product(World& world) -> bool {
   // [field-product]
   tess::GoalSet goals;
-  goals.add(tess::Coord3{31, 0, 0});
-  goals.add(tess::Coord3{31, 31, 0});
+  goals.add(tess::Coord2{31, 0});
+  goals.add(tess::Coord2{31, 31});
 
   tess::DistanceFieldScratch scratch;
   tess::DistanceFieldProduct product;
@@ -276,7 +271,7 @@ auto share_field_product(World& world) -> bool {
   }
 
   const auto nearest = tess::nearest_target<World, PassableTag>(
-      world, tess::Coord3{0, 31, 0}, *shared, scratch);
+      world, tess::Coord2{0, 31}, *shared, scratch);
   // [field-product]
 
   return built.status == tess::PathStatus::Found && stored &&

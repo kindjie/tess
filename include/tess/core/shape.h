@@ -19,10 +19,15 @@ struct Extent3 {
   friend constexpr bool operator==(Extent3 lhs, Extent3 rhs) noexcept = default;
 };
 
+struct Coord3;
+
 /** Signed coordinate in a two-dimensional consumer view. */
 struct Coord2 {
   std::int64_t x = 0;
   std::int64_t y = 0;
+
+  /** Losslessly lifts this coordinate into the canonical z-zero plane. */
+  [[nodiscard]] constexpr operator Coord3() const noexcept;
 
   friend constexpr bool operator==(Coord2 lhs, Coord2 rhs) noexcept = default;
 };
@@ -44,6 +49,8 @@ struct Coord3 {
 
   friend constexpr bool operator==(Coord3 lhs, Coord3 rhs) noexcept = default;
 };
+
+constexpr Coord2::operator Coord3() const noexcept { return Coord3{x, y, 0}; }
 
 /** Unsigned coordinate of a chunk within a finite shape. */
 struct ChunkCoord3 {
@@ -105,7 +112,7 @@ struct ResolvedTile {
 
 /** Lifts a two-dimensional coordinate into the canonical z-zero plane. */
 [[nodiscard]] constexpr Coord3 to_coord3(Coord2 coord) noexcept {
-  return Coord3{coord.x, coord.y, 0};
+  return coord;
 }
 
 /** Lifts an axial hex coordinate into the canonical z-zero plane. */

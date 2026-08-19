@@ -80,6 +80,24 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   /**
+   * Assigns `value` to `Tag` on every tile.
+   *
+   * The traversal performs no world-storage allocation, but the field value's
+   * assignment operator may allocate or throw. This is a storage write only:
+   * like direct `field()` writes, it does not update dirty, active, topology,
+   * or content-version metadata. If assignment throws, tiles visited before
+   * the exception remain assigned.
+   */
+  template <typename Tag>
+  void fill_field(const Schema::template value_type<Tag>& value) {
+    for (auto& page : pages_) {
+      for (auto& tile : page.template field_span<Tag>()) {
+        tile = value;
+      }
+    }
+  }
+
+  /**
    * Returns a page by key without runtime error recovery.
    * @pre `key` is inside the world; debug builds assert this precondition.
    */

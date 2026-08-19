@@ -14,8 +14,10 @@ headers) and is exported by
 
 - `Extent3` records unsigned per-axis sizes. `z` defaults to `1` so a
   brace-initialized 2D extent (`Extent3{64, 64}`) is already well-formed.
-- `Coord2` and `Coord3` are signed world coordinates. `to_coord3(coord)`
-  lifts a `Coord2` to `Coord3` with `z = 0`.
+- `Coord2` and `Coord3` are signed world coordinates. `Coord2` converts
+  losslessly to the canonical `Coord3` with `z = 0`, so top-down calls can use
+  the shorter type directly; `to_coord3(coord)` remains available when code
+  wants to make that lift explicit.
 - `HexCoord` is a signed axial `(q, r)` coordinate. `to_coord3` maps it to
   `(q, r, 0)`, `to_hex_coord` performs the inverse for the z-zero plane, and
   `hex_distance` returns saturated, overflow-safe axial distance without

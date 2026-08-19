@@ -22,7 +22,7 @@ both.
 
 <!-- tess-snippet: getting-direct-write source=examples/documentation.cc -->
 ```cpp
-world.field<PassableTag>(tess::Coord3{4, 2, 0}) = 1;
+world.field<PassableTag>(tess::Coord2{4, 2}) = 1;
 ```
 <!-- /tess-snippet -->
 

@@ -11,20 +11,10 @@ namespace {
 struct PassableTag {};
 struct CostTag {};
 
-using Shape = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
+using Shape = tess::Shape<tess::Extent3{32, 32}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
-
-template <typename FieldTag, typename Value>
-void fill_field(World& world, Value value) {
-  for (auto& page : world.chunks()) {
-    auto field = page.template field_span<FieldTag>();
-    for (auto& tile : field) {
-      tile = value;
-    }
-  }
-}
 
 void mark_passable(World& world, tess::Coord3 coord, bool passable) {
   world.template field<PassableTag>(coord) = passable;
@@ -34,18 +24,18 @@ void mark_passable(World& world, tess::Coord3 coord, bool passable) {
 
 auto run() -> int {
   World world;
-  fill_field<PassableTag>(world, true);
-  fill_field<CostTag>(world, 1u);
+  world.fill_field<PassableTag>(true);
+  world.fill_field<CostTag>(1u);
 
   std::array<tess::PathAgentState, 4> agents{{
-      {.position = tess::Coord3{0, 0, 0}},
-      {.position = tess::Coord3{0, 1, 0}},
-      {.position = tess::Coord3{0, 2, 0}},
-      {.position = tess::Coord3{0, 3, 0}},
+      {.position = tess::Coord2{0, 0}},
+      {.position = tess::Coord2{0, 1}},
+      {.position = tess::Coord2{0, 2}},
+      {.position = tess::Coord2{0, 3}},
   }};
   tess::PathAgentTickState tick_state;
   for (auto& agent : agents) {
-    tess::set_path_agent_goal(tick_state, agent, tess::Coord3{31, 31, 0});
+    tess::set_path_agent_goal(tick_state, agent, tess::Coord2{31, 31});
   }
 
   tess::PathRequestRuntime runtime;
@@ -66,7 +56,7 @@ auto run() -> int {
   (void)tess::tick_unit_path_agents<World, PassableTag>(
       tick_state, world, agents, runtime, options);
 
-  mark_passable(world, tess::Coord3{12, 0, 0}, false);
+  mark_passable(world, tess::Coord2{12, 0}, false);
   tess::mark_pathing_dirty(tick_state);
   tick = tess::tick_unit_path_agents<World, PassableTag>(
       tick_state, world, agents, runtime, options);

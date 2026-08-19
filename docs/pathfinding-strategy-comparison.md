@@ -122,7 +122,7 @@ browser reads stable C++ result snapshots.
 struct PassableTag {};
 struct CostTag {};
 
-using Shape = tess::Shape<tess::Extent3{16, 16, 1}, tess::Extent3{8, 8, 1}>;
+using Shape = tess::Shape<tess::Extent3{16, 16}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
                                  tess::Field<CostTag, std::uint32_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
@@ -149,12 +149,12 @@ using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
 <!-- tess-snippet: strategy-requests source=examples/pathfinding_strategies_model.cc -->
 ```cpp
-constexpr auto kGoal = tess::Coord3{15, 15, 0};
+constexpr auto kGoal = tess::Coord2{15, 15};
 
 constexpr auto kRequests = std::array{
-    tess::PathRequest{tess::Coord3{0, 0, 0}, kGoal},
-    tess::PathRequest{tess::Coord3{0, 1, 0}, kGoal},
-    tess::PathRequest{tess::Coord3{0, 2, 0}, kGoal},
+    tess::PathRequest{tess::Coord2{0, 0}, kGoal},
+    tess::PathRequest{tess::Coord2{0, 1}, kGoal},
+    tess::PathRequest{tess::Coord2{0, 2}, kGoal},
 };
 ```
 <!-- /tess-snippet -->

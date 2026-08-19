@@ -16,16 +16,8 @@ ColonyModel::Impl::Impl(int agent_count) {
 }
 
 void ColonyModel::Impl::initialize_world() {
-  for (auto& page : world.chunks()) {
-    auto passable = page.field_span<PassableTag>();
-    auto cost = page.field_span<CostTag>();
-    auto settled = page.field_span<SettledTag>();
-    for (std::size_t i = 0; i < passable.size(); ++i) {
-      passable[i] = true;
-      cost[i] = 1;
-      settled[i] = false;
-    }
-  }
+  world.fill_field<PassableTag>(true);
+  world.fill_field<CostTag>(1);
   tess::build_region_graph<World, Walker>(world, topo_scratch, graph);
 }
 

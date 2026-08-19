@@ -23,7 +23,7 @@ struct CostTag {};
 struct OccupancyTag {};
 struct ReservationTag {};
 
-using Shape = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
+using Shape = tess::Shape<tess::Extent3{32, 32}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<
     tess::Field<PassableTag, bool>, tess::Field<ConstructionTag, bool>,
     tess::Field<CostTag, std::uint32_t>, tess::Field<OccupancyTag, bool>,
@@ -102,14 +102,8 @@ struct TopologyTask {
 
 auto run() -> int {
   Colony colony;
-  for (auto& page : colony.world.chunks()) {
-    auto passable = page.template field_span<PassableTag>();
-    auto cost = page.template field_span<CostTag>();
-    for (std::size_t i = 0; i < passable.size(); ++i) {
-      passable[i] = true;
-      cost[i] = 1u;
-    }
-  }
+  colony.world.fill_field<PassableTag>(true);
+  colony.world.fill_field<CostTag>(1u);
   colony.runtime.reserve_requests(colony.agents.size());
   colony.runtime.reserve_search_nodes(1024);
   colony.runtime.reserve_path_nodes(4096);
@@ -121,10 +115,10 @@ auto run() -> int {
   // Colonists set out across the map; the wall will land in their way.
   for (std::size_t i = 0; i < colony.agents.size(); ++i) {
     auto& agent = colony.agents[i];
-    agent.position = tess::Coord3{2, static_cast<std::int64_t>(6 + i * 6), 0};
+    agent.position = tess::Coord2{2, static_cast<std::int64_t>(6 + i * 6)};
     colony.world.field<OccupancyTag>(agent.position) = true;
     tess::set_path_agent_goal(colony.tick_state, agent,
-                              tess::Coord3{29, agent.position.y, 0});
+                              tess::Coord2{29, agent.position.y});
   }
 
   // The auto-exec construction task: queued ops apply the pending wall
@@ -134,7 +128,7 @@ auto run() -> int {
     auto passable = view.template field_span<PassableTag>();
     auto construction = view.template field_span<ConstructionTag>();
     for (auto y = wall.y_begin; y < wall.y_end; ++y) {
-      const auto coord = tess::Coord3{wall.x, y, 0};
+      const auto coord = tess::Coord2{wall.x, y};
       if (tess::chunk_key<Shape>(tess::chunk_coord<Shape>(coord)) !=
           view.key()) {
         continue;
@@ -186,7 +180,7 @@ auto run() -> int {
       colony.pending_wall = WallOrder{14, 4, 28};
       for (std::int64_t chunk_y = 0; chunk_y < 4; ++chunk_y) {
         const auto key = tess::chunk_key<Shape>(tess::chunk_coord<Shape>(
-            tess::Coord3{colony.pending_wall.x, chunk_y * 8, 0}));
+            tess::Coord2{colony.pending_wall.x, chunk_y * 8}));
         (void)colony.ops.update_field(
             tess::DomainDesc::explicit_chunks(
                 std::span<const tess::ChunkKey>{&key, 1}),

@@ -46,7 +46,7 @@ class CountingAllocator {
   return x >= 0 && x < width && y >= 0 && y < height;
 }
 
-[[nodiscard]] auto coord(int x, int y) noexcept -> Coord3 { return {x, y, 0}; }
+[[nodiscard]] auto coord(int x, int y) noexcept -> Coord2 { return {x, y}; }
 
 [[nodiscard]] auto has_duration(
     const diagnostics::DiagnosticsSnapshot& snapshot,
@@ -100,12 +100,7 @@ DiagnosticsModel::DiagnosticsModel() {
 }
 
 void DiagnosticsModel::initialize_world() {
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
-      world_.field<PassableTag>(coord(x, y)) = true;
-      world_.field<TerrainTag>(coord(x, y)) = 0;
-    }
-  }
+  world_.fill_field<PassableTag>(true);
   for (int y = 0; y < height; ++y) {
     if (y != 5 && y != 18) {
       world_.field<PassableTag>(coord(width / 3, y)) = false;

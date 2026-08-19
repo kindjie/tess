@@ -57,13 +57,14 @@ dimensions; both are `tess::Extent3` values.
 
 <!-- tess-snippet: getting-shape source=examples/documentation.cc -->
 ```cpp
-using Shape = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
+using Shape = tess::Shape<tess::Extent3{32, 32}, tess::Extent3{8, 8}>;
 ```
 <!-- /tess-snippet -->
 
-One model covers 2D (`z = 1`), vertical cross-sections (`y = 1`), and
-full 3D - degenerate axes cost nothing. All world-space APIs use signed
-`tess::Coord3` coordinates.
+One model covers 2D (`z` defaults to `1`), vertical cross-sections (`y = 1`),
+and full 3D - degenerate axes cost nothing. Tess stores canonical signed
+`tess::Coord3` coordinates; ordinary top-down APIs also accept a
+`tess::Coord2` and lift it to the `z = 0` plane.
 
 - Architecture: [`architecture/shape.md`](architecture/shape.md)
 - Example: `examples/ant_farm_vertical.cc` (a degenerate-axis x-z world)
@@ -120,11 +121,14 @@ For setup and single-threaded code, write fields directly:
 
 <!-- tess-snippet: getting-direct-write source=examples/documentation.cc -->
 ```cpp
-world.field<PassableTag>(tess::Coord3{4, 2, 0}) = 1;
+world.field<PassableTag>(tess::Coord2{4, 2}) = 1;
 ```
 <!-- /tess-snippet -->
 
-Simulation-time edits should instead go through queued operations: a
+For bulk setup in a dense world, `world.fill_field<PassableTag>(1)` assigns
+one value to every tile. Like direct `field()` writes, it does not implicitly
+mark chunks dirty or advance their content versions. Simulation-time edits
+should instead go through queued operations: a
 `tess::FrameOps` collects declared edits (domain, touched fields, dirty
 mask, write policy), `tess::plan_operations` validates them into a
 conflict-checked plan, and `tess::execute_plan` runs the writes through
