@@ -34,7 +34,7 @@ template <typename World, typename PassableTag>
     const auto consider = [&](ChunkCoord3 next_chunk) {
       auto portal = Coord3{};
       auto scan_tiles = std::size_t{0};
-      if (!best_chunk_portal<World, PassableTag>(
+      if (!memoized_chunk_portal<World, PassableTag>(
               world, current_chunk, next_chunk, current, request.goal, portal,
               &scan_tiles)) {
         result.scan_tiles += scan_tiles;
@@ -111,6 +111,12 @@ template <typename World, typename PassableTag>
       std::array{Axis::Z, Axis::X, Axis::Y},
       std::array{Axis::Z, Axis::Y, Axis::X},
   };
+
+  // Opens the memo for this selection and closes it however the
+  // selection exits. A nested selection — reachable through a
+  // user-supplied passability predicate — bypasses the memo rather than
+  // sharing its generation, because the key omits the goal.
+  const detail::PortalMemoScope memo_scope{detail::active_portal_memo()};
 
   auto found_route = false;
   auto best_score = std::numeric_limits<std::uint32_t>::max();

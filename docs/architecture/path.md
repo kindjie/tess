@@ -650,6 +650,20 @@ segment with weighted A*. The greedy candidate can interleave progress axes
 instead of exhausting one axis before the next. The builder still does not
 search non-Manhattan chunk routes or prove global portal optimality.
 
+The seven candidates overlap: they re-walk the same chunk seams from the
+same tile, measured at roughly two thirds of all seam queries in the
+profiled portal workloads. Selection therefore memoizes each query for
+the duration of one selection, keyed on the tile the walk arrives from
+and the signed direction of the step. The goal is not part of the key
+because it is invariant across a selection, so a generation stamp
+retires every entry when the next selection begins, and a nested
+selection — reachable when a caller supplies its own passability
+predicate — bypasses the memo rather than sharing that generation. The
+memo retains nothing between selections and needs no invalidation: the
+world cannot change while one runs. It changes no route, but
+`portal_scan_tiles` falls accordingly, because the skipped scans do not
+happen.
+
 `WeightedPortalSegmentCache` can reuse previously verified segment paths for
 repeated supplied-waypoint portal builds. Cached hits avoid A* expansion for
 the segment, but still rebuild the route-product path and dependencies.
