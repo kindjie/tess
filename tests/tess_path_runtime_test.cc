@@ -72,9 +72,10 @@ TEST(TessPathRuntime, CheckedTicketLookupRequiresPublishedResults) {
 
   const auto results = runtime.process_unit_cached<World, PassableTag>(world);
   ASSERT_EQ(results.size(), 1u);
-  ASSERT_TRUE(runtime.try_result(ticket).has_value());
-  EXPECT_EQ(runtime.try_result(ticket)->status, tess::PathStatus::Found);
-  EXPECT_EQ(runtime.try_result(ticket)->path.size(), 2u);
+  const auto checked = runtime.try_result(ticket);
+  ASSERT_TRUE(checked.has_value());
+  EXPECT_EQ(checked.value().status, tess::PathStatus::Found);
+  EXPECT_EQ(checked.value().path.size(), 2u);
 
   runtime.clear_requests();
   EXPECT_FALSE(runtime.try_result(ticket).has_value());

@@ -277,6 +277,7 @@ TEST(TessFailFastDeathTest, ScheduleRejectsReentrantRun) {
 TEST(TessFailFastDeathTest, ScheduleRejectsBackgroundOverreport) {
   tess::Schedule schedule;
   const auto desc = tess::ScheduleTaskDesc{
+      .name = {},
       .cadence = tess::Cadence::background(tess::BackgroundBudget{1})};
   const auto id = schedule.add_task(desc, nullptr, overreported_background);
   schedule.request_run(id);
@@ -320,7 +321,7 @@ TEST(TessFailFastDeathTest, QueueRejectsAccountingRebindWithRetainedWork) {
                "set_flow_accounting requires an empty queue");
 }
 
-enum class ReentrantQueueOperation {
+enum class ReentrantQueueOperation : std::uint8_t {
   Advance,
   ObserveTick,
   Reserve,
