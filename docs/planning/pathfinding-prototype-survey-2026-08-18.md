@@ -162,52 +162,36 @@ wins and only as a separate experiment.
 
 ## Source map
 
-These references motivate experiments or provide external oracles; none is a
-dependency recommendation.
+These primary papers motivate experiments or provide external oracles; none is
+a dependency recommendation. Select and pin any implementation reference only
+inside the bounded prototype that needs it, after license review.
 
 - Portal hierarchy and indexing:
-  [QuadtreePathfinding](https://github.com/hit9/QuadtreePathfinding),
-  [Recast/Detour](https://github.com/recastnavigation/recastnavigation), and
-  [ENLSVG](https://github.com/Ohohcakester/ENLSVG-Pathfinding).
-- PIBT tie-breaking: the
-  [reference implementation](https://github.com/HirokiNagai-39/pibt-tiebreaking)
+  [ENLSVG](https://arxiv.org/abs/1702.01524).
+- PIBT tie-breaking:
+  [Lightweight and Effective Preference Construction in PIBT](https://ojs.aaai.org/index.php/SOCS/article/view/35982).
+- JPS:
+  [Online Graph Pruning for Pathfinding on Grid Maps](https://ojs.aaai.org/index.php/AAAI/article/view/7994)
   and
-  [hindrance/regret paper](https://ojs.aaai.org/index.php/SOCS/article/view/35982).
-  The small [LaCAM](https://github.com/Kei18/lacam0) implementation is a
-  secondary reference for PIBT refinements.
-- Resumable work controls:
-  [Leopard-C/PathFinding](https://github.com/Leopard-C/PathFinding)
-  and [RRTPlanner](https://github.com/naiveHobo/RRTPlanner) demonstrate explicit
-  stop or work-budget controls, not algorithms Tess should adopt.
-- JPS: the
-  [original paper](https://ojs.aaai.org/index.php/AAAI/article/view/7994),
-  [Improving JPS](https://ojs.aaai.org/index.php/ICAPS/article/view/13633),
-  [cJumpPointSearch](https://github.com/Bio2hazard/cJumpPointSearch), and
-  [fudge_pathfinding](https://github.com/silmerusse/fudge_pathfinding).
+  [Improving Jump Point Search](https://ojs.aaai.org/index.php/ICAPS/article/view/13633).
 - Execution uncertainty:
-  [Causal-PIBT](https://ojs.aaai.org/index.php/AAAI/article/view/17347),
-  [time-independent planning](https://github.com/Kei18/time-independent-planning),
-  [Agile MAPF](https://github.com/proroklab/agile-mapf), and
-  [SMART](https://github.com/smart-mapf/smart).
-- Fungible targets: [TSWAP](https://github.com/Kei18/tswap) and its
-  [paper](https://arxiv.org/abs/2109.04264).
-- Conflict-local temporal planning and oracles:
-  [bwwu/MAPF](https://github.com/bwwu/MAPF),
-  [MAPF-IR](https://kei18.github.io/mapf-IR/),
-  [CBS](https://github.com/baharsevket/Conflict-Based-Search-for-Multi-Agent-Pathfinding),
-  [w9-pathfinding](https://github.com/andreyd41/w9-pathfinding), and
-  [BCP-MAPF-CPP](https://github.com/lijucheng809/BCP-MAPF-CPP).
+  [Time-Independent Planning for Multiple Moving Agents](https://ojs.aaai.org/index.php/AAAI/article/view/17347),
+  [Agile Multi-Agent Path Finding](https://www.nature.com/articles/s44182-026-00083-2),
+  and [SMART](https://arxiv.org/abs/2503.04798).
+- Fungible targets:
+  [Solving Simultaneous Target Assignment and Path Planning Efficiently with
+  Time-Independent Execution](https://arxiv.org/abs/2109.04264).
+- Conflict-local temporal planning and optimal oracles:
+  [Cooperative A*](https://ojs.aaai.org/index.php/AIIDE/article/view/18726),
+  [Conflict-Based Search](https://tzin.bgu.ac.il/~felner/2015/CBSjur.pdf),
+  [iterative refinement](https://arxiv.org/abs/2102.12331), and
+  [branch-cut-and-price MAPF](https://www.ijcai.org/proceedings/2019/179).
 - Clearance and continuous duration:
-  [AA-SIPP-m](https://github.com/PathPlanning/AA-SIPP-m)
-  and its [paper](https://ojs.aaai.org/index.php/ICAPS/article/view/13856).
+  [AA-SIPP-m](https://ojs.aaai.org/index.php/ICAPS/article/view/13856).
 - Broader references with deliberately limited transfer:
-  [Lazy Theta*](https://github.com/lapinozz/Lazy-Theta-with-optimization-any-angle-pathfinding),
-  [LaCAM*](https://github.com/Kei18/lacam2),
-  [large-scale LaCAM](https://github.com/Kei18/lacam3),
-  [LaGAT](https://github.com/proroklab/lagat),
-  [Flow-Field-PathFinding](https://github.com/ChirlChen/Flow-Field-PathFinding),
-  [collaborative A*](https://github.com/yge58/collaborative_a_star_pathfinding),
-  and [Tactical-Pathfinding](https://github.com/ngiani/Tactical-Pathfinding).
+  [Lazy Theta*](https://ojs.aaai.org/index.php/AAAI/article/view/7566),
+  [LaCAM*](https://arxiv.org/abs/2305.03632), and
+  [large-scale LaCAM](https://ifaamas.csc.liv.ac.uk/Proceedings/aamas2024/pdfs/p1501.pdf).
 
 ## Explicit deferrals
 
