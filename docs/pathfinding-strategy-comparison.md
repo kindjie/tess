@@ -183,7 +183,7 @@ Run the comparison on the target machine:
 cmake --preset bench
 cmake --build --preset bench --target tess_bench
 ./build/bench/bench/tess_bench \
-  --benchmark_filter='path/.*batch_100_.*' \
+  --benchmark_filter='path/.*batch(_planner)?_100_.*' \
   --benchmark_min_time=1s \
   --benchmark_repetitions=10 \
   --benchmark_report_aggregates_only=true
