@@ -98,6 +98,15 @@ if(BUILD_TESTING)
   set(traffic_model_labels
     "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
   )
+  # The exhaustive funnel oracle exceeded 600 seconds on hosted Linux ASan.
+  # Keep the tighter hung-test bound for every other configuration.
+  set(traffic_funnel_timeout 600)
+  if(TESS_ENABLE_SANITIZERS)
+    string(REPLACE "," ";" traffic_sanitizer_list "${TESS_SANITIZERS}")
+    if("address" IN_LIST traffic_sanitizer_list)
+      set(traffic_funnel_timeout 1200)
+    endif()
+  endif()
   add_test(
     NAME tess_web_traffic_catalog
     COMMAND tess_web_traffic_model --self-check-catalog
@@ -128,7 +137,7 @@ if(BUILD_TESTING)
   )
   set_tests_properties(tess_web_traffic_funnel PROPERTIES
     LABELS "${traffic_model_labels};config:tsan-exempt"
-    TIMEOUT 600
+    TIMEOUT ${traffic_funnel_timeout}
   )
   add_test(
     NAME tess_web_traffic_multi_gate

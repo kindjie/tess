@@ -699,8 +699,42 @@ def test_traffic_lab_self_checks_are_sliced_by_scenario():
   assert "tess_web_traffic_shuffled_crossing PROPERTIES" in cmake
   assert "tess_web_traffic_funnel PROPERTIES" in cmake
   assert "tess_web_traffic_multi_gate PROPERTIES" in cmake
-  assert "TIMEOUT 600" in cmake
-  assert "TIMEOUT 300" in cmake
+  traffic_tests = {
+    "tess_web_traffic_catalog",
+    "tess_web_traffic_aligned",
+    "tess_web_traffic_shuffled_crossing",
+    "tess_web_traffic_funnel",
+    "tess_web_traffic_multi_gate",
+  }
+  property_blocks = {
+    name: cmake.split(
+      f"set_tests_properties({name} PROPERTIES", 1
+    )[1].split("\n  )", 1)[0]
+    for name in traffic_tests
+  }
+  assert (
+    'set(traffic_funnel_timeout 600)\n'
+    '  if(TESS_ENABLE_SANITIZERS)\n'
+    '    string(REPLACE "," ";" traffic_sanitizer_list '
+    '"${TESS_SANITIZERS}")\n'
+    '    if("address" IN_LIST traffic_sanitizer_list)\n'
+    '      set(traffic_funnel_timeout 1200)\n'
+    "    endif()\n"
+    "  endif()"
+  ) in traffic_cmake
+  assert (
+    property_blocks["tess_web_traffic_funnel"].count(
+      "TIMEOUT ${traffic_funnel_timeout}"
+    ) == 1
+  )
+  assert "TIMEOUT 300" not in property_blocks["tess_web_traffic_funnel"]
+  assert (
+    property_blocks["tess_web_traffic_multi_gate"].count("TIMEOUT 300") == 1
+  )
+  assert (
+    "TIMEOUT ${traffic_funnel_timeout}"
+    not in property_blocks["tess_web_traffic_multi_gate"]
+  )
   assert (
     'set(traffic_model_labels\n'
     '    "target:tess_web_traffic_model;subsystem:path;subsystem:sim"\n'
@@ -711,18 +745,8 @@ def test_traffic_lab_self_checks_are_sliced_by_scenario():
     'LABELS "${traffic_model_labels};config:tsan-exempt"'
   ) == 2
 
-  traffic_tests = {
-    "tess_web_traffic_catalog",
-    "tess_web_traffic_aligned",
-    "tess_web_traffic_shuffled_crossing",
-    "tess_web_traffic_funnel",
-    "tess_web_traffic_multi_gate",
-  }
   tsan_exempt = set()
-  for name in traffic_tests:
-    block = cmake.split(
-      f"set_tests_properties({name} PROPERTIES", 1
-    )[1].split("\n  )", 1)[0]
+  for name, block in property_blocks.items():
     if "config:tsan-exempt" in block:
       tsan_exempt.add(name)
   assert tsan_exempt == {

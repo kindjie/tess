@@ -10,7 +10,9 @@
   compile-time shape, deterministic scenarios, bounded planning, cached
   terrain, diagnostics, real-browser interaction/layout harness, bounded
   browser measurement, scenario-sharded native self-check registration, and
-  the exact TSan exemption boundary for serial-only guided checks. The full
+  the exact TSan exemption boundary for serial-only guided checks. The
+  exhaustive funnel oracle retains a 600-second bound normally and a scoped
+  1,200-second ASan bound; multi-gate remains at 300 seconds. The full
   correctness evidence remains blocking in the other compiler and sanitizer
   gates. It also pins the native percentile campaign seam without making
   wall-clock timing authoritative. It covers the comparison article's
