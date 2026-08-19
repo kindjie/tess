@@ -302,6 +302,9 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
 
   assert "std::array<PathPoint, path_capacity>" in model_header
   assert "std::optional" in model_header
+  assert "enum class StrategyKind : std::uint8_t" in model_header
+  assert "enum class BrowserPathStatus : std::uint8_t" in model_header
+  assert "static_cast<std::size_t>(y) *" in model
   assert "verify_copied_paths_after_scratch_reuse" in native
   assert "verify_obstacle_map" in native
   assert "verify_invalid_checked_reads" in native

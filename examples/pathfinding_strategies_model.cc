@@ -322,7 +322,9 @@ auto StrategyModel::cell_passable(std::int32_t x, std::int32_t y) const noexcept
   if (x < 0 || x >= width || y < 0 || y >= height) {
     return std::nullopt;
   }
-  const auto index = static_cast<std::size_t>(y * width + x);
+  const auto index =
+      static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+      static_cast<std::size_t>(x);
   return passable_[index] != 0U;
 }
 

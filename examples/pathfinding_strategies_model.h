@@ -14,14 +14,14 @@ inline constexpr std::size_t request_capacity = 3;
 inline constexpr std::size_t path_capacity =
     static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
 
-enum class StrategyKind : std::int32_t {
+enum class StrategyKind : std::uint8_t {
   IndependentAstar = 0,
   ExactRouteCache = 1,
   WeightedBatch = 2,
   DistanceField = 3,
 };
 
-enum class BrowserPathStatus : std::int32_t {
+enum class BrowserPathStatus : std::uint8_t {
   Found = 1,
   InvalidStart = 2,
   InvalidGoal = 3,
