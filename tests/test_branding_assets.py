@@ -483,7 +483,15 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   # decides admission, and JavaScript persists only requests it accepted.
   assert "world.field<OccupancyTag>(coord)" in model
   assert "occupied wall request was accepted" in native
-  assert "if (api.setWall(x, y) === 1)" in app
+  assert "set_wall(int x, int y, bool built)" in model_header
+  assert "api.setWall(x, y, built ? 1 : 0)" in app
+  assert "const rememberedWalls = Array.from(walls)" in app
+  assert "api.setWall(key % width, Math.floor(key / width), 1) === 1" in app
+  assert "strokeBuilt = !walls.has" in app
+  assert "paintLine(lastCell, at, strokeBuilt)" in app
+  assert "Drag open space to draw; drag from a wall to erase." in html
+  assert "wall removal did not recover route" in native
+  assert "idempotent add rebuilt topology" in native
 
   # A durable verdict is decided by search, not by a retry clock, so the
   # page cannot report a merely congested convoy as permanently stuck. Three
@@ -571,6 +579,102 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   assert "class ColonyModel" in model_header
   assert "run_native_self_check" not in model_header
   assert "run_native_self_check" in native
+
+
+def test_traffic_lab_has_large_grid_diagnostics_and_browser_evidence():
+  header = read("examples/web_traffic/traffic_model.h")
+  model = read("examples/web_traffic/traffic_model.cc")
+  native = read("examples/web_traffic/traffic_native.cc")
+  wasm = read("examples/web_traffic/traffic_wasm.cc")
+  html = read("examples/web_traffic/site/index.html")
+  app = read("examples/web_traffic/site/app.js")
+  style = read("examples/web_traffic/site/style.css")
+  cmake = read("examples/CMakeLists.txt")
+  build = read("tools/build_web_demo.sh")
+  pages = read(".github/workflows/pages.yml")
+  browser_test = read("tools/test_web_demo_interactions.py")
+  measurement = read("tools/measure_traffic_lab.py")
+
+  assert "traffic_width = 1024" in header
+  assert "traffic_height = 512" in header
+  assert "traffic_agents = 1024" in header
+  for scenario in ("Aligned", "ShuffledCrossing", "Funnel", "MultiGate"):
+    assert scenario in header
+  for name in ("aligned", "shuffled-crossing", "funnel", "multi-gate"):
+    assert name in native
+  assert "kSearchBudget = 8" in model
+  assert "first.max_planning_queries() != 8" in native
+  assert "scenario is not deterministic" in native
+  assert "estimated_memory_bytes" in header
+  assert "planning_queries_last_tick" in header
+  assert "planning_touched_nodes_last_tick" in header
+  assert '"--samples"' in native
+  assert '"--profile-repetitions"' in native
+
+  # Measurement-grade timing stays in the example harness. The native tool
+  # emits one fixed-tick row, while the campaign runner owns fresh processes,
+  # percentile sample floors, and advisory artifacts.
+  assert "PERCENTILE_MINIMUMS" in measurement
+  assert '"p99": 2000' in measurement
+  assert "subprocess.run" in measurement
+  assert '"authority": "advisory"' in measurement
+
+  assert "tess_web_traffic_model" in cmake
+  assert "tess_web_traffic_diagnostics_model" in cmake
+  assert "TESS_ENABLE_DIAGNOSTICS" in cmake
+  assert "tess_web_traffic_wasm_adapter" in cmake
+  assert "traffic_model.cc" in build
+  assert "traffic_wasm.cc" in build
+  assert "createTessTraffic" in build
+  for metric in (
+    "planning_us",
+    "planning_queries",
+    "fixed_ticks",
+    "planning_pending",
+    "advanced",
+    "waits",
+    "blocked",
+    "one_progress_streak",
+    "longest_one_progress_streak",
+  ):
+    assert f"tess_traffic_{metric}" in wasm
+    assert f"_tess_traffic_{metric}" in build
+
+  assert 'width="1024" height="512"' in html
+  assert "aspect-ratio: 2 / 1" in style
+  assert "const terrainLayer = document.createElement('canvas')" in app
+  assert "terrainCtx.putImageData" in app
+  assert "ctx.drawImage(terrainLayer" in app
+  for label in (
+    "C++ update",
+    "planning",
+    "render",
+    "frame",
+    "waits",
+    "blocked",
+    "one-agent streak",
+  ):
+    assert label in app
+
+  assert "new URLSearchParams(window.location.search)" in app
+  assert "measure=1" in app
+  assert "Float64Array" in app
+  assert "if (this.count === this.capacity)" in app
+  assert "% this.capacity" not in app
+  assert "maximum: values.length > 0" in app
+  assert "window.tessTrafficMetrics" in app
+  assert "fixedTicksLastCall" in app
+  assert "Snapshot latency" in html
+  assert "measurement-output" in app
+
+  assert "tools/test_web_demo_interactions.py" in pages
+  assert "open-cell click did not add a wall" in browser_test
+  assert "draw stroke changed mode" in browser_test
+  assert "fast drag did not interpolate" in browser_test
+  assert "1366, 768" in browser_test
+  assert "1920, 1080" in browser_test
+  assert "Traffic Lab measurement mode did not collect samples" in browser_test
+  assert "Traffic Lab measurement snapshot was not readable" in browser_test
 
 
 def test_wasm_diagnostics_demo_has_real_accessible_integration_contract():

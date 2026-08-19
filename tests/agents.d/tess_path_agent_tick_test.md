@@ -15,5 +15,9 @@
   ticks preserve the retry budget, while boxed-in goals under the legacy policy
   eventually become terminal and stop consuming processing. Weighted drains
   can derive deterministic per-agent equal-cost tie seeds without changing the
-  bounded FIFO contract. A warm clean tick must still advance every agent while
-  allocating nothing and skipping path processing.
+  bounded FIFO contract. The generic callback drain owns only queue and agent
+  lifecycle: it copies borrowed results immediately, commits earlier FIFO
+  entries across a later callback exception, leaves the throwing entry intact,
+  and stays allocation-free after caller reservation. A warm clean tick must
+  still advance every agent while allocating nothing and skipping path
+  processing.

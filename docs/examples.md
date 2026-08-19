@@ -69,10 +69,49 @@ cmake --build --preset examples
   composition compiled to WebAssembly. Its model, Wasm adapter, native
   self-check, browser controller, and page are separate so the library
   patterns are visible without platform glue interrupting them.
+- [`web_traffic`][web_traffic_src] — the source of the
+  [Traffic Lab](https://tess.owx.dev/demo/traffic/): a deterministic
+  1024×512 congestion overview with static terrain caching, separately
+  rendered agents, and an eight-search planning budget. Static barrier
+  scenarios supply their known gate crossings to exact weighted segments;
+  open scenarios retain direct weighted A*.
 - [`sparse_stream.cc`][sparse_stream] — budget-bounded sparse residency:
   a 1,024-chunk world held to a 16-page budget (64x less resident field
   storage), and a path query that reports `Indeterminate` until the
   missing bridge chunk is streamed in and the retry succeeds.
+
+### Measuring Traffic Lab
+
+The native runner can emit one row per fixed tick without formatting inside
+the measured loop. The campaign tool launches a fresh process per repetition,
+retains raw samples, and suppresses p50, p95, or p99 until it has respectively
+20, 200, or 2,000 samples:
+
+```sh
+cmake --preset release
+cmake --build --preset release --target tess_web_traffic_model
+tools/measure_traffic_lab.py \
+  --binary build/release/examples/tess_web_traffic_model \
+  --ticks 128 --repetitions 16 --output /tmp/traffic-lab.json
+```
+
+Timing artifacts are advisory. Detailed work attribution is a separate pass;
+build `tess_web_traffic_diagnostics_model` and pass `--counter-pass` to the
+same tool. It fails closed if an instrumented binary is used for timing or an
+uninstrumented binary is used for counters.
+
+Running `tess_web_traffic_model` without arguments performs the native
+acceptance check. It exhaustively compares every guided barrier route with
+direct weighted A*, then verifies deterministic 512- and 1,600-tick crowd
+checkpoints. Debug builds take materially longer because the oracle
+intentionally reproduces the former full-map searches.
+
+Browser capture is also opt-in: append `?measure=1` to the Traffic Lab URL,
+then use **Snapshot latency** or call
+`window.tessTrafficMetrics.snapshot()` in the developer console.
+The bounded 4,096-sample capture keeps update/planning, render, and JavaScript
+frame-callback distributions separate and records catch-up frames. Normal
+previews retain only the inexpensive live exponential averages.
 
 ## Colony tutorial map
 
@@ -110,6 +149,7 @@ The fractional coordinates never return to simulation state.
 [ant_farm]: https://github.com/kindjie/tess/blob/main/examples/ant_farm_vertical.cc
 [sparse_stream]: https://github.com/kindjie/tess/blob/main/examples/sparse_stream.cc
 [web_colony_src]: https://github.com/kindjie/tess/tree/main/examples/web_colony
+[web_traffic_src]: https://github.com/kindjie/tess/tree/main/examples/web_traffic
 [custom_ecs]: https://github.com/kindjie/tess/blob/main/examples/custom_ecs_min.cc
 [entt_pawns]: https://github.com/kindjie/tess/blob/main/examples/entt_pawns.cc
 [flecs_pawns]: https://github.com/kindjie/tess/blob/main/examples/flecs_pawns.cc

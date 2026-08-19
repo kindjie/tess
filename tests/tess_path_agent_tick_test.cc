@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -837,6 +838,200 @@ TEST(TessPathAgentTick, ReplanQueueBoundsExactPlanningAcrossTicks) {
   EXPECT_TRUE(queue.empty());
   EXPECT_EQ(agents[2].phase, tess::PathAgentPhase::Following);
   EXPECT_FALSE(routes.routes[2].empty());
+}
+
+TEST(TessPathAgentTick, CustomReplanQueueOwnsLifecycleButNotPathSemantics) {
+  std::array<tess::PathAgentState, 7> storage{};
+  for (std::size_t i = 0; i < storage.size(); ++i) {
+    storage[i].position = {0, static_cast<std::int64_t>(i), 0};
+    tess::set_path_agent_goal(storage[i], {2, static_cast<std::int64_t>(i), 0});
+  }
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(storage.size());
+  tess::PathAgentReplanQueue queue;
+  queue.reserve(storage.size());
+  queue.request_all(storage);
+
+  storage[0].has_goal = false;
+  storage[1].phase = tess::PathAgentPhase::Unreachable;
+  storage[2].position = storage[2].goal;
+  storage[3].phase = tess::PathAgentPhase::Blocked;
+  storage[3].blocked_retries = 4;
+  auto agents = std::span<tess::PathAgentState>{storage}.first(6);
+  auto callback_order = std::vector<std::size_t>{};
+  auto borrowed = std::array<tess::Coord3, 3>{};
+  auto search = [&](std::size_t index, tess::PathRequest request) {
+    callback_order.push_back(index);
+    borrowed = {
+        request.start, {1, static_cast<std::int64_t>(index), 0}, request.goal};
+    if (index == 4) {
+      return tess::PathResult{.status = tess::PathStatus::InvalidGoal};
+    }
+    return tess::PathResult{
+        .status = tess::PathStatus::Found,
+        .cost = 2,
+        .path = tess::PathView{std::span<const tess::Coord3>{borrowed}},
+    };
+  };
+
+  auto stats =
+      tess::process_path_agent_replans(agents, routes, queue, 2, search);
+
+  EXPECT_EQ(callback_order, (std::vector<std::size_t>{3, 4}));
+  EXPECT_EQ(stats.submitted, 2u);
+  EXPECT_EQ(stats.completed, 2u);
+  EXPECT_EQ(stats.found, 1u);
+  EXPECT_EQ(stats.invalid_goal, 1u);
+  EXPECT_EQ(stats.arrived, 1u);
+  EXPECT_EQ(queue.pending(), 2u);
+  EXPECT_FALSE(storage[2].has_goal);
+  EXPECT_EQ(storage[3].phase, tess::PathAgentPhase::Following);
+  EXPECT_EQ(storage[3].blocked_retries, 4u);
+  EXPECT_EQ(routes.routes[3],
+            (std::vector<tess::Coord3>{{0, 3, 0}, {1, 3, 0}, {2, 3, 0}}));
+  EXPECT_EQ(storage[4].phase, tess::PathAgentPhase::Blocked);
+  EXPECT_EQ(storage[4].status, tess::PathStatus::InvalidGoal);
+  EXPECT_TRUE(routes.routes[4].empty());
+
+  stats = tess::process_path_agent_replans(agents, routes, queue, 1, search);
+  EXPECT_EQ(stats.found, 1u);
+  EXPECT_EQ(callback_order, (std::vector<std::size_t>{3, 4, 5}));
+  EXPECT_EQ(routes.routes[3],
+            (std::vector<tess::Coord3>{{0, 3, 0}, {1, 3, 0}, {2, 3, 0}}));
+  EXPECT_EQ(routes.routes[5],
+            (std::vector<tess::Coord3>{{0, 5, 0}, {1, 5, 0}, {2, 5, 0}}));
+
+  stats = tess::process_path_agent_replans(agents, routes, queue, 1, search);
+  EXPECT_EQ(stats.submitted, 0u);
+  EXPECT_TRUE(queue.empty());
+}
+
+#if TESS_HAS_EXCEPTIONS
+TEST(TessPathAgentTick, CustomReplanExceptionCommitsOnlyEarlierItems) {
+  std::array<tess::PathAgentState, 2> agents{};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    agents[i].position = {0, static_cast<std::int64_t>(i), 0};
+    tess::set_path_agent_goal(agents[i], {1, static_cast<std::int64_t>(i), 0});
+    agents[i].phase = tess::PathAgentPhase::Blocked;
+    agents[i].blocked_retries = static_cast<std::uint32_t>(i + 3);
+  }
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(agents.size());
+  routes.routes[1] = {{9, 9, 0}};
+  tess::PathAgentReplanQueue queue;
+  queue.request_all(agents);
+  const auto second_before = agents[1];
+  const auto route_before = routes.routes[1];
+  const auto first_path =
+      std::array<tess::Coord3, 2>{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}};
+
+  EXPECT_THROW(
+      (void)tess::process_path_agent_replans(
+          agents, routes, queue, agents.size(),
+          [&](std::size_t index, tess::PathRequest) -> tess::PathResult {
+            if (index == 1) {
+              throw std::runtime_error{"search failed"};
+            }
+            return {
+                .status = tess::PathStatus::Found,
+                .cost = 1,
+                .path =
+                    tess::PathView{std::span<const tess::Coord3>{first_path}},
+            };
+          }),
+      std::runtime_error);
+
+  EXPECT_EQ(queue.pending(), 1u);
+  ASSERT_EQ(queue.front(), 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Following);
+  EXPECT_EQ(routes.routes[0],
+            (std::vector<tess::Coord3>{{0, 0, 0}, {1, 0, 0}}));
+  EXPECT_EQ(agents[1].position, second_before.position);
+  EXPECT_EQ(agents[1].goal, second_before.goal);
+  EXPECT_EQ(agents[1].phase, second_before.phase);
+  EXPECT_EQ(agents[1].status, second_before.status);
+  EXPECT_EQ(agents[1].blocked_retries, second_before.blocked_retries);
+  EXPECT_EQ(routes.routes[1], route_before);
+}
+#endif
+
+TEST(TessPathAgentTick, CustomReplanAppliesEveryPathStatus) {
+  constexpr std::array statuses{
+      tess::PathStatus::Found,         tess::PathStatus::InvalidStart,
+      tess::PathStatus::InvalidGoal,   tess::PathStatus::NoPath,
+      tess::PathStatus::Indeterminate, tess::PathStatus::CostOverflow,
+  };
+  std::array<tess::PathAgentState, statuses.size()> agents{};
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(agents.size());
+  tess::PathAgentReplanQueue queue;
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    agents[i].position = {0, static_cast<std::int64_t>(i), 0};
+    tess::set_path_agent_goal(agents[i], {1, static_cast<std::int64_t>(i), 0});
+  }
+  queue.request_all(agents);
+  const auto found_path =
+      std::array<tess::Coord3, 2>{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}};
+
+  const auto stats = tess::process_path_agent_replans(
+      agents, routes, queue, agents.size(),
+      [&](std::size_t index, tess::PathRequest) {
+        return tess::PathResult{
+            .status = statuses[index],
+            .cost = statuses[index] == tess::PathStatus::Found ? 1U : 0U,
+            .path =
+                statuses[index] == tess::PathStatus::Found
+                    ? tess::PathView{std::span<const tess::Coord3>{found_path}}
+                    : tess::PathView{},
+        };
+      });
+
+  EXPECT_EQ(stats.submitted, statuses.size());
+  EXPECT_EQ(stats.completed, statuses.size());
+  EXPECT_EQ(stats.found, 1u);
+  EXPECT_EQ(stats.invalid_start, 1u);
+  EXPECT_EQ(stats.invalid_goal, 1u);
+  EXPECT_EQ(stats.no_path, 1u);
+  EXPECT_EQ(stats.indeterminate, 1u);
+  EXPECT_EQ(stats.cost_overflow, 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Following);
+  for (std::size_t i = 1; i < agents.size(); ++i) {
+    EXPECT_EQ(agents[i].phase, tess::PathAgentPhase::Blocked);
+    EXPECT_EQ(agents[i].status, statuses[i]);
+    EXPECT_TRUE(routes.routes[i].empty());
+  }
+}
+
+TEST(TessPathAgentTick, WarmCustomReplanQueueDrainDoesNotAllocate) {
+  std::array<tess::PathAgentState, 8> agents{};
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(agents.size());
+  tess::PathAgentReplanQueue queue;
+  queue.reserve(agents.size());
+  auto paths = std::array<std::array<tess::Coord3, 2>, 8>{};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto row = static_cast<std::int64_t>(i);
+    agents[i].position = {0, row, 0};
+    tess::set_path_agent_goal(agents[i], {1, row, 0});
+    routes.routes[i].reserve(2);
+    paths[i] = {agents[i].position, agents[i].goal};
+  }
+  queue.request_all(agents);
+
+  tess_test::ScopedAllocationCounter counter;
+  const auto stats = tess::process_path_agent_replans(
+      agents, routes, queue, agents.size(),
+      [&](std::size_t index, tess::PathRequest) {
+        return tess::PathResult{
+            .status = tess::PathStatus::Found,
+            .cost = 1,
+            .path = tess::PathView{std::span<const tess::Coord3>{paths[index]}},
+        };
+      });
+
+  EXPECT_EQ(stats.found, agents.size());
+  EXPECT_TRUE(queue.empty());
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessPathAgentTick, ReplanQueueCanDiversifyEqualCostWeightedRoutes) {

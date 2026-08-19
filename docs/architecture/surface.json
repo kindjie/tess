@@ -496,6 +496,7 @@
     "observe_path_agent_flow_tick",
     "path_agent_goal_outstanding",
     "prepare_path_agent_processing",
+    "process_path_agent_replans",
     "process_unit_path_agent_replans",
     "process_unit_path_agents",
     "process_weighted_path_agent_replans",

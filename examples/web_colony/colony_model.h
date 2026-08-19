@@ -26,7 +26,10 @@ class ColonyModel {
   ColonyModel(ColonyModel&&) = delete;
   auto operator=(ColonyModel&&) -> ColonyModel& = delete;
 
-  [[nodiscard]] auto queue_wall(int x, int y) -> bool;
+  [[nodiscard]] auto set_wall(int x, int y, bool built) -> bool;
+  [[nodiscard]] auto queue_wall(int x, int y) -> bool {
+    return set_wall(x, y, true);
+  }
   void set_replan_each_tick(bool enabled) noexcept;
   void set_spread_congested_routes(bool enabled) noexcept;
   [[nodiscard]] auto tick(double dt_seconds) -> double;

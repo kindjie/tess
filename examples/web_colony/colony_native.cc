@@ -87,14 +87,14 @@ void print_native_scenario_usage() {
   auto accepted = std::size_t{0};
   if (scenario == "browser-guard" || scenario == "browser-incremental") {
     for (const auto& [x, y] : kEndpointGuardReproductionWalls) {
-      accepted += model.queue_wall(x, y) ? std::size_t{1} : std::size_t{0};
+      accepted += model.set_wall(x, y, true) ? std::size_t{1} : std::size_t{0};
     }
     return accepted;
   }
   if (scenario == "goal-wall") {
     for (auto y = 0; y < 96; ++y) {
-      accepted +=
-          model.queue_wall(kWidth - 19, y) ? std::size_t{1} : std::size_t{0};
+      accepted += model.set_wall(kWidth - 19, y, true) ? std::size_t{1}
+                                                       : std::size_t{0};
     }
     return accepted;
   }
@@ -107,7 +107,7 @@ void print_native_scenario_usage() {
                               (y >= 80 && y < 88) || (y >= 112 && y < 120))
                           : false;
     if (wall) {
-      accepted += model.queue_wall(64, y) ? std::size_t{1} : std::size_t{0};
+      accepted += model.set_wall(64, y, true) ? std::size_t{1} : std::size_t{0};
     }
   }
   return accepted;
@@ -142,7 +142,7 @@ void print_native_scenario_usage() {
       while (accepted_this_tick < kWallsPerTick &&
              incremental_walls_pending()) {
         const auto [x, y] = kEndpointGuardReproductionWalls[incremental_wall];
-        if (!model.queue_wall(x, y)) {
+        if (!model.set_wall(x, y, true)) {
           break;
         }
         ++accepted_this_tick;
@@ -336,6 +336,48 @@ auto run_native_self_check() -> int {
       return 1;
     }
 
+    // A wall landing on the next retained step invalidates that route in the
+    // same fixed tick. Removing it publishes a second topology revision and
+    // restores a found canonical route within the shared eight-search budget.
+    reset(1);
+    (void)demo->tick(0.05);
+    const auto& initial_route = impl().tick_state.routes.routes[0];
+    const auto initial_index = impl().agents[0].path_index;
+    if (initial_index + 1 >= initial_route.size()) {
+      std::cerr << "web colony model: retained route setup was incomplete\n";
+      return 1;
+    }
+    const auto retained_step = initial_route[initial_index + 1];
+    if (!demo->set_wall(static_cast<int>(retained_step.x),
+                        static_cast<int>(retained_step.y), true)) {
+      std::cerr << "web colony model: retained route wall was rejected\n";
+      return 1;
+    }
+    (void)demo->tick(0.05);
+    const auto rebuilds_with_wall = impl().topology_rebuilds;
+    const auto& detour = impl().tick_state.routes.routes[0];
+    if (!impl().world.field<ConstructionTag>(retained_step) ||
+        impl().agents[0].status != tess::PathStatus::Found ||
+        std::find(detour.begin() +
+                      static_cast<std::ptrdiff_t>(impl().agents[0].path_index),
+                  detour.end(), retained_step) != detour.end()) {
+      std::cerr << "web colony model: retained route crossed a new wall\n";
+      return 1;
+    }
+    if (!demo->set_wall(static_cast<int>(retained_step.x),
+                        static_cast<int>(retained_step.y), false)) {
+      std::cerr << "web colony model: retained route wall removal failed\n";
+      return 1;
+    }
+    (void)demo->tick(0.05);
+    if (impl().world.field<ConstructionTag>(retained_step) ||
+        impl().agents[0].status != tess::PathStatus::Found ||
+        impl().topology_rebuilds != rebuilds_with_wall + 1 ||
+        impl().max_planning_queries > kMaxPlanningQueriesPerTick) {
+      std::cerr << "web colony model: retained route did not recover\n";
+      return 1;
+    }
+
     // A browser wall request is an admission decision, not permission to
     // corrupt the movement state. Painting the occupied tile under a moving
     // agent must be rejected synchronously; after the agent vacates it, the
@@ -343,8 +385,8 @@ auto run_native_self_check() -> int {
     reset(1);
     (void)demo->tick(0.10);
     const auto occupied_tile = impl().agents[0].position;
-    if (demo->queue_wall(static_cast<int>(occupied_tile.x),
-                         static_cast<int>(occupied_tile.y))) {
+    if (demo->set_wall(static_cast<int>(occupied_tile.x),
+                       static_cast<int>(occupied_tile.y), true)) {
       std::cerr << "web colony model: occupied wall request was accepted\n";
       return 1;
     }
@@ -371,8 +413,8 @@ auto run_native_self_check() -> int {
       std::cerr << "web colony model: rejected wall changed the world\n";
       return 1;
     }
-    if (demo->queue_wall(static_cast<int>(occupied_tile.x),
-                         static_cast<int>(occupied_tile.y)) != 1) {
+    if (!demo->set_wall(static_cast<int>(occupied_tile.x),
+                        static_cast<int>(occupied_tile.y), true)) {
       std::cerr << "web colony model: vacated wall request was rejected\n";
       return 1;
     }
@@ -380,6 +422,38 @@ auto run_native_self_check() -> int {
     if (impl().world.field<PassableTag>(occupied_tile) ||
         !impl().world.field<ConstructionTag>(occupied_tile)) {
       std::cerr << "web colony model: accepted wall was not built\n";
+      return 1;
+    }
+
+    // Desired-state edits are idempotent and symmetric. Repeating an add or
+    // removal must be admitted without publishing a redundant topology
+    // revision, while a real removal must restore both passability and a
+    // retained route through the reopened tile.
+    const auto rebuilds_after_add = impl().topology_rebuilds;
+    if (!demo->set_wall(static_cast<int>(occupied_tile.x),
+                        static_cast<int>(occupied_tile.y), true)) {
+      std::cerr << "web colony model: idempotent wall add was rejected\n";
+      return 1;
+    }
+    (void)demo->tick(0.05);
+    if (impl().topology_rebuilds != rebuilds_after_add) {
+      std::cerr << "web colony model: idempotent add rebuilt topology\n";
+      return 1;
+    }
+    if (!demo->set_wall(static_cast<int>(occupied_tile.x),
+                        static_cast<int>(occupied_tile.y), false) ||
+        !demo->set_wall(static_cast<int>(occupied_tile.x),
+                        static_cast<int>(occupied_tile.y), false)) {
+      std::cerr << "web colony model: idempotent wall removal was rejected\n";
+      return 1;
+    }
+    (void)demo->tick(0.05);
+    if (!impl().world.field<PassableTag>(occupied_tile) ||
+        impl().world.field<ConstructionTag>(occupied_tile) ||
+        impl().shadow[shadow_index] != 0 ||
+        impl().topology_rebuilds != rebuilds_after_add + 1 ||
+        impl().agents[0].status != tess::PathStatus::Found) {
+      std::cerr << "web colony model: wall removal did not recover route\n";
       return 1;
     }
 

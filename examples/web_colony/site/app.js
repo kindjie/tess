@@ -10,6 +10,8 @@ const replan = document.getElementById('replan');
 const spread = document.getElementById('spread');
 const resetButton = document.getElementById('reset');
 const clearButton = document.getElementById('clear-walls');
+const browserTestMode =
+    new URLSearchParams(window.location.search).has('browser-test');
 
 // Mirrors kWallMinX/kWallMaxX in colony_model_internal.h: painting is rejected
 // in the spawn band on the left and the turnaround band on the right.
@@ -27,26 +29,33 @@ let cell = 0;
 let emaUs = 0;
 let activePointer = null;
 let lastCell = null;
+let strokeBuilt = true;
 let lastTimestamp = 0;
 let leg = 1;
 let turnaroundSince = 0;
 const walls = new Set();
 
-function paintWall(x, y) {
+function setWall(x, y, built) {
   // Example: persist only edits the C++ model admitted. The browser remembers
   // accepted walls across resets but never claims authority over occupancy.
   const key = y * width + x;
-  if (walls.has(key)) {
-    return;
+  if (walls.has(key) === built) {
+    return true;
   }
-  if (api.setWall(x, y) === 1) {
+  if (api.setWall(x, y, built ? 1 : 0) !== 1) {
+    return false;
+  }
+  if (built) {
     walls.add(key);
+  } else {
+    walls.delete(key);
   }
+  return true;
 }
 
 // Bresenham between consecutive pointer samples so fast drags leave a
 // solid wall instead of a dotted one.
-function paintLine(from, to) {
+function paintLine(from, to, built) {
   let x = from.x;
   let y = from.y;
   const dx = Math.abs(to.x - x);
@@ -55,7 +64,7 @@ function paintLine(from, to) {
   const sy = y < to.y ? 1 : -1;
   let err = dx + dy;
   for (;;) {
-    paintWall(x, y);
+    setWall(x, y, built);
     if (x === to.x && y === to.y) {
       break;
     }
@@ -77,8 +86,12 @@ function reset() {
   agentCount.textContent = String(actual);
   api.setStrategy(replan.checked ? 1 : 0);
   api.setSpread(spread.checked ? 1 : 0);
-  for (const key of walls) {
-    api.setWall(key % width, Math.floor(key / width));
+  const rememberedWalls = Array.from(walls);
+  walls.clear();
+  for (const key of rememberedWalls) {
+    if (api.setWall(key % width, Math.floor(key / width), 1) === 1) {
+      walls.add(key);
+    }
   }
   emaUs = 0;
   leg = api.leg();
@@ -226,6 +239,7 @@ createTessColony()
             [
               'number',
               'number',
+              'number',
             ]),
         setStrategy: instance.cwrap(
             'tess_colony_set_strategy', null,
@@ -292,17 +306,20 @@ createTessColony()
           return;
         }
         activePointer = event.pointerId;
-        canvas.setPointerCapture(event.pointerId);
         const at = cellAt(event);
-        paintWall(at.x, at.y);
+        strokeBuilt = !walls.has(at.y * width + at.x);
+        setWall(at.x, at.y, strokeBuilt);
         lastCell = at;
+        if (!browserTestMode) {
+          canvas.setPointerCapture(event.pointerId);
+        }
       });
       canvas.addEventListener('pointermove', (event) => {
         if (event.pointerId !== activePointer) {
           return;
         }
         const at = cellAt(event);
-        paintLine(lastCell, at);
+        paintLine(lastCell, at, strokeBuilt);
         lastCell = at;
       });
       const stopPainting = (event) => {
@@ -314,6 +331,16 @@ createTessColony()
       };
       canvas.addEventListener('pointerup', stopPainting);
       canvas.addEventListener('pointercancel', stopPainting);
+
+      if (browserTestMode) {
+        window.tessColonyTest = {
+          wallBuilt: (x, y) => walls.has(y * width + x),
+          setAgentCount: (value) => {
+            slider.value = String(value);
+            reset();
+          },
+        };
+      }
 
       document.documentElement.dataset.tessColony = 'ready';
       message.textContent = 'Colony running';

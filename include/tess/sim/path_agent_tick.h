@@ -304,7 +304,7 @@ struct PathAgentReplanOptions {
 };
 
 /**
- * Caller-owned FIFO of agent indices awaiting exact replanning.
+ * Caller-owned FIFO of agent indices awaiting replanning.
  *
  * Pending indices are deduplicated. Like retained routes and recovery
  * schedules, the queue is paired with the caller's agent-span indices;
@@ -398,17 +398,29 @@ class PathAgentReplanQueue {
   std::size_t head_ = 0;
 };
 
-namespace detail {
-
+/**
+ * Drains a bounded FIFO of caller-planned paths into retained agent routes.
+ *
+ * `search` is called synchronously as `(agent_index, request)` and must return
+ * a `PathResult`. Its path may borrow caller-owned storage, but must remain
+ * valid until this function immediately copies it. The callback must not
+ * mutate or reenter `agents`, `routes`, or `queue`, and its path must not alias
+ * the destination retained route.
+ *
+ * This function owns only FIFO and agent-lifecycle transitions. It does not
+ * validate or certify callback results as legal, exact, or optimal. If the
+ * callback throws, the current queue item, agent, and retained route remain
+ * unchanged; earlier items stay committed and callback-owned side effects are
+ * not rolled back. The queue and associated state are externally synchronized.
+ */
 template <typename Search>
 [[nodiscard]] auto process_path_agent_replans(
     std::span<PathAgentState> agents, PathAgentRoutes& routes,
-    PathAgentReplanQueue& queue, PathAgentReplanOptions options,
-    Search&& search, diagnostics::FlowAccounting* accounting)
-    -> PathAgentFrameStats {
+    PathAgentReplanQueue& queue, std::size_t max_requests, Search&& search,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   PathAgentFrameStats stats;
   routes.ensure_size(agents.size());
-  while (!queue.empty() && stats.submitted < options.max_requests) {
+  while (!queue.empty() && stats.submitted < max_requests) {
     const auto pending_index = queue.front();
     if (!pending_index.has_value()) {
       break;
@@ -457,8 +469,6 @@ template <typename Search>
   return stats;
 }
 
-}  // namespace detail
-
 /// Drains bounded exact unit-cost replans into retained route storage.
 template <typename World, typename ClassOrTag>
 [[nodiscard]] auto process_unit_path_agent_replans(
@@ -466,8 +476,8 @@ template <typename World, typename ClassOrTag>
     PathAgentRoutes& routes, PathAgentReplanQueue& queue, PathScratch& scratch,
     PathAgentReplanOptions options = {},
     diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
-  return detail::process_path_agent_replans(
-      agents, routes, queue, options,
+  return process_path_agent_replans(
+      agents, routes, queue, options.max_requests,
       [&](std::size_t, PathRequest request) {
         return astar_path<World, ClassOrTag>(world, request, scratch,
                                              options.missing_chunk_policy);
@@ -482,8 +492,8 @@ template <typename World, typename Class>
     PathAgentRoutes& routes, PathAgentReplanQueue& queue, PathScratch& scratch,
     PathAgentReplanOptions options = {},
     diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
-  return detail::process_path_agent_replans(
-      agents, routes, queue, options,
+  return process_path_agent_replans(
+      agents, routes, queue, options.max_requests,
       [&](std::size_t index, PathRequest request) {
         if (options.equal_cost_tie_seed != 0) {
           auto seed = options.equal_cost_tie_seed +

@@ -87,6 +87,63 @@ add_library(tess_web_colony_wasm_adapter OBJECT web_colony/colony_wasm.cc)
 target_link_libraries(tess_web_colony_wasm_adapter PRIVATE tess::tess)
 tess_apply_project_options(tess_web_colony_wasm_adapter)
 
+add_executable(
+  tess_web_traffic_model
+  web_traffic/traffic_model.cc
+  web_traffic/traffic_native.cc
+)
+target_link_libraries(tess_web_traffic_model PRIVATE tess::tess)
+tess_apply_project_options(tess_web_traffic_model)
+if(BUILD_TESTING)
+  add_test(NAME tess_web_traffic_model COMMAND tess_web_traffic_model)
+  set_tests_properties(
+    tess_web_traffic_model
+    PROPERTIES
+      LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+      TIMEOUT 240
+  )
+  add_test(
+    NAME tess_web_traffic_measurement
+    COMMAND tess_web_traffic_model
+            --scenario aligned --ticks 20 --samples
+  )
+  set_tests_properties(
+    tess_web_traffic_measurement
+    PROPERTIES
+      LABELS "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
+      PASS_REGULAR_EXPRESSION "aligned,19,"
+  )
+endif()
+
+add_library(tess_web_traffic_wasm_adapter OBJECT
+            web_traffic/traffic_wasm.cc)
+target_link_libraries(tess_web_traffic_wasm_adapter PRIVATE tess::tess)
+tess_apply_project_options(tess_web_traffic_wasm_adapter)
+
+add_executable(
+  tess_web_traffic_diagnostics_model
+  web_traffic/traffic_model.cc
+  web_traffic/traffic_native.cc
+)
+target_link_libraries(tess_web_traffic_diagnostics_model PRIVATE tess::tess)
+target_compile_definitions(
+  tess_web_traffic_diagnostics_model PRIVATE TESS_ENABLE_DIAGNOSTICS
+)
+tess_apply_project_options(tess_web_traffic_diagnostics_model)
+if(BUILD_TESTING)
+  add_test(
+    NAME tess_web_traffic_diagnostics
+    COMMAND tess_web_traffic_diagnostics_model
+            --scenario aligned --ticks 1 --samples
+  )
+  set_tests_properties(
+    tess_web_traffic_diagnostics
+    PROPERTIES
+      LABELS "target:tess_web_traffic_diagnostics_model;subsystem:path"
+      PASS_REGULAR_EXPRESSION ",0,0,0,[1-9][0-9]*,[1-9][0-9]*"
+  )
+endif()
+
 add_executable(tess_web_pathfinder_model web_pathfinder/pathfinder.cc)
 target_link_libraries(tess_web_pathfinder_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_pathfinder_model)

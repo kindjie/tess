@@ -361,13 +361,15 @@ flowchart TB
   equal jitter, round-robin fairness, and a per-call selection cap, but never
   claims reachability. A position change starts a fresh recovery episode even
   when an agent moves and becomes blocked again within one tick.
-  `PathAgentReplanQueue` separately deduplicates exact replan requests in FIFO
-  order; `process_unit_path_agent_replans` and
-  `process_weighted_path_agent_replans` drain no more than the configured
-  request count into retained routes. A successful blocked-agent replan keeps
-  the retry streak until movement proves progress. Both mechanisms are
-  externally synchronized and index-paired with the agent span. The replan
-  budget does not bound expansions within one synchronous A*.
+  `PathAgentReplanQueue` separately deduplicates replan requests in FIFO order.
+  `process_path_agent_replans` composes that lifecycle with a synchronous
+  caller callback, immediately copying its borrowed `PathResult` into retained
+  routes. It does not validate the callback's route. The exact unit and
+  weighted helpers build on this generic drain and perform no more than the
+  configured request count. A successful blocked-agent replan keeps the retry
+  streak until movement proves progress. Both mechanisms are externally
+  synchronized and index-paired with the agent span. The replan budget does
+  not bound work within one synchronous callback or A*.
 - `astar_path<World, PassableTag>(world, request, scratch, policy)` runs
   optimized unit-cost deterministic pathfinding. The passability field is
   treated as boolean-like. It runs natively on sparse worlds, honoring
