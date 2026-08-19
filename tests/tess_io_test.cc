@@ -34,6 +34,8 @@ TEST(TessIoTest, StreamsEveryPathStatus) {
 TEST(TessIoTest, StreamsUnknownPathStatusNumerically) {
   std::ostringstream output;
 
+  // Deliberately exercise the diagnostic fallback for a future enum value.
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   output << static_cast<tess::PathStatus>(std::uint8_t{255});
 
   EXPECT_EQ(output.str(), "PathStatus(255)");
