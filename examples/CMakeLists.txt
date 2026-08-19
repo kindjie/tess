@@ -98,15 +98,6 @@ if(BUILD_TESTING)
   set(traffic_model_labels
     "target:tess_web_traffic_model;subsystem:path;subsystem:sim"
   )
-  # The exhaustive funnel oracle exceeded 600 seconds on hosted Linux ASan.
-  # Keep the tighter hung-test bound for every other configuration.
-  set(traffic_funnel_timeout 600)
-  if(TESS_ENABLE_SANITIZERS)
-    string(REPLACE "," ";" traffic_sanitizer_list "${TESS_SANITIZERS}")
-    if("address" IN_LIST traffic_sanitizer_list)
-      set(traffic_funnel_timeout 1200)
-    endif()
-  endif()
   add_test(
     NAME tess_web_traffic_catalog
     COMMAND tess_web_traffic_model --self-check-catalog
@@ -132,20 +123,72 @@ if(BUILD_TESTING)
     TIMEOUT 240
   )
   add_test(
+    NAME tess_web_traffic_funnel_smoke
+    COMMAND tess_web_traffic_model --self-check-smoke funnel
+  )
+  set_tests_properties(tess_web_traffic_funnel_smoke PROPERTIES
+    LABELS "${traffic_model_labels}"
+    TIMEOUT 60
+  )
+  add_test(
+    NAME tess_web_traffic_multi_gate_smoke
+    COMMAND tess_web_traffic_model --self-check-smoke multi-gate
+  )
+  set_tests_properties(tess_web_traffic_multi_gate_smoke PROPERTIES
+    LABELS "${traffic_model_labels}"
+    TIMEOUT 60
+  )
+  add_test(
+    NAME tess_web_traffic_funnel_crowd
+    COMMAND tess_web_traffic_model --self-check-crowd funnel
+  )
+  set_tests_properties(tess_web_traffic_funnel_crowd PROPERTIES
+    LABELS "${traffic_model_labels};config:tsan-exempt"
+    TIMEOUT 600
+  )
+  add_test(
+    NAME tess_web_traffic_multi_gate_crowd
+    COMMAND tess_web_traffic_model --self-check-crowd multi-gate
+  )
+  set_tests_properties(tess_web_traffic_multi_gate_crowd PROPERTIES
+    LABELS "${traffic_model_labels};config:tsan-exempt"
+    TIMEOUT 300
+  )
+  add_test(
     NAME tess_web_traffic_funnel
-    COMMAND tess_web_traffic_model --self-check funnel
+    COMMAND tess_web_traffic_model --self-check-exhaustive funnel
   )
   set_tests_properties(tess_web_traffic_funnel PROPERTIES
-    LABELS "${traffic_model_labels};config:tsan-exempt"
-    TIMEOUT ${traffic_funnel_timeout}
+    LABELS
+      "${traffic_model_labels};config:tsan-exempt;config:optimized-exhaustive"
+    TIMEOUT 600
   )
   add_test(
     NAME tess_web_traffic_multi_gate
-    COMMAND tess_web_traffic_model --self-check multi-gate
+    COMMAND tess_web_traffic_model --self-check-exhaustive multi-gate
   )
   set_tests_properties(tess_web_traffic_multi_gate PROPERTIES
-    LABELS "${traffic_model_labels};config:tsan-exempt"
+    LABELS
+      "${traffic_model_labels};config:tsan-exempt;config:optimized-exhaustive"
     TIMEOUT 300
+  )
+  add_test(
+    NAME tess_web_traffic_crowd_rejects_unguided
+    COMMAND tess_web_traffic_model --self-check-crowd aligned
+  )
+  set_tests_properties(tess_web_traffic_crowd_rejects_unguided PROPERTIES
+    LABELS "${traffic_model_labels}"
+    TIMEOUT 60
+    WILL_FAIL TRUE
+  )
+  add_test(
+    NAME tess_web_traffic_exhaustive_rejects_unguided
+    COMMAND tess_web_traffic_model --self-check-exhaustive shuffled-crossing
+  )
+  set_tests_properties(tess_web_traffic_exhaustive_rejects_unguided PROPERTIES
+    LABELS "${traffic_model_labels}"
+    TIMEOUT 60
+    WILL_FAIL TRUE
   )
   add_test(
     NAME tess_web_traffic_measurement

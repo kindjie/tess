@@ -11,6 +11,18 @@ the URL and SHA-256 digest pinned in `ci/tools.lock.json`. It performs a real
 configure, install, package discovery, consumer build, and execution rather
 than relying on syntax compatibility alone.
 
+## ccache CI binary
+
+- Version: `4.13.6`
+- Documentation: https://ccache.dev/manual/4.13.6.html
+- Release files and signatures: https://ccache.dev/download.html
+
+Linux CI downloads the upstream x86-64 musl-static archive using the URL and
+SHA-256 digest pinned in `ci/tools.lock.json`. The archive is a CI acceleration
+tool, not a library build or runtime dependency. The installer accepts only
+HTTPS redirects, bounds each transfer attempt and the retry scheduling window,
+checks the digest before extraction, and verifies the executed version.
+
 ## GoogleTest
 
 - Version: `v1.17.0`

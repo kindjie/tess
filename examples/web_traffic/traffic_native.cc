@@ -65,6 +65,21 @@ auto parse_scenario(std::string_view name, TrafficScenario& scenario) -> bool {
   return false;
 }
 
+constexpr auto is_guided_scenario(TrafficScenario scenario) -> bool {
+  return scenario == TrafficScenario::Funnel ||
+         scenario == TrafficScenario::MultiGate;
+}
+
+auto parse_guided_scenario(std::string_view name, TrafficScenario& scenario)
+    -> bool {
+  auto parsed = TrafficScenario::Aligned;
+  if (!parse_scenario(name, parsed) || !is_guided_scenario(parsed)) {
+    return false;
+  }
+  scenario = parsed;
+  return true;
+}
+
 auto hash_bytes(const std::uint8_t* bytes, std::size_t size) -> std::uint64_t {
   auto hash = std::uint64_t{1469598103934665603ULL};
   for (std::size_t i = 0; i < size; ++i) {
@@ -179,6 +194,16 @@ auto check_crowd_outcome(TrafficScenario scenario) -> bool {
 }
 
 auto check_catalog() -> bool {
+  auto guided = TrafficScenario::Aligned;
+  if (parse_guided_scenario("aligned", guided) ||
+      parse_guided_scenario("shuffled-crossing", guided) ||
+      !parse_guided_scenario("funnel", guided) ||
+      guided != TrafficScenario::Funnel ||
+      !parse_guided_scenario("multi-gate", guided) ||
+      guided != TrafficScenario::MultiGate) {
+    std::cerr << "web traffic model: guided CLI domain diverged\n";
+    return false;
+  }
   auto previous_terrain_hash = std::uint64_t{0};
   auto previous_agent_hash = std::uint64_t{0};
   for (const auto scenario : kScenarios) {
@@ -200,7 +225,7 @@ auto check_catalog() -> bool {
   return true;
 }
 
-auto check_scenario(TrafficScenario scenario) -> bool {
+auto check_scenario_smoke(TrafficScenario scenario) -> bool {
   TrafficModel first{scenario};
   TrafficModel second{scenario};
   const auto terrain_hash =
@@ -212,7 +237,7 @@ auto check_scenario(TrafficScenario scenario) -> bool {
                                            traffic_height) ||
       agent_hash != hash_agents(second.current_agents()) ||
       wall_count(first) != expected_wall_count(scenario) ||
-      !first.validate_planner()) {
+      !first.validate_passability()) {
     std::cerr << "web traffic model: scenario is not deterministic: "
               << scenario_name(scenario) << '\n';
     return false;
@@ -234,14 +259,37 @@ auto check_scenario(TrafficScenario scenario) -> bool {
               << scenario_name(scenario) << '\n';
     return false;
   }
-  if ((scenario == TrafficScenario::Funnel ||
-       scenario == TrafficScenario::MultiGate) &&
-      !check_crowd_outcome(scenario)) {
+  return true;
+}
+
+auto check_scenario_crowd(TrafficScenario scenario) -> bool {
+  if (!check_crowd_outcome(scenario)) {
     std::cerr << "web traffic model: crowd outcome diverged: "
               << scenario_name(scenario) << '\n';
     return false;
   }
   return true;
+}
+
+auto check_scenario_exhaustive(TrafficScenario scenario) -> bool {
+  TrafficModel model{scenario};
+  if (!model.validate_planner()) {
+    std::cerr << "web traffic model: exact route oracle diverged: "
+              << scenario_name(scenario) << '\n';
+    return false;
+  }
+  return true;
+}
+
+auto check_scenario(TrafficScenario scenario) -> bool {
+  if (!check_scenario_smoke(scenario)) {
+    return false;
+  }
+  if (scenario != TrafficScenario::Funnel &&
+      scenario != TrafficScenario::MultiGate) {
+    return true;
+  }
+  return check_scenario_crowd(scenario) && check_scenario_exhaustive(scenario);
 }
 
 template <typename Check>
@@ -268,12 +316,8 @@ auto run_self_check() -> int {
         if (!check_catalog()) {
           return false;
         }
-        for (const auto scenario : kScenarios) {
-          if (!check_scenario(scenario)) {
-            return false;
-          }
-        }
-        return true;
+        return std::all_of(kScenarios.begin(), kScenarios.end(),
+                           check_scenario);
       },
       "web traffic model: ok");
 }
@@ -282,9 +326,34 @@ auto run_catalog_self_check() -> int {
   return run_checked(check_catalog, "web traffic catalog: ok");
 }
 
+auto run_smoke_self_check() -> int {
+  return run_checked(
+      [] {
+        return check_catalog() &&
+               std::all_of(kScenarios.begin(), kScenarios.end(),
+                           check_scenario_smoke);
+      },
+      "web traffic smoke: ok");
+}
+
+auto run_scenario_smoke_check(TrafficScenario scenario) -> int {
+  return run_checked([scenario] { return check_scenario_smoke(scenario); },
+                     "web traffic scenario: ok");
+}
+
 auto run_scenario_self_check(TrafficScenario scenario) -> int {
   return run_checked([scenario] { return check_scenario(scenario); },
                      "web traffic scenario: ok");
+}
+
+auto run_scenario_crowd_check(TrafficScenario scenario) -> int {
+  return run_checked([scenario] { return check_scenario_crowd(scenario); },
+                     "web traffic crowd: ok");
+}
+
+auto run_scenario_exhaustive_check(TrafficScenario scenario) -> int {
+  return run_checked([scenario] { return check_scenario_exhaustive(scenario); },
+                     "web traffic exact routes: ok");
 }
 
 auto run_scenario(TrafficScenario scenario, int ticks) -> int {
@@ -399,10 +468,31 @@ int main(int argc, char** argv) {
   if (argc == 2 && std::string_view{argv[1]} == "--self-check-catalog") {
     return run_catalog_self_check();
   }
+  if (argc == 2 && std::string_view{argv[1]} == "--self-check-smoke") {
+    return run_smoke_self_check();
+  }
+  if (argc == 3 && std::string_view{argv[1]} == "--self-check-smoke") {
+    auto scenario = TrafficScenario::Aligned;
+    return parse_scenario(argv[2], scenario)
+               ? run_scenario_smoke_check(scenario)
+               : 2;
+  }
   if (argc == 3 && std::string_view{argv[1]} == "--self-check") {
     auto scenario = TrafficScenario::Aligned;
     return parse_scenario(argv[2], scenario) ? run_scenario_self_check(scenario)
                                              : 2;
+  }
+  if (argc == 3 && std::string_view{argv[1]} == "--self-check-crowd") {
+    auto scenario = TrafficScenario::Aligned;
+    return parse_guided_scenario(argv[2], scenario)
+               ? run_scenario_crowd_check(scenario)
+               : 2;
+  }
+  if (argc == 3 && std::string_view{argv[1]} == "--self-check-exhaustive") {
+    auto scenario = TrafficScenario::Aligned;
+    return parse_guided_scenario(argv[2], scenario)
+               ? run_scenario_exhaustive_check(scenario)
+               : 2;
   }
   const auto samples = argc == 6 && std::string_view{argv[5]} == "--samples";
   const auto profiling =
@@ -414,8 +504,14 @@ int main(int argc, char** argv) {
                  "<aligned|shuffled-crossing|funnel|multi-gate> --ticks N "
                  "[--samples | --profile-repetitions N]\n"
                  "       tess_web_traffic_model --self-check-catalog\n"
+                 "       tess_web_traffic_model --self-check-smoke "
+                 "[aligned|shuffled-crossing|funnel|multi-gate]\n"
                  "       tess_web_traffic_model --self-check "
-                 "<aligned|shuffled-crossing|funnel|multi-gate>\n";
+                 "<aligned|shuffled-crossing|funnel|multi-gate>\n"
+                 "       tess_web_traffic_model --self-check-crowd "
+                 "<funnel|multi-gate>\n"
+                 "       tess_web_traffic_model --self-check-exhaustive "
+                 "<funnel|multi-gate>\n";
     return 2;
   }
   auto scenario = TrafficScenario::Aligned;
