@@ -231,11 +231,11 @@ jobs:
             echo "::endgroup::"
             ran=$((ran + 1))
           done
-          # EXACT, not a floor: the dev preset builds 16 examples, and a
+          # EXACT, not a floor: the dev preset builds 18 examples, and a
           # floor of 13 passed while one of them silently stopped building.
           # Bump this when adding an example -- a failure here means either
           # a new example or a missing one, and both want a human.
-          test "$ran" -eq 16
+          test "$ran" -eq 18
 
       # Documented example output is copied from real program runs; drift
       # between the docs and the compiled quickstart fails the build.

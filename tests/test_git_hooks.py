@@ -458,6 +458,28 @@ def _workflow_run_source(source: str) -> str:
   return "\n".join(line.removeprefix("          ") for line in lines)
 
 
+def test_dev_example_smoke_count_matches_declared_executables():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  examples = (root / "examples" / "CMakeLists.txt").read_text()
+  dev = _job_body(workflow, "dev")
+  smoke = dev.split("      - name: Example smoke\n", 1)[1].split(
+    "\n      - name:", 1
+  )[0]
+
+  targets = re.findall(
+    r"^\s*add_executable\(\s*(tess_[A-Za-z0-9_]+)(?=\s|\))",
+    examples,
+    flags=re.M,
+  )
+  expected = re.findall(r'test "\$ran" -eq ([0-9]+)', smoke)
+
+  assert targets
+  assert len(targets) == len(set(targets))
+  assert len(expected) == 1
+  assert len(targets) == int(expected[0])
+
+
 def _reportable_ci_failures(job_results: dict[str, dict[str, str]]) -> str:
   """Execute the failure classifier embedded in the reporter job."""
   root = Path(__file__).resolve().parents[1]
