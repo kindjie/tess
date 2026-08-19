@@ -19,6 +19,7 @@ struct Extent3 {
   friend constexpr bool operator==(Extent3 lhs, Extent3 rhs) noexcept = default;
 };
 
+/** Canonical signed coordinate used by all world-space APIs. */
 struct Coord3;
 
 /** Signed coordinate in a two-dimensional consumer view. */
@@ -50,6 +51,7 @@ struct Coord3 {
   friend constexpr bool operator==(Coord3 lhs, Coord3 rhs) noexcept = default;
 };
 
+/** Implements the lossless lift into the canonical z-zero plane. */
 constexpr Coord2::operator Coord3() const noexcept { return Coord3{x, y, 0}; }
 
 /** Unsigned coordinate of a chunk within a finite shape. */
