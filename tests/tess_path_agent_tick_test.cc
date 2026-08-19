@@ -865,7 +865,10 @@ TEST(TessPathAgentTick, CustomReplanQueueOwnsLifecycleButNotPathSemantics) {
     borrowed = {
         request.start, {1, static_cast<std::int64_t>(index), 0}, request.goal};
     if (index == 4) {
-      return tess::PathResult{.status = tess::PathStatus::InvalidGoal};
+      return tess::PathResult{
+          .status = tess::PathStatus::InvalidGoal,
+          .path = {},
+      };
     }
     return tess::PathResult{
         .status = tess::PathStatus::Found,
