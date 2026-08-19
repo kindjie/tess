@@ -29,8 +29,10 @@
       </header>
 
       <div class="toolbar" role="group" aria-label="Animation controls">
-        <button id="replay" type="button">Replay</button>
-        <button id="pause" type="button" aria-pressed="false">Pause</button>
+        <button id="replay" type="button" disabled>Replay</button>
+        <button id="pause" type="button" aria-pressed="false" disabled>
+          Pause
+        </button>
         <span id="phase" aria-live="polite">Loading WebAssembly…</span>
       </div>
 

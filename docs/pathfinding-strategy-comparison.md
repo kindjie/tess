@@ -13,7 +13,7 @@ for those shapes so a caller can pay for reuse only when a measured workload
 has reuse to exploit.
 
 This comparison uses one 16x16 world and three requests. The
-[complete self-checking example][strategy-source] compiles and runs in CI; each
+[complete self-checking example][strategy-main] compiles and runs in CI; each
 excerpt below is copied from that source and rejected by CI if it drifts.
 Timing evidence comes from the benchmark suite instead of from this teaching
 program.
@@ -300,6 +300,7 @@ inspect their counters, and retain the simpler API when the measured benefit
 does not justify another invalidation or grouping lifecycle.
 
 [strategy-source]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies_model.cc
+[strategy-main]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies.cc
 [benchmark-source]: https://github.com/kindjie/tess/tree/main/bench
 [quad-heap-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-10-quad-heap-rejected.md
 [congestion-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-wide-merge-second-wave.md

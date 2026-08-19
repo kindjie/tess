@@ -343,6 +343,10 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert 'id="strategy-results"></tbody>' in html
   assert 'aria-live="polite"' in html
   assert 'aria-pressed="false"' in html
+  assert 'id="replay" type="button" disabled' in html
+  assert 'id="pause" type="button" aria-pressed="false" disabled' in html
+  assert 'root.dataset.tessStrategies !== "ready"' in app
+  assert "replay.disabled = false" in app
   assert 'class="tile-grid"' in html
   assert "Comparable requests intentionally match" in html
   assert "The routes intentionally match" not in html
@@ -371,6 +375,8 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert "comparable requests return the same routes" in article
   assert "returned routes are intentionally identical across cards" not in article
   assert "Open the strategy demo in a separate page" in article
+  assert "[complete self-checking example][strategy-main]" in article
+  assert "[strategy-main]:" in article
   assert "## Algorithm and strategy status" in article
   assert "four peer algorithms" in article
   assert "Unit-cost A\\* and weighted A\\*" in article

@@ -389,6 +389,7 @@ replay.addEventListener("click", () => {
 });
 
 reducedMotion.addEventListener("change", () => {
+  if (root.dataset.tessStrategies !== "ready") return;
   stopTimer();
   setPaused(false);
   if (reducedMotion.matches) {
@@ -408,6 +409,7 @@ async function initializeStrategies() {
     animationStage = reducedMotion.matches ? 3 : 0;
     renderStage(animationStage);
     root.dataset.tessStrategies = "ready";
+    replay.disabled = false;
     startTimer();
   } catch (error) {
     root.dataset.tessStrategies = "failed";
