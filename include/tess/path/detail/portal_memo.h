@@ -4,6 +4,7 @@
 #include <tess/core/shape.h>
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 
@@ -149,12 +150,22 @@ class PortalMemo {
                                 std::int8_t step) noexcept -> std::uint64_t {
     // splitmix64 finalizer. Tile indices are dense small integers whose
     // low bits alone would cluster badly under a power-of-two mask.
-    auto value = current_index * 0x9e3779b97f4a7c15ULL +
-                 static_cast<std::uint64_t>(static_cast<std::int64_t>(step));
+    //
+    // Every constant is typed rather than suffixed: a `ULL` literal is
+    // `unsigned long long`, which is a wider type than `uint64_t` on
+    // LP64 and pulls the arithmetic into it, and GCC's -Wsign-conversion
+    // rejects the resulting widening. The step is bit_cast rather than
+    // converted, so its negative values keep an exact bit pattern
+    // without a signed-to-unsigned conversion.
+    constexpr auto golden = std::uint64_t{0x9e3779b97f4a7c15};
+    constexpr auto mix_a = std::uint64_t{0xbf58476d1ce4e5b9};
+    constexpr auto mix_b = std::uint64_t{0x94d049bb133111eb};
+    auto value = current_index * golden +
+                 std::uint64_t{std::bit_cast<std::uint8_t>(step)};
     value ^= value >> 30;
-    value *= 0xbf58476d1ce4e5b9ULL;
+    value *= mix_a;
     value ^= value >> 27;
-    value *= 0x94d049bb133111ebULL;
+    value *= mix_b;
     value ^= value >> 31;
     return value;
   }
