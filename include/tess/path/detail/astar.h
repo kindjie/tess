@@ -761,10 +761,20 @@ template <typename World, typename Tag, typename Provider>
 /// Zero entry cost is impassable. The returned path borrows `scratch` until
 /// mutation, and sparse-world resident boundaries follow `policy`.
 template <typename World, typename Class, typename Provider>
+[[nodiscard]] auto weighted_astar_path(const World& world, PathRequest request,
+                                       PathScratch& scratch,
+                                       MissingChunkPolicy policy,
+                                       const Provider& provider) -> PathResult {
+  return weighted_astar_path<World, Class, Provider>(
+      world, request, scratch, policy, provider, PathTieBreak{});
+}
+
+/// Finds a provider-aware minimum-cost path with seeded equal-cost ties.
+template <typename World, typename Class, typename Provider>
 [[nodiscard]] auto weighted_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
-    [[maybe_unused]] MissingChunkPolicy policy, const Provider& provider)
-    -> PathResult {
+    [[maybe_unused]] MissingChunkPolicy policy, const Provider& provider,
+    PathTieBreak tie_break) -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_astar_path<World, Class> requires a MovementClass; "
                 "legacy tag pairs go through the <World, PassableTag, CostTag> "
@@ -1014,7 +1024,8 @@ template <typename World, typename Class, typename Provider>
   TESS_DIAG_EVENT(path_heuristic);
   const auto model = Model{provider};
   scratch.open_.push_back(detail::PackedOpenNode::make(
-      start, 0, model.heuristic(world, request.start, request.goal)));
+      start, 0, model.heuristic(world, request.start, request.goal),
+      tie_break));
   std::push_heap(scratch.open_.begin(), scratch.open_.end(),
                  detail::packed_open_node_less);
   TESS_DIAG_EVENT(path_heap_push);
@@ -1033,7 +1044,8 @@ template <typename World, typename Class, typename Provider>
     const auto current = scratch.open_.back();
     scratch.open_.pop_back();
 
-    const auto current_offset = space.offset(current.index);
+    const auto current_index = current.node_index(tie_break);
+    const auto current_offset = space.offset(current_index);
     const auto current_state = scratch.state_at(current_offset, unseen);
     if (current_state == closed ||
         current.g() != scratch.g_at(current_offset, infinite_cost)) {
@@ -1043,8 +1055,8 @@ template <typename World, typename Class, typename Provider>
     scratch.state_[current_offset] = closed;
     ++expanded_nodes;
 
-    if (current.index == goal) {
-      auto step = current.index;
+    if (current_index == goal) {
+      auto step = current_index;
       while (true) {
         scratch.path_.push_back(detail::tile_coord<Shape>(step));
         TESS_DIAG_EVENT(path_reconstruct_node);
@@ -1058,9 +1070,9 @@ template <typename World, typename Class, typename Provider>
                          scratch.touched_count_, scratch.path_);
     }
 
-    const auto current_coord = detail::tile_coord<Shape>(current.index);
+    const auto current_coord = detail::tile_coord<Shape>(current_index);
     model.for_each_forward(
-        world, current_coord, current.index, [&](auto probe) {
+        world, current_coord, current_index, [&](auto probe) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
           if (probe.availability == TransitionAvailability::MissingTopology) {
             crossed_missing = true;
@@ -1101,14 +1113,15 @@ template <typename World, typename Class, typename Provider>
               TESS_DIAG_EVENT(path_touch_node);
             }
             scratch.g_[neighbor_offset] = tentative_g;
-            scratch.parent_[neighbor_offset] = current.index;
+            scratch.parent_[neighbor_offset] = current_index;
             scratch.state_[neighbor_offset] = open;
             TESS_DIAG_EVENT(path_heuristic);
             scratch.open_.push_back(detail::PackedOpenNode::make(
                 neighbor_index, tentative_g,
                 detail::saturating_add(
                     tentative_g,
-                    model.heuristic(world, neighbor, request.goal))));
+                    model.heuristic(world, neighbor, request.goal)),
+                tie_break));
             std::push_heap(scratch.open_.begin(), scratch.open_.end(),
                            detail::packed_open_node_less);
             TESS_DIAG_EVENT(path_heap_push);
@@ -1133,7 +1146,17 @@ template <typename World, typename Class>
                                        MissingChunkPolicy policy)
     -> PathResult {
   return weighted_astar_path<World, Class, AdjacentTransitions>(
-      world, request, scratch, policy, AdjacentTransitions{});
+      world, request, scratch, policy, AdjacentTransitions{}, {});
+}
+
+template <typename World, typename Class>
+[[nodiscard]] auto weighted_astar_path(const World& world, PathRequest request,
+                                       PathScratch& scratch,
+                                       PathTieBreak tie_break,
+                                       MissingChunkPolicy policy)
+    -> PathResult {
+  return weighted_astar_path<World, Class, AdjacentTransitions>(
+      world, request, scratch, policy, AdjacentTransitions{}, tie_break);
 }
 
 // Legacy <PassableTag, CostTag> forwarder: one movement class replaces the
@@ -1147,4 +1170,15 @@ template <typename World, typename PassableTag, typename CostTag>
   return weighted_astar_path<World,
                              movement::LegacyWeighted<PassableTag, CostTag>>(
       world, request, scratch, policy);
+}
+
+template <typename World, typename PassableTag, typename CostTag>
+[[nodiscard]] auto weighted_astar_path(const World& world, PathRequest request,
+                                       PathScratch& scratch,
+                                       PathTieBreak tie_break,
+                                       MissingChunkPolicy policy)
+    -> PathResult {
+  return weighted_astar_path<World,
+                             movement::LegacyWeighted<PassableTag, CostTag>>(
+      world, request, scratch, tie_break, policy);
 }

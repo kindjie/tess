@@ -13,6 +13,7 @@
   deterministic per-call budget; independent queue owners also run concurrently
   under TSan. Each individual queue remains externally synchronized. Zero-step
   ticks preserve the retry budget, while boxed-in goals under the legacy policy
-  eventually become terminal and stop consuming processing. A warm clean tick
-  must still advance every agent while allocating nothing and skipping path
-  processing.
+  eventually become terminal and stop consuming processing. Weighted drains
+  can derive deterministic per-agent equal-cost tie seeds without changing the
+  bounded FIFO contract. A warm clean tick must still advance every agent while
+  allocating nothing and skipping path processing.

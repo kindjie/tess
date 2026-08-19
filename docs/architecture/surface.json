@@ -215,6 +215,7 @@
     "PathRequest",
     "PathRequestRuntime",
     "PathResult",
+    "PathTieBreak",
     "PathRuntimeCachePolicy",
     "PathRuntimeStats",
     "PathScratch",

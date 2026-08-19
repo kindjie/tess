@@ -1364,7 +1364,7 @@ def test_webgpu_pages_smoke_requires_swiftshader_compute_completion():
   )
   assert "stage ${result}" in timeout
   webgpu_smoke = workflow.split(
-    "grep -q '>Colony running<'", 1
+    "grep -Eq '>Colony (running|planning:)'", 1
   )[1].split("- name: Configure Pages", 1)[0]
   assert "--disable-gpu" not in webgpu_smoke
   assert "--virtual-time-budget" not in webgpu_smoke

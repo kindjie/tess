@@ -158,6 +158,14 @@ template <typename World, typename Class>
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> PathResult;
 
+/// Finds an optimal weighted path with seeded equal-cost tie-breaking.
+template <typename World, typename Class>
+[[nodiscard]] auto weighted_astar_path(
+    const World& world, PathRequest request, PathScratch& scratch,
+    PathTieBreak tie_break,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> PathResult;
+
 /// Finds a weighted path composed with a special-transition provider.
 template <typename World, typename Class, typename Provider>
 [[nodiscard]] auto weighted_astar_path(const World& world, PathRequest request,
@@ -165,10 +173,26 @@ template <typename World, typename Class, typename Provider>
                                        MissingChunkPolicy policy,
                                        const Provider& provider) -> PathResult;
 
+/// Finds a provider-aware weighted path with seeded equal-cost tie-breaking.
+template <typename World, typename Class, typename Provider>
+[[nodiscard]] auto weighted_astar_path(const World& world, PathRequest request,
+                                       PathScratch& scratch,
+                                       MissingChunkPolicy policy,
+                                       const Provider& provider,
+                                       PathTieBreak tie_break) -> PathResult;
+
 template <typename World, typename PassableTag, typename CostTag>
 /// Finds a weighted path using separate legacy passability and cost tags.
 [[nodiscard]] auto weighted_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> PathResult;
+
+template <typename World, typename PassableTag, typename CostTag>
+/// Finds a legacy weighted path with seeded equal-cost tie-breaking.
+[[nodiscard]] auto weighted_astar_path(
+    const World& world, PathRequest request, PathScratch& scratch,
+    PathTieBreak tie_break,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> PathResult;
 
@@ -638,20 +662,48 @@ namespace detail {
 
 // Packed open-list node: the sort key concatenates the ordering's two
 // lexicographic fields so one compare decides whenever (f, g) differ.
-// Order-isomorphic to open_node_less over (f asc, g desc, index asc);
-// UINT32_MAX - g is defined and invertible for every g, so the mapping
-// is injective over the full field range. f is retained in the high
-// word solely for the unit search's two-bucket dial test.
+// Order-isomorphic to open_node_less over (f asc, g desc, index asc) by
+// default. Seeded searches store a reversible permutation of the index as the
+// tertiary key, preserving this 16-byte representation. UINT32_MAX - g is
+// defined and invertible for every g, so the key mapping is injective over the
+// full field range. f is retained in the high word solely for the unit
+// search's two-bucket dial test.
 struct PackedOpenNode {
   std::uint64_t key = 0;
   std::uint64_t index = 0;
 
+  [[nodiscard]] static constexpr auto mix_tie(std::uint64_t value) noexcept
+      -> std::uint64_t {
+    value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
+    value = (value ^ (value >> 27U)) * 0x94d049bb133111ebULL;
+    return value ^ (value >> 31U);
+  }
+
+  [[nodiscard]] static constexpr auto unmix_tie(std::uint64_t value) noexcept
+      -> std::uint64_t {
+    value ^= value >> 31U;
+    value ^= value >> 62U;
+    value *= 0x319642b2d24d8ec3ULL;
+    value ^= value >> 27U;
+    value ^= value >> 54U;
+    value *= 0x96de1b173f119089ULL;
+    value ^= value >> 30U;
+    return value ^ (value >> 60U);
+  }
+
   [[nodiscard]] static constexpr auto make(std::uint64_t index, std::uint32_t g,
-                                           std::uint32_t f) noexcept
+                                           std::uint32_t f,
+                                           PathTieBreak tie_break = {}) noexcept
       -> PackedOpenNode {
-    return PackedOpenNode{(static_cast<std::uint64_t>(f) << 32u) |
-                              (std::numeric_limits<std::uint32_t>::max() - g),
-                          index};
+    return PackedOpenNode{
+        (static_cast<std::uint64_t>(f) << 32u) |
+            (std::numeric_limits<std::uint32_t>::max() - g),
+        tie_break.seed == 0 ? index : mix_tie(index ^ tie_break.seed)};
+  }
+
+  [[nodiscard]] constexpr auto node_index(
+      PathTieBreak tie_break = {}) const noexcept -> std::uint64_t {
+    return tie_break.seed == 0 ? index : unmix_tie(index) ^ tie_break.seed;
   }
 
   [[nodiscard]] constexpr auto g() const noexcept -> std::uint32_t {
@@ -671,6 +723,13 @@ struct PackedOpenNode {
   }
   return lhs.index > rhs.index;
 }
+
+static_assert(PackedOpenNode::unmix_tie(PackedOpenNode::mix_tie(0)) == 0);
+static_assert(PackedOpenNode::unmix_tie(PackedOpenNode::mix_tie(1)) == 1);
+static_assert(PackedOpenNode::unmix_tie(PackedOpenNode::mix_tie(
+                  std::numeric_limits<std::uint64_t>::max())) ==
+              std::numeric_limits<std::uint64_t>::max());
+static_assert(sizeof(PackedOpenNode) == 2 * sizeof(std::uint64_t));
 
 }  // namespace detail
 
@@ -730,9 +789,26 @@ class PathScratch {
                                   MissingChunkPolicy policy,
                                   const Provider& provider) -> PathResult;
 
+  template <typename World, typename Class, typename Provider>
+  friend auto weighted_astar_path(const World& world, PathRequest request,
+                                  PathScratch& scratch,
+                                  MissingChunkPolicy policy,
+                                  const Provider& provider,
+                                  PathTieBreak tie_break) -> PathResult;
+
+  template <typename World, typename Class>
+  friend auto weighted_astar_path(const World& world, PathRequest request,
+                                  PathScratch& scratch, PathTieBreak tie_break,
+                                  MissingChunkPolicy policy) -> PathResult;
+
   template <typename World, typename PassableTag, typename CostTag>
   friend auto weighted_astar_path(const World& world, PathRequest request,
                                   PathScratch& scratch,
+                                  MissingChunkPolicy policy) -> PathResult;
+
+  template <typename World, typename PassableTag, typename CostTag>
+  friend auto weighted_astar_path(const World& world, PathRequest request,
+                                  PathScratch& scratch, PathTieBreak tie_break,
                                   MissingChunkPolicy policy) -> PathResult;
 
   template <typename World, typename Tag>

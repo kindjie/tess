@@ -7,12 +7,13 @@ const metrics = document.getElementById('metrics');
 const slider = document.getElementById('agents');
 const agentCount = document.getElementById('agent-count');
 const replan = document.getElementById('replan');
+const spread = document.getElementById('spread');
 const resetButton = document.getElementById('reset');
 const clearButton = document.getElementById('clear-walls');
 
-// Mirrors kWallMinX/kWallMaxX in colony_model.cc: painting is rejected in the
-// spawn band on the left and the turnaround band on the right.
-const bandWidth = 10;
+// Mirrors kWallMinX/kWallMaxX in colony_model_internal.h: painting is rejected
+// in the spawn band on the left and the turnaround band on the right.
+const bandWidth = 18;
 // Mirrors the FixedStepAccumulator rate in colony_model.cc.
 const ticksPerSecond = 20;
 // Five seconds of no agent moving at all. Well above transient contention.
@@ -75,6 +76,7 @@ function reset() {
   const actual = api.reset(requested);
   agentCount.textContent = String(actual);
   api.setStrategy(replan.checked ? 1 : 0);
+  api.setSpread(spread.checked ? 1 : 0);
   for (const key of walls) {
     api.setWall(key % width, Math.floor(key / width));
   }
@@ -158,6 +160,9 @@ function frame(timestamp) {
     const crowdBlocked = api.crowdBlocked();
     const completedLegs = api.completedLegs();
     const abortedLegs = api.abortedLegs();
+    const planningPending = api.planningPending();
+    const advancedLastTick = api.advancedLastTick();
+    const movementWaitsLastTick = api.movementWaitsLastTick();
     const turnaroundReady = api.turnaroundReady() === 1;
     if (turnaroundReady) {
       if (turnaroundSince === 0) {
@@ -189,13 +194,18 @@ function frame(timestamp) {
       message.textContent =
           `Colony stalled: no agent has moved for ${
               Math.floor(stalledTicks / ticksPerSecond)}s`;
+    } else if (planningPending > 0) {
+      message.textContent =
+          `Colony planning: ${planningPending} routes pending`;
     } else {
       message.textContent = 'Colony running';
     }
     metrics.textContent = `C++ update ${emaUs.toFixed(0)} µs/tick; ` +
         `canvas render excluded · ` +
         `${arrived}/${count} arrived · ${crowdBlocked} crowd-blocked · ` +
-        `${unreachable} wall-blocked · leg ${leg} · ` +
+        `${unreachable} wall-blocked · ${planningPending} pending plans · ` +
+        `${advancedLastTick} moved · ` +
+        `${movementWaitsLastTick} movement waits · leg ${leg} · ` +
         `${completedLegs} completed · ${abortedLegs} crowd turnarounds`;
   } catch (error) {
     message.textContent = `Tick failed: ${error}`;
@@ -222,6 +232,8 @@ createTessColony()
             [
               'number',
             ]),
+        setSpread: instance.cwrap(
+            'tess_colony_set_spread', null, ['number']),
         tick: instance.cwrap('tess_colony_tick', 'number', ['number']),
         relaunch: instance.cwrap('tess_colony_relaunch', 'number', []),
         leg: instance.cwrap('tess_colony_leg', 'number', []),
@@ -245,6 +257,12 @@ createTessColony()
             'tess_colony_aborted_legs', 'number', []),
         stalledTicks: instance.cwrap(
             'tess_colony_stalled_ticks', 'number', []),
+        planningPending: instance.cwrap(
+            'tess_colony_planning_pending', 'number', []),
+        advancedLastTick: instance.cwrap(
+            'tess_colony_advanced_last_tick', 'number', []),
+        movementWaitsLastTick: instance.cwrap(
+            'tess_colony_movement_waits_last_tick', 'number', []),
       };
       width = api.width();
       height = api.height();
@@ -257,6 +275,10 @@ createTessColony()
       slider.addEventListener('change', reset);
       replan.addEventListener('change', () => {
         api.setStrategy(replan.checked ? 1 : 0);
+        emaUs = 0;
+      });
+      spread.addEventListener('change', () => {
+        api.setSpread(spread.checked ? 1 : 0);
         emaUs = 0;
       });
       resetButton.addEventListener('click', reset);

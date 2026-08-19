@@ -17,6 +17,69 @@ add_executable(
 )
 target_link_libraries(tess_web_colony_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_colony_model)
+if(BUILD_TESTING)
+  add_test(
+    NAME tess_web_colony_scenario_smoke
+    COMMAND tess_web_colony_model --scenario two-gates --agents 128
+            --mode spread --max-ticks 1000 --require-complete
+  )
+  set_tests_properties(
+    tess_web_colony_scenario_smoke
+    PROPERTIES
+      LABELS "target:tess_web_colony_model;subsystem:path;subsystem:sim"
+      PASS_REGULAR_EXPRESSION
+        "scenario=two-gates.*arrived=128.*crowd=0.*unreachable=0"
+  )
+  add_test(
+    NAME tess_web_colony_multigate_spread_guard
+    COMMAND tess_web_colony_model --scenario four-gates --agents 512
+            --mode spread --max-ticks 1000 --require-complete
+  )
+  set_tests_properties(
+    tess_web_colony_multigate_spread_guard
+    PROPERTIES
+      LABELS "target:tess_web_colony_model;subsystem:path;subsystem:sim"
+      PASS_REGULAR_EXPRESSION
+        "scenario=four-gates.*arrived=512.*crowd=0.*diversity_waves=0"
+  )
+  add_test(
+    NAME tess_web_colony_incremental_wall_spread
+    COMMAND tess_web_colony_model --scenario browser-incremental --agents 1024
+            --mode spread --max-ticks 1000 --require-complete
+  )
+  set_tests_properties(
+    tess_web_colony_incremental_wall_spread
+    PROPERTIES
+      LABELS "target:tess_web_colony_model;subsystem:path;subsystem:sim"
+      PASS_REGULAR_EXPRESSION
+        "browser-incremental.*complete=1.*walls_accepted=297.*diversity_waves=1"
+  )
+  add_test(
+    NAME tess_web_colony_endpoint_crosscut_guard
+    COMMAND tess_web_colony_model --scenario browser-guard --agents 896
+            --mode spread --max-ticks 1000 --require-complete
+  )
+  set_tests_properties(
+    tess_web_colony_endpoint_crosscut_guard
+    PROPERTIES
+      LABELS "target:tess_web_colony_model;subsystem:path;subsystem:sim"
+      PASS_REGULAR_EXPRESSION
+        "scenario=browser-guard.*arrived=896.*crowd=0.*unreachable=0"
+  )
+  add_test(
+    NAME tess_web_colony_canonical_endpoint_crosscut_guard
+    COMMAND tess_web_colony_model --scenario browser-guard --agents 896
+            --mode canonical --max-ticks 5000 --require-complete
+  )
+  set_tests_properties(
+    tess_web_colony_canonical_endpoint_crosscut_guard
+    PROPERTIES
+      LABELS "target:tess_web_colony_model;subsystem:path;subsystem:sim"
+      TIMEOUT 240
+      PASS_REGULAR_EXPRESSION
+        "scenario=browser-guard.*arrived=896.*crowd=0.*unreachable=0"
+  )
+endif()
 
 # Compile the browser adapter under native warnings and diff clang-tidy
 # without coupling it to the native verification executable.

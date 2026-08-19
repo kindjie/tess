@@ -10,8 +10,10 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "colony_model.h"
@@ -39,14 +41,23 @@ struct SettledTag {};
 constexpr int kWidth = width;
 constexpr int kHeight = height;
 constexpr int kMaxAgents = max_agents;
-// Wall painting is rejected outside this band so the spawn columns on the
-// left and the turnaround columns on the right always stay standable.
-constexpr int kWallMinX = 10;
-constexpr int kWallMaxX = kWidth - 11;
+// Eight mostly populated endpoint columns alternate with permanent access
+// aisles. One shared row remains open through every such column, so settled
+// colonists cannot turn endpoint parking into a full-height wall. Wall
+// painting stays outside the complete endpoint bands.
+constexpr int kEndpointBandWidth = 18;
+constexpr int kWallMinX = kEndpointBandWidth;
+constexpr int kWallMaxX = kWidth - kEndpointBandWidth - 1;
+constexpr int kApproachGuardColumns = 8;
+constexpr std::size_t kApproachBarrierTiles = kHeight / 2;
 // Recovery probes begin after half this window. It only has to be long enough
 // that ordinary convoy shuffling does not pay for an exact reachability probe.
 constexpr std::uint32_t kRecoveryWindowTicks = 32;
 constexpr std::size_t kMaxPlanningQueriesPerTick = 8;
+// Pointer painting can publish one topology revision per fixed tick. Delay a
+// congestion response until the stroke has been quiet long enough that its
+// seeded snapshot describes the visible wall rather than a partial one.
+constexpr std::uint64_t kTopologyIdleTicks = 8;
 constexpr auto kRecoveryOptions = tess::BlockedAgentRecoveryOptions{
     .initial_delay_ticks = kRecoveryWindowTicks / 2,
     .max_delay_ticks = 256,
@@ -88,25 +99,22 @@ struct BuildAck {
 };
 
 // Convoy layout: batch k = i / kHeight walks row y = i % kHeight between
-// column 9 - k (home) and kWidth - 3 - k (away). Every agent owns a distinct
-// goal tile — occupancy admits exactly one occupant, so shared goals would
-// leave all but one agent blocked forever — and every leg has equal length,
-// with the outbound leader (k = 0) starting ahead of its followers so nobody
-// parks in front of a teammate still travelling.
-//
-// That last clause holds only while each agent keeps to its own row. A painted
-// bottleneck breaks it: every agent funnels through the one crossing row, then
-// walks the goal column to find its own tile, straight through teammates who
-// arrived earlier and remain still for the leg. `SettledTag` keeps planning
-// honest, while the wave controller turns everyone around together if that
-// temporary packing blocks a remaining goal.
+// columns 16 - 2k (home) and 125 - 2k (away). Its middle-row agent parks in a
+// sparse outer column instead. That leaves row 64 as a cross-cut through every
+// otherwise populated column while preserving distinct, equal-length goals.
 constexpr auto home_tile(std::size_t i) -> tess::Coord3 {
-  return {9 - static_cast<std::int64_t>(i / kHeight),
-          static_cast<std::int64_t>(i % kHeight), 0};
+  const auto batch = static_cast<std::int64_t>(i / kHeight);
+  if (i % kHeight == kHeight / 2) {
+    return {17, 56 + batch, 0};
+  }
+  return {16 - 2 * batch, static_cast<std::int64_t>(i % kHeight), 0};
 }
 constexpr auto away_tile(std::size_t i) -> tess::Coord3 {
-  return {kWidth - 3 - static_cast<std::int64_t>(i / kHeight),
-          static_cast<std::int64_t>(i % kHeight), 0};
+  const auto batch = static_cast<std::int64_t>(i / kHeight);
+  if (i % kHeight == kHeight / 2) {
+    return {kWidth - 2, 56 + batch, 0};
+  }
+  return {kWidth - 3 - 2 * batch, static_cast<std::int64_t>(i % kHeight), 0};
 }
 
 struct ColonyModel::Impl {
@@ -116,6 +124,8 @@ struct ColonyModel::Impl {
   tess::PathAgentTickState tick_state;
   tess::BlockedAgentRecoverySchedule recovery_schedule;
   tess::PathAgentReplanQueue replan_queue;
+  tess::PathAgentReplanQueue diversity_replan_queue;
+  tess::PathAgentReplanQueue wide_merge_replan_queue;
   tess::LocalTopologyScratch topo_scratch;
   tess::PathScratch settle_scratch;
   tess::PathScratch replan_scratch;
@@ -125,6 +135,7 @@ struct ColonyModel::Impl {
   tess::FrameOps ops;
   tess::DeltaCollector deltas;
   std::vector<tess::Coord3> pending_walls;
+  std::vector<std::uint8_t> merge_claims;
   std::vector<tess::ChunkKey> dirty_scratch;
   std::vector<std::uint8_t> shadow;  // 0 open, 1 wall, per tile.
   // Presentation snapshots. Logical positions remain the integer coordinates
@@ -135,6 +146,16 @@ struct ColonyModel::Impl {
   tess::RenderVersion version{};
   std::size_t built_tiles = 0;
   bool replan_each_tick = false;
+  bool spread_congested_routes = false;
+  bool diversity_wave_attempted = false;
+  bool routes_diversified = false;
+  bool wide_merge_checked = false;
+  std::size_t left_approach_wall_tiles = 0;
+  std::size_t right_approach_wall_tiles = 0;
+  std::size_t diversity_replan_waves = 0;
+  std::size_t wide_merge_replan_waves = 0;
+  std::size_t wide_merge_tiles = 0;
+  std::uint64_t last_topology_edit_tick = 0;
   // Persistent schedule clock and accumulator: the carry between frames is
   // what turns measured real deltas into a wall-clock 20 Hz simulation.
   // (tick_state owns the separate agent-tick clock; leave it alone.)
@@ -148,6 +169,8 @@ struct ColonyModel::Impl {
   int aborted_legs = 0;
   // Consecutive fixed ticks with zero agent movement. See AgentTaskFn.
   std::size_t stalled_ticks = 0;
+  std::size_t last_advanced = 0;
+  std::size_t last_movement_waits = 0;
   std::size_t max_recovery_probes = 0;
   std::size_t max_planning_queries = 0;
 
@@ -165,8 +188,15 @@ struct ColonyModel::Impl {
         }
         const auto local =
             tess::local_tile_id<Shape>(tess::local_coord<Shape>(coord));
+        const auto newly_constructed = !construction[local.value];
         passable[local.value] = false;
         construction[local.value] = true;
+        if (newly_constructed && coord.x < kWallMinX + kApproachGuardColumns) {
+          ++demo->left_approach_wall_tiles;
+        }
+        if (newly_constructed && coord.x > kWallMaxX - kApproachGuardColumns) {
+          ++demo->right_approach_wall_tiles;
+        }
         ++ack.tiles;
       }
     }
@@ -195,7 +225,7 @@ struct ColonyModel::Impl {
 
   struct TopologyTaskFn {
     Impl* demo = nullptr;
-    auto operator()(const tess::ScheduleTaskContext&)
+    auto operator()(const tess::ScheduleTaskContext& context)
         -> tess::ScheduleTaskResult {
       // Example: rebuild derived topology on dirty input. The schedule runs
       // this OnDirty task only after queued terrain edits publish their bit.
@@ -210,7 +240,16 @@ struct ColonyModel::Impl {
           TESS_ASSERT(false);
           return {};
         }
+        // A topology revision ends any older seeded snapshot. Canonical work
+        // owns the new revision immediately; a fresh seed becomes eligible
+        // only after pointer painting has remained idle for a short window.
+        demo->diversity_replan_queue.clear();
+        demo->wide_merge_replan_queue.clear();
         demo->replan_queue.request_all(demo->agents);
+        demo->routes_diversified = false;
+        demo->diversity_wave_attempted = false;
+        demo->wide_merge_checked = false;
+        demo->last_topology_edit_tick = context.clock.tick;
       }
       return {};
     }
@@ -244,6 +283,152 @@ struct ColonyModel::Impl {
           tess::chunk_key<Shape>(tess::chunk_coord<Shape>(agent.position));
       world.mark_content_changed(key);
     }
+  }
+
+  [[nodiscard]] auto endpoint_approach_obstructed() const noexcept -> bool {
+    // A few wall endpoints can cross this band without causing the one-sided
+    // endpoint convergence this guard protects. Require a substantial local
+    // barrier so unrelated interior congestion can still use route spreading.
+    return left_approach_wall_tiles >= kApproachBarrierTiles ||
+           right_approach_wall_tiles >= kApproachBarrierTiles;
+  }
+
+  [[nodiscard]] auto dominant_barrier_open_runs() const -> std::size_t {
+    auto barrier_x = kWallMinX;
+    auto barrier_tiles = 0;
+    auto barrier_straddlers = 0;
+    const auto active = static_cast<std::size_t>(outstanding_goal_count());
+    const auto minimum_straddlers = std::max(std::size_t{8}, active / 4U);
+    for (auto x = kWallMinX; x <= kWallMaxX; ++x) {
+      auto construction_tiles = 0;
+      for (auto y = 0; y < kHeight; ++y) {
+        construction_tiles +=
+            world.field<ConstructionTag>(tess::Coord3{x, y, 0}) ? 1 : 0;
+      }
+      auto straddlers = 0;
+      for (const auto& agent : agents) {
+        if (!agent.has_goal) {
+          continue;
+        }
+        const auto crosses = outbound
+                                 ? agent.position.x < x && agent.goal.x >= x
+                                 : agent.position.x > x && agent.goal.x <= x;
+        straddlers += crosses ? 1 : 0;
+      }
+      if (static_cast<std::size_t>(straddlers) < minimum_straddlers) {
+        continue;
+      }
+      if (construction_tiles > barrier_tiles ||
+          (construction_tiles == barrier_tiles &&
+           straddlers > barrier_straddlers)) {
+        barrier_tiles = construction_tiles;
+        barrier_straddlers = straddlers;
+        barrier_x = x;
+      }
+    }
+    if (barrier_tiles < kHeight / 2) {
+      return 0;
+    }
+
+    auto runs = std::size_t{0};
+    auto in_run = false;
+    for (auto y = 0; y < kHeight; ++y) {
+      const auto open =
+          !world.field<ConstructionTag>(tess::Coord3{barrier_x, y, 0});
+      if (open && !in_run) {
+        ++runs;
+      }
+      in_run = open;
+    }
+    return runs;
+  }
+
+  void update_route_diversity(std::uint64_t tick) {
+    if (!spread_congested_routes || replan_each_tick ||
+        endpoint_approach_obstructed()) {
+      if (!diversity_replan_queue.empty() || routes_diversified) {
+        diversity_replan_queue.clear();
+        routes_diversified = false;
+        replan_queue.request_all(agents);
+      }
+      return;
+    }
+    const auto topology_idle =
+        tick >= last_topology_edit_tick &&
+        tick - last_topology_edit_tick >= kTopologyIdleTicks;
+    if (diversity_wave_attempted || !topology_idle) {
+      return;
+    }
+    const auto active = static_cast<std::size_t>(outstanding_goal_count());
+    const auto threshold = std::max(std::size_t{8}, active / 16);
+    if (active < 64 || last_movement_waits < threshold) {
+      return;
+    }
+    // A broad barrier with several separate openings already supplies route
+    // diversity. Seeding those routes can synchronize agents that canonical
+    // planning had naturally split, so observe this topology once and leave
+    // the retained routes alone for the rest of the leg.
+    if (dominant_barrier_open_runs() > 2) {
+      diversity_wave_attempted = true;
+      return;
+    }
+    diversity_wave_attempted = true;
+    routes_diversified = true;
+    ++diversity_replan_waves;
+    // The seeded policy owns exactly this snapshot. Later topology and
+    // recovery requests remain in the canonical queue and cannot inherit it.
+    replan_queue.clear();
+    diversity_replan_queue.request_all(agents);
+  }
+
+  [[nodiscard]] auto count_wide_merge_tiles() -> std::size_t {
+    std::fill(merge_claims.begin(), merge_claims.end(), std::uint8_t{0});
+    for (std::size_t i = 0; i < agents.size(); ++i) {
+      const auto& agent = agents[i];
+      if (!agent.has_goal || agent.status != tess::PathStatus::Found ||
+          agent.phase != tess::PathAgentPhase::Blocked ||
+          i >= tick_state.routes.routes.size()) {
+        continue;
+      }
+      const auto& route = tick_state.routes.routes[i];
+      if (agent.path_index + 1 >= route.size()) {
+        continue;
+      }
+      const auto desired = route[agent.path_index + 1];
+      const auto key = tess::tile_key<Shape>(desired);
+      auto& claims = merge_claims[static_cast<std::size_t>(key.value)];
+      claims = std::min<std::uint8_t>(claims + 1, 2);
+    }
+    return static_cast<std::size_t>(
+        std::count_if(merge_claims.begin(), merge_claims.end(),
+                      [](std::uint8_t claims) { return claims >= 2; }));
+  }
+
+  void update_wide_merge_routes() {
+    if (!spread_congested_routes || replan_each_tick ||
+        endpoint_approach_obstructed()) {
+      wide_merge_replan_queue.clear();
+      return;
+    }
+    if (wide_merge_checked || !diversity_wave_attempted ||
+        !routes_diversified || !diversity_replan_queue.empty() ||
+        !replan_queue.empty()) {
+      return;
+    }
+    const auto active = static_cast<std::size_t>(outstanding_goal_count());
+    const auto threshold = std::max(std::size_t{8}, active / 16);
+    if (active < 64 || last_movement_waits < threshold) {
+      return;
+    }
+    // Inspect exactly one post-wave snapshot. Rechecking every later tick can
+    // turn ordinary gate contention into an unnecessary second wave.
+    wide_merge_checked = true;
+    wide_merge_tiles = count_wide_merge_tiles();
+    if (wide_merge_tiles < 64) {
+      return;
+    }
+    ++wide_merge_replan_waves;
+    wide_merge_replan_queue.request_all(agents);
   }
 
   // Example: bound expensive recovery work. A retry clock cannot distinguish
@@ -355,6 +540,8 @@ struct ColonyModel::Impl {
       // last pair, which is the pair rendered with the accumulator remainder.
       demo->snapshot_before_movement();
       demo->sync_settled_obstacles();
+      demo->update_route_diversity(context.clock.tick);
+      demo->update_wide_merge_routes();
       // Example: run bounded pathing before movement. The earlier Pathing
       // phase refreshes shared topology; this Movement task then performs its
       // bounded per-agent planning before it consumes retained routes and
@@ -366,6 +553,8 @@ struct ColonyModel::Impl {
         // agent. It still needs the bounded classifier: replanning alone
         // cannot distinguish a wall seal from settled-only snapshot NoPath.
         demo->replan_queue.clear();
+        demo->diversity_replan_queue.clear();
+        demo->wide_merge_replan_queue.clear();
         (void)demo->recover_blocked_agents(context.clock.tick,
                                            kMaxPlanningQueriesPerTick);
         // Found recovery results need no retained-route work because the
@@ -373,20 +562,49 @@ struct ColonyModel::Impl {
         demo->replan_queue.clear();
         tess::mark_pathing_dirty(demo->tick_state);
       } else {
-        const auto replan_stats =
-            tess::process_weighted_path_agent_replans<World, Traveler>(
-                demo->world, demo->agents, demo->tick_state.routes,
-                demo->replan_queue, demo->replan_scratch,
-                tess::PathAgentReplanOptions{
-                    .max_requests = kMaxPlanningQueriesPerTick,
-                });
+        std::size_t planning_queries = 0;
+        if (planning_queries < kMaxPlanningQueriesPerTick &&
+            !demo->diversity_replan_queue.empty()) {
+          const auto diversity_stats =
+              tess::process_weighted_path_agent_replans<World, Traveler>(
+                  demo->world, demo->agents, demo->tick_state.routes,
+                  demo->diversity_replan_queue, demo->replan_scratch,
+                  tess::PathAgentReplanOptions{
+                      .max_requests =
+                          kMaxPlanningQueriesPerTick - planning_queries,
+                      .equal_cost_tie_seed = 0x434f4c4f4e59ULL,
+                  });
+          planning_queries += diversity_stats.submitted;
+        }
+        if (planning_queries < kMaxPlanningQueriesPerTick) {
+          const auto wide_merge_stats =
+              tess::process_weighted_path_agent_replans<World, Traveler>(
+                  demo->world, demo->agents, demo->tick_state.routes,
+                  demo->wide_merge_replan_queue, demo->replan_scratch,
+                  tess::PathAgentReplanOptions{
+                      .max_requests =
+                          kMaxPlanningQueriesPerTick - planning_queries,
+                      .equal_cost_tie_seed = 0x434f4e47455354ULL,
+                  });
+          planning_queries += wide_merge_stats.submitted;
+        }
+        if (planning_queries < kMaxPlanningQueriesPerTick) {
+          const auto canonical_stats =
+              tess::process_weighted_path_agent_replans<World, Traveler>(
+                  demo->world, demo->agents, demo->tick_state.routes,
+                  demo->replan_queue, demo->replan_scratch,
+                  tess::PathAgentReplanOptions{
+                      .max_requests =
+                          kMaxPlanningQueriesPerTick - planning_queries,
+                  });
+          planning_queries += canonical_stats.submitted;
+        }
         const auto remaining_queries =
-            kMaxPlanningQueriesPerTick - replan_stats.submitted;
+            kMaxPlanningQueriesPerTick - planning_queries;
         const auto recovery_queries =
             demo->recover_blocked_agents(context.clock.tick, remaining_queries);
-        demo->max_planning_queries =
-            std::max(demo->max_planning_queries,
-                     replan_stats.submitted + recovery_queries);
+        demo->max_planning_queries = std::max(
+            demo->max_planning_queries, planning_queries + recovery_queries);
       }
       auto options = tess::PathAgentTickOptions{};
       // This demo's exact replans are owned by replan_queue. Zero keeps a
@@ -412,6 +630,8 @@ struct ColonyModel::Impl {
           demo->tick_state, demo->world, demo->agents, demo->runtime,
           demo->joint_scratch, options,
           tess::JointMoveOptions{tess::SwapPolicy::Permit}, 0, nullptr);
+      demo->last_advanced = stats.movement.advanced;
+      demo->last_movement_waits = stats.movement.blocked_waits;
       // A colony can stop dead without any agent being durably blocked --
       // two agents each standing on the tile the other needs will block, be
       // refunded, and block again forever. Nobody reports that today, so the
@@ -578,6 +798,14 @@ struct ColonyModel::Impl {
       ++aborted_legs;
     }
     outbound = !outbound;
+    diversity_wave_attempted = false;
+    routes_diversified = false;
+    diversity_replan_queue.clear();
+    wide_merge_checked = false;
+    wide_merge_tiles = 0;
+    wide_merge_replan_queue.clear();
+    last_advanced = 0;
+    last_movement_waits = 0;
     recovery_schedule.clear();
     for (std::size_t i = 0; i < agents.size(); ++i) {
       crowd_blocked[i] = 0;

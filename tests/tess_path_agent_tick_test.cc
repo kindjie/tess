@@ -839,6 +839,62 @@ TEST(TessPathAgentTick, ReplanQueueBoundsExactPlanningAcrossTicks) {
   EXPECT_FALSE(routes.routes[2].empty());
 }
 
+TEST(TessPathAgentTick, ReplanQueueCanDiversifyEqualCostWeightedRoutes) {
+  World world;
+  fill_world(world);
+  for (std::uint64_t y = 0; y < Runtime2D::size.y; ++y) {
+    if (y != 8 && y != 24) {
+      world.field<PassableTag>({15, static_cast<std::int64_t>(y), 0}) = false;
+    }
+  }
+
+  std::array<tess::PathAgentState, 32> agents{};
+  for (auto& agent : agents) {
+    agent.position = {0, 16, 0};
+    tess::set_path_agent_goal(agent, {31, 16, 0});
+  }
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(agents.size());
+  tess::PathAgentReplanQueue queue;
+  queue.reserve(agents.size());
+  queue.request_all(agents);
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(RuntimeTileCount);
+
+  const auto stats = tess::process_weighted_path_agent_replans<
+      World, tess::movement::LegacyWeighted<PassableTag, CostTag>>(
+      world, agents, routes, queue, scratch,
+      tess::PathAgentReplanOptions{
+          .max_requests = agents.size(),
+          .equal_cost_tie_seed = 0x434f4c4f4e59ULL,
+      });
+
+  ASSERT_EQ(stats.found, agents.size());
+  std::array<bool, 32> crossings{};
+  for (const auto& route : routes.routes) {
+    EXPECT_EQ(route.size(), 48u);
+    const auto crossing =
+        std::find_if(route.begin(), route.end(),
+                     [](tess::Coord3 coord) { return coord.x == 15; });
+    ASSERT_NE(crossing, route.end());
+    crossings[static_cast<std::size_t>(crossing->y)] = true;
+  }
+  EXPECT_TRUE(crossings[8]);
+  EXPECT_TRUE(crossings[24]);
+
+  const auto first_routes = routes.routes;
+  queue.request_all(agents);
+  const auto repeated = tess::process_weighted_path_agent_replans<
+      World, tess::movement::LegacyWeighted<PassableTag, CostTag>>(
+      world, agents, routes, queue, scratch,
+      tess::PathAgentReplanOptions{
+          .max_requests = agents.size(),
+          .equal_cost_tie_seed = 0x434f4c4f4e59ULL,
+      });
+  EXPECT_EQ(repeated.found, agents.size());
+  EXPECT_EQ(routes.routes, first_routes);
+}
+
 TEST(TessPathAgentTick, QueuedReplanPreservesBlockedRetryStreak) {
   World world;
   fill_world(world);

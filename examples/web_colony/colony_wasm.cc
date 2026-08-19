@@ -38,6 +38,12 @@ TESS_COLONY_EXPORT void tess_colony_set_strategy(int replan_each_tick) {
   }
 }
 
+TESS_COLONY_EXPORT void tess_colony_set_spread(int enabled) {
+  if (model) {
+    model->set_spread_congested_routes(enabled != 0);
+  }
+}
+
 TESS_COLONY_EXPORT double tess_colony_tick(double dt_seconds) {
   return model ? model->tick(dt_seconds) : -1.0;
 }
@@ -94,6 +100,18 @@ TESS_COLONY_EXPORT int tess_colony_turnaround_ready() {
 
 TESS_COLONY_EXPORT int tess_colony_stalled_ticks() {
   return model ? model->stalled_ticks() : 0;
+}
+
+TESS_COLONY_EXPORT int tess_colony_planning_pending() {
+  return model ? model->planning_pending() : 0;
+}
+
+TESS_COLONY_EXPORT int tess_colony_advanced_last_tick() {
+  return model ? model->advanced_last_tick() : 0;
+}
+
+TESS_COLONY_EXPORT int tess_colony_movement_waits_last_tick() {
+  return model ? model->movement_waits_last_tick() : 0;
 }
 
 }  // extern "C"
