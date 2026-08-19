@@ -168,6 +168,10 @@ flowchart TB
   bounds-clamped (an offset at or past the end yields an empty view) and sharing
   the same storage without copying. It is constructible from a `std::span` or a
   `std::vector<Coord3>`, so existing result-construction sites are unchanged.
+- The optional `tess/io.h` header provides human-readable stream insertion for
+  `PathStatus` and `PathView`. Streaming a path traverses its borrowed
+  coordinates without extending their lifetime. The text is diagnostic output,
+  not a stable serialization format.
 - `DistanceFieldResult` returns the status and node counts for a reverse
   shared-goal field build.
 - `WeightedPathBatchStats` returns request count, unique-goal count, field

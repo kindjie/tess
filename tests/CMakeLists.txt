@@ -241,6 +241,12 @@ tess_apply_project_options(tess_shape_test)
 
 tess_discover_tests(tess_shape_test LABELS core)
 
+add_executable(tess_io_test tess_io_test.cc)
+target_link_libraries(tess_io_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_io_test)
+
+tess_discover_tests(tess_io_test LABELS core path)
+
 add_executable(
   tess_grid_benchmark_harness_test
   tess_grid_benchmark_harness_test.cc

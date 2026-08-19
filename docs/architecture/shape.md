@@ -67,6 +67,14 @@ headers) and is exported by
   `TESS_ASSERT(expr)` and `TESS_ASSERT_MSG(expr, message)` terminate on a
   failed contract in those builds and compile out under `NDEBUG`.
 
+## Human-Readable Output
+
+The optional `tess/io.h` header provides stream insertion for `Coord2`,
+`Coord3`, and `Extent3`. Keeping it separate prevents the normal aggregate and
+core headers from acquiring an iostream dependency. The output is intended for
+logs, examples, and diagnostics; its text is not a stable serialization or
+persistence format.
+
 ## Key Packing
 
 Local tile ids and chunk keys are row-major:
