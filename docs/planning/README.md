@@ -21,6 +21,8 @@
 
 ## Point-in-time evidence
 
+- [Pathfinding prototype survey,
+  2026-08-18](pathfinding-prototype-survey-2026-08-18.md)
 - [Second full audit, 2026-07-09](audit-2026-07-09.md) and its
   [remediation plan](audit-2026-07-09-remediation.md)
 - [Performance audit, 2026-07-11](audit-2026-07-11.md) and its
