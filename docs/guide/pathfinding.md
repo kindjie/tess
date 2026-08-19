@@ -87,6 +87,8 @@ The [interactive pathfinder](https://tess.owx.dev/demo/) shows the basic A*
 query, while the [colony demo](https://tess.owx.dev/demo/colony/) exercises
 retained routes and multi-agent movement. Reproducible timing and memory
 evidence lives on the [performance page](../performance.md).
+The [side-by-side strategy comparison](../pathfinding-strategy-comparison.md)
+shows the four call shapes over one compiled, self-checking example.
 
 ## Thresholds
 

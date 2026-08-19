@@ -42,6 +42,10 @@ cmake --build --preset examples
 
 - [`mvp_path.cc`][mvp_path] — a small end-to-end queued-edit plus A*
   pathfinding prototype.
+- [`pathfinding_strategies.cc`][pathfinding_strategies] — one small world
+  comparing plain A*, exact route caching, weighted batches, and shared-goal
+  distance fields; its named regions feed the
+  [strategy comparison](pathfinding-strategy-comparison.md).
 - [`stairs_3d.cc`][stairs_3d] — the `StairTransitions` provider connecting
   two z-levels, with reachability, the path-runtime precheck, and an
   incremental update after demolishing the stair.
@@ -96,6 +100,7 @@ The fractional coordinates never return to simulation state.
 [quickstart]: https://github.com/kindjie/tess/blob/main/examples/quickstart.cc
 [colony_2d]: https://github.com/kindjie/tess/blob/main/examples/colony_2d.cc
 [mvp_path]: https://github.com/kindjie/tess/blob/main/examples/mvp_path.cc
+[pathfinding_strategies]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies.cc
 [path_agents]: https://github.com/kindjie/tess/blob/main/examples/path_agents.cc
 [stairs_3d]: https://github.com/kindjie/tess/blob/main/examples/stairs_3d.cc
 [ant_farm]: https://github.com/kindjie/tess/blob/main/examples/ant_farm_vertical.cc
