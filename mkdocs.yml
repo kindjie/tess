@@ -95,6 +95,7 @@ nav:
       - Diagnostics architecture: architecture/diagnostics.md
       - GPU interface: architecture/gpu.md
   - API reference: https://tess.owx.dev/api/
+  - Pathfinding comparison: pathfinding-strategy-comparison.md
   - Performance: performance.md
   - Use cases: use-cases.md
   - Project:

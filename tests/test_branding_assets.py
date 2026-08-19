@@ -148,6 +148,9 @@ def test_docs_search_metadata_establishes_tess_site_identity():
     ),
     "docs/performance.md": "C++ Grid Pathfinding and Simulation Benchmarks",
     "docs/packaging.md": "Install the tess Header-Only C++20 Library",
+    "docs/pathfinding-strategy-comparison.md": (
+      "A* vs Route Caches, Batches, and Distance Fields"
+    ),
     "docs/use-cases.md": "Grid Pathfinding and Simulation Use Cases",
   }
   for path, title in expected_titles.items():
