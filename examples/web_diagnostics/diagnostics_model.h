@@ -14,7 +14,7 @@ inline constexpr int height = 24;
 struct PassableTag {};
 struct TerrainTag {};
 
-using Shape = tess::Shape<Extent3{width, height, 1}, Extent3{8, 8, 1}>;
+using Shape = tess::Shape<Extent3{width, height}, Extent3{8, 8}>;
 using Schema =
     FieldSchema<Field<PassableTag, bool>, Field<TerrainTag, std::uint16_t>>;
 using World = AlwaysResidentWorld<Shape, Schema>;

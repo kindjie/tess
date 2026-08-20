@@ -21,7 +21,7 @@ struct CostTag {};
 struct OccupancyTag {};
 struct ReservationTag {};
 
-using Shape = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
+using Shape = tess::Shape<tess::Extent3{32, 32}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<
     tess::Field<PassableTag, bool>, tess::Field<CostTag, std::uint32_t>,
     tess::Field<OccupancyTag, bool>, tess::Field<ReservationTag, bool>>;
@@ -29,14 +29,8 @@ using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
 auto run() -> int {
   World world;
-  for (auto& page : world.chunks()) {
-    auto passable = page.template field_span<PassableTag>();
-    auto cost = page.template field_span<CostTag>();
-    for (std::size_t i = 0; i < passable.size(); ++i) {
-      passable[i] = true;
-      cost[i] = 1u;
-    }
-  }
+  world.fill_field<PassableTag>(true);
+  world.fill_field<CostTag>(1u);
 
   entt::registry registry;
   tess::EnttPathAgentContext context;
@@ -50,13 +44,12 @@ auto run() -> int {
   for (std::size_t i = 0; i < kPawns; ++i) {
     const auto row = static_cast<std::int64_t>(i) * 2;
     pawns[i] = tess::spawn_entt_path_agent<World, OccupancyTag>(
-        registry, context, world, index, tess::Coord3{0, row, 0});
+        registry, context, world, index, tess::Coord2{0, row});
     if (pawns[i] == entt::null) {
       std::cerr << "spawn refused for pawn " << i << "\n";
       return 1;
     }
-    tess::set_entt_path_agent_goal(registry, pawns[i],
-                                   tess::Coord3{12, row, 0});
+    tess::set_entt_path_agent_goal(registry, pawns[i], tess::Coord2{12, row});
   }
 
   tess::PathRequestRuntime runtime;
@@ -69,8 +62,7 @@ auto run() -> int {
     if (tick == 3) {
       // Mid-flight reassignment: writing a new PathGoal re-arms the
       // pawn from wherever it stands -- no teleport, no identity churn.
-      tess::set_entt_path_agent_goal(registry, pawns[0],
-                                     tess::Coord3{0, 15, 0});
+      tess::set_entt_path_agent_goal(registry, pawns[0], tess::Coord2{0, 15});
       std::cout << "tick 3: pawn 0 rerouted mid-flight\n";
     }
     if (tick == 5) {

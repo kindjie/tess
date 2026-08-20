@@ -30,8 +30,8 @@ constexpr int kMaxCatchUpTicks = 8;
 constexpr int kBarrierMinX = traffic_width / 2 - 2;
 constexpr int kBarrierMaxX = traffic_width / 2 + 1;
 
-using Shape = tess::Shape<tess::Extent3{traffic_width, traffic_height, 1},
-                          tess::Extent3{32, 32, 1}>;
+using Shape = tess::Shape<tess::Extent3{traffic_width, traffic_height},
+                          tess::Extent3{32, 32}>;
 using Schema = tess::FieldSchema<
     tess::Field<PassableTag, bool>, tess::Field<ConstructionTag, bool>,
     tess::Field<CostTag, std::uint32_t>, tess::Field<OccupancyTag, bool>,
@@ -162,20 +162,8 @@ struct TrafficModel::Impl {
 #endif
 
   void initialize_world() {
-    for (auto& page : world.chunks()) {
-      auto passable = page.field_span<PassableTag>();
-      auto construction = page.field_span<ConstructionTag>();
-      auto cost = page.field_span<CostTag>();
-      auto occupancy = page.field_span<OccupancyTag>();
-      auto reservation = page.field_span<ReservationTag>();
-      for (std::size_t i = 0; i < passable.size(); ++i) {
-        passable[i] = true;
-        construction[i] = false;
-        cost[i] = 1;
-        occupancy[i] = false;
-        reservation[i] = false;
-      }
-    }
+    world.fill_field<PassableTag>(true);
+    world.fill_field<CostTag>(1);
     terrain_shadow.assign(
         static_cast<std::size_t>(traffic_width) * traffic_height, 0);
   }

@@ -66,7 +66,7 @@ constexpr auto kRecoveryOptions = tess::BlockedAgentRecoveryOptions{
 };
 
 using Shape =
-    tess::Shape<tess::Extent3{kWidth, kHeight, 1}, tess::Extent3{16, 16, 1}>;
+    tess::Shape<tess::Extent3{kWidth, kHeight}, tess::Extent3{16, 16}>;
 using Schema = tess::FieldSchema<
     tess::Field<PassableTag, bool>, tess::Field<ConstructionTag, bool>,
     tess::Field<CostTag, std::uint32_t>, tess::Field<OccupancyTag, bool>,

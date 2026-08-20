@@ -19,7 +19,7 @@ struct CostTag {};
 struct OccupancyTag {};
 struct ReservationTag {};
 
-using Shape = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
+using Shape = tess::Shape<tess::Extent3{32, 32}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<
     tess::Field<PassableTag, bool>, tess::Field<CostTag, std::uint32_t>,
     tess::Field<OccupancyTag, bool>, tess::Field<ReservationTag, bool>>;
@@ -152,14 +152,8 @@ static_assert(tess::PathAgentSink<MiniAgentSystem>);
 
 auto run() -> int {
   World world;
-  for (auto& page : world.chunks()) {
-    auto passable = page.template field_span<PassableTag>();
-    auto cost = page.template field_span<CostTag>();
-    for (std::size_t i = 0; i < passable.size(); ++i) {
-      passable[i] = true;
-      cost[i] = 1u;
-    }
-  }
+  world.fill_field<PassableTag>(true);
+  world.fill_field<CostTag>(1u);
 
   MiniEcs ecs;
   tess::TileOccupancyIndex index;
@@ -168,14 +162,14 @@ auto run() -> int {
   batch.reserve(8);
 
   for (std::int64_t i = 0; i < 3; ++i) {
-    const auto position = tess::Coord3{0, i * 3, 0};
+    const tess::Coord3 position = tess::Coord2{0, i * 3};
     const auto entity = ecs.create(position);
     world.field<OccupancyTag>(position) = true;
     if (!index.insert(position, MiniHandleAdapter::to_handle(entity))) {
       std::cerr << "occupancy index rejected a fresh spawn\n";
       return 1;
     }
-    ecs.goals[entity.index] = tess::Coord3{6, i * 3, 0};
+    ecs.goals[entity.index] = tess::Coord2{6, i * 3};
   }
 
   tess::PathRequestRuntime runtime;
@@ -206,7 +200,7 @@ auto run() -> int {
     const auto position = ecs.positions[slot];
     const auto handle = index.entity_at(position);
     const auto goal_row = static_cast<std::int64_t>(slot) * 3;
-    if (position != tess::Coord3{6, goal_row, 0} ||
+    if (position != tess::Coord2{6, goal_row} ||
         MiniHandleAdapter::to_entity(handle).index != slot) {
       std::cerr << "pawn " << slot << " out of sync\n";
       return 1;

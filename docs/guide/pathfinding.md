@@ -106,9 +106,9 @@ cost climb.
 ```cpp
 tess::WeightedPathBatchScratch scratch;
 const auto requests = std::array{
-    tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}},
-    tess::PathRequest{tess::Coord3{0, 1, 0}, tess::Coord3{31, 31, 0}},
-    tess::PathRequest{tess::Coord3{0, 2, 0}, tess::Coord3{31, 31, 0}},
+    tess::PathRequest{tess::Coord2{0, 0}, tess::Coord2{31, 31}},
+    tess::PathRequest{tess::Coord2{0, 1}, tess::Coord2{31, 31}},
+    tess::PathRequest{tess::Coord2{0, 2}, tess::Coord2{31, 31}},
 };
 const auto results =
     tess::weighted_path_batch<World, PassableTag, CostTag, /*MaxCost=*/128>(
@@ -119,8 +119,8 @@ const auto results =
 <!-- tess-snippet: field-product source=examples/documentation.cc -->
 ```cpp
 tess::GoalSet goals;
-goals.add(tess::Coord3{31, 0, 0});
-goals.add(tess::Coord3{31, 31, 0});
+goals.add(tess::Coord2{31, 0});
+goals.add(tess::Coord2{31, 31});
 
 tess::DistanceFieldScratch scratch;
 tess::DistanceFieldProduct product;
@@ -135,7 +135,7 @@ if (shared == nullptr) {
 }
 
 const auto nearest = tess::nearest_target<World, PassableTag>(
-    world, tess::Coord3{0, 31, 0}, *shared, scratch);
+    world, tess::Coord2{0, 31}, *shared, scratch);
 ```
 <!-- /tess-snippet -->
 

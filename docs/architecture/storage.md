@@ -106,6 +106,15 @@ The world type exposes static storage metadata:
 - `page_byte_size`
 - `storage_byte_size`
 
+`fill_field<Tag>(value)` assigns one value to the selected field across every
+tile in a dense world. The traversal performs no world-storage allocation;
+assignment of a user-defined field value may allocate or throw, leaving the
+already visited tiles assigned. The method is intentionally absent from the
+sparse world: “every tile” would otherwise ambiguously mean every resident
+tile or materializing the complete bounded shape. Like direct `field()`
+writes, filling storage does not update dirty, active, topology, or
+content-version metadata.
+
 Hot accessors are explicitly `noexcept` and do not allocate after
 construction:
 

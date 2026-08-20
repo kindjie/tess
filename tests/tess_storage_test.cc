@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
@@ -14,6 +15,27 @@ namespace {
 struct TerrainTag {};
 struct CostTag {};
 struct RegionTag {};
+struct ThrowingTag {};
+
+struct ThrowingValue {
+  int value = 0;
+  static inline int assignments_before_throw = -1;
+
+  ThrowingValue() = default;
+  explicit ThrowingValue(int initial) : value(initial) {}
+  ThrowingValue(const ThrowingValue&) = default;
+
+  auto operator=(const ThrowingValue& other) -> ThrowingValue& {
+    if (assignments_before_throw == 0) {
+      throw std::runtime_error("injected field assignment failure");
+    }
+    if (assignments_before_throw > 0) {
+      --assignments_before_throw;
+    }
+    value = other.value;
+    return *this;
+  }
+};
 
 constexpr std::uint32_t DirtyTerrain = 1u << 0u;
 constexpr std::uint32_t DirtyCost = 1u << 1u;
@@ -27,6 +49,7 @@ using Vertical2D =
     tess::Shape<tess::Extent3{1, 64, 32}, tess::Extent3{1, 16, 8}>;
 using Chunked3D =
     tess::Shape<tess::Extent3{64, 64, 32}, tess::Extent3{16, 16, 8}>;
+using Small2D = tess::Shape<tess::Extent3{4, 4}, tess::Extent3{4, 4}>;
 
 using TerrainField = tess::Field<TerrainTag, std::uint16_t>;
 using CostField = tess::Field<CostTag, float>;
@@ -38,6 +61,24 @@ using Page = tess::ChunkPage<Shape, Schema>;
 
 template <typename Shape>
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
+
+using ThrowingSchema =
+    tess::FieldSchema<tess::Field<ThrowingTag, ThrowingValue>>;
+using ThrowingWorld = tess::AlwaysResidentWorld<Small2D, ThrowingSchema>;
+using SparseTopDown = tess::SparseResidentWorld<TopDown2D, Schema>;
+
+template <typename WorldType, typename Tag>
+using WorldFieldValue =
+    typename WorldType::schema_type::template value_type<Tag>;
+
+template <typename WorldType, typename Tag>
+concept HasFillField =
+    requires(WorldType& world, const WorldFieldValue<WorldType, Tag>& value) {
+      world.template fill_field<Tag>(value);
+    };
+
+static_assert(HasFillField<World<TopDown2D>, TerrainTag>);
+static_assert(!HasFillField<SparseTopDown, TerrainTag>);
 
 TEST(TessStorage, FieldSchemaAcceptsDistinctTagsAndFindsValueTypes) {
   static_assert(tess::is_valid_field_schema_v<TerrainField, CostField>);
@@ -235,6 +276,94 @@ TEST(TessStorage, WorldTryResolveAndTryFieldRejectInvalidCoordinates) {
   ASSERT_NE(terrain, nullptr);
   *terrain = 17;
   EXPECT_EQ(world.field<TerrainTag>(tess::Coord3{1, 2, 3}), 17);
+}
+
+TEST(TessStorage, DenseWorldFillsAFieldAcrossEveryTile) {
+  World<TopDown2D> world;
+
+  {
+    tess_test::ScopedAllocationCounter counter;
+    world.fill_field<TerrainTag>(std::uint16_t{17});
+    world.fill_field<CostTag>(2.5F);
+    EXPECT_EQ(counter.count(), 0u);
+  }
+
+  for (const auto& page : world.chunks()) {
+    for (const auto value : page.field_span<TerrainTag>()) {
+      EXPECT_EQ(value, 17);
+    }
+    for (const auto value : page.field_span<CostTag>()) {
+      EXPECT_FLOAT_EQ(value, 2.5F);
+    }
+    for (const auto value : page.field_span<RegionTag>()) {
+      EXPECT_EQ(value, 0u);
+    }
+    const auto key = page.chunk_key();
+    EXPECT_EQ(world.dirty_flags(key), 0u);
+    EXPECT_EQ(world.active_flags(key), 0u);
+    EXPECT_EQ(world.meta(key).version, 0u);
+    EXPECT_EQ(world.meta(key).topology_version, 0u);
+  }
+}
+
+TEST(TessStorage, DenseWorldFillLeavesMetadataAndPartialWritesOnThrow) {
+  ThrowingWorld world;
+  constexpr auto key = tess::ChunkKey{0};
+  constexpr auto bounds =
+      tess::Box3{tess::Coord3{1, 1, 0}, tess::Extent3{2, 2}};
+
+  world.mark_topology_dirty(key, DirtyTerrain, bounds);
+  world.mark_active(key, ActiveFluid);
+  world.mark_content_changed(key);
+  const auto before = world.meta(key);
+  const auto dirty_flags = world.dirty_flags(key);
+  const auto active_flags = world.active_flags(key);
+  const auto dirty_bounds = world.dirty_bounds(key);
+
+  ThrowingValue::assignments_before_throw = 3;
+  EXPECT_THROW(world.fill_field<ThrowingTag>(ThrowingValue{9}),
+               std::runtime_error);
+  ThrowingValue::assignments_before_throw = -1;
+
+  const auto values = world.field_span<ThrowingTag>(key);
+  ASSERT_EQ(values.size(), 16u);
+  for (std::size_t index = 0; index < values.size(); ++index) {
+    EXPECT_EQ(values[index].value, index < 3 ? 9 : 0);
+  }
+  EXPECT_EQ(world.meta(key).state, before.state);
+  EXPECT_EQ(world.meta(key).version, before.version);
+  EXPECT_EQ(world.meta(key).topology_version, before.topology_version);
+  EXPECT_EQ(world.meta(key).active_count, before.active_count);
+  EXPECT_EQ(world.meta(key).entity_count, before.entity_count);
+  EXPECT_EQ(world.dirty_flags(key), dirty_flags);
+  EXPECT_EQ(world.active_flags(key), active_flags);
+  EXPECT_EQ(world.dirty_bounds(key), dirty_bounds);
+
+  world.fill_field<ThrowingTag>(ThrowingValue{7});
+  for (const auto& value : world.field_span<ThrowingTag>(key)) {
+    EXPECT_EQ(value.value, 7);
+  }
+  EXPECT_EQ(world.meta(key).state, before.state);
+  EXPECT_EQ(world.meta(key).version, before.version);
+  EXPECT_EQ(world.meta(key).topology_version, before.topology_version);
+  EXPECT_EQ(world.meta(key).active_count, before.active_count);
+  EXPECT_EQ(world.meta(key).entity_count, before.entity_count);
+  EXPECT_EQ(world.dirty_flags(key), dirty_flags);
+  EXPECT_EQ(world.active_flags(key), active_flags);
+  EXPECT_EQ(world.dirty_bounds(key), dirty_bounds);
+}
+
+TEST(TessStorage, TopDownWorldAcceptsCoord2ForTileAccess) {
+  World<TopDown2D> world;
+  constexpr auto coord = tess::Coord2{35, 18};
+
+  world.field<TerrainTag>(coord) = 23;
+
+  const auto resolved = world.resolve(coord);
+  ASSERT_NE(world.try_field<TerrainTag>(coord), nullptr);
+  EXPECT_EQ(*world.try_field<TerrainTag>(coord), 23);
+  EXPECT_EQ(resolved.chunk_key, (tess::ChunkKey{5}));
+  EXPECT_EQ(resolved.local_tile_id, (tess::LocalTileId{67}));
 }
 
 TEST(TessStorage, WorldConstAccessReturnsConstPagesFieldsAndSpans) {

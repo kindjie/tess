@@ -20,8 +20,7 @@ constexpr int kHeight = 24;
 
 struct PassableTag {};
 
-using Shape =
-    tess::Shape<tess::Extent3{kWidth, kHeight, 1}, tess::Extent3{8, 8, 1}>;
+using Shape = tess::Shape<tess::Extent3{kWidth, kHeight}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
@@ -40,7 +39,7 @@ auto in_bounds(int x, int y) -> bool {
   return x >= 0 && x < kWidth && y >= 0 && y < kHeight;
 }
 
-auto coord(int x, int y) -> tess::Coord3 { return {x, y, 0}; }
+auto coord(int x, int y) -> tess::Coord2 { return {x, y}; }
 
 }  // namespace
 
@@ -52,11 +51,7 @@ TESS_DEMO_EXPORT auto tess_demo_height() -> int { return kHeight; }
 
 TESS_DEMO_EXPORT void tess_demo_reset() {
   auto& demo = state();
-  for (int y = 0; y < kHeight; ++y) {
-    for (int x = 0; x < kWidth; ++x) {
-      demo.world.field<PassableTag>(coord(x, y)) = 1;
-    }
-  }
+  demo.world.fill_field<PassableTag>(1);
   demo.path = {};
 }
 

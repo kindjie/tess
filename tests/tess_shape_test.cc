@@ -137,8 +137,18 @@ TEST(TessShape, DetectsSingleChunkWorlds) {
 }
 
 TEST(TessShape, LowersCoord2ToCoord3) {
+  constexpr tess::Coord3 implicit = tess::Coord2{2, 3};
+  constexpr tess::PathRequest request{tess::Coord2{1, 2}, tess::Coord2{4, 5}};
+
+  static_assert(std::is_aggregate_v<tess::Coord2>);
+  static_assert(std::is_aggregate_v<tess::Coord3>);
+  static_assert(std::is_convertible_v<tess::Coord2, tess::Coord3>);
+  static_assert(implicit == tess::Coord3{2, 3, 0});
+  static_assert(request.start == tess::Coord3{1, 2, 0});
+  static_assert(request.goal == tess::Coord3{4, 5, 0});
   static_assert(tess::to_coord3(tess::Coord2{2, 3}) == tess::Coord3{2, 3, 0});
 
+  EXPECT_EQ(implicit, (tess::Coord3{2, 3, 0}));
   EXPECT_EQ(tess::to_coord3(tess::Coord2{2, 3}), (tess::Coord3{2, 3, 0}));
 }
 
