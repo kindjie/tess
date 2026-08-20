@@ -2330,6 +2330,7 @@ jobs:
     name: Report CI Failure
     concurrency:
       group: ci-failure-report
+      queue: max
     if: >-
       ${{ always() && github.event_name != 'pull_request' &&
           (contains(needs.*.result, 'failure') ||
@@ -2374,20 +2375,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           JOB_RESULTS: ${{ toJSON(needs) }}
+          SOURCE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+          SOURCE_RUN_URL: >-
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           has_unresolved=$(printf '%s' "$JOB_RESULTS" | jq -r \
             'any(.[]; .result == "failure" or .result == "cancelled")')
           if [ "$has_unresolved" = false ]; then
-            if [ "$GITHUB_RUN_ATTEMPT" -le 1 ]; then
+            if [ "$SOURCE_RUN_ATTEMPT" -le 1 ]; then
               exit 0
             fi
-            cat > "$RUNNER_TEMP/ci-recovery-classifier.py" <<'PY'
+          # CI_RECOVERY_BLOCK_BEGIN
+          cat > "$RUNNER_TEMP/ci-recovery-classifier.py" <<'PY'
           # CI_RECOVERY_CLASSIFIER_BEGIN
           import json, os, re, sys
           data = json.load(sys.stdin)
           issue = data.get("issue", {})
           timeline = data.get("timeline", [])
-          current_attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
+          current_attempt = int(os.environ["SOURCE_RUN_ATTEMPT"])
           latest = timeline[-1] if isinstance(timeline, list) and timeline else {}
           markers = re.findall(
             r"^<!-- tess-ci-report run_id=(\d+) attempt=(\d+) -->$",
@@ -2401,39 +2407,39 @@ jobs:
             and latest.get("user", {}).get("login") == "github-actions[bot]"
             and created is not None and created == updated
             and issue.get("updatedAt") == updated
-            and run_id == int(os.environ["GITHUB_RUN_ID"])
+            and run_id == int(os.environ["SOURCE_RUN_ID"])
             and 0 < attempt < current_attempt
           )
           print(issue.get("number", "") if owned else "")
           # CI_RECOVERY_CLASSIFIER_END
           PY
-            read_owned_issue() {
-              issues=$(gh issue list --repo "$GITHUB_REPOSITORY" \
-                --label ci-failure --state open --limit 101 \
-                --json number,state,updatedAt) || return 1
-              issue_count=$(printf '%s' "$issues" | jq 'length') || return 1
-              [ "$issue_count" -eq 1 ] || return 0
-              number=$(printf '%s' "$issues" | jq -r '.[0].number') || \
-                return 1
-              issue=$(printf '%s' "$issues" | jq '.[0]') || return 1
-              pages=$(gh api --paginate --slurp \
-                "/repos/$GITHUB_REPOSITORY/issues/$number/timeline?per_page=100") \
-                || return 1
-              payload=$(printf '%s\n%s\n' "$issue" "$pages" | jq -s \
-                '{issue: .[0], timeline: (.[1] | add)}') || return 1
-              printf '%s' "$payload" | \
-                python3 "$RUNNER_TEMP/ci-recovery-classifier.py"
-            }
-            owned_issue=$(read_owned_issue) || exit 0
-            [ -n "$owned_issue" ] || exit 0
-            # Final ownership read narrows the unavoidable API race before
-            # close; a human can still reopen if activity lands afterward.
-            final_issue=$(read_owned_issue) || exit 0
-            [ "$final_issue" = "$owned_issue" ] || exit 0
-            gh issue close "$owned_issue" --repo "$GITHUB_REPOSITORY" \
-              --reason completed \
-              --comment "Recovered in attempt $GITHUB_RUN_ATTEMPT: \
-          $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          read_owned_issue() {
+            issues=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+              --label ci-failure --state open --limit 101 \
+              --json number,state,updatedAt) || return 1
+            issue_count=$(printf '%s' "$issues" | jq 'length') || return 1
+            [ "$issue_count" -eq 1 ] || return 0
+            number=$(printf '%s' "$issues" | jq -r '.[0].number') || \
+              return 1
+            issue=$(printf '%s' "$issues" | jq '.[0]') || return 1
+            pages=$(gh api --paginate --slurp \
+              "/repos/$GITHUB_REPOSITORY/issues/$number/timeline?per_page=100") \
+              || return 1
+            payload=$(printf '%s\n%s\n' "$issue" "$pages" | jq -s \
+              '{issue: .[0], timeline: (.[1] | add)}') || return 1
+            printf '%s' "$payload" | \
+              python3 "$RUNNER_TEMP/ci-recovery-classifier.py"
+          }
+          owned_issue=$(read_owned_issue) || exit 0
+          [ -n "$owned_issue" ] || exit 0
+          # Final read narrows the race before close; a human can still reopen.
+          final_issue=$(read_owned_issue) || exit 0
+          [ "$final_issue" = "$owned_issue" ] || exit 0
+          gh issue close "$owned_issue" --repo "$GITHUB_REPOSITORY" \
+            --reason completed \
+            --comment "Recovered in attempt $SOURCE_RUN_ATTEMPT: \
+          $SOURCE_RUN_URL"
+          # CI_RECOVERY_BLOCK_END
             exit 0
           fi
 

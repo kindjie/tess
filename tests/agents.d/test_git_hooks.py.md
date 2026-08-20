@@ -2,7 +2,9 @@
 
 - `tests/test_git_hooks.py`: broad coverage for the local hooks and CI
   backstops, including privacy, token limits, indexed content, pre-push test
-  selection, labels, dependency locks, and workflow pinning. The
+  selection, labels, dependency locks, and workflow pinning. The privileged
+  CI recovery workflow is the sole action-free workflow; all invoked actions
+  remain GitHub-owned and SHA-pinned. The
   diff-scoped clang-tidy timeout is pinned to its large-surface budget. The
   `tests/agents.d/` gate is an exact bidirectional mirror: missing or orphaned
   fragments, empty bodies, and byte-inexact headings all fail against the real

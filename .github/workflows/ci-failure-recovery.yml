@@ -1,0 +1,91 @@
+name: CI Failure Recovery
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+
+# workflow_run is privileged even when its source workflow was not. This
+# workflow therefore consumes only immutable event metadata and GitHub API
+# responses; it never checks out or executes repository or source-run data.
+permissions:
+  actions: read
+  issues: write
+
+concurrency:
+  group: ci-failure-report
+  queue: max
+
+jobs:
+  reconcile:
+    if: >-
+      ${{ github.event.workflow_run.event != 'pull_request' &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.run_attempt > 1 &&
+          github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Close the recovered same-run issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          # CI_RECOVERY_BLOCK_BEGIN
+          cat > "$RUNNER_TEMP/ci-recovery-classifier.py" <<'PY'
+          # CI_RECOVERY_CLASSIFIER_BEGIN
+          import json, os, re, sys
+          data = json.load(sys.stdin)
+          issue = data.get("issue", {})
+          timeline = data.get("timeline", [])
+          current_attempt = int(os.environ["SOURCE_RUN_ATTEMPT"])
+          latest = timeline[-1] if isinstance(timeline, list) and timeline else {}
+          markers = re.findall(
+            r"^<!-- tess-ci-report run_id=(\d+) attempt=(\d+) -->$",
+            latest.get("body", ""), flags=re.M,
+          )
+          run_id, attempt = map(int, markers[0]) if len(markers) == 1 else (0, 0)
+          created, updated = latest.get("created_at"), latest.get("updated_at")
+          owned = (
+            current_attempt > 1 and issue.get("state") == "OPEN"
+            and latest.get("event") == "commented"
+            and latest.get("user", {}).get("login") == "github-actions[bot]"
+            and created is not None and created == updated
+            and issue.get("updatedAt") == updated
+            and run_id == int(os.environ["SOURCE_RUN_ID"])
+            and 0 < attempt < current_attempt
+          )
+          print(issue.get("number", "") if owned else "")
+          # CI_RECOVERY_CLASSIFIER_END
+          PY
+          read_owned_issue() {
+            issues=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+              --label ci-failure --state open --limit 101 \
+              --json number,state,updatedAt) || return 1
+            issue_count=$(printf '%s' "$issues" | jq 'length') || return 1
+            [ "$issue_count" -eq 1 ] || return 0
+            number=$(printf '%s' "$issues" | jq -r '.[0].number') || \
+              return 1
+            issue=$(printf '%s' "$issues" | jq '.[0]') || return 1
+            pages=$(gh api --paginate --slurp \
+              "/repos/$GITHUB_REPOSITORY/issues/$number/timeline?per_page=100") \
+              || return 1
+            payload=$(printf '%s\n%s\n' "$issue" "$pages" | jq -s \
+              '{issue: .[0], timeline: (.[1] | add)}') || return 1
+            printf '%s' "$payload" | \
+              python3 "$RUNNER_TEMP/ci-recovery-classifier.py"
+          }
+          owned_issue=$(read_owned_issue) || exit 0
+          [ -n "$owned_issue" ] || exit 0
+          # Final read narrows the race before close; a human can still reopen.
+          final_issue=$(read_owned_issue) || exit 0
+          [ "$final_issue" = "$owned_issue" ] || exit 0
+          gh issue close "$owned_issue" --repo "$GITHUB_REPOSITORY" \
+            --reason completed \
+            --comment "Recovered in attempt $SOURCE_RUN_ATTEMPT: \
+          $SOURCE_RUN_URL"
+          # CI_RECOVERY_BLOCK_END

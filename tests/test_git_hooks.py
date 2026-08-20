@@ -1571,11 +1571,13 @@ def test_browser_state_dataset_expression_rejects_code_injection():
 def test_workflows_use_only_github_owned_sha_pinned_actions():
   root = Path(__file__).resolve().parents[1]
   action_re = re.compile(r"^\s*uses:\s+([^\s@]+)@([^\s#]+)", re.MULTILINE)
+  actionless = set()
 
   for workflow_path in sorted((root / ".github" / "workflows").glob("*.yml")):
     workflow = workflow_path.read_text(encoding="utf-8")
     actions = action_re.findall(workflow)
-    assert actions, f"{workflow_path.name} has no actions"
+    if not actions:
+      actionless.add(workflow_path.name)
     for action, revision in actions:
       assert action.startswith("actions/"), (
         f"{workflow_path.name} uses non-GitHub action {action}"
@@ -1583,6 +1585,7 @@ def test_workflows_use_only_github_owned_sha_pinned_actions():
       assert re.fullmatch(r"[0-9a-f]{40}", revision), (
         f"{workflow_path.name} does not SHA-pin {action}"
       )
+  assert actionless == {"ci-failure-recovery.yml"}
 
 
 SHA_A = "a" * 40

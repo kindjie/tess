@@ -117,7 +117,10 @@ run werror, release, TSan, macOS, the full-tree clang-tidy sweep, and
 the benchmark threshold gates; a failed non-PR run files or extends a
 rolling `ci-failure` issue. A successful retry closes that issue only when the
 bot's unedited report for an earlier attempt of the same run remains the latest
-issue activity; ambiguous or human-owned activity is left open.
+issue activity; ambiguous or human-owned activity is left open. Full reruns
+reconcile in the CI workflow, while successful failed-job-only reruns of
+default-branch CI reconcile from a no-checkout completion workflow with the
+same ownership rules and serialized issue access.
 
 Pull requests touching perf-sensitive paths also run a **shadow-mode
 paired sentinel benchmark job** (`tools/paired_bench.py` over
