@@ -13,4 +13,5 @@
 - Checked ticket lookup returns values only from a fully published processing
   pass. The throwing-provider fixture first completes a trivial request, then
   interrupts the next one to prove neither a partial result nor an uninstalled
-  borrowed path becomes visible.
+  borrowed path becomes visible, and no result-status counter remains
+  published for the interrupted pass.

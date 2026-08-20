@@ -172,6 +172,32 @@ TEST(TessSparsePathRuntime, WeightedBatchRoutesOverSparseWorld) {
   EXPECT_EQ(runtime.result(a).status, tess::PathStatus::NoPath);
 }
 
+TEST(TessSparsePathRuntime, WeightedBatchFailurePreservesMissingChunkPolicy) {
+  Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
+  fill_chunk(world, tess::ChunkKey{0});
+
+  const auto goal = tess::Coord3{96, 0, 0};
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{40, 0, 0}, goal},
+      tess::PathRequest{tess::Coord3{0, 0, 0}, goal},
+  };
+  tess::WeightedPathBatchScratch batch_scratch;
+  const auto results = tess::weighted_path_batch<Sparse, WeightedMovement, 64>(
+      world, requests, batch_scratch,
+      tess::MissingChunkPolicy::ReportIndeterminate);
+  ASSERT_EQ(results.size(), requests.size());
+
+  tess::PathScratch oracle_scratch;
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto oracle = tess::weighted_astar_path<Sparse, WeightedMovement>(
+        world, requests[i], oracle_scratch,
+        tess::MissingChunkPolicy::ReportIndeterminate);
+    EXPECT_EQ(results[i].status, oracle.status);
+  }
+  EXPECT_EQ(results[0].status, tess::PathStatus::Indeterminate);
+  EXPECT_EQ(results[1].status, tess::PathStatus::InvalidGoal);
+}
+
 TEST(TessSparsePathRuntime, ReplanQueuePreservesIndeterminateBoundary) {
   Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
   fill_chunk(world, tess::ChunkKey{0});

@@ -397,6 +397,8 @@ class PathRequestRuntime {
       stats.invalid_start = 0;
       stats.invalid_goal = 0;
       stats.no_path = 0;
+      stats.not_computed = 0;
+      stats.no_candidate = 0;
       stats.indeterminate = 0;
       stats.cost_overflow = 0;
       stats.precheck_ruled_out = 0;

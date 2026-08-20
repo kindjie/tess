@@ -119,6 +119,8 @@ TEST(TessPathRuntime, InterruptedPassPublishesNoPartialResults) {
   EXPECT_EQ(stats.completed, 0u);
   EXPECT_EQ(stats.found, 0u);
   EXPECT_EQ(stats.no_path, 0u);
+  EXPECT_EQ(stats.not_computed, 0u);
+  EXPECT_EQ(stats.no_candidate, 0u);
   EXPECT_EQ(stats.path_nodes, 0u);
 }
 

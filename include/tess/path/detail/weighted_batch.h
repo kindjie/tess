@@ -459,18 +459,35 @@ namespace detail {
 
 // Mirrors weighted_astar_path's endpoint validation for a member of a
 // shared-goal group whose field build failed: the start (containment,
-// passability) is checked before any goal status, and a zero-entry-cost
-// start outranks only a zero-entry-cost goal, matching the single-request
-// check order exactly.
+// residency, passability) is checked before any goal status, and a
+// zero-entry-cost start outranks only a zero-entry-cost goal, matching the
+// single-request check order exactly.
 template <typename World, typename Class, typename Provider>
 [[nodiscard]] auto weighted_group_member_failure(const World& world,
                                                  PathRequest request,
-                                                 DistanceFieldResult field)
+                                                 DistanceFieldResult field,
+                                                 MissingChunkPolicy policy)
     -> PathResult {
   using Shape = typename World::shape_type;
+  using Space = detail::NodeIndexSpace<World>;
   using Model = ResolvedTransitionModel<World, Class, Provider>;
-  if (!contains<Shape>(request.start) ||
-      !is_passable<World, Class>(world, request.start)) {
+  if (!contains<Shape>(request.start)) {
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, {}, Model::cost_scale};
+  }
+  if constexpr (!Space::is_dense) {
+    const Space residency{world};
+    if (!residency.is_resident_index(tile_index<Shape>(request.start))) {
+      return PathResult{policy == MissingChunkPolicy::ReportIndeterminate
+                            ? PathStatus::Indeterminate
+                            : PathStatus::InvalidStart,
+                        0,
+                        0,
+                        0,
+                        {},
+                        Model::cost_scale};
+    }
+  }
+  if (!is_passable<World, Class>(world, request.start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, {}, Model::cost_scale};
   }
   if (contains<Shape>(request.goal) &&
@@ -673,7 +690,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
               world, requests[j], scratch.astar_scratch_, policy, provider);
         }
         return detail::weighted_group_member_failure<World, Class, Provider>(
-            world, requests[j], field);
+            world, requests[j], field, policy);
       }();
       scratch.offsets_[j] = scratch.paths_.size();
       scratch.sizes_[j] = result.path.size();

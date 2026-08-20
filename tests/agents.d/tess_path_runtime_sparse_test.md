@@ -10,4 +10,6 @@
   produces a policy-relative `NoPath`; prechecks preserve either choice; and
   policy changes invalidate negative cache entries. Shared weighted fields
   keep already reached members `Found` while independently classifying
-  unreached members. The suite also runs under ASan.
+  unreached members; a failed shared-goal build must classify every member
+  with the same missing-chunk policy and endpoint precedence as single-request
+  A*. The suite also runs under ASan.
