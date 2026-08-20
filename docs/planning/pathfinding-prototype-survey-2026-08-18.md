@@ -7,6 +7,11 @@ public API. Active work belongs in an issue and pull request; completed
 performance experiments belong in the
 [optimization log](optimization-log.md).
 
+The maintained
+[v0.13-to-v1.0 execution plan](v0.13-to-v1.0-execution-plan.md) supersedes this
+brief's ordering and stale PR-status assumptions without rewriting its
+point-in-time evidence.
+
 The [roadmap](../roadmap.md) remains the authority for released, release-gated,
 deferred, and out-of-scope work. The maintained
 [path](../architecture/path.md) and
