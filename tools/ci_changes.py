@@ -54,6 +54,7 @@ CONCURRENCY_SENSITIVE_FILES = (
 )
 CONCURRENCY_SENSITIVE_TEST_PREFIXES = (
   "tests/allocation_counter",
+  "tests/tess_chunk_maintenance",
   "tests/tess_execution_phase_safety",
   "tests/tess_maintenance",
   "tests/tess_no_exceptions",

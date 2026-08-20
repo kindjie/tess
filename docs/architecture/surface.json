@@ -192,6 +192,15 @@
     "upload_desc"
   ],
   "docs/architecture/maintenance.md": [
+    "ChunkAdapterReleaseResult",
+    "ChunkEvictionResult",
+    "ChunkMaintenanceAdapter",
+    "ChunkMarkResult",
+    "ChunkProductState",
+    "ChunkProductToken",
+    "ChunkProductView",
+    "ChunkResidencyResult",
+    "ChunkResidencyStatus",
     "CoalescingScheduler",
     "DirtyBitScheduler",
     "FifoScheduler",

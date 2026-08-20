@@ -693,6 +693,17 @@ tess_discover_tests(
   LABELS core diagnostics experimental)
 
 add_executable(
+  tess_chunk_maintenance_test
+  allocation_counter.cc
+  tess_chunk_maintenance_test.cc
+)
+target_link_libraries(
+  tess_chunk_maintenance_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_chunk_maintenance_test)
+tess_discover_tests(
+  tess_chunk_maintenance_test LABELS core experimental storage)
+
+add_executable(
   tess_queued_planning_test
   allocation_counter.cc
   tess_queued_planning_test.cc

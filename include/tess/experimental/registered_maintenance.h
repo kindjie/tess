@@ -140,7 +140,9 @@ class MaintenanceHandle {
 namespace detail {
 
 inline std::atomic<std::uint64_t> next_owner_epoch = 1;
-inline thread_local const void* active_registered_scheduler = nullptr;
+// Reuse the handle owner identity for reentrancy checks. Keeping only the
+// nonzero epoch avoids retaining an object address beyond the lexical guard.
+inline thread_local std::uint64_t active_registered_scheduler_epoch = 0;
 
 [[nodiscard]] inline auto claim_owner_epoch() noexcept -> std::uint64_t {
   const auto epoch = next_owner_epoch.fetch_add(1, std::memory_order_relaxed);
@@ -232,17 +234,17 @@ class RegisteredScheduler final {
   class OperationGuard {
    public:
     explicit OperationGuard(RegisteredScheduler& scheduler)
-        : previous_(detail::active_registered_scheduler) {
-      if (previous_ == &scheduler) {
+        : previous_(detail::active_registered_scheduler_epoch) {
+      if (previous_ == scheduler.owner_epoch_) {
         return;
       }
-      if (previous_ != nullptr) {
+      if (previous_ != 0) {
         ::tess::detail::fail_fast(
             "RegisteredScheduler nested cross-scheduler operation called "
             "from a running task");
       }
       lock_ = std::shared_lock<std::shared_mutex>{scheduler.lifecycle_mutex_};
-      detail::active_registered_scheduler = &scheduler;
+      detail::active_registered_scheduler_epoch = scheduler.owner_epoch_;
       outer_ = true;
     }
 
@@ -251,12 +253,12 @@ class RegisteredScheduler final {
 
     ~OperationGuard() {
       if (outer_) {
-        detail::active_registered_scheduler = previous_;
+        detail::active_registered_scheduler_epoch = previous_;
       }
     }
 
    private:
-    const void* previous_ = nullptr;
+    std::uint64_t previous_ = 0;
     std::shared_lock<std::shared_mutex> lock_{};
     bool outer_ = false;
   };
@@ -531,7 +533,7 @@ class RegisteredScheduler final {
   }
 
   void reject_reentrant_lifecycle(const char* operation) const {
-    if (detail::active_registered_scheduler == nullptr) {
+    if (detail::active_registered_scheduler_epoch == 0) {
       return;
     }
     static_cast<void>(operation);
@@ -540,7 +542,7 @@ class RegisteredScheduler final {
   }
 
   void reject_reentrant_drain(const char* operation) const {
-    if (detail::active_registered_scheduler != this) {
+    if (detail::active_registered_scheduler_epoch != owner_epoch_) {
       return;
     }
     static_cast<void>(operation);

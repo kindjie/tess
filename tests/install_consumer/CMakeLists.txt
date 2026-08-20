@@ -38,6 +38,9 @@ endif()
 
 add_executable(tess_install_consumer main.cc)
 target_link_libraries(tess_install_consumer PRIVATE tess::tess)
+
+add_executable(tess_install_chunk_maintenance chunk_maintenance.cc)
+target_link_libraries(tess_install_chunk_maintenance PRIVATE tess::tess)
 target_compile_definitions(
   tess_install_consumer
   PRIVATE
@@ -59,4 +62,12 @@ if(TESS_NO_EXCEPTIONS)
   endif()
   target_compile_definitions(
     tess_install_consumer PRIVATE TESS_EXPECT_NO_EXCEPTIONS=1)
+  if(MSVC)
+    target_compile_options(tess_install_chunk_maintenance PRIVATE /EHs-c-)
+    target_compile_definitions(
+      tess_install_chunk_maintenance PRIVATE _HAS_EXCEPTIONS=0)
+  else()
+    target_compile_options(tess_install_chunk_maintenance PRIVATE
+                           -fno-exceptions)
+  endif()
 endif()
