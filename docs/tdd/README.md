@@ -17,6 +17,8 @@ When implementation diverges from a TDD:
 
 ## Documents
 
+- [Canonical terminology and pre-1.0 contract cleanup](terminology-contracts.md)
+  (proposed)
 - [Pathfinding strategy comparison demo](pathfinding-strategy-demo.md)
   (implemented)
 - [Failure diagnostics and implementation-state accuracy](failure-diagnostics.md)
