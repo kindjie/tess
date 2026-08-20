@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,15 @@ def _workflow_run_source(source: str) -> str:
   lines = source.splitlines()
   assert all(not line or line.startswith("          ") for line in lines)
   return "\n".join(line.removeprefix("          ") for line in lines)
+
+
+def _recovery_block(workflow: str, job_id: str) -> str:
+  job = _job_body(workflow, job_id)
+  start = "# CI_RECOVERY_BLOCK_BEGIN\n"
+  end = "# CI_RECOVERY_BLOCK_END"
+  assert job.count(start) == 1
+  assert job.count(end) == 1
+  return _workflow_run_source(job.split(start, 1)[1].split(end, 1)[0])
 
 
 def test_generic_example_smokes_use_cheap_traffic_checks():
@@ -89,8 +99,8 @@ def _ci_recovery_issue(
     text=True,
     env={
       **os.environ,
-      "GITHUB_RUN_ID": str(run_id),
-      "GITHUB_RUN_ATTEMPT": str(run_attempt),
+      "SOURCE_RUN_ID": str(run_id),
+      "SOURCE_RUN_ATTEMPT": str(run_attempt),
     },
   )
   return result.stdout.strip()
@@ -173,21 +183,105 @@ def test_ci_failure_reporter_recovery_is_fail_closed_and_rechecked():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github/workflows/ci.yml").read_text()
   reporter = _job_body(workflow, "report-failure")
+  completion_workflow = (
+    root / ".github/workflows/ci-failure-recovery.yml"
+  ).read_text()
+  completion = _job_body(completion_workflow, "reconcile")
 
   assert "github.run_attempt > 1" in reporter
   assert "has_unresolved=" in reporter
   assert '.result == "failure" or .result == "cancelled"' in reporter
   assert "<!-- tess-ci-report run_id=${GITHUB_RUN_ID}" in reporter
+  for source, expression in (
+    ("SOURCE_RUN_ID", "github.run_id"),
+    ("SOURCE_RUN_ATTEMPT", "github.run_attempt"),
+    ("SOURCE_RUN_URL", "github.server_url"),
+  ):
+    assert f"{source}:" in reporter
+    assert expression in reporter
   assert reporter.count("CI_RECOVERY_CLASSIFIER_BEGIN") == 1
-  assert '--json number,state,updatedAt' in reporter
-  assert '[ "$issue_count" -eq 1 ] || return 0' in reporter
-  assert reporter.count("/timeline?per_page=100") == 1
-  assert "owned_issue=$(read_owned_issue)" in reporter
-  assert "final_issue=$(read_owned_issue)" in reporter
-  assert reporter.index("# Final ownership read") < reporter.index(
-    "gh issue close"
+  assert completion.count("CI_RECOVERY_CLASSIFIER_BEGIN") == 1
+  assert _recovery_block(workflow, "report-failure") == _recovery_block(
+    completion_workflow, "reconcile"
   )
-  assert "--paginate --slurp" in reporter
+
+  for recovery in (reporter, completion):
+    assert '--json number,state,updatedAt' in recovery
+    assert '[ "$issue_count" -eq 1 ] || return 0' in recovery
+    assert recovery.count("/timeline?per_page=100") == 1
+    assert "owned_issue=$(read_owned_issue)" in recovery
+    assert "final_issue=$(read_owned_issue)" in recovery
+    assert recovery.index("# Final read") < recovery.index(
+      "gh issue close"
+    )
+    assert "--paginate --slurp" in recovery
+    close = recovery.split("gh issue close", 1)[1].split("exit 0", 1)[0]
+    assert "||" not in close
+    assert "SOURCE_RUN_ATTEMPT" in close
+    assert "SOURCE_RUN_URL" in close
+
+
+def test_ci_completion_recovery_covers_failed_job_only_reruns():
+  root = Path(__file__).resolve().parents[1]
+  workflows = tuple((root / ".github" / "workflows").glob("*.yml"))
+  names = []
+  for path in workflows:
+    match = re.search(r"^name: (.+)$", path.read_text(), flags=re.M)
+    assert match is not None, path
+    names.append(match.group(1))
+  assert names.count("CI") == 1
+
+  workflow = (root / ".github/workflows/ci.yml").read_text()
+  reporter = _job_body(workflow, "report-failure")
+  recovery = (
+    root / ".github/workflows/ci-failure-recovery.yml"
+  ).read_text()
+  trigger = recovery.split("on:\n", 1)[1].split("\n\n", 1)[0]
+  assert trigger == (
+    "  workflow_run:\n"
+    "    workflows: [CI]\n"
+    "    branches: [main]\n"
+    "    types: [completed]"
+  )
+  permissions = recovery.split("permissions:\n", 1)[1].split("\n\n", 1)[0]
+  assert permissions == "  actions: read\n  issues: write"
+  jobs = recovery.split("jobs:\n", 1)[1]
+  assert re.findall(r"^  ([a-z0-9-]+):$", jobs, flags=re.M) == ["reconcile"]
+
+  completion = _job_body(recovery, "reconcile")
+  condition = completion.split("if: >-\n", 1)[1].split("runs-on:", 1)[0]
+  assert " ".join(condition.split()) == (
+    "${{ github.event.workflow_run.event != 'pull_request' && "
+    "github.event.workflow_run.head_repository.full_name == "
+    "github.repository && github.event.workflow_run.head_branch == 'main' "
+    "&& github.event.workflow_run.run_attempt > 1 && "
+    "github.event.workflow_run.conclusion == 'success' }}"
+  )
+  assert len(re.findall(r"^      - ", completion, flags=re.M)) == 1
+  assert completion.count("        run: |\n") == 1
+  assert "actions/checkout" not in completion
+  assert "actions/download-artifact" not in completion
+  assert "actions/cache" not in completion
+  assert "uses:" not in completion
+  assert "secrets" not in completion
+  assert "tools/" not in completion
+  assert "GITHUB_WORKSPACE" not in completion
+  assert "github.workspace" not in completion
+
+  for source, expression in (
+    ("SOURCE_RUN_ID", "github.event.workflow_run.id"),
+    ("SOURCE_RUN_ATTEMPT", "github.event.workflow_run.run_attempt"),
+    ("SOURCE_RUN_URL", "github.event.workflow_run.html_url"),
+  ):
+    assert f"{source}: ${{{{ {expression} }}}}" in completion
+  script = completion.split("        run: |\n", 1)[1]
+  assert "${{" not in script
+  assert "GITHUB_RUN_ID" not in script
+  assert "GITHUB_RUN_ATTEMPT" not in script
+
+  for job in (reporter, recovery):
+    assert "group: ci-failure-report" in job
+    assert "queue: max" in job
 
 
 def test_ci_setup_tools_are_pinned_bounded_and_used_without_apt_ccache():
@@ -406,9 +500,18 @@ esac
 def test_ccache_stats_cleanup_distinguishes_missing_and_broken(tmp_path):
   root = Path(__file__).resolve().parents[1]
   script = root / "tools" / "report_ccache_stats.sh"
+  bash = shutil.which("bash")
+  assert bash is not None
+  missing_bin = tmp_path / "missing-bin"
+  missing_bin.mkdir()
+  missing_path = str(missing_bin)
+  assert {"/usr/bin", "/bin"}.isdisjoint(
+    missing_path.split(os.pathsep)
+  )
+  assert missing_path != os.environ["PATH"]
   missing = subprocess.run(
-    (script,),
-    env={**os.environ, "PATH": "/usr/bin:/bin"},
+    (bash, script),
+    env={**os.environ, "PATH": missing_path},
     capture_output=True,
     text=True,
   )
@@ -418,9 +521,14 @@ def test_ccache_stats_cleanup_distinguishes_missing_and_broken(tmp_path):
   fake_bin = tmp_path / "bin"
   fake_bin.mkdir()
   _write_executable(fake_bin / "ccache", "#!/bin/sh\nexit 7\n")
+  broken_path = str(fake_bin)
+  assert {"/usr/bin", "/bin"}.isdisjoint(
+    broken_path.split(os.pathsep)
+  )
+  assert broken_path != os.environ["PATH"]
   broken = subprocess.run(
-    (script,),
-    env={**os.environ, "PATH": f"{fake_bin}:/usr/bin:/bin"},
+    (bash, script),
+    env={**os.environ, "PATH": broken_path},
   )
   assert broken.returncode == 7
 
