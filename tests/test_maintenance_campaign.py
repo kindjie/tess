@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -1241,3 +1242,133 @@ def test_cross_device_decision_rejects_incomplete_report_counters(
 
   with pytest.raises(CAMPAIGN.ToolError, match="work counters"):
     CAMPAIGN.cross_device_decision([first, second], config)
+
+
+SOURCE_SHA_MODULE = ROOT / "cmake" / "TessMaintenanceCampaignSourceSha.cmake"
+
+
+def module_sentinel() -> str:
+  match = re.search(
+    r'TESS_MAINTENANCE_CAMPAIGN_SOURCE_SHA_SENTINEL\s+"([^"]+)"',
+    SOURCE_SHA_MODULE.read_text(encoding="utf-8"),
+  )
+  assert match is not None
+  return match.group(1)
+
+
+def run_source_sha_probe(
+  tmp_path: Path, source_dir: Path, cache_sha: str | None = None
+) -> subprocess.CompletedProcess:
+  script = tmp_path / "probe.cmake"
+  script.write_text(
+    "list(APPEND CMAKE_MODULE_PATH "
+    f'"{(ROOT / "cmake").as_posix()}")\n'
+    "include(TessMaintenanceCampaignSourceSha)\n"
+    "tess_resolve_maintenance_campaign_source_sha(\n"
+    f'  resolved "{source_dir.as_posix()}"\n'
+    ")\n"
+    'message(STATUS "resolved=${resolved}")\n',
+    encoding="utf-8",
+  )
+  command = ["cmake"]
+  if cache_sha is not None:
+    command.append(f"-DTESS_MAINTENANCE_CAMPAIGN_SOURCE_SHA={cache_sha}")
+  command += ["-P", str(script)]
+  return subprocess.run(command, capture_output=True, text=True)
+
+
+def test_bench_configure_resolves_source_identity_without_git():
+  # Ordinary benchmark configures (system or preprovided Google Benchmark,
+  # source archives without .git) must not depend on an unset GIT_EXECUTABLE
+  # or on a Git checkout. The dedicated module owns the fallback chain.
+  bench_lists = (ROOT / "bench" / "CMakeLists.txt").read_text(
+    encoding="utf-8"
+  )
+  assert "include(TessMaintenanceCampaignSourceSha)" in bench_lists
+  assert "tess_resolve_maintenance_campaign_source_sha" in bench_lists
+  assert "GIT_EXECUTABLE" not in bench_lists
+
+
+def test_campaign_source_sha_prefers_explicit_cache_identity(tmp_path: Path):
+  explicit = "a" * 40
+  result = run_source_sha_probe(tmp_path, tmp_path, cache_sha=explicit)
+
+  assert result.returncode == 0, result.stderr
+  assert f"resolved={explicit}" in result.stdout
+
+
+def test_campaign_source_sha_rejects_malformed_cache_identity(
+  tmp_path: Path,
+):
+  for malformed in ("b4a882bb", "A" * 40, "g" * 40, "a" * 64):
+    result = run_source_sha_probe(tmp_path, tmp_path, cache_sha=malformed)
+
+    assert result.returncode != 0
+    assert "40 lowercase" in result.stderr
+
+
+def test_campaign_source_sha_resolves_head_from_git_checkout(
+  tmp_path: Path,
+):
+  head = subprocess.run(
+    ["git", "rev-parse", "HEAD"],
+    cwd=ROOT,
+    capture_output=True,
+    text=True,
+    check=True,
+  ).stdout.strip()
+  result = run_source_sha_probe(tmp_path, ROOT)
+
+  assert result.returncode == 0, result.stderr
+  assert f"resolved={head}" in result.stdout
+
+
+def test_campaign_source_sha_embeds_sentinel_without_repository(
+  tmp_path: Path,
+):
+  source_dir = tmp_path / "no-repository"
+  source_dir.mkdir()
+  result = run_source_sha_probe(tmp_path, source_dir)
+
+  assert result.returncode == 0, result.stderr
+  assert f"resolved={module_sentinel()}" in result.stdout
+
+
+def test_campaign_staging_rejects_sentinel_source_identity(tmp_path: Path):
+  # The sentinel keeps ordinary configures working while evidence staging
+  # fails closed: the exact embedded fallback string must never survive
+  # build-manifest creation or payload identity validation.
+  sentinel = module_sentinel()
+  config_path = tmp_path / "config.json"
+  write_config(config_path)
+
+  with pytest.raises(CAMPAIGN.ToolError, match="40 lowercase"):
+    CAMPAIGN.create_build_manifest(
+      source_root=tmp_path,
+      source_sha=sentinel,
+      binary=tmp_path / "missing-binary",
+      config_path=config_path,
+      compiler=tmp_path / "missing-compiler",
+      compile_commands=tmp_path / "missing-compile-commands.json",
+      link_command=tmp_path / "missing-link.txt",
+      device="test-device",
+      build_context="test-build",
+      container_image_id=None,
+    )
+
+  payload = {
+    "source_sha": sentinel,
+    **{
+      name: "0" * 64
+      for name in (
+        "binary_sha256",
+        "config_sha256",
+        "config_file_sha256",
+        "tool_sha256",
+        "benchmark_source_sha256",
+        "build_manifest_sha256",
+      )
+    },
+  }
+  with pytest.raises(CAMPAIGN.ToolError, match="invalid source SHA"):
+    CAMPAIGN._validate_payload_identity(payload)

@@ -98,10 +98,15 @@ also records cleanup and the superseded failed attempts.
 
 Every repository change after the frozen source `b4a882bb` is evidence
 tooling, records, tests, or documentation: this evidence directory, the
-redaction map and its archive regression test, and the planning and
-roadmap records. None of it changes the measured workloads, the
-maintenance implementation or adapter, the campaign benchmark source,
-fixtures, effective compile or link flags, the SDK, or the
-evidence-admissibility semantics. The measured binaries in the bundle
-therefore remain representative of the frozen candidate, and the recorded
-result stands without a rerun.
+redaction map and its archive regression test, the planning and roadmap
+records, and a configure-time fix that resolves the campaign source
+identity through `cmake/TessMaintenanceCampaignSourceSha.cmake` instead
+of an unconditional `git rev-parse` (benchmark configuration previously
+failed without Git or a `.git` directory). None of it changes the
+measured workloads, the maintenance implementation or adapter, the
+campaign benchmark source, fixtures, effective compile or link flags, the
+SDK, or the evidence-admissibility semantics. In a Git checkout the
+resolver embeds the same commit identity the frozen build embedded, and a
+sentinel-carrying binary is rejected by evidence staging. The measured
+binaries in the bundle therefore remain representative of the frozen
+candidate, and the recorded result stands without a rerun.

@@ -83,12 +83,10 @@ add_executable(
   tess_bench_maintenance_campaign
   tess_maintenance_campaign_bench.cc
 )
-execute_process(
-  COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
-  WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-  OUTPUT_VARIABLE TESS_MAINTENANCE_CAMPAIGN_SOURCE_SHA
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  COMMAND_ERROR_IS_FATAL ANY
+include(TessMaintenanceCampaignSourceSha)
+tess_resolve_maintenance_campaign_source_sha(
+  tess_maintenance_campaign_source_sha
+  "${PROJECT_SOURCE_DIR}"
 )
 file(
   SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/maintenance-campaign.json"
@@ -105,7 +103,7 @@ file(
 string(CONCAT
   TESS_MAINTENANCE_CAMPAIGN_SOURCE_DEFINITION
   "TESS_MAINTENANCE_CAMPAIGN_SOURCE_SHA="
-  "\"${TESS_MAINTENANCE_CAMPAIGN_SOURCE_SHA}\""
+  "\"${tess_maintenance_campaign_source_sha}\""
 )
 string(CONCAT
   TESS_MAINTENANCE_CAMPAIGN_CONFIG_DEFINITION
