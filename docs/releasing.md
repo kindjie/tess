@@ -39,6 +39,16 @@ run. The workflow intentionally retains `contents: read`, so publishing the
 release stays a deliberate maintainer action rather than giving tested
 repository code a write token.
 
+Bind the signed annotated release tag to the successful exact SHA and push it
+before creating a draft GitHub release for that tag. Upload the retained tar,
+zip, and `SHA256SUMS` to the draft, verify their names and digests and the
+archives' embedded version and source commit, then publish the complete draft
+once. After publication, require GitHub to report the release immutable,
+confirm that the remote tag still targets the tested commit, and run
+`gh release verify` plus `gh release verify-asset` for every retained local
+asset. Treat any mismatch as a release incident; never replace a published
+immutable tag or asset in place.
+
 ## 0.13 and the 1.0 candidate
 
 Publish `v0.13.0` only after all breaking API changes, the stable maintenance
