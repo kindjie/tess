@@ -49,7 +49,7 @@ Run on the device:
                    Configures the linux-bench preset automatically.
   campaign stage <bundle-dir>       Build and hash the controlled maintenance
                    evidence bundle locally; does not access the Deck.
-  campaign run <bundle-dir> <calibration|candidate> <results-dir>
+  campaign run <bundle-dir> <calibration|candidate> <run-id> <results-dir>
                    Run one whole pinned evidence phase and retrieve artifacts.
 
 Env: DECK_HOST (default 'deck'), TESS_STEAMRT_IMAGE,

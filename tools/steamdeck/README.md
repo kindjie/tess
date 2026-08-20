@@ -62,8 +62,10 @@ pins the governor around the entire calibration or candidate phase:
 
 ```sh
 tools/steamdeck/deck campaign stage <empty-bundle-dir>
-tools/steamdeck/deck campaign run <bundle-dir> calibration <results-dir>
-tools/steamdeck/deck campaign run <bundle-dir> candidate <results-dir>
+tools/steamdeck/deck campaign run \
+  <bundle-dir> calibration <new-run-id> <empty-results-dir>
+tools/steamdeck/deck campaign run \
+  <bundle-dir> candidate <same-run-id> <same-results-dir>
 ```
 
 See the

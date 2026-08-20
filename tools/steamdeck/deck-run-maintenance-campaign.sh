@@ -19,9 +19,39 @@ case "$BUNDLE:$RESULT_DIR" in
   *) echo "bundle and results must be below HOME" >&2; exit 2 ;;
 esac
 
-mkdir -p "$RESULT_DIR"
 cd "$BUNDLE"
 sha256sum -c SHA256SUMS
+
+verify_result_set() {
+  local directory="$1" phase="$2" manifest
+  manifest="${phase}-SHA256SUMS"
+  [ -f "$directory/$manifest" ] || return 1
+  (
+    cd "$directory"
+    sha256sum -c "$manifest"
+    diff -u \
+      <(sed -E 's/^[0-9a-f]{64}  //' "$manifest" | LC_ALL=C sort) \
+      <(find . -type f ! -name '*-SHA256SUMS' -print | LC_ALL=C sort)
+    [ "$(find . -type f -name '*-SHA256SUMS' -print)" \
+      = './calibration-SHA256SUMS' ]
+  )
+}
+
+if [ "$PHASE" = "calibration" ]; then
+  [ ! -e "$RESULT_DIR" ] \
+    || { echo "calibration result directory already exists" >&2; exit 2; }
+  mkdir -p "$RESULT_DIR"
+else
+  [ -d "$RESULT_DIR" ] \
+    && [ -f "$RESULT_DIR/calibration.json" ] \
+    && [ -f "$RESULT_DIR/thresholds.json" ] \
+    || { echo "candidate needs retained calibration results" >&2; exit 2; }
+  [ ! -e "$RESULT_DIR/candidate.json" ] \
+    && [ ! -e "$RESULT_DIR/report.json" ] \
+    || { echo "candidate result directory already contains outputs" >&2; exit 2; }
+  verify_result_set "$RESULT_DIR" calibration \
+    || { echo "retained calibration result set is invalid" >&2; exit 2; }
+fi
 
 snapshot_governors() {
   local output="$1" governor
@@ -40,13 +70,23 @@ set_governors() {
   done
 }
 
-snapshot_governors "$RESULT_DIR/governor-before.txt"
-[ -s "$RESULT_DIR/governor-before.txt" ] \
+snapshot_governors "$RESULT_DIR/${PHASE}-governor-before.txt"
+[ -s "$RESULT_DIR/${PHASE}-governor-before.txt" ] \
   || { echo "cannot read CPU governors" >&2; exit 2; }
 
 restore_governors() {
-  local status=$? governor target
+  local status=$? governor target logging_status=0
   trap - EXIT
+  if [ "${logging_active:-0}" -eq 1 ]; then
+    exec 1>&3 2>&4
+    wait "$stdout_tee_pid" || logging_status=$?
+    wait "$stderr_tee_pid" || logging_status=$?
+    exec 3>&- 4>&-
+    rm -f "$stdout_fifo" "$stderr_fifo"
+    if [ "$status" -eq 0 ] && [ "$logging_status" -ne 0 ]; then
+      status="$logging_status"
+    fi
+  fi
   while IFS=: read -r governor target; do
     case "$governor:$target" in
       /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor:[A-Za-z0-9_-]*)
@@ -54,9 +94,15 @@ restore_governors() {
         ;;
       *) echo "refusing invalid saved governor entry" >&2 ;;
     esac
-  done < "$RESULT_DIR/governor-before.txt"
-  snapshot_governors "$RESULT_DIR/governor-after.txt"
-  printf '%s\n' "$status" > "$RESULT_DIR/phase-exit-status.txt"
+  done < "$RESULT_DIR/${PHASE}-governor-before.txt"
+  snapshot_governors "$RESULT_DIR/${PHASE}-governor-after.txt"
+  printf '%s\n' "$status" > "$RESULT_DIR/${PHASE}-exit-status.txt"
+  (
+    cd "$RESULT_DIR"
+    find . -type f ! -name '*-SHA256SUMS' -print0 \
+      | sort -z \
+      | xargs -0 sha256sum > "${PHASE}-SHA256SUMS"
+  )
   exit "$status"
 }
 trap restore_governors EXIT
@@ -64,8 +110,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 set_governors performance
-snapshot_governors "$RESULT_DIR/governor-during.txt"
-if grep -v ':performance$' "$RESULT_DIR/governor-during.txt" >/dev/null; then
+snapshot_governors "$RESULT_DIR/${PHASE}-governor-during.txt"
+if grep -v ':performance$' \
+  "$RESULT_DIR/${PHASE}-governor-during.txt" >/dev/null; then
   echo "not every CPU governor is pinned to performance" >&2
   exit 2
 fi
@@ -75,8 +122,16 @@ fi
   printf 'uname='; uname -a
   printf 'python='; python3 --version
 } > "$RESULT_DIR/${PHASE}-environment.txt"
-exec > >(tee "$RESULT_DIR/${PHASE}.stdout.log") \
-  2> >(tee "$RESULT_DIR/${PHASE}.stderr.log" >&2)
+stdout_fifo="$RESULT_DIR/.${PHASE}.stdout.fifo"
+stderr_fifo="$RESULT_DIR/.${PHASE}.stderr.fifo"
+mkfifo "$stdout_fifo" "$stderr_fifo"
+exec 3>&1 4>&2
+tee "$RESULT_DIR/${PHASE}.stdout.log" < "$stdout_fifo" >&3 &
+stdout_tee_pid=$!
+tee "$RESULT_DIR/${PHASE}.stderr.log" < "$stderr_fifo" >&4 &
+stderr_tee_pid=$!
+exec > "$stdout_fifo" 2> "$stderr_fifo"
+logging_active=1
 
 mapfile -t SETTINGS < <(
   python3 - "$PHASE" <<'PY'
@@ -116,10 +171,12 @@ else
     --binary "$BINARY" --config "$CONFIG" --device steam-deck \
     --build-manifest "$MANIFEST" \
     --thresholds "${RESULT_DIR}/thresholds.json" \
+    --calibration "${RESULT_DIR}/calibration.json" \
     --repetitions "$REPETITIONS" --minimum-time "$MINIMUM_TIME" \
     --seed "$SEED" --output "$RESULT_DIR/candidate.json"
   python3 "$TOOL" analyze \
     --input "$RESULT_DIR/candidate.json" --config "$CONFIG" \
     --thresholds "$RESULT_DIR/thresholds.json" \
+    --calibration "$RESULT_DIR/calibration.json" \
     --output "$RESULT_DIR/report.json"
 fi

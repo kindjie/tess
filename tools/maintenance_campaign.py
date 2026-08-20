@@ -12,6 +12,7 @@ import platform
 import random
 import re
 import shlex
+import shutil
 import statistics
 import subprocess
 import sys
@@ -261,6 +262,33 @@ def mapping_sha256(value: Mapping[str, Any]) -> str:
   ).hexdigest()
 
 
+def _read_embedded_identity(binary: Path) -> dict[str, str]:
+  try:
+    result = subprocess.run(
+      (str(binary), "--tess-campaign-identity"),
+      capture_output=True,
+      text=True,
+      check=False,
+      timeout=30,
+    )
+  except (OSError, subprocess.TimeoutExpired) as error:
+    raise ToolError(f"cannot read benchmark identity: {error}") from error
+  if result.returncode != 0 or result.stderr:
+    raise ToolError("benchmark identity mode failed")
+  try:
+    identity = json.loads(result.stdout)
+  except json.JSONDecodeError as error:
+    raise ToolError("benchmark identity mode returned malformed JSON") from error
+  if not isinstance(identity, dict) or set(identity) != {
+    "source_sha",
+    "config_file_sha256",
+    "tool_sha256",
+    "benchmark_source_sha256",
+  }:
+    raise ToolError("benchmark identity mode returned an incomplete identity")
+  return identity
+
+
 def _cpu_model() -> str:
   if platform.system() == "Darwin":
     result = subprocess.run(
@@ -363,22 +391,66 @@ def _sanitize_build_command(
   build_root: Path,
   compiler: Path,
 ) -> str:
+  def path_offset(token: str, path: str) -> int | None:
+    offset = token.find(path)
+    if offset < 0:
+      return None
+    prefix = token[:offset]
+    end = offset + len(path)
+    if "/" in prefix or (end < len(token) and token[end] != "/"):
+      return None
+    return offset
+
   replacements = (
     (str(source_root.resolve()), "$SOURCE"),
     (str(build_root.resolve()), "$BUILD"),
     (str(compiler.resolve()), "$COMPILER"),
   )
-  sanitized = command
-  for original, replacement in sorted(
-    replacements, key=lambda entry: len(entry[0]), reverse=True
-  ):
-    sanitized = sanitized.replace(original, replacement)
-  if (
-    str(source_root.resolve()) in sanitized
-    or str(build_root.resolve()) in sanitized
+  tokens = shlex.split(command)
+  for index, token in enumerate(tokens):
+    for original, replacement in sorted(
+      replacements, key=lambda entry: len(entry[0]), reverse=True
+    ):
+      offset = path_offset(token, original)
+      if offset is None:
+        continue
+      end = offset + len(original)
+      token = token[:offset] + replacement + token[end:]
+    tokens[index] = token
+  sanitized = shlex.join(tokens)
+  local_paths = (str(source_root.resolve()), str(build_root.resolve()))
+  if any(
+    path_offset(token, path) is not None
+    for token in tokens
+    for path in local_paths
   ):
     raise ToolError("build command contains an unsanitized local path")
   return sanitized
+
+
+def _resolve_command_driver(
+  arguments: Sequence[str], *, directory: Path
+) -> Path:
+  if not arguments:
+    raise ToolError("build command has no executable")
+  driver_index = 0
+  if Path(arguments[0]).name in {"ccache", "sccache", "distcc"}:
+    driver_index = 1
+  if driver_index >= len(arguments):
+    raise ToolError("build command has no compiler after its launcher")
+  driver = Path(arguments[driver_index])
+  if driver.is_absolute():
+    resolved = driver.resolve()
+  elif "/" in str(driver):
+    resolved = (directory / driver).resolve()
+  else:
+    found = shutil.which(str(driver))
+    if found is None:
+      raise ToolError("build command compiler is not executable")
+    resolved = Path(found).resolve()
+  if not resolved.is_file() or not os.access(resolved, os.X_OK):
+    raise ToolError("build command compiler is not executable")
+  return resolved
 
 
 def create_build_manifest(
@@ -392,6 +464,7 @@ def create_build_manifest(
   link_command: Path,
   device: str,
   build_context: str,
+  container_image_id: str | None,
 ) -> dict[str, Any]:
   """Bind an exact clean source tree to its benchmark build inputs."""
   source_root = source_root.resolve()
@@ -404,6 +477,20 @@ def create_build_manifest(
     raise ToolError(f"device {device!r} is not in the frozen campaign")
   if build_context != config["collection"]["devices"][device]["build_context"]:
     raise ToolError("build context differs from the frozen campaign")
+  if device == "steam-deck":
+    if not isinstance(container_image_id, str) or re.fullmatch(
+      r"sha256:[0-9a-f]{64}", container_image_id
+    ) is None:
+      raise ToolError("Deck build needs a resolved container image ID")
+    build_environment = {
+      "kind": "container-image",
+      "context": build_context,
+      "image_id": container_image_id,
+    }
+  else:
+    if container_image_id is not None:
+      raise ToolError("native build cannot claim a container image ID")
+    build_environment = {"kind": "native", "context": build_context}
   if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
     raise ToolError("source SHA must be 40 lowercase hexadecimal characters")
   if _run_git(source_root, "rev-parse", "HEAD") != source_sha:
@@ -443,17 +530,28 @@ def create_build_manifest(
     raise ToolError("compile commands must contain exactly one campaign source")
   entry = matching[0]
   if isinstance(entry.get("arguments"), list):
-    compile_command = shlex.join(str(value) for value in entry["arguments"])
+    compile_arguments = [str(value) for value in entry["arguments"]]
   elif isinstance(entry.get("command"), str):
-    compile_command = entry["command"]
+    compile_arguments = shlex.split(entry["command"])
   else:
     raise ToolError("campaign compile command is malformed")
+  compile_driver = _resolve_command_driver(
+    compile_arguments,
+    directory=Path(str(entry.get("directory", build_root))),
+  )
+  if compile_driver != compiler:
+    raise ToolError("compile command does not use the recorded compiler")
+  compile_command = shlex.join(compile_arguments)
   try:
     link_text = link_command.read_text(encoding="utf-8").strip()
   except OSError as error:
     raise ToolError(f"cannot load link command: {error}") from error
   if not link_text:
     raise ToolError("campaign link command is empty")
+  link_arguments = shlex.split(link_text)
+  link_driver = _resolve_command_driver(
+    link_arguments, directory=link_command.parent
+  )
   compile_text = _sanitize_build_command(
     compile_command,
     source_root=source_root,
@@ -472,11 +570,9 @@ def create_build_manifest(
     "tool_sha256": _sha256(Path(__file__).resolve()),
     "benchmark_source_sha256": _sha256(benchmark_source),
   }
-  probe_name = config["workloads"][sorted(config["workloads"])[0]][
-    "benchmarks"
-  ]["dirty_bit"]
-  probe = _one_observation(binary, probe_name, 0.001)
-  _validate_embedded_identity(probe["benchmark_context"], identity)
+  embedded_identity = _read_embedded_identity(binary)
+  if embedded_identity != identity:
+    raise ToolError("benchmark binary has the wrong embedded identity")
   return {
     "schema_version": 1,
     "kind": "maintenance-build-manifest",
@@ -487,9 +583,11 @@ def create_build_manifest(
     "config_file_sha256": identity["config_file_sha256"],
     "tool_sha256": identity["tool_sha256"],
     "benchmark_source_sha256": identity["benchmark_source_sha256"],
-    "embedded_identity": identity,
+    "embedded_identity": embedded_identity,
     "toolchain": _toolchain(compiler),
+    "link_driver": _toolchain(link_driver),
     "build_context": build_context,
+    "build_environment": build_environment,
     "compile_command": {
       "text": compile_text,
       "sha256": hashlib.sha256(compile_text.encode("utf-8")).hexdigest(),
@@ -522,7 +620,9 @@ def validate_build_manifest(
     "benchmark_source_sha256",
     "embedded_identity",
     "toolchain",
+    "link_driver",
     "build_context",
+    "build_environment",
     "compile_command",
     "link_command",
     "source_tree_clean",
@@ -581,7 +681,28 @@ def validate_build_manifest(
   policy = config["collection"]["devices"][device]
   if manifest.get("build_context") != policy["build_context"]:
     raise ToolError("build context differs from the frozen campaign")
+  build_environment = manifest.get("build_environment")
+  expected_environment = {
+    "kind": "native",
+    "context": policy["build_context"],
+  }
+  if device == "steam-deck":
+    if not isinstance(build_environment, dict):
+      raise ToolError("Deck build manifest has no container identity")
+    image_id = build_environment.get("image_id")
+    if not isinstance(image_id, str) or re.fullmatch(
+      r"sha256:[0-9a-f]{64}", image_id
+    ) is None:
+      raise ToolError("Deck build manifest has an invalid container identity")
+    expected_environment = {
+      "kind": "container-image",
+      "context": policy["build_context"],
+      "image_id": image_id,
+    }
+  if build_environment != expected_environment:
+    raise ToolError("build manifest has an invalid build environment")
   _validate_toolchain(manifest.get("toolchain"))
+  _validate_toolchain(manifest.get("link_driver"))
   for name in ("compile_command", "link_command"):
     command = manifest.get(name)
     if not isinstance(command, dict) or set(command) != {"text", "sha256"}:
@@ -727,13 +848,14 @@ def _calibration_schedule(
 
 def _validate_threshold_for_collection(
   thresholds: Mapping[str, Any],
+  calibration: Mapping[str, Any],
   *,
   config: Mapping[str, Any],
   build_manifest: Mapping[str, Any],
   build_manifest_sha256: str,
   environment: Mapping[str, Any],
 ) -> None:
-  _validate_threshold_manifest(thresholds, config)
+  _verify_threshold_derivation(thresholds, calibration, config)
   if thresholds.get("valid") is not True:
     raise ToolError("candidate collection needs valid frozen thresholds")
   expected = {
@@ -822,6 +944,18 @@ def _validate_threshold_manifest(
     raise ToolError("threshold manifest has an inconsistent verdict")
 
 
+def _verify_threshold_derivation(
+  thresholds: Mapping[str, Any],
+  calibration: Mapping[str, Any],
+  config: Mapping[str, Any],
+) -> None:
+  _validate_threshold_manifest(thresholds, config)
+  if mapping_sha256(calibration) != thresholds["calibration_sha256"]:
+    raise ToolError("thresholds are not bound to the retained calibration")
+  if analyze_calibration(calibration, config) != thresholds:
+    raise ToolError("thresholds were not derived from calibration")
+
+
 def collect_campaign(
   binary: Path,
   config: Mapping[str, Any],
@@ -830,6 +964,7 @@ def collect_campaign(
   config_file_sha256: str,
   build_manifest: Mapping[str, Any],
   thresholds: Mapping[str, Any],
+  calibration: Mapping[str, Any],
   repetitions: int,
   minimum_time_seconds: float,
   seed: int,
@@ -862,6 +997,7 @@ def collect_campaign(
   build_manifest_sha256 = mapping_sha256(build_manifest)
   _validate_threshold_for_collection(
     thresholds,
+    calibration,
     config=config,
     build_manifest=build_manifest,
     build_manifest_sha256=build_manifest_sha256,
@@ -1532,6 +1668,7 @@ def analyze_campaign(
   payload: Mapping[str, Any],
   config: Mapping[str, Any],
   thresholds: Mapping[str, Any],
+  calibration: Mapping[str, Any],
 ) -> dict[str, Any]:
   """Analyze one device without changing the frozen decision policy."""
   if payload.get("schema_version") != 1:
@@ -1540,7 +1677,7 @@ def analyze_campaign(
     raise ToolError("analysis input is not a candidate campaign")
   _validate_raw_payload_schema(payload, phase="candidate")
   _validate_payload_identity(payload)
-  _validate_threshold_manifest(thresholds, config)
+  _verify_threshold_derivation(thresholds, calibration, config)
   if not thresholds.get("valid"):
     raise ToolError("A/A noise exceeded the predeclared limit")
   if thresholds.get("analysis_policy") != config.get("analysis"):
@@ -2065,6 +2202,7 @@ def _parser() -> argparse.ArgumentParser:
   collect.add_argument("--device", required=True)
   collect.add_argument("--build-manifest", type=Path, required=True)
   collect.add_argument("--thresholds", type=Path, required=True)
+  collect.add_argument("--calibration", type=Path, required=True)
   collect.add_argument("--repetitions", type=int, default=30)
   collect.add_argument("--minimum-time", type=float, default=0.05)
   collect.add_argument("--seed", type=int, required=True)
@@ -2086,6 +2224,7 @@ def _parser() -> argparse.ArgumentParser:
   analyze.add_argument("--input", type=Path, required=True)
   analyze.add_argument("--config", type=Path, required=True)
   analyze.add_argument("--thresholds", type=Path, required=True)
+  analyze.add_argument("--calibration", type=Path, required=True)
   analyze.add_argument("--output", type=Path, required=True)
   decide = subparsers.add_parser("decide")
   decide.add_argument("--report", type=Path, action="append", required=True)
@@ -2104,6 +2243,7 @@ def _parser() -> argparse.ArgumentParser:
   build_manifest.add_argument("--link-command", type=Path, required=True)
   build_manifest.add_argument("--device", required=True)
   build_manifest.add_argument("--build-context", required=True)
+  build_manifest.add_argument("--container-image-id")
   build_manifest.add_argument("--output", type=Path, required=True)
   return parser
 
@@ -2124,6 +2264,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         link_command=args.link_command,
         device=args.device,
         build_context=args.build_context,
+        container_image_id=args.container_image_id,
       )
     elif args.command == "collect":
       config = load_config(args.config)
@@ -2134,6 +2275,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         config_file_sha256=_sha256(args.config),
         build_manifest=_read_json(args.build_manifest),
         thresholds=_read_json(args.thresholds),
+        calibration=_read_json(args.calibration),
         repetitions=args.repetitions,
         minimum_time_seconds=args.minimum_time,
         seed=args.seed,
@@ -2159,6 +2301,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _read_json(args.input),
         load_config(args.config),
         _read_json(args.thresholds),
+        _read_json(args.calibration),
       )
     else:
       payload = cross_device_decision(

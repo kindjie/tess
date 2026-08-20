@@ -132,7 +132,7 @@ target_compile_definitions(
 )
 target_link_libraries(
   tess_bench_maintenance_campaign
-  PRIVATE tess::tess benchmark::benchmark_main
+  PRIVATE tess::tess benchmark::benchmark
 )
 tess_apply_project_options(tess_bench_maintenance_campaign)
 

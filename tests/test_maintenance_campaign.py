@@ -263,6 +263,17 @@ def bind_candidate(payload: dict, thresholds: dict) -> dict:
   return payload
 
 
+def analyze_bound_campaign(
+  payload: dict, config: dict, thresholds: dict
+) -> dict:
+  return CAMPAIGN.analyze_campaign(
+    payload,
+    config,
+    thresholds,
+    calibration_payload(config),
+  )
+
+
 def test_embedded_identity_rejects_stale_or_missing_binary_context():
   identity = {
     "source_sha": SOURCE_SHA,
@@ -306,7 +317,7 @@ def test_summary_uses_predeclared_control_and_material_win(tmp_path: Path):
   thresholds = CAMPAIGN.analyze_calibration(
     calibration_payload(config), config
   )
-  report = CAMPAIGN.analyze_campaign(
+  report = analyze_bound_campaign(
     bind_candidate(
       campaign_payload([10_000.0, 10_100.0, 9_900.0, 10_050.0], config),
       thresholds,
@@ -334,7 +345,7 @@ def test_summary_reports_material_regression(tmp_path: Path):
   thresholds = CAMPAIGN.analyze_calibration(
     calibration_payload(config), config
   )
-  report = CAMPAIGN.analyze_campaign(
+  report = analyze_bound_campaign(
     bind_candidate(
       campaign_payload([22_000.0, 22_200.0, 21_800.0, 22_100.0], config),
       thresholds,
@@ -361,7 +372,7 @@ def test_primary_aggregate_regression_cannot_be_overridden(tmp_path: Path):
     thresholds,
   )
 
-  report = CAMPAIGN.analyze_campaign(payload, config, thresholds)
+  report = analyze_bound_campaign(payload, config, thresholds)
 
   assert report["primary_comparison"]["decision"] == "material_regression"
   assert report["overall_decision"] == "material_regression"
@@ -379,7 +390,7 @@ def test_uncertain_regression_boundary_is_inconclusive(tmp_path: Path):
     thresholds,
   )
 
-  report = CAMPAIGN.analyze_campaign(payload, config, thresholds)
+  report = analyze_bound_campaign(payload, config, thresholds)
 
   assert report["primary_comparison"]["decision"] == "inconclusive"
   assert report["overall_decision"] == "inconclusive"
@@ -399,7 +410,7 @@ def test_summary_fails_closed_on_missing_repetition(tmp_path: Path):
   bind_candidate(payload, thresholds)
 
   with pytest.raises(CAMPAIGN.ToolError, match="missing observations"):
-    CAMPAIGN.analyze_campaign(
+    analyze_bound_campaign(
       payload,
       config,
       thresholds,
@@ -420,7 +431,7 @@ def test_summary_rejects_stale_config_identity(tmp_path: Path):
   payload["config_sha256"] = "d" * 64
 
   with pytest.raises(CAMPAIGN.ToolError, match="config_sha256"):
-    CAMPAIGN.analyze_campaign(payload, config, thresholds)
+    analyze_bound_campaign(payload, config, thresholds)
 
 
 def test_summary_rejects_wrong_payload_kind(tmp_path: Path):
@@ -437,7 +448,7 @@ def test_summary_rejects_wrong_payload_kind(tmp_path: Path):
   payload["kind"] = "unrelated-results"
 
   with pytest.raises(CAMPAIGN.ToolError, match="candidate campaign"):
-    CAMPAIGN.analyze_campaign(payload, config, thresholds)
+    analyze_bound_campaign(payload, config, thresholds)
 
 
 def test_summary_rejects_incomplete_collection_schema(tmp_path: Path):
@@ -454,7 +465,7 @@ def test_summary_rejects_incomplete_collection_schema(tmp_path: Path):
   payload["collection"].pop("order_policy")
 
   with pytest.raises(CAMPAIGN.ToolError, match="collection schema"):
-    CAMPAIGN.analyze_campaign(payload, config, thresholds)
+    analyze_bound_campaign(payload, config, thresholds)
 
 
 def test_summary_rejects_unbound_thresholds(tmp_path: Path):
@@ -471,12 +482,19 @@ def test_summary_rejects_unbound_thresholds(tmp_path: Path):
   payload["threshold_manifest_sha256"] = "0" * 64
 
   with pytest.raises(CAMPAIGN.ToolError, match="not bound"):
-    CAMPAIGN.analyze_campaign(payload, config, thresholds)
+    analyze_bound_campaign(payload, config, thresholds)
 
   malformed = dict(thresholds)
   malformed.pop("benchmark_source_sha256")
   with pytest.raises(CAMPAIGN.ToolError, match="threshold manifest"):
-    CAMPAIGN.analyze_campaign(payload, config, malformed)
+    analyze_bound_campaign(payload, config, malformed)
+
+  inflated = json.loads(json.dumps(thresholds))
+  inflated["workloads"]["dense"]["relative_threshold"] = 100.0
+  inflated["workloads"]["dense"]["absolute_threshold_ns"] = 1e12
+  bind_candidate(payload, inflated)
+  with pytest.raises(CAMPAIGN.ToolError, match="derived from calibration"):
+    analyze_bound_campaign(payload, config, inflated)
 
 
 def test_summary_rejects_wrong_hardware_and_incomplete_raw_data(
@@ -494,7 +512,7 @@ def test_summary_rejects_wrong_hardware_and_incomplete_raw_data(
   )
   payload["environment"]["cpu_model"] = "WrongCPU"
   with pytest.raises(CAMPAIGN.ToolError, match="environment"):
-    CAMPAIGN.analyze_campaign(payload, config, thresholds)
+    analyze_bound_campaign(payload, config, thresholds)
 
   payload = bind_candidate(
     campaign_payload([10_000.0, 10_100.0, 9_900.0, 10_050.0], config),
@@ -502,7 +520,7 @@ def test_summary_rejects_wrong_hardware_and_incomplete_raw_data(
   )
   payload["observations"][0]["counters"].pop("resident_slots")
   with pytest.raises(CAMPAIGN.ToolError, match="work counters"):
-    CAMPAIGN.analyze_campaign(payload, config, thresholds)
+    analyze_bound_campaign(payload, config, thresholds)
 
   payload = bind_candidate(
     campaign_payload([10_000.0, 10_100.0, 9_900.0, 10_050.0], config),
@@ -510,7 +528,7 @@ def test_summary_rejects_wrong_hardware_and_incomplete_raw_data(
   )
   payload["observations"][0]["peak_rss_kib"] = None
   with pytest.raises(CAMPAIGN.ToolError, match="RSS"):
-    CAMPAIGN.analyze_campaign(payload, config, thresholds)
+    analyze_bound_campaign(payload, config, thresholds)
 
   payload = bind_candidate(
     campaign_payload([10_000.0, 10_100.0, 9_900.0, 10_050.0], config),
@@ -518,7 +536,7 @@ def test_summary_rejects_wrong_hardware_and_incomplete_raw_data(
   )
   payload["observations"][0]["benchmark_context"]["num_cpus"] = 7
   with pytest.raises(CAMPAIGN.ToolError, match="context drift"):
-    CAMPAIGN.analyze_campaign(payload, config, thresholds)
+    analyze_bound_campaign(payload, config, thresholds)
 
   payload = bind_candidate(
     campaign_payload([10_000.0, 10_100.0, 9_900.0, 10_050.0], config),
@@ -528,7 +546,7 @@ def test_summary_rejects_wrong_hardware_and_incomplete_raw_data(
     "cpu_scaling_enabled"
   ] = True
   with pytest.raises(CAMPAIGN.ToolError, match="frequency scaling"):
-    CAMPAIGN.analyze_campaign(payload, config, thresholds)
+    analyze_bound_campaign(payload, config, thresholds)
 
 
 def test_summary_reconstructs_exact_collection_schedule(tmp_path: Path):
@@ -550,7 +568,7 @@ def test_summary_reconstructs_exact_collection_schedule(tmp_path: Path):
   )
 
   with pytest.raises(CAMPAIGN.ToolError, match="collection schedule"):
-    CAMPAIGN.analyze_campaign(payload, config, thresholds)
+    analyze_bound_campaign(payload, config, thresholds)
 
 
 def test_collection_rejects_unplanned_parameters(tmp_path: Path):
@@ -602,6 +620,7 @@ def test_build_manifest_binds_relative_compile_entry_and_binary_context(
   binary.write_bytes(b"test binary")
   compiler = tmp_path / "compiler"
   compiler.write_bytes(b"test compiler")
+  compiler.chmod(0o755)
   compile_commands = build_root / "compile_commands.json"
   compile_commands.write_text(
     json.dumps(
@@ -642,8 +661,11 @@ def test_build_manifest_binds_relative_compile_entry_and_binary_context(
   }
   monkeypatch.setattr(
     CAMPAIGN,
-    "_one_observation",
-    lambda *_args: {"benchmark_context": identity},
+    "_read_embedded_identity",
+    lambda *_args: {
+      CAMPAIGN._EMBEDDED_IDENTITY_FIELDS[name]: value
+      for name, value in identity.items()
+    },
   )
 
   manifest = CAMPAIGN.create_build_manifest(
@@ -656,11 +678,13 @@ def test_build_manifest_binds_relative_compile_entry_and_binary_context(
     link_command=link_command,
     device="test-device",
     build_context="test-build",
+    container_image_id=None,
   )
 
   assert manifest["embedded_identity"]["source_sha"] == SOURCE_SHA
   assert str(tmp_path) not in manifest["compile_command"]["text"]
   assert "$SOURCE" in manifest["compile_command"]["text"]
+  assert manifest["link_driver"]["sha256"] == "4" * 64
 
   identity["tess_source_sha"] = "f" * 40
   with pytest.raises(CAMPAIGN.ToolError, match="embedded identity"):
@@ -674,7 +698,45 @@ def test_build_manifest_binds_relative_compile_entry_and_binary_context(
       link_command=link_command,
       device="test-device",
       build_context="test-build",
+      container_image_id=None,
     )
+
+  other_compiler = tmp_path / "other-compiler"
+  other_compiler.write_bytes(b"other compiler")
+  other_compiler.chmod(0o755)
+  commands = json.loads(compile_commands.read_text(encoding="utf-8"))
+  commands[0]["arguments"][0] = str(other_compiler)
+  compile_commands.write_text(json.dumps(commands), encoding="utf-8")
+  with pytest.raises(CAMPAIGN.ToolError, match="recorded compiler"):
+    CAMPAIGN.create_build_manifest(
+      source_root=source_root,
+      source_sha=SOURCE_SHA,
+      binary=binary,
+      config_path=config_path,
+      compiler=compiler,
+      compile_commands=compile_commands,
+      link_command=link_command,
+      device="test-device",
+      build_context="test-build",
+      container_image_id=None,
+    )
+
+
+def test_build_command_sanitizer_does_not_corrupt_relative_src_component(
+  tmp_path: Path,
+):
+  compiler = tmp_path / "compiler"
+  compiler.write_bytes(b"compiler")
+
+  sanitized = CAMPAIGN._sanitize_build_command(
+    "/src/compiler ../googlebenchmark/src/libbenchmark.a -I/src/include",
+    source_root=Path("/src"),
+    build_root=Path("/build"),
+    compiler=compiler,
+  )
+
+  assert "../googlebenchmark/src/libbenchmark.a" in sanitized
+  assert "$SOURCE/include" in sanitized
 
 
 def device_report(config: dict, device: str, decision: str) -> dict:

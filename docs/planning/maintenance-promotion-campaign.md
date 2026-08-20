@@ -22,9 +22,12 @@ calibrate them.
 The measured implementation is frozen by a build manifest that binds the clean
 source commit, raw config and canonical config, benchmark and campaign-tool
 sources, benchmark binary, compiler, sanitized compile and link commands, and
-the pinned SDK or native build context. The binary also embeds the source,
+the resolved compile and link drivers, and the pinned SDK or native build
+context. The binary also embeds the source,
 config, benchmark-source, and tool digests; manifest creation and every
-observation verify them from Google Benchmark context. A change to the adapter,
+observation verify them from Google Benchmark context. Manifest creation reads
+the same identity through a dedicated mode that runs no benchmark or adapter
+code. A change to the adapter,
 registered scheduler, backend, benchmark, fixture, compiler, effective flags,
 or SDK invalidates both timing legs. A later
 mechanical move may carry evidence forward only when MNT-4 records why the
@@ -98,14 +101,56 @@ binary whose embedded identities differ:
 ```sh
 cmake --preset bench-only
 cmake --build build/bench-only --target tess_bench_maintenance_campaign
+mnt3_m3_results=/path/to/new-empty-m3-results
+mnt3_source_sha="$(git rev-parse HEAD)"
+mkdir -p "$mnt3_m3_results"
+[ -z "$(find "$mnt3_m3_results" -mindepth 1 -print -quit)" ]
+python3 tools/maintenance_campaign.py build-manifest \
+  --source-root . --source-sha "$mnt3_source_sha" \
+  --binary build/bench-only/bench/tess_bench_maintenance_campaign \
+  --config bench/maintenance-campaign.json \
+  --compiler /usr/bin/c++ \
+  --compile-commands build/bench-only/compile_commands.json \
+  --link-command \
+    build/bench-only/bench/CMakeFiles/tess_bench_maintenance_campaign.dir/link.txt \
+  --device m3 --build-context macos-native-xcode \
+  --output "$mnt3_m3_results/build-manifest.json"
 ```
 
-Run `calibrate`, then `thresholds`. `collect` requires that exact valid
-threshold manifest and embeds both its digest and the calibration digest;
-`analyze` rejects another calibration. Pass the device-specific values frozen
-in `bench/maintenance-campaign.json`; deviations fail closed. After both
-reports exist, run `decide` with exactly those two reports and the frozen
-config.
+Run `calibrate`, then `thresholds`, using the M3 repetition, minimum-time, and
+seed values in `bench/maintenance-campaign.json`. `collect` and `analyze` both
+require the retained `calibration.json`; they recompute the threshold manifest
+and require exact equality before accepting it. `collect` then embeds both the
+threshold digest and calibration digest. Pass only the device-specific values
+frozen in the config; deviations fail closed. After both reports exist, run
+`decide` with exactly those two reports and the frozen config.
+
+```sh
+python3 tools/maintenance_campaign.py calibrate \
+  --binary build/bench-only/bench/tess_bench_maintenance_campaign \
+  --config bench/maintenance-campaign.json --device m3 \
+  --build-manifest "$mnt3_m3_results/build-manifest.json" \
+  --repetitions 30 --minimum-time 0.05 --seed 130013 \
+  --output "$mnt3_m3_results/calibration.json"
+python3 tools/maintenance_campaign.py thresholds \
+  --input "$mnt3_m3_results/calibration.json" \
+  --config bench/maintenance-campaign.json \
+  --output "$mnt3_m3_results/thresholds.json"
+python3 tools/maintenance_campaign.py collect \
+  --binary build/bench-only/bench/tess_bench_maintenance_campaign \
+  --config bench/maintenance-campaign.json --device m3 \
+  --build-manifest "$mnt3_m3_results/build-manifest.json" \
+  --calibration "$mnt3_m3_results/calibration.json" \
+  --thresholds "$mnt3_m3_results/thresholds.json" \
+  --repetitions 30 --minimum-time 0.05 --seed 130031 \
+  --output "$mnt3_m3_results/candidate.json"
+python3 tools/maintenance_campaign.py analyze \
+  --input "$mnt3_m3_results/candidate.json" \
+  --config bench/maintenance-campaign.json \
+  --calibration "$mnt3_m3_results/calibration.json" \
+  --thresholds "$mnt3_m3_results/thresholds.json" \
+  --output "$mnt3_m3_results/report.json"
+```
 
 The Deck route is deliberately separate from the generic one-binary benchmark
 helper. Stage and hash the complete cross-built bundle without contacting the
@@ -113,15 +158,22 @@ device, then run one whole pinned phase at a time:
 
 ```sh
 tools/steamdeck/deck campaign stage <empty-bundle-dir>
-tools/steamdeck/deck campaign run <bundle-dir> calibration <results-dir>
-tools/steamdeck/deck campaign run <bundle-dir> candidate <results-dir>
+tools/steamdeck/deck campaign run \
+  <bundle-dir> calibration <new-run-id> <empty-results-dir>
+tools/steamdeck/deck campaign run \
+  <bundle-dir> candidate <same-run-id> <same-results-dir>
 ```
 
+Staging first rebuilds the wrapper image from the exact frozen SteamRT4 base
+digest and records the resulting wrapper image ID in the build manifest.
 `campaign run` executes `deck doctor` immediately before transfer. Its Deck
 helper verifies the bundle, records the governor and environment, pins every
 CPU once around all 600 calibration or 1,200 candidate invocations, restores
 the original per-CPU governors on every exit, and retrieves partial artifacts
-even after failure. Do not edit the bundle between device legs.
+even after failure. Run IDs and phase-output existence checks prevent a rerun
+from overwriting evidence; retrieved phase checksums are verified locally. Use
+a new run ID and results directory for every rerun. Do not edit the bundle
+between device legs.
 
 The retained evidence bundle contains sanitized raw calibration and candidate
 JSON, threshold manifests, per-device reports, the cross-device decision,

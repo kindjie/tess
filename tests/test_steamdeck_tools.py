@@ -577,6 +577,13 @@ def test_maintenance_campaign_has_local_stage_and_pinned_whole_phase():
   runner = MAINTENANCE_RUNNER.read_text(encoding="utf-8")
 
   assert "stage)" in host
+  assert "<run-id>" in host
+  assert "tess-maintenance-steamrt4:local" in host
+  assert host.index("docker build --platform linux/amd64") < host.index(
+      "docker run --rm --platform linux/amd64"
+  )
+  assert '--container-image-id "$CONTAINER_IMAGE_ID"' in host
+  assert '"$image_id" bash -ceu' in host
   assert "tools/steamdeck/deck doctor" in host
   assert host.index("tools/steamdeck/deck doctor") < host.index("rsync -az")
   assert "sha256sum -c SHA256SUMS" in runner
@@ -586,6 +593,12 @@ def test_maintenance_campaign_has_local_stage_and_pinned_whole_phase():
   )
   assert runner.count("set_governors performance") == 1
   assert "--thresholds \"${RESULT_DIR}/thresholds.json\"" in runner
+  assert "result directory already contains outputs" in runner
+  assert '"${PHASE}-SHA256SUMS"' in runner
+  assert 'verify_result_set "$results" "$phase"' in host
+  assert 'verify_result_set "$RESULT_DIR" calibration' in runner
+  assert 'wait "$stdout_tee_pid"' in runner
+  assert 'wait "$stderr_tee_pid"' in runner
 
 
 def test_deck_help_routes_maintenance_campaign_without_generic_bench():

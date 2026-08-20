@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 #include <type_traits>
 
 #if defined(__APPLE__) || defined(__linux__)
@@ -302,3 +303,24 @@ TESS_CAMPAIGN_CELL("scaling_4096", Scaling4096World, 4'096, 4'096,
 #undef TESS_CAMPAIGN_CELL
 
 }  // namespace
+
+auto main(int argc, char** argv) -> int {
+  if (argc == 2 && std::string_view{argv[1]} == "--tess-campaign-identity") {
+    std::printf(
+        "{\"benchmark_source_sha256\":\"%s\","
+        "\"config_file_sha256\":\"%s\","
+        "\"source_sha\":\"%s\",\"tool_sha256\":\"%s\"}\n",
+        TESS_MAINTENANCE_CAMPAIGN_SOURCE_FILE_SHA,
+        TESS_MAINTENANCE_CAMPAIGN_CONFIG_FILE_SHA,
+        TESS_MAINTENANCE_CAMPAIGN_SOURCE_SHA,
+        TESS_MAINTENANCE_CAMPAIGN_TOOL_SHA);
+    return 0;
+  }
+  benchmark::Initialize(&argc, argv);
+  if (benchmark::ReportUnrecognizedArguments(argc, argv)) {
+    return 1;
+  }
+  benchmark::RunSpecifiedBenchmarks();
+  benchmark::Shutdown();
+  return 0;
+}
