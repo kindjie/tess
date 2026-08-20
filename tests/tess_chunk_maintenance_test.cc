@@ -722,14 +722,12 @@ auto run_sparse_archive_scenario() -> std::vector<std::byte> {
 TEST(TessChunkMaintenance, BackendsMatchIndependentRescanAndArchiveOracle) {
   const auto immediate = run_dense_scenario<maintenance::ImmediateScheduler>();
   EXPECT_EQ(run_dense_scenario<experimental::FifoScheduler>(), immediate);
-  EXPECT_EQ(run_dense_scenario<experimental::CoalescingScheduler>(),
-            immediate);
+  EXPECT_EQ(run_dense_scenario<experimental::CoalescingScheduler>(), immediate);
   EXPECT_EQ(run_dense_scenario<experimental::DirtyBitScheduler>(), immediate);
 
   const auto dense_archive =
       run_archive_scenario<maintenance::ImmediateScheduler>();
-  EXPECT_EQ(run_archive_scenario<experimental::FifoScheduler>(),
-            dense_archive);
+  EXPECT_EQ(run_archive_scenario<experimental::FifoScheduler>(), dense_archive);
   EXPECT_EQ(run_archive_scenario<experimental::CoalescingScheduler>(),
             dense_archive);
   EXPECT_EQ(run_archive_scenario<experimental::DirtyBitScheduler>(),
@@ -739,9 +737,8 @@ TEST(TessChunkMaintenance, BackendsMatchIndependentRescanAndArchiveOracle) {
       run_sparse_archive_scenario<maintenance::ImmediateScheduler>();
   EXPECT_EQ(run_sparse_archive_scenario<experimental::FifoScheduler>(),
             sparse_archive);
-  EXPECT_EQ(
-      run_sparse_archive_scenario<experimental::CoalescingScheduler>(),
-      sparse_archive);
+  EXPECT_EQ(run_sparse_archive_scenario<experimental::CoalescingScheduler>(),
+            sparse_archive);
   EXPECT_EQ(run_sparse_archive_scenario<experimental::DirtyBitScheduler>(),
             sparse_archive);
 }

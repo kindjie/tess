@@ -28,6 +28,7 @@
 - This also supersedes the v1-stabilization TDD's requirement that a stable
   aggregate never transitively include an experimental header. The alias-only
   facade must see the measured implementation declarations; it therefore
-  makes experimental maintenance spellings reachable through `tess/tess.h`,
-  but the support contract grants stability only to the documented
-  `tess::maintenance` names and semantics.
+  makes experimental maintenance spellings reachable through the explicit
+  `tess/maintenance.h` aggregate. The compatibility umbrella `tess/tess.h`
+  deliberately excludes maintenance, and the support contract grants
+  stability only to the documented `tess::maintenance` names and semantics.
