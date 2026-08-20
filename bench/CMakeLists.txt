@@ -75,6 +75,65 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_bench_thread_scaling)
 
+# MNT-3's controlled promotion campaign is isolated from the permanent
+# threshold suite. Its complete cell registry and frozen decision policy live
+# in bench/maintenance-campaign.json; raw M3 and Steam Deck artifacts, rather
+# than hosted-runner timing, decide whether the dirty-bit backend graduates.
+add_executable(
+  tess_bench_maintenance_campaign
+  tess_maintenance_campaign_bench.cc
+)
+include(TessMaintenanceCampaignSourceSha)
+tess_resolve_maintenance_campaign_source_sha(
+  tess_maintenance_campaign_source_sha
+  "${PROJECT_SOURCE_DIR}"
+)
+file(
+  SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/maintenance-campaign.json"
+  TESS_MAINTENANCE_CAMPAIGN_CONFIG_FILE_SHA
+)
+file(
+  SHA256 "${PROJECT_SOURCE_DIR}/tools/maintenance_campaign.py"
+  TESS_MAINTENANCE_CAMPAIGN_TOOL_SHA
+)
+file(
+  SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/tess_maintenance_campaign_bench.cc"
+  TESS_MAINTENANCE_CAMPAIGN_SOURCE_FILE_SHA
+)
+string(CONCAT
+  TESS_MAINTENANCE_CAMPAIGN_SOURCE_DEFINITION
+  "TESS_MAINTENANCE_CAMPAIGN_SOURCE_SHA="
+  "\"${tess_maintenance_campaign_source_sha}\""
+)
+string(CONCAT
+  TESS_MAINTENANCE_CAMPAIGN_CONFIG_DEFINITION
+  "TESS_MAINTENANCE_CAMPAIGN_CONFIG_FILE_SHA="
+  "\"${TESS_MAINTENANCE_CAMPAIGN_CONFIG_FILE_SHA}\""
+)
+string(CONCAT
+  TESS_MAINTENANCE_CAMPAIGN_TOOL_DEFINITION
+  "TESS_MAINTENANCE_CAMPAIGN_TOOL_SHA="
+  "\"${TESS_MAINTENANCE_CAMPAIGN_TOOL_SHA}\""
+)
+string(CONCAT
+  TESS_MAINTENANCE_CAMPAIGN_BENCH_DEFINITION
+  "TESS_MAINTENANCE_CAMPAIGN_SOURCE_FILE_SHA="
+  "\"${TESS_MAINTENANCE_CAMPAIGN_SOURCE_FILE_SHA}\""
+)
+target_compile_definitions(
+  tess_bench_maintenance_campaign
+  PRIVATE
+    ${TESS_MAINTENANCE_CAMPAIGN_SOURCE_DEFINITION}
+    ${TESS_MAINTENANCE_CAMPAIGN_CONFIG_DEFINITION}
+    ${TESS_MAINTENANCE_CAMPAIGN_TOOL_DEFINITION}
+    ${TESS_MAINTENANCE_CAMPAIGN_BENCH_DEFINITION}
+)
+target_link_libraries(
+  tess_bench_maintenance_campaign
+  PRIVATE tess::tess benchmark::benchmark
+)
+tess_apply_project_options(tess_bench_maintenance_campaign)
+
 # The budgeted-progress runner is likewise its own binary (design
 # docs/planning/budgeted-progress-benchmarks.md section 14.1): a
 # multi-frame queueing experiment with its own clock, controller, and

@@ -56,6 +56,22 @@ tools/steamdeck/deck bench --pin  # ship to the Deck, run on real Zen 2 hardware
 BENCH_BIN=tess_bench_diagnostics tools/steamdeck/deck bench --pin
 ```
 
+The maintenance promotion campaign has a stricter two-step route. Staging is
+local-only and produces an immutable checksum bundle; each later device command
+pins the governor around the entire calibration or candidate phase:
+
+```sh
+tools/steamdeck/deck campaign stage <empty-bundle-dir>
+tools/steamdeck/deck campaign run \
+  <bundle-dir> calibration <new-run-id> <empty-results-dir>
+tools/steamdeck/deck campaign run \
+  <bundle-dir> candidate <same-run-id> <same-results-dir>
+```
+
+See the
+[maintenance promotion protocol](../../docs/planning/maintenance-promotion-campaign.md)
+for the frozen matrix, identity checks, stop rules, and retained artifacts.
+
 The benchmark command builds only the selected binary and defaults to one
 compiler job because the amd64 Steam Runtime is commonly emulated inside a
 memory-limited Docker Desktop VM. Set `TESS_STEAMRT_BUILD_JOBS=N` deliberately
@@ -171,7 +187,8 @@ builds are too slow.
   `linux-bench` presets (clang, separate `build/linux-*` dirs) alongside the
   existing presets.
 - `deck` — the entrypoint: `setup`, `deck-setup`, `doctor`, `test`, `watch`,
-  `asan`, `bench`. Wraps the scripts below; run `deck help`. Each command
+  `asan`, `bench`, `campaign`. Wraps the scripts below; run `deck help`. Each
+  command
   configures the cmake preset it needs (`bench` → `linux-bench`, `test`/
   `watch` → `linux-dev`, `asan` → `linux-asan`); override with
   `DECK_PRESET=<preset>`.
@@ -183,3 +200,7 @@ builds are too slow.
 - `deck-run-pinned.sh` — on-Deck helper for `--pin`: pins the CPU governor to
   `performance`, runs the selected benchmark binary, and restores the governor
   on exit.
+- `deck-maintenance-campaign.sh` — creates the exact local evidence bundle or
+  transfers it after a fresh doctor check and retrieves phase artifacts.
+- `deck-run-maintenance-campaign.sh` — verifies the bundle and pins/restores
+  every CPU once around a complete calibration or candidate phase.

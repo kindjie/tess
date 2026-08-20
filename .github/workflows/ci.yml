@@ -536,6 +536,8 @@ jobs:
           tests/test_clang_tidy_changed.py
           tests/test_no_exceptions_manifest.py
           tests/test_paired_bench.py
+          tests/test_maintenance_campaign.py
+          tests/test_maintenance_evidence_archive.py
           tests/test_check_counter_goldens.py
           tests/test_benchmark_changepoint.py
           tests/test_coverage_gaps.py
@@ -574,8 +576,7 @@ jobs:
           tests/test_parser_fuzz.py
           tests/test_publish_benchmark_data.py
 
-      # Failing gate (promoted 2026-07-07 after a clean shake-out):
-      # public symbols must be documented in a maintained architecture
+      # Public symbols must be documented in a maintained architecture
       # doc and listed in docs/architecture/surface.json.
       - name: Public surface manifest
         run: python tools/check_public_surface.py
