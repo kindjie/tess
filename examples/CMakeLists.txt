@@ -6,6 +6,10 @@ add_executable(tess_quickstart quickstart.cc)
 target_link_libraries(tess_quickstart PRIVATE tess::tess)
 tess_apply_project_options(tess_quickstart)
 
+add_executable(tess_chunk_maintenance chunk_maintenance.cc)
+target_link_libraries(tess_chunk_maintenance PRIVATE tess::tess)
+tess_apply_project_options(tess_chunk_maintenance)
+
 add_executable(tess_documentation documentation.cc)
 target_link_libraries(tess_documentation PRIVATE tess::tess)
 tess_apply_project_options(tess_documentation)

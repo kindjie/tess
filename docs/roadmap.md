@@ -64,10 +64,11 @@ without maintaining a second exhaustive list.
   without scheduling dirty-mask work, and path-overlay collection can include
   retained and queue-produced routes whose runtime tickets are no longer
   directly usable.
-- A registered `DirtyBitScheduler` passed its experimental promotion gates
-  and is the selected candidate for an external chunk-maintenance adapter. It
-  remains opt-in under `tess::experimental` and is not integrated with world
-  storage.
+- A registered `DirtyBitScheduler` passed its experimental backend-selection
+  gates, and an external fixed-slot chunk-maintenance adapter now exercises
+  dense and sparse residency without integrating handles into world storage.
+  Both remain opt-in under `tess::experimental` pending portable promotion
+  evidence.
 - Budgeted-progress benchmark infrastructure, controlled-hardware campaign
   tooling, and further diagnostics and correctness fixes have landed. The
   [budgeted-progress record][budgeted-progress] preserves its staged design

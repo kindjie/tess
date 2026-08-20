@@ -567,9 +567,10 @@ The persistent worker pool is current production behavior. Alternative
 external pool libraries were evaluated and not adopted. The original queued
 coalescing maintenance candidate was rejected on sparse overhead; the later
 registered `DirtyBitScheduler` passed its experimental gates and is the
-preferred candidate for a future external maintenance adapter. See
-`docs/planning/optimization-log.md` for evidence and retry conditions, and the
-historical `docs/tdd/tdd_addendum_concurrent_tile_world.md` for design intent.
+default backend behind the experimental external maintenance adapter. See
+`docs/planning/optimization-log.md` for evidence and retry conditions, and
+the historical `docs/tdd/tdd_addendum_concurrent_tile_world.md` for design
+intent.
 
 The phase executor contract is deliberately library-agnostic. External
 backends must adapt to the contiguous operation-index range API and preserve

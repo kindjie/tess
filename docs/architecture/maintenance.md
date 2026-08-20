@@ -114,6 +114,56 @@ through the residency transition. Likewise, canonical archive equality is
 useful authoritative-state evidence but cannot validate dirty flags, versions,
 residency generations, or derived products, which archives intentionally omit.
 
+## External Chunk Adapter
+
+`include/tess/experimental/chunk_maintenance.h` is the first world-backed
+consumer of the registered contract. `ChunkMaintenanceAdapter` remains
+experimental and external to storage: it borrows an immovable `World`, owns
+its scheduler, tasks, handles, and derived product slots, and never changes
+world construction or `ChunkMeta` layout. The caller gives one nonzero dirty
+mask to one clearing owner and a typed rebuild callback. Zero or foreign marks
+are rejected before mutation.
+
+The operation results are deliberately explicit. `ChunkMarkResult` reports
+accepted and rejected marks; `ChunkProductView` combines a product pointer,
+`ChunkProductState`, and its token; `ChunkResidencyResult` carries a
+`ChunkResidencyStatus`, which also reports reconciliation; `ChunkEvictionResult`
+reports an eviction attempt; and `ChunkAdapterReleaseResult` distinguishes
+released, not-idle, and already-released adapters.
+
+Concurrent producers may offer scheduler work, subject to the world's
+external-synchronization rules. Residency changes and task release instead
+require exclusive adapter access: close and join producers before the drain
+that establishes `Idle`, and keep them closed through the operation.
+
+Dense task slots map directly to chunk keys. Sparse task slots map to the
+world's fixed resident slots and carry `{key, residency_generation}` bindings.
+Sparse binding changes are permitted only after producers are closed and
+joined and an explicit adapter drain has returned a fresh positive `Idle`.
+The caller keeps producers closed through an adapter-owned residency batch.
+Direct sparse residency mutation after binding is unsupported; a coordinated
+archive load is reconciled explicitly at the same quiescent boundary. Tasks
+recheck `resident_ref()` before unchecked sparse access, but those checks do
+not make unsynchronized world mutation safe.
+
+Each completed product carries `ChunkProductToken{key, version,
+residency_generation}` and is classified as unavailable, stale, or current.
+The callback writes derived state only; authoritative fields and archive bytes
+do not depend on backend selection. After a successful callback the adapter
+publishes the token and uses `clear_dirty_observed()` to clear exactly its
+observed bits. An intervening mark or residency change leaves the token stale
+and work retryable. A callback exception propagates verbatim, may leave a
+partial but stale product, keeps authoritative dirty state set, and requires
+an explicit caller retry.
+
+`mark_dirty()` records authoritative dirty/version state before scheduling,
+so queue capacity failure cannot erase the retry signal. Scheduling remains
+coalescing, budgeted drains remain explicit, and warmed adapter scheduling and
+draining allocate only if the user rebuild callback does. The self-checking
+`examples/chunk_maintenance.cc` shows 32 offers collapsing into one rebuild
+while inspecting the dirty flags, content version, product token, and backend
+metrics. An installed-package consumer compiles and runs the same workflow.
+
 Queued backends allocate their pointer ring only during construction. A task
 must outlive its scheduler or a completed `flush()`. Destroying a scheduler
 with pending tasks drops the non-owning pointers without executing them.
@@ -155,11 +205,12 @@ consumer may depend on completed derived state.
 ## Promotion Decision
 
 The registered dirty-bit backend passed the experimental promotion criteria
-and is the preferred backend for a future external chunk-maintenance adapter.
-It passes deterministic 1,000-run flush, canonical archive equivalence,
-concurrency, generation-safe dirty clear, budget, exception, shutdown, and
-steady-state allocation contracts; the maintenance suite is also clean under
-ASan/UBSan and TSan. It collapses 512 dense schedules to one execution.
+and is the default backend behind the experimental external chunk-maintenance
+adapter. It passes deterministic 1,000-run flush, canonical archive
+equivalence, concurrency, generation-safe dirty clear, budget, exception,
+shutdown, and steady-state allocation contracts; the maintenance suite is
+also clean under ASan/UBSan and TSan. It collapses 512 dense schedules to one
+execution.
 
 In the local evaluation, dirty-bit scheduling was faster than immediate
 execution for the sparse synthetic case, reduced p95 latency against FIFO by
@@ -169,9 +220,8 @@ lowest deferred sparse flush time. It also beat queued coalescing by more than
 TDD's conditional rule. The new scenario thresholds remain informational
 until representative Linux main-tier calibration exists.
 
-The API remains experimental and opt-in. No scheduler is embedded in world
-storage, world construction is unchanged, and exact event and authoritative
-simulation paths remain outside maintenance. The next integration step is an
-external owner or adapter that binds registered tasks to derived chunk state.
-See the optimization log and design-decision history for the measurements and
-boundary.
+The API and external adapter remain experimental and opt-in. No scheduler is
+embedded in world storage, world construction is unchanged, and exact event
+and authoritative simulation paths remain outside maintenance. Portable
+promotion evidence over the adapter is the next gate. See the optimization log
+and design-decision history for the measurements and boundary.

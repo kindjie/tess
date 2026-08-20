@@ -51,7 +51,9 @@ cmake -S "$root/tests/install_consumer" -B "$build" \
 if [[ -n "$config" ]]; then
   cmake --build "$build" --config "$config"
   "$build/$config/tess_install_consumer"
+  "$build/$config/tess_install_chunk_maintenance"
 else
   cmake --build "$build"
   "$build/tess_install_consumer"
+  "$build/tess_install_chunk_maintenance"
 fi

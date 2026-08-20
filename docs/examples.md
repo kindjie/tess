@@ -137,6 +137,11 @@ The fractional coordinates never return to simulation state.
 
 ## Integration boundaries
 
+- [`chunk_maintenance.cc`][chunk_maintenance] — an experimental external
+  owner that coalesces repeated chunk dirty marks into a versioned derived
+  summary, checks dirty/version state, and keeps scheduler handles out of the
+  world. The install smoke builds and runs a self-contained version of this
+  workflow against the installed package.
 - [`custom_ecs_min.cc`][custom_ecs] — the ECS adapter concepts implemented
   by a deliberately non-EnTT-shaped micro ECS.
 - [`entt_pawns.cc`][entt_pawns] — the EnTT adapter driving registry-owned
@@ -159,6 +164,7 @@ The fractional coordinates never return to simulation state.
 [stairs_3d]: https://github.com/kindjie/tess/blob/main/examples/stairs_3d.cc
 [ant_farm]: https://github.com/kindjie/tess/blob/main/examples/ant_farm_vertical.cc
 [sparse_stream]: https://github.com/kindjie/tess/blob/main/examples/sparse_stream.cc
+[chunk_maintenance]: https://github.com/kindjie/tess/blob/main/examples/chunk_maintenance.cc
 [web_colony_src]: https://github.com/kindjie/tess/tree/main/examples/web_colony
 [web_traffic_src]: https://github.com/kindjie/tess/tree/main/examples/web_traffic
 [custom_ecs]: https://github.com/kindjie/tess/blob/main/examples/custom_ecs_min.cc
