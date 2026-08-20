@@ -131,7 +131,7 @@ void BM_topology_region_graph_update_single_chunk_512x512(
   bench_check(built.region_count > 0, "region graph build produced no regions");
 
   const auto dirty = std::array{tess::ChunkKey{0}};
-  tess::LocalTopologyResult updated{};
+  tess::TopologyBuildResult updated{};
   for (auto _ : state) {
     updated = tess::update_region_graph<TopoWorld, PassableTag>(world, scratch,
                                                                 graph, dirty);

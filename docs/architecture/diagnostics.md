@@ -224,12 +224,12 @@ substrate-only helpers rather than an editor framework:
 - `draw_world_overview` shows compile-time shape, chunk, residency, and page
   storage facts for dense or sparse worlds.
 - `draw_chunk_inspector` resolves a caller-selected tile and shows its chunk,
-  local coordinate, metadata, and dirty/active flags. It distinguishes an
+  local coordinate, metadata, and dirty/active masks. It distinguishes an
   out-of-bounds selection from an in-bounds non-resident sparse chunk.
 - `draw_bool_field_editor<Tag>` reads a selected boolean field through a const
   world. Its `BoolFieldEditResult` carries a `ToolStatus` and, for a changed
   checkbox, a `BoolFieldEditIntent`; it never loads a chunk or mutates storage,
-  versions, dirty flags, or game meaning. The caller validates and applies the
+  versions, dirty masks, or game meaning. The caller validates and applies the
   intent in its own authorized simulation phase.
 
 Picking, windows, undo/redo, persistence workflow, generalized reflected field

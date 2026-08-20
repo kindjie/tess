@@ -256,6 +256,40 @@ def test_mkdocs_navigation_includes_persistence_architecture():
   )
 
 
+def test_terminology_reference_and_global_tooltips_stay_synchronized():
+  config = read("mkdocs.yml")
+  definitions = read("includes/abbreviations.md")
+  terminology = read("docs/terminology.md")
+
+  assert "    - content.tooltips" in config
+  assert "  - abbr" in config
+  assert "  - pymdownx.snippets:" in config
+  assert "      auto_append:" in config
+  assert "        - includes/abbreviations.md" in config
+  assert "      check_paths: true" in config
+  assert "watch:\n  - includes" in config
+  assert "      - Terminology: terminology.md" in config
+
+  exact_terms = (
+    "simulation tick",
+    "render frame",
+    "operation batch",
+    "delta frame",
+    "content version",
+    "topology version",
+    "residency generation",
+    "movement class",
+    "distance field",
+    "route cache",
+  )
+  for term in exact_terms:
+    assert definitions.count(f"*[{term}]:") == 1
+    assert f"**{term}**" in terminology
+
+  for ambiguous in ("stable", "exact", "bounded", "active", "frame"):
+    assert f"*[{ambiguous}]:" not in definitions
+
+
 def test_branding_controls_meet_non_text_contrast_minimum():
   css = read("examples/web_pathfinder/site/style.css")
   assert "border: 1px solid #75658f" in css
@@ -322,8 +356,8 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert "kInvalid = -1" in wasm
   assert "size_t" not in wasm
   assert "PathStatus" not in wasm
-  assert "tess_strategies_cell_passable" in wasm
-  assert "_tess_strategies_cell_passable" in build_script
+  assert "tess_strategies_tile_passable" in wasm
+  assert "_tess_strategies_tile_passable" in build_script
   assert "tess_strategies_field_reached_nodes" in wasm
   assert "_tess_strategies_field_reached_nodes" in build_script
   assert "dataset.tessStrategies" in app
@@ -338,9 +372,9 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert "Cache misses: 1" in app
   assert "Field builds: 1" in app
   assert "A* fallbacks: 0" in app
-  assert "api.cellPassable" in app
+  assert "api.tilePassable" in app
   assert "api.fieldReachedNodes" in app
-  assert 'tile.classList.add("blocked")' in app
+  assert 'tile.classList.add("impassable")' in app
   assert 'tile.classList.toggle("field-covered"' in app
 
   assert 'id="strategy-results"></tbody>' in html
@@ -415,8 +449,8 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert "data-batch-field-builds=\"1\"" in strategy_smoke
   assert "data-batch-fallbacks=\"0\"" in strategy_smoke
   assert "data-field-reached-nodes=\"211\"" in strategy_smoke
-  assert "data-blocked-cells-per-grid=\"45\"" in strategy_smoke
-  assert "data-distance-field-covered-cells=\"211\"" in strategy_smoke
+  assert "data-impassable-tiles-per-grid=\"45\"" in strategy_smoke
+  assert "data-distance-field-covered-tiles=\"211\"" in strategy_smoke
   assert "data-distance-field-third-route=\"ready\"" in strategy_smoke
 
 
@@ -490,7 +524,7 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   assert "const rememberedWalls = Array.from(walls)" in app
   assert "api.setWall(key % width, Math.floor(key / width), 1) === 1" in app
   assert "strokeBuilt = !walls.has" in app
-  assert "paintLine(lastCell, at, strokeBuilt)" in app
+  assert "paintLine(lastTile, at, strokeBuilt)" in app
   assert "Drag open space to draw; drag from a wall to erase." in html
   assert "wall removal did not recover route" in native
   assert "idempotent add rebuilt topology" in native
@@ -565,7 +599,7 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   assert "api.interpolationAlpha()" in app
   assert "previous + (current - previous) * alpha" in app
   assert "swap animation pair diverged" in native
-  assert "const agentSize = cell * 0.72" in app
+  assert "const agentSize = tileSize * 0.72" in app
   assert "canvas render excluded" in app
 
   # Tutorial structure is part of the example contract: the model labels the
@@ -686,7 +720,7 @@ def test_traffic_lab_has_large_grid_diagnostics_and_browser_evidence():
   assert "measurement-output" in app
 
   assert "tools/test_web_demo_interactions.py" in pages
-  assert "open-cell click did not add a wall" in browser_test
+  assert "open-tile click did not add a wall" in browser_test
   assert "draw stroke changed mode" in browser_test
   assert "fast drag did not interpolate" in browser_test
   assert "1366, 768" in browser_test

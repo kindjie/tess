@@ -177,7 +177,7 @@ TEST(TessColonyHarness, ClearingRuntimeCachesDoesNotChangeResults) {
   // differential: with distinct goals and the default cache policy,
   // this scenario does not populate the product cache it clears, so
   // a genuine warm-hit-versus-cold-miss comparison needs a
-  // repeated-goal workload it does not yet run.
+  // repeated-goal workload it does not run.
   expect_same_outcome(warm_run, cold_run);
 }
 

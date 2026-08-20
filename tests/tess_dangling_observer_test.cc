@@ -110,7 +110,7 @@ TEST(TessDanglingObserver, TheSupportedSpellingStillWorks) {
   // Binding the report to a named value is the fix a caller applies, and
   // it must keep behaving exactly as before.
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
 
   const auto report = tess::plan_operations(world, ops);
   EXPECT_TRUE(report.plan().operations().empty());

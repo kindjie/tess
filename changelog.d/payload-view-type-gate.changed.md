@@ -3,7 +3,7 @@
   span. That span was also what a correctly-typed empty batch returned and
   what an operation carrying no payload returned, so a caller that asked for
   the wrong type processed nothing every frame with no signal to distinguish
-  it from a quiet frame. The typed `FrameOps` entry points pair each
+  it from a quiet frame. The typed `OperationBatch` entry points pair each
   `OperationKind` with the payload type it names, so a consumer dispatching
   on `kind` over operations from those entry points has the type fixed for
   it and a mismatch is a caller bug rather than a condition to branch on;

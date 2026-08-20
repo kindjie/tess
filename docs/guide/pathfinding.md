@@ -46,9 +46,9 @@ measured workload justifies it.
 2. **Are requests weighted, with goals that repeat?** →
    `weighted_path_batch` amortizes one bounded field per repeated goal;
    all-distinct goals fall back to per-request weighted A*.
-3. **Do identical routes repeat on a stable map?** →
+3. **Do identical routes repeat on an unchanged map?** →
    `cached_astar_path`, with caller-driven invalidation
-   (`RouteCacheScratch::invalidate_if_world_changed`) — the
+   (`UnitRouteCache::invalidate_if_world_changed`) — the
    [pathfinding note](../architecture/path.md) specifies the contract.
 4. **Otherwise** — `astar_path`, or `weighted_astar_path` with a
    movement class when passability or cost differs per unit.
@@ -57,11 +57,11 @@ measured workload justifies it.
 
 | Workload | API | Example |
 | --- | --- | --- |
-| Few one-off unit-cost queries | `astar_path` | `examples/mvp_path.cc` |
+| Few one-off unit-cost queries | `astar_path` | `examples/queued_path.cc` |
 | Per-unit rules or terrain costs | `MovementClass` + `weighted_astar_path` | `examples/path_agents.cc` |
 | Many agents, shared goal set (dense worlds only) | distance-field product + `FieldProductCache` | `examples/ant_farm_vertical.cc` |
 | Weighted per-tick batches, repeated goals | `weighted_path_batch` | below |
-| Repeated identical routes, stable map | `cached_astar_path` | below |
+| Repeated identical routes, unchanged map | `cached_astar_path` | below |
 
 The [pathfinding note](../architecture/path.md) holds the normative
 workload charts and semantics; this page only routes into them.
@@ -111,7 +111,7 @@ const auto requests = std::array{
     tess::PathRequest{tess::Coord2{0, 2}, tess::Coord2{31, 31}},
 };
 const auto results =
-    tess::weighted_path_batch<World, PassableTag, CostTag, /*MaxCost=*/128>(
+    tess::weighted_path_batch<World, WeightedMovement, /*MaxCost=*/128>(
         world, requests, scratch);
 ```
 <!-- /tess-snippet -->

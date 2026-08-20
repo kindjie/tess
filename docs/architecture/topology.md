@@ -66,7 +66,7 @@ stateDiagram-v2
 
 - `LocalRegionId` identifies one passable connected component inside one
   chunk. Ids are 1-based: `invalid_local_region` (value 0) is used for
-  blocked tiles and invalid lookups, and id N maps to `regions()[N - 1]`.
+  impassable tiles and invalid lookups, and id N maps to `regions()[N - 1]`.
 - `LocalRegion` summarizes one local region with tile count, world-space
   bounds, and boundary-exit count.
 - `LocalBoundaryExit` records one passable local boundary tile that has an
@@ -101,13 +101,16 @@ stateDiagram-v2
   `if constexpr`; the sparse-only state is empty for a dense graph).
 - `RegionGraphScratch` owns reusable reachability traversal storage with
   epoch-stamped visited marks.
-- `LocalTopologyResult` summarizes an operation that can fail: a
+- `TopologyBuildResult` summarizes a local build or graph update that can fail:
+  a
   `TopologyStatus` (`Built`, `InvalidChunk` for an out-of-range chunk key,
   or `MissingChunk` when a sparse local build names a valid non-resident
   chunk), region count, passable tile count, boundary exit count, and the
-  captured topology version. `build_local_chunk_topology` and
-  `update_region_graph` return it.
-- `RegionGraphBuildResult` is the same counts **without** a status, and
+  sum of the captured chunk topology versions. The sum is an aggregate
+  comparison value, not itself a `TopologyVersion`.
+  `build_local_chunk_topology` and `update_region_graph` return it.
+- `RegionGraphBuildResult` is the same counts and topology-version sum
+  **without** a status, and
   `build_region_graph` returns it. That build cannot fail: the dense
   branch iterates keys `0..chunk_count`, so `InvalidChunk` cannot arise
   and `MissingChunk` does not exist under `AlwaysResident`; the sparse
@@ -122,7 +125,7 @@ stateDiagram-v2
   boundary exits. A sparse build rejects a non-resident chunk before accessing
   page storage and returns `MissingChunk` with an empty topology. The second
   template argument is a movement class OR a raw passable tag: a raw tag
-  normalizes to the `WalkableField` identity class,
+  normalizes to the `UnitCostFieldMovement` identity class,
   whose flood stays the byte-identical legacy `field_span` scan; a composed
   class evaluates its predicate on the resolved page per tile.
 - `build_region_graph<World, ClassOrTag>(world, scratch, graph, provider =
@@ -153,7 +156,7 @@ stateDiagram-v2
   transition-provider type, live instance, or revision mismatch
   (`matches_provider`).
 - `RegionGraphT::matches_class<ClassOrTag>()` reports whether the graph was
-  built for the given class (normalized, so a raw tag and its `WalkableField`
+  built for the given class (normalized, so a raw tag and its `UnitCostFieldMovement`
   identity agree). The stamp is a runtime class-identity token captured at
   build time, mirroring the shape binding: the graph type encodes neither, so
   a graph labeled for one class must never answer reachability for another.
@@ -207,11 +210,11 @@ components because every legal diagonal has a clear face-connected route;
 this projection preserves reachability while exact path costs still use the
 diagonal model.
 
-The builder treats the passability field as boolean-like. Blocked tiles keep
+The builder treats the passability field as boolean-like. Impassable tiles keep
 `invalid_local_region`. Region IDs are assigned deterministically in increasing
 local tile order, then depth-first flood fill order. The result captures
-`world.meta(chunk).topology_version`; this slice does not mutate dirty flags or
-metadata versions.
+`world.meta(chunk).topology_version`; the build does not mutate dirty masks,
+content versions, or topology versions.
 
 `RegionGraph` pairs exits by looking at the adjacent world coordinate across
 each boundary exit. If that tile belongs to a passable local region in the
@@ -275,7 +278,7 @@ marker used by compile-time validation and normalization.
   `DefaultSteps` for legacy custom classes without a member, while
   `StepPolicyFor<Policy, Shape>` rejects diagonals unless the shape is an
   orthogonal lattice with exactly two effective axes. Policy types expose
-  stable `StepPolicyIdentity` and positive fixed-point cost scales;
+  fixed `StepPolicyIdentity` and positive fixed-point cost scales;
   `ValidCornerRule` closes the diagonal rules, while
   `step_policy_identity`, `step_policy_identity_of`, and `step_policy_of`
   expose their normalized identities.
@@ -284,13 +287,12 @@ marker used by compile-time validation and normalization.
 - Cost expressions (0 == impassable, u32-saturated): `UnitCost`,
   `ConstantCost<N>`, `FieldCost<CostTag>`, `SelectCost<SelTag, WhenSet,
   WhenClear>`. `normalize_cost` is byte-exact with the weighted A* leaf.
-- Identity classes for backward compatibility: `WalkableField<PassableTag>`
-  (unweighted; carries the raw tag and a `passable_span` fast path so the
-  identity region flood stays a byte-identical `field_span` scan),
-  `WalkableCostField<PassableTag, CostTag>` (weighted, cost>0 folded into
-  passability), and `LegacyWeighted<PassableTag, CostTag>` (the legacy
-  cost-agnostic asymmetry). `movement_class_of<T>` normalizes a raw tag OR a
-  class so every legacy `<World, PassableTag>` call site compiles unchanged.
+- Field-backed adapters: `UnitCostFieldMovement<PassableTag>` carries the raw
+  tag and a `passable_span` fast path so the identity region flood remains a
+  byte-identical `field_span` scan;
+  `PositiveCostFieldMovement<PassableTag, CostTag>` folds positive entry cost
+  into passability. `movement_class_of<T>` normalizes a raw unit-cost tag or an
+  explicit movement class.
 - `MovementClassFor<Class, Page>` checks the full predicate/cost contract;
   `HasPassableSpan<Class>` identifies the single-field fast path used by
   compatible topology and path builders.
@@ -342,7 +344,7 @@ updates re-derive portals over that same neighborhood, so a longer-range
 transition would survive, stale, past an edit to its landing chunk. The
 provider type, live stateful object identity, and revision are stamped like the
 movement class (`matches_provider`). Empty providers use a null instance and
-revision zero. A stateful provider must remain at a stable address while the
+revision zero. A stateful provider must remain at an address-stable location while the
 graph can be reused, expose
 `transition_revision() const noexcept -> std::uint64_t`, and advance it
 whenever its emitted edge set can change; `update_region_graph` falls back to
@@ -440,9 +442,10 @@ endpoints may lie, but it does not constrain which world fields the
 enumeration may read: a provider is free to emit an edge out of chunk A
 based on a field in some unrelated chunk B. Dirtying only B then
 re-enumerates B and its neighbours, leaves A's edge stale, and — because
-B's recorded version now matches again — leaves the graph reporting fresh.
-So for a provider whose enumeration reads outside the emitting chunk,
-either dirty every chunk whose outgoing transitions the edit can change,
+B's recorded topology version now matches again — leaves the graph reporting
+fresh. So for a provider whose enumeration reads outside the emitting chunk,
+either mark every chunk whose outgoing transitions the edit can change as
+topology-dirty,
 give the provider a revision (a changed `transition_revision` forces a full
 rebuild), or rebuild outright. The built-in `StairTransitions` reads only
 the emitting chunk's own field, so for it the owning chunk plus face

@@ -19,6 +19,9 @@ using MovementSchema = tess::FieldSchema<
     tess::Field<PassableTag, bool>, tess::Field<CostTag, std::uint32_t>,
     tess::Field<OccupancyTag, bool>, tess::Field<ReservationTag, bool>>;
 using World = tess::AlwaysResidentWorld<Runtime2D, MovementSchema>;
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 constexpr auto RuntimeTileCount =
     Runtime2D::size.x * Runtime2D::size.y * Runtime2D::size.z;
 
@@ -304,7 +307,7 @@ TEST(TessEcsAdapter, AdvanceWithIndexKeepsFieldAndIndexInSync) {
   reserve_runtime(runtime, 1);
   (void)tess::process_unit_path_agents<World, PassableTag>(
       world, batch.agents(), runtime);
-  ASSERT_EQ(batch.agents()[0].status, tess::PathStatus::Found);
+  ASSERT_EQ(batch.agents()[0].last_result, tess::PathStatus::Found);
 
   const auto stats =
       tess::advance_path_agents_with_index<World, PassableTag, OccupancyTag,
@@ -340,7 +343,7 @@ TEST(TessEcsAdapter, AdvanceWithIndexLeavesIndexUntouchedOnFailures) {
   reserve_runtime(runtime, 1);
   (void)tess::process_unit_path_agents<World, PassableTag>(
       world, batch.agents(), runtime);
-  ASSERT_EQ(batch.agents()[0].status, tess::PathStatus::Found);
+  ASSERT_EQ(batch.agents()[0].last_result, tess::PathStatus::Found);
 
   // Transient failure: the next tile is occupied by a non-agent source
   // (field only -- the one-directional mirror), so the commit rejects and
@@ -360,7 +363,7 @@ TEST(TessEcsAdapter, AdvanceWithIndexLeavesIndexUntouchedOnFailures) {
   world.template field<OccupancyTag>(tess::Coord3{1, 0, 0}) = false;
   (void)tess::process_unit_path_agents<World, PassableTag>(
       world, batch.agents(), runtime);
-  ASSERT_EQ(batch.agents()[0].status, tess::PathStatus::Found);
+  ASSERT_EQ(batch.agents()[0].last_result, tess::PathStatus::Found);
   batch.agents()[0].position = tess::Coord3{5, 5, 0};
   stats = tess::advance_path_agents_with_index<World, PassableTag, OccupancyTag,
                                                ReservationTag>(
@@ -501,7 +504,7 @@ TEST(TessEcsAdapter, TickPipelineExcludesOffBoardEntries) {
   EXPECT_EQ(index.size(), 1u);
 }
 
-TEST(TessEcsAdapter, WeightedTickPairFormArrives) {
+TEST(TessEcsAdapter, WeightedMovementClassArrives) {
   World world;
   fill_world(world);
   tess::TileOccupancyIndex index;
@@ -521,8 +524,8 @@ TEST(TessEcsAdapter, WeightedTickPairFormArrives) {
   tick_state.pathing_dirty = false;
 
   for (int tick = 0; tick < 2; ++tick) {
-    (void)tess::tick_ecs_path_agents<World, PassableTag, CostTag, 4,
-                                     OccupancyTag, ReservationTag>(
+    (void)tess::tick_ecs_path_agents<World, WeightedMovement, 4, OccupancyTag,
+                                     ReservationTag>(
         tick_state, world, store, store, batch, runtime, index);
   }
 

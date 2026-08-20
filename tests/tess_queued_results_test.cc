@@ -11,15 +11,14 @@
 
 // S6.1: the ResultChannel core -- completion semantics, plan-time failure
 // delivery through record_plan_completions, drain order and drain-once,
-// paired-clear generations, and allocation-free warm reuse. Result-bearing
-// EXECUTION (Ready slots with values) lands with the execute wrappers in the
-// next slice and is covered by the conformance extension there.
+// paired-clear generations, allocation-free warm reuse, and result-bearing
+// execution through the execute wrappers covered below.
 namespace {
 
 struct TerrainTag {};
 struct CostTag {};
 
-constexpr std::uint32_t DirtyTerrain = 1u << 0u;
+constexpr auto DirtyTerrain = tess::DirtyMask{1u << 0u};
 
 using TopDown2D =
     tess::Shape<tess::Extent3{64, 32, 1}, tess::Extent3{32, 16, 1}>;
@@ -32,15 +31,17 @@ struct Ack {
 };
 
 // One valid op and one plan-time rejection (write mask under ReadOnly).
-auto plan_one_good_one_rejected(World& world, tess::FrameOps& ops)
+auto plan_one_good_one_rejected(World& world, tess::OperationBatch& ops)
     -> tess::ExecutionReport {
   (void)ops.update_field(
       tess::DomainDesc::resident_chunks(),
-      tess::FieldAccessDesc{DirtyTerrain, DirtyTerrain, DirtyTerrain},
+      tess::FieldAccessDesc{DirtyTerrain.value, DirtyTerrain.value,
+                            DirtyTerrain},
       tess::WritePolicy::UniquePerChunk);
   (void)ops.update_field(
       tess::DomainDesc::resident_chunks(),
-      tess::FieldAccessDesc{DirtyTerrain, DirtyTerrain, DirtyTerrain},
+      tess::FieldAccessDesc{DirtyTerrain.value, DirtyTerrain.value,
+                            DirtyTerrain},
       tess::WritePolicy::ReadOnly);
   return tess::plan_operations(world, ops);
 }
@@ -58,7 +59,7 @@ TEST(TessQueuedResults, DefaultCompletionIsNeverOk) {
 
 TEST(TessQueuedResults, PlanRejectionsDeliverReasonsNotValues) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   const auto report = plan_one_good_one_rejected(world, ops);
   ASSERT_EQ(report.operations().size(), 2u);
 
@@ -91,12 +92,13 @@ TEST(TessQueuedResults, PlanRejectionsDeliverReasonsNotValues) {
 
 TEST(TessQueuedResults, DrainVisitsHandleOrderExactlyOnce) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   // Three rejected ops -> three Failed slots at handles 0..2.
   for (int i = 0; i < 3; ++i) {
     (void)ops.update_field(
         tess::DomainDesc::resident_chunks(),
-        tess::FieldAccessDesc{DirtyTerrain, DirtyTerrain, DirtyTerrain},
+        tess::FieldAccessDesc{DirtyTerrain.value, DirtyTerrain.value,
+                              DirtyTerrain},
         tess::WritePolicy::ReadOnly);
   }
   const auto report = tess::plan_operations(world, ops);
@@ -124,7 +126,7 @@ TEST(TessQueuedResults, DrainVisitsHandleOrderExactlyOnce) {
 
 TEST(TessQueuedResults, ThrowingDrainVisitorCanRetryTheUndeliveredSlot) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   const auto report = plan_one_good_one_rejected(world, ops);
   tess::ResultChannel<Ack> channel;
   ASSERT_EQ(tess::record_plan_completions(report, channel), 1u);
@@ -150,7 +152,7 @@ TEST(TessQueuedResults, ThrowingDrainVisitorCanRetryTheUndeliveredSlot) {
 
 TEST(TessQueuedResults, ReentrantReserveAndThrowKeepsTheSlotRetryable) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   const auto report = plan_one_good_one_rejected(world, ops);
   tess::ResultChannel<Ack> channel;
   ASSERT_EQ(tess::record_plan_completions(report, channel), 1u);
@@ -171,7 +173,7 @@ TEST(TessQueuedResults, ReentrantReserveAndThrowKeepsTheSlotRetryable) {
 
 TEST(TessQueuedResults, ReentrantClearAndThrowDoesNotTouchTheOldSlot) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   const auto report = plan_one_good_one_rejected(world, ops);
   tess::ResultChannel<Ack> channel;
   ASSERT_EQ(tess::record_plan_completions(report, channel), 1u);
@@ -193,7 +195,7 @@ TEST(TessQueuedResults, ReentrantClearAndThrowDoesNotTouchTheOldSlot) {
 
 TEST(TessQueuedResults, ClearDropsSlotsAndBumpsTheGeneration) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   const auto report = plan_one_good_one_rejected(world, ops);
 
   tess::ResultChannel<Ack> channel;
@@ -210,17 +212,17 @@ TEST(TessQueuedResults, ClearDropsSlotsAndBumpsTheGeneration) {
 
 TEST(TessQueuedResults, WarmReuseWithinCapacityIsAllocationFree) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   const auto report = plan_one_good_one_rejected(world, ops);
 
   tess::ResultChannel<Ack> channel;
   channel.reserve_operations(4);
-  // Warm the slot storage once, then reuse across "frames".
+  // Warm the slot storage once, then reuse across operation batches.
   (void)tess::record_plan_completions(report, channel);
   channel.clear();
   {
     tess_test::ScopedAllocationCounter counter;
-    for (int frame = 0; frame < 4; ++frame) {
+    for (int pass = 0; pass < 4; ++pass) {
       (void)tess::record_plan_completions(report, channel);
       (void)channel.drain_results(
           [](tess::OpHandle, const tess::OpCompletion&, const Ack*) {});
@@ -234,12 +236,12 @@ TEST(TessQueuedResults, WarmReuseWithinCapacityIsAllocationFree) {
 
 constexpr auto WritesTerrain = tess::FieldAccessDesc{
     0,
-    DirtyTerrain,
+    DirtyTerrain.value,
     DirtyTerrain,
 };
 
 auto enqueue_chunk_write(
-    tess::FrameOps& ops, std::uint64_t chunk,
+    tess::OperationBatch& ops, std::uint64_t chunk,
     tess::WritePolicy policy = tess::WritePolicy::UniquePerChunk)
     -> tess::OpHandle {
   return ops.update_field(
@@ -275,7 +277,7 @@ auto drain_all(tess::ResultChannel<Ack>& channel) -> std::vector<DrainedEntry> {
 TEST(TessQueuedResults, DeliveryIsIdenticalUnderSerialAndThreadedExecutors) {
   World serial_world;
   World threaded_world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   for (std::uint64_t chunk = 0; chunk < 4; ++chunk) {
     (void)enqueue_chunk_write(ops, chunk);
   }
@@ -331,7 +333,7 @@ TEST(TessQueuedResults, DeliveryIsIdenticalUnderSerialAndThreadedExecutors) {
 TEST(TessQueuedResults, MixedPolicyPhaseRejectsBeforeResultsOrCallbacks) {
   // The phase capability carries its complete policy set, so both serial and
   // concurrent executors reject a mixed phase before publishing results.
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   World serial_world;
   (void)enqueue_chunk_write(ops, 0);
   (void)ops.update_field(tess::DomainDesc::explicit_chunks(
@@ -386,8 +388,8 @@ TEST(TessQueuedResults, MixedPolicyPhaseRejectsBeforeResultsOrCallbacks) {
 }
 
 TEST(TessQueuedResults, ForeignPhaseFailsBeforeTouchingTheChannel) {
-  tess::FrameOps ops;
-  tess::FrameOps foreign_ops;
+  tess::OperationBatch ops;
+  tess::OperationBatch foreign_ops;
   World world;
   (void)enqueue_chunk_write(ops, 0);
   (void)enqueue_chunk_write(foreign_ops, 1);
@@ -412,7 +414,7 @@ TEST(TessQueuedResults, ForeignPhaseFailsBeforeTouchingTheChannel) {
 }
 
 TEST(TessQueuedResults, SerialPlanWrapperPreparesTheWholePlanUpfront) {
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   World world;
   (void)enqueue_chunk_write(ops, 0);
   (void)enqueue_chunk_write(ops, 1, tess::WritePolicy::UniquePerTile);
@@ -434,7 +436,7 @@ TEST(TessQueuedResults, SerialPlanWrapperPreparesTheWholePlanUpfront) {
 }
 
 TEST(TessQueuedResults, WarmResultBearingExecutionIsAllocationFree) {
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   World world;
   for (std::uint64_t chunk = 0; chunk < 4; ++chunk) {
     (void)enqueue_chunk_write(ops, chunk);
@@ -465,7 +467,7 @@ TEST(TessQueuedResults, WarmResultBearingExecutionIsAllocationFree) {
   run();  // warm
   {
     tess_test::ScopedAllocationCounter counter;
-    for (int frame = 0; frame < 4; ++frame) {
+    for (int pass = 0; pass < 4; ++pass) {
       run();
     }
     EXPECT_EQ(counter.count(), 0u);
@@ -606,7 +608,7 @@ TEST(TessQueuedResults, ClearInvalidatesTicketsAndWarmReuseAllocatesNothing) {
 
   {
     tess_test::ScopedAllocationCounter counter;
-    for (int frame = 0; frame < 8; ++frame) {
+    for (int pass = 0; pass < 8; ++pass) {
       CountingWork work{4, 0};
       const auto ticket = queue.submit(work);
       const auto stats = queue.advance(tess::AsyncWorkBudget{4});

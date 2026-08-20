@@ -20,7 +20,7 @@ within memory budget?"}
   Dense --> Edit{"Edits during simulation?"}
   Sparse --> Edit
   Edit -->|"Setup only"| Direct["Direct field writes"]
-  Edit -->|"Sim-time"| Queued["FrameOps -> plan -> execute"]
+  Edit -->|"Sim-time"| Queued["OperationBatch -> plan -> execute"]
   Direct --> Load{"Path workload shape?"}
   Queued --> Load
   Load -->|"Few one-off queries"| AStar["astar_path"]
@@ -32,7 +32,7 @@ FieldProductCache"]
   Load -->|"Weighted batches,
 repeated goals"| Batch["weighted_path_batch"]
   Load -->|"Repeated routes,
-stable map"| Route["cached_astar_path"]
+unchanged map"| Route["cached_astar_path"]
   AStar --> Pre{"Unreachable goals common?"}
   Weighted --> Pre
   FieldP --> Pre

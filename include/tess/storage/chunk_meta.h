@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/shape.h>
+#include <tess/storage/metadata_types.h>
 
 #include <bit>
 #include <cstdint>
@@ -8,26 +9,24 @@
 
 namespace tess {
 
-/** Coarse lifecycle state derived from a chunk's active flags. */
-enum class ChunkState : std::uint8_t {
-  ResidentSleeping,
-  ResidentActive,
+/** Work-participation activity derived from a chunk's active mask. */
+enum class ChunkActivity : std::uint8_t {
+  Sleeping,
+  Active,
 };
-static_assert(sizeof(ChunkState) == sizeof(std::uint8_t));
+static_assert(sizeof(ChunkActivity) == sizeof(std::uint8_t));
 
 /**
  * Cold metadata for one resident chunk.
  *
- * Dirty and active flags and dirty bounds live in world-owned parallel arrays
+ * Dirty and active masks and dirty bounds live in world-owned parallel arrays
  * for cache-efficient scans. Read and mutate those values through `World`; a
  * `ChunkMeta` reference alone does not expose the complete chunk state. Sparse
  * world eviction invalidates references to this object.
  */
 struct ChunkMeta {
-  ChunkState state = ChunkState::ResidentSleeping;
-  std::uint32_t version = 0;
-  std::uint32_t topology_version = 0;
-  std::uint32_t active_count = 0;
+  ContentVersion content_version{};
+  TopologyVersion topology_version{};
   std::uint32_t entity_count = 0;
 };
 
@@ -35,28 +34,28 @@ struct ChunkMeta {
  * Generation-stamped snapshot returned by `World::observe_dirty()`.
  *
  * Pass it to `World::clear_dirty_observed()` after rebuilding derived state.
- * The clear succeeds only if no later dirty mark changed the version, so a
- * maintenance pass cannot erase intervening marks.
+ * The clear succeeds only if no later dirty mark changed the content version,
+ * so a maintenance pass cannot erase intervening marks.
  *
- * `residency` scopes the observation to a single residency interval. A
- * sparse world restarts a reloaded chunk's `version` at zero, so version
- * equality alone would let an observation taken before an eviction match a
- * mark made after the reload and clear work it never saw. Always-resident
- * worlds never evict and leave this zero on both sides.
+ * `residency_generation` scopes the observation to one residency interval. A
+ * sparse world restarts a rematerialized chunk's content version at zero, so
+ * content version equality alone would let an observation taken before an
+ * eviction match a mark made after rematerialization and clear work it never
+ * saw. Always-resident worlds never evict and leave this invalid on both sides.
  */
 struct DirtyObservation {
-  std::uint32_t flags = 0;
+  DirtyMask mask{};
   Box3 bounds{};
-  std::uint32_t version = 0;
-  std::uint64_t residency = 0;
+  ContentVersion content_version{};
+  ResidencyGeneration residency_generation{};
 };
 
 namespace detail {
 
-[[nodiscard]] constexpr std::uint32_t popcount(std::uint32_t flags) noexcept {
+[[nodiscard]] constexpr std::uint32_t popcount(ActiveMask mask) noexcept {
   // Single POPCNT/CNT instruction instead of the old 32-iteration bit
-  // loop; runs on every occupancy/state edit (audit 2026-07-11 low).
-  return static_cast<std::uint32_t>(std::popcount(flags));
+  // loop; runs on every occupancy/state edit.
+  return static_cast<std::uint32_t>(std::popcount(mask.value));
 }
 
 // An extent >= 2^63 would flip the int64 cast negative (and a large origin
@@ -105,91 +104,84 @@ namespace detail {
 }
 
 // Mutation helpers shared by the AlwaysResident and SparseResident worlds so
-// both maintain identical dirty/active/version semantics. The flag word and
-// bounds live in the worlds' SoA columns (see ChunkMeta's comment), so the
-// helpers take them by reference alongside the residual struct.
+// both maintain identical dirty-mask, active-mask, and content-version
+// semantics. The mask word and bounds live in the worlds' SoA columns (see
+// ChunkMeta's comment), so the helpers take them by reference alongside the
+// residual struct.
 
-inline void meta_mark_dirty(std::uint32_t& dirty_flags, Box3& dirty_bounds,
-                            ChunkMeta& meta, std::uint32_t flags,
+inline void meta_mark_dirty(DirtyMask& dirty_mask, Box3& dirty_bounds,
+                            ChunkMeta& meta, DirtyMask mask,
                             Box3 bounds) noexcept {
-  if (flags == 0) {
+  if (mask.empty()) {
     return;
   }
-  if (dirty_flags == 0) {
+  if (dirty_mask.empty()) {
     dirty_bounds = bounds;
   } else {
     dirty_bounds = union_box(dirty_bounds, bounds);
   }
-  dirty_flags |= flags;
-  ++meta.version;
+  dirty_mask |= mask;
+  ++meta.content_version;
 }
 
 inline void meta_mark_content_changed(ChunkMeta& meta) noexcept {
-  ++meta.version;
+  ++meta.content_version;
 }
 
-inline void meta_clear_dirty(std::uint32_t& dirty_flags, Box3& dirty_bounds,
-                             std::uint32_t flags) noexcept {
-  if (flags == 0) {
+inline void meta_clear_dirty(DirtyMask& dirty_mask, Box3& dirty_bounds,
+                             DirtyMask mask) noexcept {
+  if (mask.empty()) {
     return;
   }
-  dirty_flags &= ~flags;
-  if (dirty_flags == 0) {
+  dirty_mask &= ~mask;
+  if (dirty_mask.empty()) {
     dirty_bounds = {};
   }
 }
 
 [[nodiscard]] inline DirtyObservation meta_observe_dirty(
-    std::uint32_t dirty_flags, Box3 dirty_bounds, const ChunkMeta& meta,
-    std::uint32_t flags, std::uint64_t residency = 0) noexcept {
+    DirtyMask dirty_mask, Box3 dirty_bounds, const ChunkMeta& meta,
+    DirtyMask mask, ResidencyGeneration residency_generation = {}) noexcept {
   return DirtyObservation{
-      dirty_flags & flags,
+      dirty_mask & mask,
       dirty_bounds,
-      meta.version,
-      residency,
+      meta.content_version,
+      residency_generation,
   };
 }
 
-inline bool meta_clear_dirty_observed(std::uint32_t& dirty_flags,
-                                      Box3& dirty_bounds, const ChunkMeta& meta,
-                                      DirtyObservation observed,
-                                      std::uint64_t residency = 0) noexcept {
-  // A reloaded sparse chunk restarts `version` at zero, so an observation
-  // from an earlier residency interval can compare equal to a mark made
-  // after the reload. Reject it before the version check.
-  if (residency != observed.residency) {
+inline bool meta_clear_dirty_observed(
+    DirtyMask& dirty_mask, Box3& dirty_bounds, const ChunkMeta& meta,
+    DirtyObservation observed,
+    ResidencyGeneration residency_generation = {}) noexcept {
+  // A rematerialized sparse chunk restarts its content version at zero, so an
+  // observation from an earlier residency interval can compare equal to a
+  // mark made after rematerialization. Reject it before the content-version
+  // check.
+  if (residency_generation != observed.residency_generation) {
     return false;
   }
-  if (meta.version != observed.version) {
+  if (meta.content_version != observed.content_version) {
     return false;
   }
-  meta_clear_dirty(dirty_flags, dirty_bounds, observed.flags);
+  meta_clear_dirty(dirty_mask, dirty_bounds, observed.mask);
   return true;
 }
 
-inline void meta_mark_active(std::uint32_t& active_flags, ChunkMeta& meta,
-                             std::uint32_t flags) noexcept {
-  if (flags == 0) {
+inline void meta_mark_active(ActiveMask& active_mask,
+                             ActiveMask mask) noexcept {
+  if (mask.empty()) {
     return;
   }
-  const auto before = active_flags;
-  active_flags |= flags;
-  meta.active_count = popcount(active_flags);
-  if (before == 0 && active_flags != 0) {
-    meta.state = ChunkState::ResidentActive;
-  }
+  active_mask |= mask;
 }
 
-inline void meta_clear_active(std::uint32_t& active_flags, ChunkMeta& meta,
-                              std::uint32_t flags) noexcept {
-  if (flags == 0) {
+inline void meta_clear_active(ActiveMask& active_mask,
+                              ActiveMask mask) noexcept {
+  if (mask.empty()) {
     return;
   }
-  active_flags &= ~flags;
-  meta.active_count = popcount(active_flags);
-  if (active_flags == 0) {
-    meta.state = ChunkState::ResidentSleeping;
-  }
+  active_mask &= ~mask;
 }
 
 }  // namespace detail

@@ -8,11 +8,12 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 namespace tess {
 
-// Lifecycle of a path agent, decoupled from the last PathStatus result:
+// Lifecycle of a path agent, decoupled from its optional last search result:
 // - Idle: no goal (or arrived); the agent does not consume processing.
 // - NeedsPath: a goal was assigned and no route has been computed yet.
 // - Following: a Found route is being walked tile by tile.
@@ -36,7 +37,8 @@ struct PathAgentState {
   Coord3 goal{};
   PathTicket ticket{};
   std::size_t path_index = 0;
-  PathStatus status = PathStatus::NoPath;
+  /// Most recent search conclusion, absent before search or after invalidation.
+  std::optional<PathStatus> last_result = std::nullopt;
   PathAgentPhase phase = PathAgentPhase::Idle;
   bool has_goal = false;
   std::uint32_t blocked_retries = 0;
@@ -52,6 +54,8 @@ struct PathAgentFrameStats {
   std::size_t invalid_start = 0;
   std::size_t invalid_goal = 0;
   std::size_t no_path = 0;
+  std::size_t not_computed = 0;
+  std::size_t no_candidate = 0;
   // Sparse worlds: the search stopped at the resident-set boundary without
   // ruling out a route through a non-resident chunk
   // (PathStatus::Indeterminate).
@@ -69,7 +73,7 @@ struct PathAgentFrameStats {
 /// Configures bounded direct movement and the dirty bits it emits.
 struct PathAgentAdvanceOptions {
   std::size_t max_steps = 1;
-  std::uint32_t movement_dirty_mask = 0;
+  DirtyMask movement_dirty_mask{};
 };
 
 // Which agents a processing pass (re)submits (per-agent pathing dirt,
@@ -130,7 +134,7 @@ inline void block_path_agent(PathAgentState& agent,
                              MovementStatus status) noexcept {
   agent.phase = PathAgentPhase::Blocked;
   if (!movement_block_can_retry_route(status)) {
-    agent.status = PathStatus::NoPath;
+    agent.last_result.reset();
   }
 }
 
@@ -143,7 +147,7 @@ inline void resume_path_agent(PathAgentState& agent) noexcept {
     const PathAgentState& agent) noexcept {
   return agent.phase == PathAgentPhase::Following ||
          (agent.phase == PathAgentPhase::Blocked &&
-          agent.status == PathStatus::Found);
+          agent.last_result == PathStatus::Found);
 }
 
 }  // namespace detail
@@ -155,7 +159,7 @@ inline void resume_path_agent(PathAgentState& agent) noexcept {
 inline void set_path_agent_goal(PathAgentState& agent, Coord3 goal) noexcept {
   agent.goal = goal;
   agent.path_index = 0;
-  agent.status = PathStatus::NoPath;
+  agent.last_result.reset();
   agent.phase = PathAgentPhase::NeedsPath;
   agent.blocked_retries = 0;
   agent.has_goal = true;
@@ -169,7 +173,7 @@ inline void clear_path_agent_goal(PathAgentState& agent) noexcept {
   agent.goal = {};
   agent.ticket = {};
   agent.path_index = 0;
-  agent.status = PathStatus::NoPath;
+  agent.last_result.reset();
   agent.phase = PathAgentPhase::Idle;
   agent.blocked_retries = 0;
   agent.has_goal = false;
@@ -242,6 +246,9 @@ inline auto submit_path_agents(
 inline void record_path_agent_status(PathAgentFrameStats& stats,
                                      PathStatus status) noexcept {
   switch (status) {
+    case PathStatus::NotComputed:
+      ++stats.not_computed;
+      return;
     case PathStatus::Found:
       ++stats.found;
       return;
@@ -259,6 +266,9 @@ inline void record_path_agent_status(PathAgentFrameStats& stats,
       return;
     case PathStatus::CostOverflow:
       ++stats.cost_overflow;
+      return;
+    case PathStatus::NoCandidate:
+      ++stats.no_candidate;
       return;
   }
 }
@@ -292,7 +302,7 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
 
     const auto was_blocked = agent.phase == PathAgentPhase::Blocked;
     const auto result = runtime.result(agent.ticket);
-    agent.status = result.status;
+    agent.last_result = result.status;
     agent.path_index = 0;
     if (result.status == PathStatus::Found) {
       agent.phase = PathAgentPhase::Following;
@@ -346,7 +356,7 @@ inline auto advance_path_agents(
   }
 
   for (auto& agent : agents) {
-    if (!agent.has_goal || agent.status != PathStatus::Found) {
+    if (!agent.has_goal || agent.last_result != PathStatus::Found) {
       continue;
     }
 
@@ -365,7 +375,7 @@ inline auto advance_path_agents(
       ++stats.advanced;
       if (agent.position == agent.goal) {
         arrive_path_agent(agent, accounting);
-        agent.status = PathStatus::Found;
+        agent.last_result = PathStatus::Found;
         ++stats.arrived;
         break;
       }
@@ -403,7 +413,7 @@ inline auto advance_path_agents_with_movement(
   for (std::size_t agent_index = 0; agent_index < agents.size();
        ++agent_index) {
     auto& agent = agents[agent_index];
-    if (!agent.has_goal || agent.status != PathStatus::Found) {
+    if (!agent.has_goal || agent.last_result != PathStatus::Found) {
       continue;
     }
 
@@ -428,15 +438,16 @@ inline auto advance_path_agents_with_movement(
         if (is_transient_movement_failure(movement.status)) {
           // Wait in place. Occupancy/reservation failures retain Found so the
           // same step can be retried without a pointless occupancy-blind
-          // search. Other transient failures set NoPath and request a fresh
-          // route. The following tick starts consuming the shared bounded
+          // search. Other transient failures clear the obsolete search result
+          // and request a fresh route. The following tick starts consuming
+          // the shared bounded
           // retry budget (see PathAgentTickOptions::max_blocked_retries).
           detail::block_path_agent(agent, movement.status);
           ++stats.blocked_waits;
         } else {
           // Invalid endpoints or a non-adjacent step indicate a caller
           // bug; terminal until a new goal re-arms the lifecycle.
-          agent.status = PathStatus::NoPath;
+          agent.last_result.reset();
           agent.phase = PathAgentPhase::Unreachable;
           fail_path_agent_flow(agent, accounting);
         }
@@ -450,7 +461,7 @@ inline auto advance_path_agents_with_movement(
       ++stats.advanced;
       if (agent.position == agent.goal) {
         arrive_path_agent(agent, accounting);
-        agent.status = PathStatus::Found;
+        agent.last_result = PathStatus::Found;
         ++stats.arrived;
         break;
       }
@@ -494,7 +505,7 @@ inline auto advance_path_agents_with_movement(
   for (std::size_t agent_index = 0; agent_index < agents.size();
        ++agent_index) {
     auto& agent = agents[agent_index];
-    if (!agent.has_goal || agent.status != PathStatus::Found) {
+    if (!agent.has_goal || agent.last_result != PathStatus::Found) {
       continue;
     }
     const auto& route = routes.routes[agent_index];
@@ -514,7 +525,7 @@ inline auto advance_path_agents_with_movement(
           detail::block_path_agent(agent, movement.status);
           ++stats.blocked_waits;
         } else {
-          agent.status = PathStatus::NoPath;
+          agent.last_result.reset();
           agent.phase = PathAgentPhase::Unreachable;
           fail_path_agent_flow(agent, accounting);
         }
@@ -526,7 +537,7 @@ inline auto advance_path_agents_with_movement(
       ++stats.advanced;
       if (agent.position == agent.goal) {
         arrive_path_agent(agent, accounting);
-        agent.status = PathStatus::Found;
+        agent.last_result = PathStatus::Found;
         ++stats.arrived;
         break;
       }
@@ -554,7 +565,7 @@ inline auto advance_path_agents(
 
   for (std::size_t i = 0; i < agents.size(); ++i) {
     auto& agent = agents[i];
-    if (!agent.has_goal || agent.status != PathStatus::Found) {
+    if (!agent.has_goal || agent.last_result != PathStatus::Found) {
       continue;
     }
 
@@ -573,7 +584,7 @@ inline auto advance_path_agents(
       ++stats.advanced;
       if (agent.position == agent.goal) {
         arrive_path_agent(agent, accounting);
-        agent.status = PathStatus::Found;
+        agent.last_result = PathStatus::Found;
         ++stats.arrived;
         break;
       }
@@ -602,7 +613,7 @@ inline auto advance_path_agents_with_movement(
   for (std::size_t agent_index = 0; agent_index < agents.size();
        ++agent_index) {
     auto& agent = agents[agent_index];
-    if (!agent.has_goal || agent.status != PathStatus::Found) {
+    if (!agent.has_goal || agent.last_result != PathStatus::Found) {
       continue;
     }
 
@@ -630,7 +641,7 @@ inline auto advance_path_agents_with_movement(
           detail::block_path_agent(agent, movement.status);
           ++stats.blocked_waits;
         } else {
-          agent.status = PathStatus::NoPath;
+          agent.last_result.reset();
           agent.phase = PathAgentPhase::Unreachable;
           fail_path_agent_flow(agent, accounting);
         }
@@ -644,7 +655,7 @@ inline auto advance_path_agents_with_movement(
       ++stats.advanced;
       if (agent.position == agent.goal) {
         arrive_path_agent(agent, accounting);
-        agent.status = PathStatus::Found;
+        agent.last_result = PathStatus::Found;
         ++stats.arrived;
         break;
       }
@@ -676,6 +687,8 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
   lhs.invalid_start += rhs.invalid_start;
   lhs.invalid_goal += rhs.invalid_goal;
   lhs.no_path += rhs.no_path;
+  lhs.not_computed += rhs.not_computed;
+  lhs.no_candidate += rhs.no_candidate;
   lhs.indeterminate += rhs.indeterminate;
   lhs.cost_overflow += rhs.cost_overflow;
   lhs.precheck_ruled_out += rhs.precheck_ruled_out;
@@ -683,10 +696,11 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
   lhs.arrived += rhs.arrived;
   lhs.blocked_waits += rhs.blocked_waits;
   lhs.movement_failures.invalid += rhs.movement_failures.invalid;
+  lhs.movement_failures.impassable += rhs.movement_failures.impassable;
   lhs.movement_failures.blocked += rhs.movement_failures.blocked;
   lhs.movement_failures.occupied += rhs.movement_failures.occupied;
   lhs.movement_failures.reserved += rhs.movement_failures.reserved;
-  lhs.movement_failures.stale_version += rhs.movement_failures.stale_version;
+  lhs.movement_failures.stale_content += rhs.movement_failures.stale_content;
   lhs.movement_failures.stale_topology += rhs.movement_failures.stale_topology;
 }
 
@@ -755,26 +769,6 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   auto stats = submit_path_agents(agents, runtime, scope, accounting);
   (void)runtime.template process_weighted_batch<World, Class, MaxCost>(
       world, policy, graph, provider);
-  add_path_agent_stats(
-      stats, apply_path_agent_results(agents, runtime, scope, routes));
-  stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;
-  return stats;
-}
-
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost>
-/// Processes bounded weighted paths using separate legacy field tags.
-[[nodiscard]] auto process_weighted_path_agents(
-    const World& world, std::span<PathAgentState> agents,
-    PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
-    const RegionGraphT<typename World::residency_type>* graph = nullptr,
-    PathSubmitScope scope = PathSubmitScope::All,
-    PathAgentRoutes* routes = nullptr,
-    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
-  auto stats = submit_path_agents(agents, runtime, scope, accounting);
-  (void)runtime
-      .template process_weighted_batch<World, PassableTag, CostTag, MaxCost>(
-          world, policy, graph);
   add_path_agent_stats(
       stats, apply_path_agent_results(agents, runtime, scope, routes));
   stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;

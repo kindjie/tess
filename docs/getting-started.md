@@ -23,10 +23,10 @@ flowchart TB
   accTitle: End-to-end simulation data flow
   accDescr: Queued edits update the world and dirty metadata, which drives topology, paths, movement, and versioned render deltas.
 
-  Caller["Game systems"] --> Queue["FrameOps"]
+  Caller["Game systems"] --> Queue["OperationBatch"]
   Queue --> Exec["Plan and execute"]
   Exec --> World["World fields"]
-  Exec --> Dirty["Dirty masks, bounds, and versions"]
+  Exec --> Dirty["Dirty masks, bounds, and content versions"]
   Dirty --> Topology["OnDirty topology task"]
   Dirty --> Paths["Path-agent replanning"]
   Topology --> Paths
@@ -99,6 +99,8 @@ A world binds a shape and schema to a residency policy:
 <!-- tess-snippet: getting-world source=examples/documentation.cc -->
 ```cpp
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
+using WeightedMovement =
+    tess::movement::PositiveCostFieldMovement<PassableTag, CostTag>;
 ```
 <!-- /tess-snippet -->
 
@@ -129,7 +131,7 @@ For bulk setup in a dense world, `world.fill_field<PassableTag>(1)` assigns
 one value to every tile. Like direct `field()` writes, it does not implicitly
 mark chunks dirty or advance their content versions. Simulation-time edits
 should instead go through queued operations: a
-`tess::FrameOps` collects declared edits (domain, touched fields, dirty
+`tess::OperationBatch` collects declared edits (domain, touched fields, dirty
 mask, write policy), `tess::plan_operations` validates them into a
 conflict-checked plan, and `tess::execute_plan` runs the writes through
 chunk views. The declared write policy (for example
@@ -143,7 +145,7 @@ per-operation completion records, drained once per frame.
 
 - Architecture:
   [`architecture/queued-operations.md`](architecture/queued-operations.md)
-- Example: `examples/mvp_path.cc` (the smallest end-to-end queued edit
+- Example: `examples/queued_path.cc` (the smallest end-to-end queued edit
   plus A* query)
 
 ## 5. Pathfinding: A*, movement classes, weighted routing
@@ -181,7 +183,7 @@ at once, pick by workload shape: agents sharing a goal set on unit-cost
 terrain reuse one distance-field product (see
 `tess/path/field_product_cache.h`), weighted per-tick batches amortize
 repeated goals through `tess::weighted_path_batch` (all-distinct goals
-fall back to per-request A*), and repeated identical routes on a stable
+fall back to per-request A*), and repeated identical routes on an unchanged
 map are served by the route cache via `tess::cached_astar_path`. The
 [pathfinding note](architecture/path.md) maps each workload shape to its
 API.
@@ -259,7 +261,7 @@ Schedule tasks themselves run serially; the selectable parallel phase
 executor (see `tess/ops/phase_executor.h`) parallelizes the planned,
 write-policy-compatible queued operations a task submits. The worker pool
 is the production parallel backend; the scoped-thread executor is a
-stable per-dispatch alternative. Whether the pool pays off depends on how much
+address-stable per-dispatch alternative. Whether the pool pays off depends on how much
 work each chunk does — see
 [performance](performance.md#when-the-worker-pool-is-worth-it), which
 publishes measured four-worker figures and the crossover below which the

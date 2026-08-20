@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
@@ -20,7 +21,7 @@ namespace tess {
 /// Result metadata for one movement-class-bound segment-cache lookup.
 struct SegmentHit {
   bool found = false;
-  PathStatus status = PathStatus::NoPath;
+  PathStatus status = PathStatus::NotComputed;
   std::uint32_t cost = 0;
 };
 
@@ -170,7 +171,7 @@ class WeightedPortalSegmentCache {
     return ClassView<Class>{*this, identity};
   }
 
-  // One compaction pass keeping only entries whose chunk-version
+  // One compaction pass keeping only entries whose content-version
   // dependencies still validate against `world`. Rebuilds the path-node
   // arena so storage held by dropped entries is reclaimed.
   template <typename World>
@@ -304,11 +305,11 @@ class WeightedPortalSegmentCache {
 
   struct Entry {
     PathRequest request{};
-    PathStatus status = PathStatus::NoPath;
+    PathStatus status = PathStatus::NotComputed;
     std::uint32_t cost = 0;
     std::size_t path_offset = 0;
     std::size_t path_size = 0;
-    ChunkVersionDependencies dependencies{};
+    ContentVersionDependencies dependencies{};
   };
   static_assert(std::is_nothrow_move_constructible_v<Entry>);
   static_assert(std::is_nothrow_move_assignable_v<Entry>);
@@ -507,21 +508,20 @@ class WeightedPortalSegmentCache {
   std::uintptr_t bound_class_ = 0;
 };
 
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 /// Builds a weighted portal route while reusing class-bound cached segments.
 [[nodiscard]] auto build_weighted_portal_route_product(
     const World& world, PathRequest request, std::span<const Coord3> waypoints,
     PathScratch& scratch, WeightedPortalSegmentCache& cache,
     WeightedPortalRouteProduct& product) -> PathResult {
   using Shape = World::shape_type;
-  // Caches weighted portal segments keyed by chunk topology and tracks
-  // chunk-version dependencies; dense-only until sparse topology (Slice 4) and
-  // the sparse route-cache slice. Its per-segment weighted A* already runs
-  // natively on sparse worlds via weighted_astar_path.
+  // Caches weighted portal segments keyed by chunk topology and tracks content
+  // versions. The portal topology is dense-only; direct weighted A* runs
+  // natively on sparse worlds.
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "build_weighted_portal_route_product (segment cache) is dense-only; it "
-      "needs sparse topology and route-cache support from a later slice.");
+      "build_weighted_portal_route_product requires an AlwaysResidentWorld; "
+      "use weighted_astar_path for sparse worlds.");
 
   std::vector<Coord3> stash;
   const auto source = product.stash_if_owned(waypoints, stash);
@@ -529,12 +529,10 @@ template <typename World, typename PassableTag, typename CostTag>
   product.clear();
   product.request_ = request;
   product.waypoints_.assign(source.begin(), source.end());
-  auto class_cache =
-      cache
-          .template for_class<movement::LegacyWeighted<PassableTag, CostTag>>();
+  auto class_cache = cache.template for_class<Class>();
 
   auto from = request.start;
-  auto total_cost = std::uint32_t{0};
+  auto total_cost = std::uint64_t{0};
   auto total_expanded = std::size_t{0};
   auto total_reached = std::size_t{0};
   auto append_path = [&](std::span<const Coord3> path) {
@@ -547,12 +545,21 @@ template <typename World, typename PassableTag, typename CostTag>
     if (const auto hit =
             class_cache.lookup_append(world, segment_request, product.path_);
         hit.found) {
-      total_cost = detail::saturating_add(total_cost, hit.cost);
+      total_cost += hit.cost;
+      if (total_cost >= std::numeric_limits<std::uint32_t>::max()) {
+        product.path_.clear();
+        product.status_ = PathStatus::CostOverflow;
+        product.expanded_nodes_ = total_expanded;
+        product.reached_nodes_ = total_reached;
+        detail::capture_failure_dependencies<Shape>(
+            world, request, product.status_, product.dependencies_);
+        return false;
+      }
       return true;
     }
 
-    const auto result = weighted_astar_path<World, PassableTag, CostTag>(
-        world, segment_request, scratch);
+    const auto result =
+        weighted_astar_path<World, Class>(world, segment_request, scratch);
     class_cache.store(world, segment_request, result);
     total_expanded += result.expanded_nodes;
     total_reached += result.reached_nodes;
@@ -567,7 +574,16 @@ template <typename World, typename PassableTag, typename CostTag>
           world, segment_request, result.status, product.dependencies_);
       return false;
     }
-    total_cost = detail::saturating_add(total_cost, result.cost);
+    total_cost += result.cost;
+    if (total_cost >= std::numeric_limits<std::uint32_t>::max()) {
+      product.path_.clear();
+      product.status_ = PathStatus::CostOverflow;
+      product.expanded_nodes_ = total_expanded;
+      product.reached_nodes_ = total_reached;
+      detail::capture_failure_dependencies<Shape>(
+          world, request, product.status_, product.dependencies_);
+      return false;
+    }
     append_path(result.path.span());
     return true;
   };
@@ -585,7 +601,7 @@ template <typename World, typename PassableTag, typename CostTag>
   }
 
   product.status_ = PathStatus::Found;
-  product.cost_ = total_cost;
+  product.cost_ = static_cast<std::uint32_t>(total_cost);
   product.expanded_nodes_ = total_expanded;
   product.reached_nodes_ = total_reached;
   for (const auto coord : product.path_) {

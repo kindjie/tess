@@ -58,19 +58,23 @@ class ResidencyModel {
         const auto generation_before = world_.residency_generation(key);
         (void)world_.ensure_resident(key);
         const auto generation_after = world_.residency_generation(key);
-        if (generation_before != 0 && generation_after != generation_before) {
+        if (generation_before.valid() &&
+            generation_after != generation_before) {
           reload_without_evict_ = true;
         }
-        // A freshly loaded page draws from a monotone clock, so its
+        // A freshly materialized page draws from a monotone clock, so its
         // generation must exceed every generation ever issued. Reusing
         // one would make an evicted chunk's stale handle indistinguish-
         // able from a live one.
-        if (generation_before == 0 && generation_after <= highest_generation_) {
-          reused_generation_ = generation_after;
+        if (!generation_before.valid() &&
+            generation_after.value <= highest_generation_) {
+          reused_generation_ = generation_after.value;
         }
-        highest_generation_ = std::max(highest_generation_, generation_after);
-        // Loading a chunk into a full world is the LRU eviction path.
-        if (generation_before == 0 && resident_before == world_.capacity()) {
+        highest_generation_ =
+            std::max(highest_generation_, generation_after.value);
+        // Materializing a chunk in a full world is the LRU eviction path.
+        if (!generation_before.valid() &&
+            resident_before == world_.capacity()) {
           ++lru_evictions_;
         }
         break;
@@ -84,7 +88,7 @@ class ResidencyModel {
       default:
         if (world_.is_resident(key)) {
           world_.mark_dirty(
-              key, 1U,
+              key, tess::DirtyMask{1U},
               tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
         }
         break;
@@ -117,7 +121,7 @@ class ResidencyModel {
     // absent one always reports zero: that pairing is what lets a
     // handle detect its own staleness.
     for (const auto key : world_.resident_chunk_keys()) {
-      if (world_.residency_generation(key) == 0) {
+      if (!world_.residency_generation(key).valid()) {
         return violation("resident chunk has a nonzero generation", key.value,
                          0);
       }
@@ -127,7 +131,7 @@ class ResidencyModel {
           "ensure_resident on a resident chunk keeps its generation", 1, 0);
     }
     if (reused_generation_ != 0) {
-      return violation("a newly loaded chunk draws an unused generation",
+      return violation("a newly materialized chunk draws an unused generation",
                        reused_generation_, highest_generation_);
     }
     return std::nullopt;
@@ -163,9 +167,9 @@ class ScheduleModel {
     (void)schedule_.add_task(
         {"every", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()},
         every_);
-    (void)schedule_.add_task(
-        {"dirty", tess::SimPhase::Pathing, tess::Cadence::on_dirty(kMask)},
-        dirty_);
+    (void)schedule_.add_task({"dirty", tess::SimPhase::Pathing,
+                              tess::Cadence::on_dirty(tess::DirtyMask{kMask})},
+                             dirty_);
     (void)schedule_.add_task(
         {"event", tess::SimPhase::Movement, tess::Cadence::on_event(kMask)},
         event_);
@@ -197,13 +201,13 @@ class ScheduleModel {
         break;
       }
       case 1:
-        schedule_.notify_dirty(kMask);
+        schedule_.notify_dirty(tess::DirtyMask{kMask});
         break;
       case 2:
         schedule_.notify_events(kMask);
         break;
       default:
-        schedule_.notify_dirty(op & kMask);
+        schedule_.notify_dirty(tess::DirtyMask{op & kMask});
         break;
     }
   }
@@ -634,7 +638,7 @@ TEST(TessProperty, TheResidencySweepReachesCapacityAndEvicts) {
          "invariants were never actually tested";
   EXPECT_GT(evictions, 0U)
       << "the sweep never evicted, so the generation invariants never saw a "
-         "reloaded chunk";
+         "rematerialized chunk";
 }
 
 TEST(TessProperty, TheScheduleSweepTicksAndEntersEveryCadence) {

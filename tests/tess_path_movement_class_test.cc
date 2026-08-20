@@ -12,10 +12,8 @@
 #include <utility>
 
 // S5.2: movement classes threaded through the A* leaves and weighted cores.
-// The identity/LegacyWeighted equivalence cases pin the byte-identity
-// contract (a class-driven search returns node-for-node what the raw-tag
-// search returns); the Walker/Builder cases prove two classes over one world
-// actually diverge where their predicates differ.
+// The Walker/Builder cases prove two classes over one world actually diverge
+// where their predicates differ.
 namespace {
 
 namespace mv = tess::movement;
@@ -23,6 +21,9 @@ namespace mv = tess::movement;
 struct PassableTag {};
 struct ConstructionTag {};
 struct CostTag {};
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 struct OccupancyTag {};
 struct ReservationTag {};
 struct StairTag {};
@@ -241,8 +242,9 @@ TEST(TessPathMovementClass, IdentityClassMatchesRawTagUnitSearch) {
 
   const auto by_tag =
       tess::astar_path<World, PassableTag>(world, request, tag_scratch);
-  const auto by_class = tess::astar_path<World, mv::WalkableField<PassableTag>>(
-      world, request, class_scratch);
+  const auto by_class =
+      tess::astar_path<World, mv::UnitCostFieldMovement<PassableTag>>(
+          world, request, class_scratch);
 
   ASSERT_EQ(by_tag.status, tess::PathStatus::Found);
   expect_same_result(by_tag, by_class);
@@ -320,7 +322,61 @@ TEST(TessPathMovementClass, DistanceFieldRejectsAnotherResolvedModel) {
   const auto mismatched = tess::weighted_distance_field_path<World, Diagonal>(
       world, {goal, goal}, scratch);
 
-  EXPECT_EQ(mismatched.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(mismatched.status, tess::PathStatus::NotComputed);
+}
+
+TEST(TessPathMovementClass, ChangedWorldCannotPublishInconsistentFieldPaths) {
+  World world;
+  fill_open(world, 1);
+  constexpr auto start = tess::Coord3{0, 0, 0};
+  constexpr auto goal = tess::Coord3{7, 0, 0};
+
+  tess::DistanceFieldScratch unit_scratch;
+  unit_scratch.reserve_nodes(64);
+  ASSERT_EQ(
+      (tess::build_distance_field<World, PassableTag>(world, goal, unit_scratch)
+           .status),
+      tess::PathStatus::Found);
+
+  tess::DistanceFieldScratch weighted_scratch;
+  weighted_scratch.reserve_nodes(64);
+  ASSERT_EQ((tess::build_weighted_distance_field<World, WeightedMovement>(
+                 world, goal, weighted_scratch)
+                 .status),
+            tess::PathStatus::Found);
+
+  world.template field<PassableTag>(tess::Coord3{1, 0, 0}) = false;
+  const auto unit = tess::distance_field_path<World, PassableTag>(
+      world, {start, goal}, unit_scratch);
+  const auto weighted =
+      tess::weighted_distance_field_path<World, WeightedMovement>(
+          world, {start, goal}, weighted_scratch);
+
+  EXPECT_EQ(unit.status, tess::PathStatus::NotComputed);
+  EXPECT_TRUE(unit.path.empty());
+  EXPECT_EQ(weighted.status, tess::PathStatus::NotComputed);
+  EXPECT_TRUE(weighted.path.empty());
+}
+
+TEST(TessPathMovementClass,
+     InterruptedProviderFieldCannotPublishAnAuthoritativeFailure) {
+  World world;
+  fill_open(world, 1);
+  tess::DistanceFieldScratch scratch;
+  constexpr auto start = tess::Coord3{0, 0, 0};
+  constexpr auto goal = tess::Coord3{3, 3, 0};
+  const auto provider = ThrowingDiagonalProvider{};
+
+  EXPECT_THROW((static_cast<void>(
+                   tess::build_weighted_distance_field<World, DefaultClass>(
+                       world, goal, scratch,
+                       tess::MissingChunkPolicy::AssumeImpassable, provider))),
+               std::runtime_error);
+
+  const auto result = tess::weighted_distance_field_path<World, DefaultClass>(
+      world, {start, goal}, scratch, provider);
+  EXPECT_EQ(result.status, tess::PathStatus::NotComputed);
+  EXPECT_TRUE(result.path.empty());
 }
 
 TEST(TessPathMovementClass, AxialHexSearchUsesSixRegularNeighbors) {
@@ -416,9 +472,9 @@ TEST(TessPathMovementClass, ProviderAwareSearchUsesCheaperStairEdge) {
       world, request, regular_scratch);
   const auto weighted = tess::weighted_astar_path<StairWorld, DefaultClass>(
       world, request, weighted_scratch,
-      tess::MissingChunkPolicy::TreatAsBlocked, provider);
+      tess::MissingChunkPolicy::AssumeImpassable, provider);
   const auto unit = tess::astar_path<StairWorld, PassableTag>(
-      world, request, unit_scratch, tess::MissingChunkPolicy::TreatAsBlocked,
+      world, request, unit_scratch, tess::MissingChunkPolicy::AssumeImpassable,
       provider);
 
   ASSERT_EQ(regular.status, tess::PathStatus::Found);
@@ -445,7 +501,7 @@ TEST(TessPathMovementClass, ProviderSearchRetainsFiveArgumentFunctionType) {
   tess::PathScratch scratch;
   const auto result =
       path_function(world, {{0, 0, 0}, {3, 0, 0}}, scratch,
-                    tess::MissingChunkPolicy::TreatAsBlocked, Provider{});
+                    tess::MissingChunkPolicy::AssumeImpassable, Provider{});
 
   EXPECT_EQ(result.status, tess::PathStatus::Found);
 }
@@ -473,7 +529,7 @@ TEST(TessPathMovementClass, ProviderAwareFieldUsesAndStampsStairEdge) {
 
   const auto built =
       tess::build_weighted_distance_field<StairWorld, DefaultClass>(
-          world, landing, scratch, tess::MissingChunkPolicy::TreatAsBlocked,
+          world, landing, scratch, tess::MissingChunkPolicy::AssumeImpassable,
           provider);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   const auto result =
@@ -486,13 +542,13 @@ TEST(TessPathMovementClass, ProviderAwareFieldUsesAndStampsStairEdge) {
   const auto mismatched =
       tess::weighted_distance_field_path<StairWorld, DefaultClass>(
           world, {foot, landing}, scratch);
-  EXPECT_EQ(mismatched.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(mismatched.status, tess::PathStatus::NotComputed);
 
   const auto boxed =
       tess::build_weighted_distance_field_in_box<StairWorld, DefaultClass>(
           world, landing,
           tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{4, 4, 2}}, scratch,
-          tess::MissingChunkPolicy::TreatAsBlocked, provider);
+          tess::MissingChunkPolicy::AssumeImpassable, provider);
   ASSERT_EQ(boxed.status, tess::PathStatus::Found);
   EXPECT_EQ((tess::weighted_distance_field_path<StairWorld, DefaultClass>(
                  world, {foot, landing}, scratch, provider))
@@ -501,7 +557,7 @@ TEST(TessPathMovementClass, ProviderAwareFieldUsesAndStampsStairEdge) {
 
   const auto bounded =
       tess::build_bounded_weighted_distance_field<StairWorld, DefaultClass, 4>(
-          world, landing, scratch, tess::MissingChunkPolicy::TreatAsBlocked,
+          world, landing, scratch, tess::MissingChunkPolicy::AssumeImpassable,
           provider);
   ASSERT_EQ(bounded.status, tess::PathStatus::Found);
   EXPECT_EQ((tess::weighted_distance_field_path<StairWorld, DefaultClass>(
@@ -530,7 +586,7 @@ TEST(TessPathMovementClass, SparseProviderFieldReportsMissingFootTopology) {
   const auto result =
       tess::build_weighted_distance_field<StairWorld, DefaultClass>(
           world, tess::Coord3{2, 1, 2}, scratch,
-          tess::MissingChunkPolicy::Indeterminate, provider);
+          tess::MissingChunkPolicy::ReportIndeterminate, provider);
 
   EXPECT_EQ(result.status, tess::PathStatus::Indeterminate);
 }
@@ -563,9 +619,9 @@ TEST(TessPathMovementClass, ProviderAwareCommitAcceptsPlannedStairEdge) {
                                      ReservationTag>(world, intent);
   EXPECT_EQ(without.status, tess::MovementStatus::NotAdjacent);
 
-  const auto moved =
-      tess::commit_movement_intent<StairWorld, DefaultClass, OccupancyTag,
-                                   ReservationTag>(world, intent, 0, provider);
+  const auto moved = tess::commit_movement_intent<StairWorld, DefaultClass,
+                                                  OccupancyTag, ReservationTag>(
+      world, intent, tess::DirtyMask{}, provider);
   EXPECT_EQ(moved.status, tess::MovementStatus::Moved);
   EXPECT_FALSE(world.field<OccupancyTag>(foot));
   EXPECT_TRUE(world.field<OccupancyTag>(landing));
@@ -574,7 +630,7 @@ TEST(TessPathMovementClass, ProviderAwareCommitAcceptsPlannedStairEdge) {
 TEST(TessPathMovementClass, DiagonalRouteCachePreservesScaleAndExactCost) {
   World world;
   fill_open(world, 1);
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   tess::PathScratch scratch;
   constexpr auto goal = tess::Coord3{3, 3, 0};
 
@@ -615,7 +671,7 @@ TEST(TessPathMovementClass, RouteCacheInvalidatesWhenProviderChanges) {
       static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
   const auto provider = tess::StairTransitions<StairTag>{};
   const auto request = tess::PathRequest{foot, landing};
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   tess::PathScratch scratch;
 
   const auto special = tess::cached_astar_path<StairWorld, PassableTag>(
@@ -639,7 +695,7 @@ TEST(TessPathMovementClass,
   const auto regular = RevisionRestartProvider{.enabled = false, .revision = 0};
   const auto request =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   tess::PathScratch scratch;
 
   const auto first = tess::cached_astar_path<World, PassableTag>(
@@ -665,14 +721,14 @@ TEST(TessPathMovementClass,
   tess::DistanceFieldScratch scratch;
 
   ASSERT_EQ((tess::build_weighted_distance_field<World, DefaultClass>(
-                 world, goal, scratch, tess::MissingChunkPolicy::TreatAsBlocked,
-                 shortcut))
+                 world, goal, scratch,
+                 tess::MissingChunkPolicy::AssumeImpassable, shortcut))
                 .status,
             tess::PathStatus::Found);
   const auto rebound = tess::weighted_distance_field_path<World, DefaultClass>(
       world, {start, goal}, scratch, regular);
 
-  EXPECT_EQ(rebound.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(rebound.status, tess::PathStatus::NotComputed);
   EXPECT_EQ(rebound.reached_nodes, 0u);
 }
 
@@ -716,7 +772,8 @@ TEST(TessPathMovementClass, BatchPreservesDiagonalAndProviderModels) {
   const auto provider = tess::StairTransitions<StairTag>{};
   tess::WeightedPathBatchScratch stair_scratch;
   const auto stair = tess::weighted_path_batch<StairWorld, DefaultClass, 4>(
-      stair_world, stair_requests, stair_scratch, provider);
+      stair_world, stair_requests, stair_scratch,
+      tess::MissingChunkPolicy::ReportIndeterminate, provider);
   ASSERT_EQ(stair.size(), 2u);
   EXPECT_EQ(stair[0].cost, 1u);
   EXPECT_EQ(stair[0].path.size(), 2u);
@@ -800,63 +857,28 @@ TEST(TessPathMovementClass, ProviderAwareAgentPlansAndCommitsSameStair) {
   EXPECT_TRUE(world.field<OccupancyTag>(landing));
 }
 
-TEST(TessPathMovementClass, LegacyWeightedMatchesTagPairWeightedSearch) {
-  World world;
-  fill_open(world, 2);
-  carve_serpentine(world);
-  // Expensive band plus a zero-cost (impassable-to-weighted) tile exercise
-  // the normalize_cost contract inside the class leaf. The zero-cost tile
-  // sits on the goal row but off the forced serpentine corridor.
-  world.field<CostTag>(tess::Coord3{3, 0, 0}) = 9;
-  world.field<CostTag>(tess::Coord3{4, 0, 0}) = 9;
-  world.field<CostTag>(tess::Coord3{3, 6, 0}) = 0;
-
-  tess::PathScratch tag_scratch;
-  tess::PathScratch class_scratch;
-  const auto request =
-      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 6, 0}};
-
-  const auto by_pair = tess::weighted_astar_path<World, PassableTag, CostTag>(
-      world, request, tag_scratch);
-  const auto by_class =
-      tess::weighted_astar_path<World,
-                                mv::LegacyWeighted<PassableTag, CostTag>>(
-          world, request, class_scratch);
-
-  ASSERT_EQ(by_pair.status, tess::PathStatus::Found);
-  expect_same_result(by_pair, by_class);
-}
-
-TEST(TessPathMovementClass, LegacyWeightedMatchesTagPairDistanceField) {
+TEST(TessPathMovementClass, ExplicitWeightedClassBuildsDistanceField) {
   World world;
   fill_open(world, 2);
   carve_serpentine(world);
   world.field<CostTag>(tess::Coord3{2, 4, 0}) = 7;
 
   const auto goal = tess::Coord3{7, 6, 0};
-  tess::DistanceFieldScratch tag_scratch;
-  tess::DistanceFieldScratch class_scratch;
+  tess::DistanceFieldScratch scratch;
 
-  const auto tag_field =
-      tess::build_weighted_distance_field<World, PassableTag, CostTag>(
-          world, goal, tag_scratch);
-  const auto class_field = tess::build_weighted_distance_field<
-      World, mv::LegacyWeighted<PassableTag, CostTag>>(world, goal,
-                                                       class_scratch);
-  ASSERT_EQ(tag_field.status, tess::PathStatus::Found);
-  EXPECT_EQ(tag_field.status, class_field.status);
-  EXPECT_EQ(tag_field.expanded_nodes, class_field.expanded_nodes);
-  EXPECT_EQ(tag_field.reached_nodes, class_field.reached_nodes);
+  const auto field =
+      tess::build_weighted_distance_field<World, WeightedMovement>(world, goal,
+                                                                   scratch);
+  ASSERT_EQ(field.status, tess::PathStatus::Found);
+  EXPECT_GT(field.expanded_nodes, 0u);
+  EXPECT_GT(field.reached_nodes, 0u);
 
   const auto start = tess::Coord3{0, 0, 0};
-  const auto by_pair =
-      tess::weighted_distance_field_path<World, PassableTag, CostTag>(
-          world, {start, goal}, tag_scratch);
-  const auto by_class = tess::weighted_distance_field_path<
-      World, mv::LegacyWeighted<PassableTag, CostTag>>(world, {start, goal},
-                                                       class_scratch);
-  ASSERT_EQ(by_pair.status, tess::PathStatus::Found);
-  expect_same_result(by_pair, by_class);
+  const auto path = tess::weighted_distance_field_path<World, WeightedMovement>(
+      world, {start, goal}, scratch);
+  ASSERT_EQ(path.status, tess::PathStatus::Found);
+  EXPECT_EQ(path.path.front(), start);
+  EXPECT_EQ(path.path.back(), goal);
 }
 
 TEST(TessPathMovementClass, WalkerRoutesAroundConstructionBuilderThroughIt) {
@@ -930,20 +952,17 @@ TEST(TessPathMovementClass, ClassSearchHonorsMissingChunksOnSparseWorlds) {
   }
 
   tess::PathScratch scratch;
-  // Goal in the non-resident chunk: blocked under the default policy, never a
-  // wrong NoPath under Indeterminate.
+  // Goal in the non-resident chunk is indeterminate by default. Callers may
+  // explicitly choose to treat missing chunks as impassable.
   const auto request =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{40, 0, 0}};
-  const auto blocked =
-      tess::weighted_astar_path<Sparse,
-                                mv::LegacyWeighted<PassableTag, CostTag>>(
-          world, request, scratch);
-  EXPECT_EQ(blocked.status, tess::PathStatus::InvalidGoal);
   const auto indeterminate =
-      tess::weighted_astar_path<Sparse,
-                                mv::LegacyWeighted<PassableTag, CostTag>>(
-          world, request, scratch, tess::MissingChunkPolicy::Indeterminate);
+      tess::weighted_astar_path<Sparse, WeightedMovement>(world, request,
+                                                          scratch);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
+  const auto impassable = tess::weighted_astar_path<Sparse, WeightedMovement>(
+      world, request, scratch, tess::MissingChunkPolicy::AssumeImpassable);
+  EXPECT_EQ(impassable.status, tess::PathStatus::InvalidGoal);
 }
 
 // S5.5: plan == commit. Every step weighted A* accepts for a class passes
@@ -993,11 +1012,11 @@ TEST(TessPathMovementClass, CommitValidationAgreesWithThePlannedClass) {
   const auto walker_in =
       tess::validate_movement_intent<World, Walker, OccupancyTag,
                                      ReservationTag>(world, into_site);
-  EXPECT_EQ(walker_in.status, tess::MovementStatus::BlockedTo);
+  EXPECT_EQ(walker_in.status, tess::MovementStatus::ImpassableTo);
   const auto walker_out =
       tess::validate_movement_intent<World, Walker, OccupancyTag,
                                      ReservationTag>(world, out_of_site);
-  EXPECT_EQ(walker_out.status, tess::MovementStatus::BlockedFrom);
+  EXPECT_EQ(walker_out.status, tess::MovementStatus::ImpassableFrom);
   const auto builder_in =
       tess::validate_movement_intent<World, Builder, OccupancyTag,
                                      ReservationTag>(world, into_site);
@@ -1020,7 +1039,7 @@ TEST(TessPathMovementClass, CommitRejectsRegularZeroCostDestination) {
                                      ReservationTag>(
           world, tess::MovementIntent{from, to});
 
-  EXPECT_EQ(result.status, tess::MovementStatus::BlockedTo);
+  EXPECT_EQ(result.status, tess::MovementStatus::ImpassableTo);
 }
 
 TEST(TessPathMovementClass, DiagonalCommitUsesResolvedClearance) {
@@ -1035,7 +1054,7 @@ TEST(TessPathMovementClass, DiagonalCommitUsesResolvedClearance) {
       tess::validate_movement_intent<World, Diagonal, OccupancyTag,
                                      ReservationTag>(
           world, tess::MovementIntent{.from = from, .to = to});
-  EXPECT_EQ(blocked.status, tess::MovementStatus::BlockedTo);
+  EXPECT_EQ(blocked.status, tess::MovementStatus::Blocked);
 
   world.field<PassableTag>(tess::Coord3{3, 2, 0}) = true;
   const auto moved = tess::commit_movement_intent<World, Diagonal, OccupancyTag,
@@ -1058,21 +1077,22 @@ TEST(TessPathMovementClass, CommitAcceptsParallelProviderTransition) {
   tess::PathScratch scratch;
   const auto path = tess::weighted_astar_path<World, Diagonal>(
       world, tess::PathRequest{from, to}, scratch,
-      tess::MissingChunkPolicy::TreatAsBlocked, provider);
+      tess::MissingChunkPolicy::AssumeImpassable, provider);
   ASSERT_EQ(path.status, tess::PathStatus::Found);
   ASSERT_EQ(path.path.size(), 2u);
   EXPECT_EQ(path.path.back(), to);
 
   const auto moved = tess::commit_movement_intent<World, Diagonal, OccupancyTag,
                                                   ReservationTag>(
-      world, tess::MovementIntent{.from = from, .to = to}, 0, provider);
+      world, tess::MovementIntent{.from = from, .to = to}, tess::DirtyMask{},
+      provider);
   EXPECT_EQ(moved.status, tess::MovementStatus::Moved);
   EXPECT_FALSE(world.field<OccupancyTag>(from));
   EXPECT_TRUE(world.field<OccupancyTag>(to));
 }
 
 TEST(TessPathMovementClass, SpecialEdgeRejectsZeroCostDestinationAtPlanTime) {
-  using Legacy = mv::LegacyWeighted<PassableTag, CostTag>;
+  using Class = WeightedMovement;
   World world;
   fill_open(world, 1);
   constexpr auto from = tess::Coord3{2, 2, 0};
@@ -1081,7 +1101,7 @@ TEST(TessPathMovementClass, SpecialEdgeRejectsZeroCostDestinationAtPlanTime) {
   const auto provider = DiagonalBridgeProvider{};
 
   using Model =
-      tess::ResolvedTransitionModel<World, Legacy, DiagonalBridgeProvider>;
+      tess::ResolvedTransitionModel<World, Class, DiagonalBridgeProvider>;
   auto emitted_special = false;
   Model{provider}.for_each_forward(
       world, from,
@@ -1094,9 +1114,9 @@ TEST(TessPathMovementClass, SpecialEdgeRejectsZeroCostDestinationAtPlanTime) {
   EXPECT_FALSE(emitted_special);
 
   tess::PathScratch scratch;
-  const auto path = tess::weighted_astar_path<World, Legacy>(
+  const auto path = tess::weighted_astar_path<World, Class>(
       world, tess::PathRequest{from, to}, scratch,
-      tess::MissingChunkPolicy::TreatAsBlocked, provider);
+      tess::MissingChunkPolicy::AssumeImpassable, provider);
 
   EXPECT_EQ(path.status, tess::PathStatus::InvalidGoal);
 }
@@ -1115,7 +1135,7 @@ TEST(TessPathMovementClass, MissingProviderTopologyOutranksBlockedRegularEdge) {
           world, tess::MovementIntent{.from = from, .to = to},
           MissingDiagonalProvider{});
 
-  EXPECT_EQ(result.status, tess::MovementStatus::StaleVersion);
+  EXPECT_EQ(result.status, tess::MovementStatus::StaleTopology);
 }
 
 TEST(TessPathMovementClass, LegalRegularEdgeSkipsProviderHotPath) {
@@ -1131,7 +1151,7 @@ TEST(TessPathMovementClass, LegalRegularEdgeSkipsProviderHotPath) {
   const auto commit = [&] {
     return tess::commit_movement_intent<World, Diagonal, OccupancyTag,
                                         ReservationTag>(
-        world, tess::MovementIntent{.from = from, .to = to}, 0,
+        world, tess::MovementIntent{.from = from, .to = to}, tess::DirtyMask{},
         ThrowingDiagonalProvider{});
   };
   auto result = tess::MovementResult{};
@@ -1167,7 +1187,7 @@ TEST(TessPathMovementClass, RuntimeReboundToAnotherClassNeverServesStaleRoute) {
   EXPECT_EQ(results[0].cost, 21u);
   EXPECT_EQ(runtime.stats().class_cache_invalidations, 0u);
 
-  // Same (start, goal), same world version, different class: the rebind
+  // Same (start, goal), same content versions, different class: the rebind
   // clears the unit caches and the Builder gets ITS 7-step route, not the
   // Walker's cached 21-step detour.
   runtime.clear_requests();
@@ -1217,7 +1237,7 @@ TEST(TessPathMovementClass, WeightedClassTicksRouteAndCommitPerClass) {
       const auto stats = tess::tick_weighted_path_agents_with_movement<
           World, Class, 64, OccupancyTag, ReservationTag>(state, world, agents,
                                                           runtime, {});
-      blocked += stats.movement.movement_failures.blocked;
+      blocked += stats.movement.movement_failures.impassable;
       ++ticks;
     }
     EXPECT_FALSE(agent.has_goal) << "agent never arrived";
@@ -1259,7 +1279,7 @@ TEST(TessPathMovementClass, PolicyClearNeverUnbindsTheClassGuard) {
   (void)runtime.process_unit_cached<World, Walker>(world, policy);
 
   // A world edit arms the policy clear inside the NEXT process call.
-  world.mark_dirty(tess::ChunkKey{0}, 1u,
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
   runtime.clear_requests();
   (void)runtime.submit(request);
@@ -1289,7 +1309,7 @@ TEST(TessPathMovementClass, DirectRouteCacheNeverServesAnotherClass) {
   }
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   const auto request =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
 

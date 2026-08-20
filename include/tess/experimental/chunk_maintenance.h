@@ -40,8 +40,8 @@ enum class ChunkProductState : std::uint8_t {
 /** Version and residency identity of one completed derived product. */
 struct ChunkProductToken {
   ChunkKey key{};
-  std::uint32_t version = 0;
-  std::uint64_t residency_generation = 0;
+  ContentVersion content_version{};
+  ResidencyGeneration residency_generation{};
 
   friend constexpr auto operator==(ChunkProductToken,
                                    ChunkProductToken) noexcept
@@ -93,13 +93,13 @@ enum class ChunkAdapterReleaseResult : std::uint8_t {
  * `World` is borrowed and must outlive this immovable adapter. `Product` is
  * adapter-owned, while `Rebuild` is invoked as
  * `rebuild(const World&, ChunkKey, DirtyObservation, Product&)`. A successful
- * callback publishes a version/residency token, then clears only the observed
- * bits. The observation may have no flags when `retry()` repairs shared
+ * callback publishes a content-version/residency token, then clears only the
+ * observed bits. The observation may have an empty mask when `retry()` repairs
  * content-version drift caused by a disjoint owner. If the generation or
- * version changed, the product remains explicitly stale and the fixed task
- * schedules another pass. Callback exceptions propagate verbatim, leave
- * the owned dirty signal or version drift intact, and require the caller to
- * use `retry()` after inspecting partial product effects.
+ * content version changed, the product remains explicitly stale and the fixed
+ * task schedules another pass. Callback exceptions propagate verbatim, leave
+ * the owned dirty signal or content-version drift intact, and require the
+ * caller to use `retry()` after inspecting partial product effects.
  *
  * `owned_dirty_mask` must be nonzero and disjoint from every other clearing
  * owner for the same world. `mark_dirty()` rejects zero and foreign bits. It
@@ -107,7 +107,8 @@ enum class ChunkAdapterReleaseResult : std::uint8_t {
  * failure loses no dirty signal. Scheduling is coalescing; one call does not
  * imply one execution. A disjoint owner may advance the shared content
  * version and stale this product without setting an owned bit; `retry()` then
- * rebuilds against that version without clearing the other owner's bits.
+ * rebuilds against that content version without clearing the other owner's
+ * bits.
  * Failed follow-up admission is retained as adapter-owned retry debt and
  * reoffered by unbounded `flush()` or explicit `retry()`, so it cannot produce
  * a false `Idle`.
@@ -159,7 +160,7 @@ class ChunkMaintenanceAdapter final {
     Task task{};
     ChunkProductToken token{};
     ChunkKey key{};
-    std::uint64_t residency_generation = 0;
+    ResidencyGeneration residency_generation{};
     bool bound = false;
     bool built = false;
     std::atomic<bool> retry_debt = false;
@@ -173,7 +174,7 @@ class ChunkMaintenanceAdapter final {
    * useful only for queue-capacity comparison backends; fixed-registration
    * backends require enough capacity for every adapter slot.
    */
-  ChunkMaintenanceAdapter(World& world, std::uint32_t owned_dirty_mask,
+  ChunkMaintenanceAdapter(World& world, DirtyMask owned_dirty_mask,
                           Rebuild rebuild, std::size_t backend_capacity = 0)
       : world_(&world),
         owned_dirty_mask_(owned_dirty_mask),
@@ -183,7 +184,7 @@ class ChunkMaintenanceAdapter final {
         scheduler_(slot_count_,
                    backend_capacity == 0 ? slot_count_ : backend_capacity),
         handles_(std::make_unique<MaintenanceHandle[]>(slot_count_)) {
-    if (owned_dirty_mask_ == 0) {
+    if (owned_dirty_mask_.empty()) {
       ::tess::detail::fail_fast(
           "ChunkMaintenanceAdapter requires a nonzero owned dirty mask");
     }
@@ -197,7 +198,7 @@ class ChunkMaintenanceAdapter final {
       }
       handles_[slot] = handle.value();
       if constexpr (is_dense) {
-        bind_slot(slot, ChunkKey{slot}, 0);
+        bind_slot(slot, ChunkKey{slot}, {});
       }
     }
     if constexpr (is_sparse) {
@@ -216,24 +217,24 @@ class ChunkMaintenanceAdapter final {
   ~ChunkMaintenanceAdapter() = default;
 
   /** Marks owned dirty bits and offers the corresponding fixed task. */
-  [[nodiscard]] auto mark_dirty(ChunkKey key, std::uint32_t flags, Box3 bounds)
+  [[nodiscard]] auto mark_dirty(ChunkKey key, DirtyMask mask, Box3 bounds)
       -> ChunkMarkResult {
     if (released_) {
       return ChunkMarkResult::Released;
     }
-    if (flags == 0 || (flags & ~owned_dirty_mask_) != 0) {
+    if (mask.empty() || !(mask & ~owned_dirty_mask_).empty()) {
       return ChunkMarkResult::InvalidMask;
     }
     const auto slot = bound_slot(key);
     if (!slot.has_value()) {
       return ChunkMarkResult::Missing;
     }
-    world_->mark_dirty(key, flags, bounds);
+    world_->mark_dirty(key, mask, bounds);
     return map_mark_result(schedule_slot(slot.value()));
   }
 
   /**
-   * Reoffers dirty or version-stale work without changing world state.
+   * Reoffers dirty or content-version-stale work without changing world state.
    *
    * Empty means an out-of-bounds or currently non-resident key, or a released
    * adapter. Capacity and zero-progress outcomes remain explicit.
@@ -308,7 +309,7 @@ class ChunkMaintenanceAdapter final {
 #endif
   }
 
-  /** Returns one product borrow and validates its version/residency token. */
+  /** Validates and returns one product's content-version/residency token. */
   [[nodiscard]] auto product(ChunkKey key) const -> ChunkProductView<Product> {
     const auto slot_index = bound_slot(key);
     if (!slot_index.has_value()) {
@@ -353,7 +354,7 @@ class ChunkMaintenanceAdapter final {
       return ChunkResidencyResult{ChunkResidencyStatus::NotIdle, {}};
     }
     const auto handle = world_->ensure_resident(key);
-    if (handle.generation == 0) {
+    if (!handle.generation.valid()) {
       return ChunkResidencyResult{ChunkResidencyStatus::Missing, {}};
     }
     const auto ref = world_->resident_ref(key);
@@ -470,7 +471,7 @@ class ChunkMaintenanceAdapter final {
   }
 
   void bind_slot(std::size_t slot_index, ChunkKey key,
-                 std::uint64_t generation) noexcept {
+                 ResidencyGeneration generation) noexcept {
     auto& slot = slots_[slot_index];
     if (!slot.bound || slot.key != key ||
         slot.residency_generation != generation) {
@@ -486,7 +487,7 @@ class ChunkMaintenanceAdapter final {
     auto& slot = slots_[slot_index];
     slot.bound = false;
     slot.built = false;
-    slot.residency_generation = 0;
+    slot.residency_generation = {};
     slot.retry_debt.store(false, std::memory_order_release);
   }
 
@@ -589,8 +590,8 @@ class ChunkMaintenanceAdapter final {
         slot.residency_generation != token.residency_generation) {
       return false;
     }
-    return world_->meta(token.key).version == token.version &&
-           (world_->dirty_flags(token.key) & owned_dirty_mask_) == 0;
+    return world_->meta(token.key).content_version == token.content_version &&
+           (world_->dirty_mask(token.key) & owned_dirty_mask_).empty();
   }
 
   void run_slot(std::size_t slot_index, MaintenanceBudget& budget) {
@@ -602,8 +603,9 @@ class ChunkMaintenanceAdapter final {
       return;
     }
     const auto observed = world_->observe_dirty(slot.key, owned_dirty_mask_);
-    if (observed.flags == 0 &&
-        (!slot.built || slot.token.version == observed.version)) {
+    if (observed.mask.empty() &&
+        (!slot.built ||
+         slot.token.content_version == observed.content_version)) {
       slot.retry_debt.store(false, std::memory_order_release);
       return;
     }
@@ -615,7 +617,7 @@ class ChunkMaintenanceAdapter final {
     if (!sparse_binding_current(slot, slot_index)) {
       return;
     }
-    slot.token = ChunkProductToken{slot.key, observed.version,
+    slot.token = ChunkProductToken{slot.key, observed.content_version,
                                    slot.residency_generation};
     slot.built = true;
     if (world_->clear_dirty_observed(slot.key, observed)) {
@@ -628,7 +630,7 @@ class ChunkMaintenanceAdapter final {
   }
 
   World* world_;
-  std::uint32_t owned_dirty_mask_;
+  DirtyMask owned_dirty_mask_;
   Rebuild rebuild_;
   std::size_t slot_count_;
   std::unique_ptr<Slot[]> slots_;

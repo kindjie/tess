@@ -11,7 +11,7 @@
 namespace tess::examples::web_diagnostics {
 namespace {
 
-constexpr std::uint32_t kTerrainDirty = 1U << 0U;
+constexpr auto kTerrainDirty = tess::DirtyMask{1U << 0U};
 
 template <typename T>
 class CountingAllocator {
@@ -151,6 +151,8 @@ auto DiagnosticsModel::run_path_workload() -> bool {
       case PathStatus::InvalidGoal:
       case PathStatus::NoPath:
         break;
+      case PathStatus::NotComputed:
+      case PathStatus::NoCandidate:
       case PathStatus::Indeterminate:
       case PathStatus::CostOverflow:
         return false;
@@ -162,7 +164,7 @@ auto DiagnosticsModel::run_path_workload() -> bool {
 auto DiagnosticsModel::run_queued_workload() -> bool {
   diagnostics::ScopedTimer timer{diagnostics::TraceCategory::Queued,
                                  "queued_phase"};
-  FrameOps ops;
+  OperationBatch ops;
   using KeyVector = std::vector<ChunkKey, CountingAllocator<ChunkKey>>;
   KeyVector keys;
   keys.reserve(4);
@@ -173,7 +175,7 @@ auto DiagnosticsModel::run_queued_workload() -> bool {
   const auto domain = DomainDesc::explicit_chunks(
       std::span<const ChunkKey>{keys.data(), keys.size()});
   (void)ops.update_field(domain,
-                         FieldAccessDesc{0, kTerrainDirty, kTerrainDirty},
+                         FieldAccessDesc{0, kTerrainDirty.value, kTerrainDirty},
                          WritePolicy::UniquePerChunk);
   const auto report = plan_operations(world_, ops);
   if (!report.ok()) {

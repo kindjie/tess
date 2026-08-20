@@ -173,7 +173,7 @@ button:disabled { opacity: 0.55; cursor: default; }
   border-bottom: 1px solid rgb(77 69 95 / 32%);
 }
 
-.tile.blocked {
+.tile.impassable {
   background:
     linear-gradient(135deg, transparent 38%, #55496b 39% 61%, transparent 62%),
     #272230;

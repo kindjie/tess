@@ -12,7 +12,7 @@ struct ConstructionTag {};
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
                                  tess::Field<ConstructionTag, std::uint8_t>>;
 
-// Builder may enter construction tiles the plain walker cannot (M6).
+// Builder may enter construction tiles the plain walker cannot.
 using Builder = tess::movement::MovementClass<
     tess::movement::AnyOf<tess::movement::Field<PassableTag>,
                           tess::movement::Field<ConstructionTag>>,
@@ -187,10 +187,14 @@ TEST(TessPrecheck, SparseNonResidentBoundaryIsMissingChunk) {
                                              {{0, 0, 0}, {40, 0, 0}}, scratch),
             tess::PrecheckStatus::Reachable);
   // Toward a goal in a non-resident chunk (x=80, chunk 2): the corridor's edge
-  // exits into unloaded space, so the route cannot be ruled out.
+  // exits into non-resident space, so the route cannot be ruled out.
   EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world,
                                              {{0, 0, 0}, {80, 0, 0}}, scratch),
             tess::PrecheckStatus::MissingChunk);
+  EXPECT_EQ(tess::precheck_path<PassableTag>(
+                graph, world, {{0, 0, 0}, {80, 0, 0}}, scratch,
+                tess::MissingChunkPolicy::AssumeImpassable),
+            tess::PrecheckStatus::InvalidGoal);
 }
 
 TEST(TessPrecheck, WarmPrecheckIsAllocationFree) {
@@ -243,13 +247,15 @@ TEST(TessPrecheck, ProviderRevisionMismatchIsGraphStale) {
                                                            graph, provider);
   tess::RegionGraphScratch scratch;
   EXPECT_EQ(tess::precheck_path<PassableTag>(
-                graph, world, {{0, 0, 0}, {15, 7, 0}}, scratch, provider),
+                graph, world, {{0, 0, 0}, {15, 7, 0}}, scratch,
+                tess::MissingChunkPolicy::ReportIndeterminate, provider),
             tess::PrecheckStatus::Unreachable);
 
   provider.enabled = true;
   ++provider.revision;
   EXPECT_EQ(tess::precheck_path<PassableTag>(
-                graph, world, {{0, 0, 0}, {15, 7, 0}}, scratch, provider),
+                graph, world, {{0, 0, 0}, {15, 7, 0}}, scratch,
+                tess::MissingChunkPolicy::ReportIndeterminate, provider),
             tess::PrecheckStatus::GraphStale);
 }
 

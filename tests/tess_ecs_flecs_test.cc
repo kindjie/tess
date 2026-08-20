@@ -318,7 +318,7 @@ TEST(TessEcsFlecs, LifecycleAndTickEmitRenderDeltas) {
   tess::DeltaCollector collector;
   collector.reserve(8, 32, 16);
   const auto entity = tess::spawn_flecs_path_agent<World, OccupancyTag>(
-      sim.ecs, sim.context, sim.world, sim.index, tess::Coord3{0, 0, 0}, 0,
+      sim.ecs, sim.context, sim.world, sim.index, tess::Coord3{0, 0, 0}, {},
       &collector);
   tess::set_flecs_path_agent_goal(sim.ecs, entity, tess::Coord3{2, 0, 0});
   for (int tick = 0; tick < 2; ++tick) {

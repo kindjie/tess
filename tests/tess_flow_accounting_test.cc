@@ -491,7 +491,7 @@ TEST(TessAgentFlow, StructuralMovementFailureTerminalizesAsFailed) {
   tess::observe_path_agent_flow_tick(tick_state, agents, 1);
   tess::set_path_agent_goal(tick_state, agents[0], tess::Coord3{5, 5, 0});
   agents[0].phase = tess::PathAgentPhase::Following;
-  agents[0].status = tess::PathStatus::Found;
+  agents[0].last_result = tess::PathStatus::Found;
 
   // A retained route whose next step is not adjacent is a caller bug
   // the movement-validated advance treats as a terminal structural

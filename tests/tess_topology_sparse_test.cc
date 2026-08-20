@@ -117,7 +117,7 @@ TEST(TessSparseTopology, IndeterminateAcrossNonResidentBoundary) {
 
   tess::RegionGraphScratch reach;
   // start in chunk 0, goal in chunk 2. No portal bridges them (chunk 1 is
-  // unloaded), but chunk 0's region exits into the missing chunk 1, so the
+  // non-resident), but chunk 0's region exits into the missing chunk 1, so the
   // answer is Indeterminate -- never a wrong Unreachable.
   const auto result =
       tess::reachable<Small>(graph, {{0, 0, 0}, {70, 0, 0}}, reach);

@@ -80,8 +80,8 @@ enum class ReleaseResult : std::uint8_t {
  * consumed rather than restored and its execution is counted. Offers
  * coalesced into that same synchronous call-local invocation are consumed with
  * it; every independently retained accepted offer remains reachable. The
- * caller's authoritative dirty/version state decides whether explicitly
- * scheduling a retry is safe.
+ * caller's authoritative dirty-mask/content-version state decides whether
+ * explicitly scheduling a retry is safe.
  */
 template <typename Backend>
 concept MaintenanceBackend =

@@ -13,9 +13,10 @@ is a type alias change plus handling for the sparse-only states below.
 
 ## Thresholds
 
-The full-storage cost is a compile-time constant — print or
-`static_assert` `World::storage_byte_size` before deciding. For the
-sparse branch, capacity is `byte_budget / page_byte_size` chunks: size
+The Tess-owned inline page-storage cost is a compile-time constant — print or
+`static_assert` `World::storage_byte_size` before deciding. It excludes any
+dynamic storage or referenced objects managed by field values. For the sparse
+branch, capacity is `byte_budget / page_byte_size` chunks: size
 the budget from the number of *simultaneously hot* chunks, not the world
 size, or the LRU will thrash.
 
@@ -35,7 +36,7 @@ auto terrain = dense_world.field_span<TerrainTag>(tess::ChunkKey{3});
 <!-- tess-snippet: sparse-budget source=examples/sparse_stream.cc -->
 ```cpp
 constexpr auto budget = 16 * HugeSparse::page_byte_size;
-HugeSparse world{tess::ResidencyConfig{budget}};  // Loads no chunks.
+HugeSparse world{tess::ResidencyConfig{budget}};  // Materializes no chunks.
 
 for (std::uint64_t key = 0; key < 64; ++key) {
   (void)world.ensure_resident(tess::ChunkKey{key});  // LRU-evicts at cap.
@@ -49,15 +50,15 @@ const auto ok = world.resident_byte_size() <= world.byte_budget();
 <!-- tess-snippet: sparse-indeterminate source=examples/sparse_stream.cc -->
 ```cpp
 tess::PathScratch scratch;
-const auto blocked = tess::astar_path<StreamWorld, PassableTag>(
-    world, request, scratch, tess::MissingChunkPolicy::Indeterminate);
-// blocked.status == PathStatus::Indeterminate: a non-resident chunk was
-// skipped, so failure is not proven -- stream the chunk in and retry.
+const auto pending = tess::astar_path<StreamWorld, PassableTag>(
+    world, request, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
+// pending.status == PathStatus::Indeterminate: a non-resident chunk was
+// skipped, so failure is not proven -- materialize the chunk and retry.
 
 (void)world.ensure_resident(tess::ChunkKey{1});
 open_row(world, 32, 63);
 const auto found = tess::astar_path<StreamWorld, PassableTag>(
-    world, request, scratch, tess::MissingChunkPolicy::Indeterminate);
+    world, request, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
 ```
 <!-- /tess-snippet -->
 
@@ -68,9 +69,8 @@ const auto found = tess::astar_path<StreamWorld, PassableTag>(
   eviction), [pathfinding note](../architecture/path.md) (sparse
   coverage semantics).
 
-## Horizon
+## Scope
 
-!!! note "Planned"
-    The full sparse generation/streaming/serialization lifecycle is
-    design-forward (see the [roadmap](../roadmap.md)); shipped sparse
-    worlds materialize on demand under the byte budget.
+Sparse worlds materialize chunks on demand under the byte budget. Tess archives
+the current resident set; applications own durable backing storage and decide
+when and from where non-resident chunk data is supplied.

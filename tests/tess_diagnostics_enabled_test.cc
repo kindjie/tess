@@ -11,7 +11,7 @@ namespace {
 
 struct DiagTerrainTag {};
 
-constexpr std::uint32_t DiagDirtyTerrain = 1u << 0u;
+constexpr auto DiagDirtyTerrain = tess::DirtyMask{1u << 0u};
 
 using DiagTopDown2D =
     tess::Shape<tess::Extent3{64, 32, 1}, tess::Extent3{32, 16, 1}>;
@@ -125,13 +125,13 @@ TEST(TessDiagnostics, ScopedQueuedPhaseCountersRecordGenericEvents) {
 
 TEST(TessDiagnostics, ScopedQueuedPhaseCountersObservePartitionedExecution) {
   DiagWorld world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   tess::PlannedPhaseExecutionScratch scratch;
   tess::ScopedThreadPhaseExecutor executor{2};
   tess::diagnostics::QueuedPhaseCounters counters;
   constexpr auto writes_terrain = tess::FieldAccessDesc{
       0,
-      DiagDirtyTerrain,
+      DiagDirtyTerrain.value,
       DiagDirtyTerrain,
   };
   const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{0}};
@@ -177,7 +177,7 @@ TEST(TessDiagnostics, ScopedQueuedPhaseCountersObservePartitionedExecution) {
 
 TEST(TessDiagnostics, ExceptionDirtyMergeCountsRecordsAndUniqueChunks) {
   DiagWorld world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   tess::PlannedPhaseExecutionScratch scratch;
   constexpr auto key = tess::ChunkKey{0};
   constexpr auto marks_terrain = tess::FieldAccessDesc{
@@ -214,8 +214,8 @@ TEST(TessDiagnostics, ExceptionDirtyMergeCountsRecordsAndUniqueChunks) {
 
   EXPECT_EQ(counters.dirty_records_collected, 2u);
   EXPECT_EQ(counters.dirty_chunks_merged, 1u);
-  EXPECT_EQ(world.dirty_flags(key), DiagDirtyTerrain);
-  EXPECT_EQ(world.meta(key).version, 1u);
+  EXPECT_EQ(world.dirty_mask(key), DiagDirtyTerrain);
+  EXPECT_EQ(world.meta(key).content_version, tess::ContentVersion{1});
 }
 
 // Mutation guard: the serpentine mazes must be answered by the real A*
@@ -262,10 +262,11 @@ TEST(TessDiagnostics, SerpentineMazeReachesWeightedHeapSearch) {
   tess::diagnostics::PathCounters counters;
   {
     tess::diagnostics::ScopedPathCounters scope{counters};
-    const auto result =
-        tess::weighted_astar_path<decltype(world), tess_test::SerpPassableTag,
-                                  tess_test::SerpCostTag>(
-            world, tess::PathRequest{endpoints.start, endpoints.goal}, scratch);
+    const auto result = tess::weighted_astar_path<
+        decltype(world),
+        tess::movement::PositiveCostFieldMovement<tess_test::SerpPassableTag,
+                                                  tess_test::SerpCostTag>>(
+        world, tess::PathRequest{endpoints.start, endpoints.goal}, scratch);
     ASSERT_EQ(result.status, tess::PathStatus::Found);
     EXPECT_GT(result.expanded_nodes, result.path.size());
   }

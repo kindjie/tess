@@ -21,8 +21,8 @@ template <typename World, typename Class, typename Provider>
     -> DistanceFieldResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "build_weighted_distance_field_in_box<World, Class> requires "
-                "a MovementClass; legacy tag pairs go through the "
-                "<World, PassableTag, CostTag> overload.");
+                "a MovementClass; pass a movement class such as "
+                "PositiveCostFieldMovement.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
   using Model = ResolvedTransitionModel<World, Class, Provider>;
@@ -38,10 +38,11 @@ template <typename World, typename Class, typename Provider>
     // the entry-cost read index the goal chunk.
     const Space residency{world};
     if (!residency.is_resident_index(detail::tile_index<Shape>(goal))) {
-      return DistanceFieldResult{policy == MissingChunkPolicy::Indeterminate
-                                     ? PathStatus::Indeterminate
-                                     : PathStatus::InvalidGoal,
-                                 0, 0};
+      return DistanceFieldResult{
+          policy == MissingChunkPolicy::ReportIndeterminate
+              ? PathStatus::Indeterminate
+              : PathStatus::InvalidGoal,
+          0, 0};
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
@@ -150,7 +151,8 @@ template <typename World, typename Class, typename Provider>
   }
 
   if constexpr (!Space::is_dense) {
-    if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
+    if (crossed_missing && policy == MissingChunkPolicy::ReportIndeterminate) {
+      scratch.publish_build_status(PathStatus::Indeterminate);
       return DistanceFieldResult{PathStatus::Indeterminate, expanded_nodes,
                                  scratch.touched_.size()};
     }
@@ -160,6 +162,7 @@ template <typename World, typename Class, typename Provider>
     return DistanceFieldResult{PathStatus::CostOverflow, expanded_nodes,
                                scratch.touched_.size()};
   }
+  scratch.publish_build_status(PathStatus::Found);
   return DistanceFieldResult{PathStatus::Found, expanded_nodes,
                              scratch.touched_.size()};
 }
@@ -171,17 +174,6 @@ template <typename World, typename Class>
   return build_weighted_distance_field_in_box<World, Class,
                                               AdjacentTransitions>(
       world, goal, domain, scratch, policy, AdjacentTransitions{});
-}
-
-// Legacy <PassableTag, CostTag> forwarder: one movement class replaces the
-// tag pair; LegacyWeighted preserves the historical semantics exactly.
-template <typename World, typename PassableTag, typename CostTag>
-[[nodiscard]] auto build_weighted_distance_field_in_box(
-    const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
-    MissingChunkPolicy policy) -> DistanceFieldResult {
-  return build_weighted_distance_field_in_box<
-      World, movement::LegacyWeighted<PassableTag, CostTag>>(
-      world, goal, domain, scratch, policy);
 }
 
 }  // namespace tess

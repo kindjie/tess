@@ -19,7 +19,7 @@ bridging, the production worker-pool phase executor, the GPU descriptor
 interface and optional WebGPU transport, and compile-gated diagnostics.
 Resolved regular and provider-composed transitions drive exact paths, fields,
 topology, caches, agents, and movement commit across orthogonal,
-clearance-preserving diagonal, and axial-hex worlds. `FrameOps` also carries
+clearance-preserving diagonal, and axial-hex worlds. `OperationBatch` also carries
 typed intent batches and their
 version/invalidation policy; cooperative tickets resume budgeted work across
 ticks; and exact event streams drive coalesced OnEvent schedule cadences.

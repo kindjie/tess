@@ -8,4 +8,6 @@
   untouched, and bounded-field overflow falls back per request. Repeated
   queries with reserved scratch allocate nothing. Seeded weighted-search
   tie-breaking is deterministic, preserves optimal cost, and can select both
-  sides of a symmetric equal-cost barrier.
+  sides of a symmetric equal-cost barrier. Default, failed, stale, and
+  model-mismatched products report `NotComputed`, while an authoritative
+  exhausted search reports `NoPath`.

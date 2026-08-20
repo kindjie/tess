@@ -22,6 +22,9 @@ using tess_test::SerpCostTag;
 using tess_test::SerpPassableTag;
 using tess_test::SerpSchema;
 using tess_test::SerpTopDown2D;
+using SerpMovement =
+    tess::movement::MovementClass<tess::movement::Field<SerpPassableTag>,
+                                  tess::movement::FieldCost<SerpCostTag>>;
 
 template <typename Shape>
 using SerpWorld = tess::AlwaysResidentWorld<Shape, SerpSchema>;
@@ -185,9 +188,9 @@ struct SerpFixture {
 TEST(TessPackedOpenNode, WeightedAStarSerpentineGolden) {
   auto fx = make_fixture();
   tess::PathScratch scratch;
-  const auto result = tess::weighted_astar_path<decltype(fx.world),
-                                                SerpPassableTag, SerpCostTag>(
-      fx.world, tess::PathRequest{fx.start, fx.goal}, scratch);
+  const auto result =
+      tess::weighted_astar_path<decltype(fx.world), SerpMovement>(
+          fx.world, tess::PathRequest{fx.start, fx.goal}, scratch);
   ASSERT_EQ(result.status, tess::PathStatus::Found);
   EXPECT_TRUE(
       tess_test::valid_path_walk(fx.world, result.path, fx.start, fx.goal));
@@ -201,15 +204,13 @@ TEST(TessPackedOpenNode, WeightedFloodSerpentineGolden) {
   auto fx = make_fixture();
   tess::DistanceFieldScratch scratch;
   const auto result =
-      tess::build_weighted_distance_field<decltype(fx.world), SerpPassableTag,
-                                          SerpCostTag>(fx.world, fx.goal,
-                                                       scratch);
+      tess::build_weighted_distance_field<decltype(fx.world), SerpMovement>(
+          fx.world, fx.goal, scratch);
   ASSERT_EQ(result.status, tess::PathStatus::Found);
   EXPECT_EQ(result.expanded_nodes, 52u);
   EXPECT_EQ(result.reached_nodes, 52u);
   const auto replay =
-      tess::weighted_distance_field_path<decltype(fx.world), SerpPassableTag,
-                                         SerpCostTag>(
+      tess::weighted_distance_field_path<decltype(fx.world), SerpMovement>(
           fx.world, {fx.start, fx.goal}, scratch);
   ASSERT_EQ(replay.status, tess::PathStatus::Found);
   EXPECT_EQ(replay.cost, 24u);
@@ -220,10 +221,10 @@ TEST(TessPackedOpenNode, BoxedFloodSerpentineGolden) {
   tess::DistanceFieldScratch scratch;
   const auto result =
       tess::build_weighted_distance_field_in_box<decltype(fx.world),
-                                                 SerpPassableTag, SerpCostTag>(
+                                                 SerpMovement>(
           fx.world, fx.goal,
           tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{8, 8, 1}}, scratch,
-          tess::MissingChunkPolicy::TreatAsBlocked);
+          tess::MissingChunkPolicy::AssumeImpassable);
   ASSERT_EQ(result.status, tess::PathStatus::Found);
   EXPECT_EQ(result.expanded_nodes, 52u);
   EXPECT_EQ(result.reached_nodes, 52u);
@@ -237,10 +238,10 @@ TEST(TessPackedOpenNode, WeightedGoalSetProductGolden) {
   goals.add(tess::Coord3{0, 7, 0});
   tess::DistanceFieldScratch scratch;
   tess::DistanceFieldProduct product;
-  const auto built = tess::build_weighted_distance_field_product<
-      decltype(fx.world),
-      tess::movement::LegacyWeighted<SerpPassableTag, SerpCostTag>>(
-      fx.world, goals, product, scratch);
+  const auto built =
+      tess::build_weighted_distance_field_product<decltype(fx.world),
+                                                  SerpMovement>(
+          fx.world, goals, product, scratch);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   EXPECT_EQ(built.expanded_nodes, 52u);
   EXPECT_EQ(built.reached_nodes, 52u);
@@ -286,9 +287,9 @@ TEST(TessPackedOpenNode, WeightedEarlyExitLeavesScratchReusable) {
   // same scratch must match a fresh-scratch run exactly.
   auto fx = make_fixture();
   tess::PathScratch reused;
-  const auto first = tess::weighted_astar_path<decltype(fx.world),
-                                               SerpPassableTag, SerpCostTag>(
-      fx.world, tess::PathRequest{fx.start, fx.goal}, reused);
+  const auto first =
+      tess::weighted_astar_path<decltype(fx.world), SerpMovement>(
+          fx.world, tess::PathRequest{fx.start, fx.goal}, reused);
   ASSERT_EQ(first.status, tess::PathStatus::Found);
 
   // Interleave a unit search on the same scratch (shared open_ vector).
@@ -297,12 +298,12 @@ TEST(TessPackedOpenNode, WeightedEarlyExitLeavesScratchReusable) {
   ASSERT_EQ(unit.status, tess::PathStatus::Found);
 
   tess::PathScratch fresh;
-  const auto expected = tess::weighted_astar_path<decltype(fx.world),
-                                                  SerpPassableTag, SerpCostTag>(
-      fx.world, tess::PathRequest{fx.goal, fx.start}, fresh);
-  const auto second = tess::weighted_astar_path<decltype(fx.world),
-                                                SerpPassableTag, SerpCostTag>(
-      fx.world, tess::PathRequest{fx.goal, fx.start}, reused);
+  const auto expected =
+      tess::weighted_astar_path<decltype(fx.world), SerpMovement>(
+          fx.world, tess::PathRequest{fx.goal, fx.start}, fresh);
+  const auto second =
+      tess::weighted_astar_path<decltype(fx.world), SerpMovement>(
+          fx.world, tess::PathRequest{fx.goal, fx.start}, reused);
   ASSERT_EQ(second.status, expected.status);
   EXPECT_EQ(second.cost, expected.cost);
   EXPECT_EQ(second.expanded_nodes, expected.expanded_nodes);
@@ -318,14 +319,13 @@ TEST(TessPackedOpenNode, WarmWeightedSearchIsAllocationFree) {
   tess::PathScratch scratch;
   scratch.reserve_nodes(tess::ShapeTraits<SerpTopDown2D>::chunk_count *
                         tess::ShapeTraits<SerpTopDown2D>::local_tile_count);
-  auto warm = tess::weighted_astar_path<decltype(fx.world), SerpPassableTag,
-                                        SerpCostTag>(
+  auto warm = tess::weighted_astar_path<decltype(fx.world), SerpMovement>(
       fx.world, tess::PathRequest{fx.start, fx.goal}, scratch);
   ASSERT_EQ(warm.status, tess::PathStatus::Found);
   tess_test::ScopedAllocationCounter counter;
-  const auto again = tess::weighted_astar_path<decltype(fx.world),
-                                               SerpPassableTag, SerpCostTag>(
-      fx.world, tess::PathRequest{fx.start, fx.goal}, scratch);
+  const auto again =
+      tess::weighted_astar_path<decltype(fx.world), SerpMovement>(
+          fx.world, tess::PathRequest{fx.start, fx.goal}, scratch);
   ASSERT_EQ(again.status, tess::PathStatus::Found);
   EXPECT_EQ(counter.count(), 0u);
 }

@@ -5,7 +5,7 @@ non-owning intent envelopes over the existing storage and block APIs. It lives
 in `include/tess/ops/queued.h` and is exported by `tess/tess.h`.
 
 The guarded scheduler and `AutoExecTask` execution boundary keeps planning and
-metadata reduction on the frame owner. Concurrent callbacks receive only
+metadata reduction on the batch owner. Concurrent callbacks receive only
 planner-proven disjoint mutable chunk domains and isolated result/dirty slots.
 
 ```mermaid
@@ -13,7 +13,7 @@ flowchart TB
   accTitle: Queued-operation planning
   accDescr: Guarded runners validate the queue before forming deterministic phases that prove disjoint mutable chunk ownership.
 
-  Queue["FrameOps in enqueue order"] --> Plan["plan_operations"]
+  Queue["OperationBatch in enqueue order"] --> Plan["plan_operations"]
   Plan --> Valid{"All operations valid?"}
   Valid -->|No| Reject["Failure reports;<br/>guarded runners stop"]
   Valid -->|Yes| Phases["Deterministic<br/>parallel phases"]
@@ -24,27 +24,28 @@ flowchart TB
 ```mermaid
 flowchart TB
   accTitle: Parallel phase ownership and reduction
-  accDescr: The frame owner prepares isolated slots, joins every callback, then merges metadata and drains results in deterministic order.
+  accDescr: The batch owner prepares isolated slots, joins every callback, then merges metadata and drains results in deterministic order.
 
-  Prepare["Frame owner: prepare isolated dirty and result slots"]
+  Prepare["Batch owner: prepare isolated dirty and result slots"]
   Execute["Executor callbacks: mutate disjoint chunk fields"]
   Record["Callbacks: record dirty data and completion"]
-  Join["Frame owner: join every callback"]
-  Merge["Frame owner: collect, sort, coalesce, and mark dirty"]
-  Drain["Frame owner: drain results, then clear queue and channel"]
+  Join["Batch owner: join every callback"]
+  Merge["Batch owner: collect, sort, coalesce, and mark dirty"]
+  Drain["Batch owner: drain results, then clear queue and channel"]
   Prepare --> Execute --> Record --> Join --> Merge --> Drain
 ```
 
 ## Public Surface
 
-- `FrameOps` owns the operations submitted for one planning frame.
+- `OperationBatch` owns the operations submitted together for one planning pass.
   `reserve_operations(count)` establishes a warm allocation-free capacity.
-  `FrameOps::clear()` resets the frame for reuse: it drops all queued
-  operations while keeping the enqueue vector's capacity, so warm frame
+  `OperationBatch::clear()` resets the batch for reuse: it drops all queued
+  operations while keeping the enqueue vector's capacity, so warm
   loops re-enqueue without allocating. Clearing invalidates previously
   returned handles, and handle/id assignment restarts at zero on the next
   enqueue.
-- `OpHandle` is a stable handle assigned when an operation is enqueued.
+- `OpHandle` is a batch-local handle assigned when an operation is enqueued.
+  It remains valid only until `OperationBatch::clear()`.
 - `OpId` is assigned in enqueue order. The current handle value and id value
   both start at zero and advance together, but they remain separate public
   types. Default-constructed `OpHandle` and `OpId` values compare equal to
@@ -56,7 +57,7 @@ flowchart TB
 - `OperationStatus` records per-operation planner outcome. The current
   statuses are `Planned`, `InvalidIdentity`, `InvalidWritePolicy`,
   `InvalidDomain`, `InvalidFieldAccess`, and `HazardConflict`.
-- `OperationFailure` records the stable reason for an invalid operation. The
+- `OperationFailure` records the enumerated reason for an invalid operation. The
   current values are `None` (carried by planned operations),
   `NonDenseHandle`, `NonDenseId`, `InvalidWritePolicyValue`,
   `ExplicitChunkOutOfRange`, `ReadOnlyWriteMask`, and `FieldHazardConflict`.
@@ -65,9 +66,9 @@ flowchart TB
   `resident_chunks()`.
 - `FieldAccessDesc` records untyped field access masks for an operation:
   `read_mask`, `write_mask`, and `dirty_mask`. These are planner metadata only
-  in the planner; they do not themselves mutate world dirty flags and are not
+  in the planner; they do not themselves mutate world dirty masks and are not
   field-tag reflection.
-- `FrameOps` accepts field updates plus typed path, nearest-target,
+- `OperationBatch` accepts field updates plus typed path, nearest-target,
   field-product, movement, topology, residency, dirty-mark, and render-delta
   intents. Batch descriptors retain a type-checked `IntentPayloadView` over
   caller-owned storage. The payload must outlive queue planning and execution;
@@ -93,7 +94,8 @@ flowchart TB
   only `ReadOnly` and `UniquePerChunk` planned operations for now. If a
   mutable chunk operation touches a chunk already present in the current
   phase, the planner starts a later phase so chunk field data and
-  dirty/version metadata are not mutated concurrently. `UniquePerTile` is
+  dirty-mask and content-version metadata are not mutated concurrently.
+  `UniquePerTile` is
   deliberately rejected until tile subdomains and tile-level ownership
   validation exist. Each non-owning capability is bound to the exact
   `ExecutionPlan` generation that issued it; that plan must outlive the phase
@@ -134,7 +136,7 @@ callbacks. Chunk execution remains explicit through the planner-issued block
 adapters, while specialized path, movement, residency, and presentation
 consumers read the type-checked payload after inspecting `OperationKind`.
 
-The typed `FrameOps` entry points pair each `OperationKind` with the payload
+The typed `OperationBatch` entry points pair each `OperationKind` with the payload
 type it names, so `IntentPayloadView::as<T>()` treats a mismatch as a caller
 bug: it asserts `holds<T>()` and, with assertions compiled out, falls back to
 an empty span rather than reinterpreting the batch. (Nothing enforces that
@@ -201,8 +203,8 @@ with other read-only operations. A `UniquePerChunk` operation can share a
 phase only when its chunk domain is disjoint from every other operation
 already in that phase, read-only work included: a mutable operation
 conflicts with any overlapping operation even when field masks are
-disjoint, because chunk dirty bounds and version metadata are shared at
-chunk scope.
+disjoint, because chunk dirty bounds and content-version metadata are shared
+at chunk scope.
 
 The plan-to-block adapter is intentionally non-owning. The planned operation
 must outlive any `ChunkDomain` or `BlockCtx` produced from it, because those
@@ -242,8 +244,8 @@ caller-driven bridge, not a scheduler.
 `execute_plan_deferred_dirty<Policy>` run the same callbacks but record
 declared dirty chunks into a caller-owned `PlannedDirtyAccumulator` instead of
 mutating world metadata inside the callback loop. Callers can then merge dirty
-metadata after a serial operation, after a whole phase, or after future worker
-jobs complete. The deferred path is the intended handoff point for parallel
+metadata after a serial operation, after a whole phase, or after worker-pool
+jobs complete. The deferred path is the handoff point for parallel
 execution because workers can keep dirty records local and the main thread can
 merge metadata deterministically.
 
@@ -346,7 +348,7 @@ not started after a callback exception, join callbacks already in flight, then
 rethrow on the dispatching thread. If callbacks throw concurrently, which
 exception is propagated is unspecified. They do not roll back partial writes.
 
-`ScopedThreadPhaseExecutor` is the stable, simple implementation of this
+`ScopedThreadPhaseExecutor` is the simple per-dispatch implementation of this
 contract. It owns no persistent pool: each call splits one
 operation-index range across a bounded number of `std::thread` workers
 (worker counts clamp to at least one, including when
@@ -427,7 +429,7 @@ normal phase merge keeps the reusable sort/coalesce path.
 
 Inspecting existing queued operations, reports, and planned operations returns
 non-owning spans and does not allocate. Enqueueing and domain/report expansion
-may allocate because `FrameOps`, explicit domains, reports, and planned chunk
+may allocate because `OperationBatch`, explicit domains, reports, and planned chunk
 lists own their storage.
 
 ## Result Channels
@@ -447,10 +449,11 @@ deliberately drain-only, synchronous design:
   early), `Ready` (completed, value readable), `Failed` (completed with
   reasons; no value).
 - `ResultChannel<T>` is caller-owned, fixed-capacity scratch keyed by
-  `OpHandle`. Slots are dense (slot index == handle value; `FrameOps` hands
-  out handles 0..N-1 per frame), so lookup is O(1) with no map. Publication
+  `OpHandle`. Slots are dense (slot index == handle value; `OperationBatch` hands
+  out handles 0..N-1 per operation batch), so lookup is O(1) with no map.
+  Publication
   is executor-agnostic without atomics: each op's executing thread writes
-  only its own slot, and every read happens on the frame owner's thread
+  only its own slot, and every read happens on the batch owner's thread
   after the synchronous execute call returns, so the phase executor's join
   barrier supplies visibility. `drain_results(visitor)` visits every
   completed, not-yet-drained slot in handle (== enqueue) order as
@@ -463,9 +466,9 @@ deliberately drain-only, synchronous design:
   drain, and exception recovery never touches the retired generation.
   References passed to the visitor expire if it changes channel storage or
   lifecycle. `state()`/`completion()` lookups stay readable until `clear()`.
-  `clear()` must pair with `FrameOps::clear()`: handle
+  `clear()` must pair with `OperationBatch::clear()`: handle
   assignment restarts at zero there, and a channel kept across it would
-  alias new-frame handles onto stale slots (the `generation()` counter
+  alias new-batch handles onto stale slots (the `generation()` counter
   exists so tests and long-lived callers can assert the discipline).
 - `record_plan_completions(report, channel)` copies every plan-time
   rejection out of an `ExecutionReport` into `Failed` slots before
@@ -555,7 +558,7 @@ This slice intentionally does not implement:
   descriptors
 - hazard analysis beyond deterministic same-plan field-mask conflicts over
   overlapping chunk domains
-- sparse residency or non-resident chunk loading
+- sparse residency or non-resident chunk materialization
 - rich diagnostics beyond per-op status, failure reason, limited detail, access
   metadata, and captured source location
 
@@ -591,7 +594,7 @@ execution system. The shipped implementation deliberately remains narrower:
   and preserved intent metadata. Cost estimates and general reordered hazards
   are absent.
 - `AutoExecTask` owns one typed callback and selects serial or worker-pool
-  phase execution. Queued storage does not yet own arbitrary typed kernels.
+  phase execution. Queued storage does not own arbitrary typed kernels.
 
 Richer domains and the general dependency graph are explicit
 [future extensions](../roadmap.md#future-and-deferred-extensions), not

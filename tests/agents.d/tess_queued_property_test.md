@@ -22,7 +22,7 @@
   carries into execution. Mutation-verified.
 
   It rewrites to `MarkDirty` as well as `BuildFieldProduct` for a
-  specific reason: `FrameOps::mark_dirty` synthesizes its own metadata
+  specific reason: `OperationBatch::mark_dirty` synthesizes its own metadata
   (read-only, mask copied into `dirty_mask` and invalidations), so the
   generated policy and read/write masks are discarded for that kind.
   The alphabet's kind x policy x access product is therefore not real
@@ -35,7 +35,7 @@
   `ReadOnly` and `UniquePerChunk`, so any `UniquePerTile` or `Unsafe`
   operation stops planning part-way and the phases built so far are a
   PREFIX. Only a `HazardConflict` row carries conflict diagnostics.
-  And handle/id density is a `FrameOps` guarantee — the span overload
+  And handle/id density is a `OperationBatch` guarantee — the span overload
   deliberately accepts arbitrary operations and rejects non-dense
   identity instead.
 
@@ -49,5 +49,5 @@
   already-normal input), and one policy value outside the enum —
   without each of those the corresponding rule holds vacuously. The
   test name is qualified because `InvalidIdentity` is NOT reachable
-  from `FrameOps`, which always assigns dense identities; the span
+  from `OperationBatch`, which always assigns dense identities; the span
   overload's rejection of non-dense input is covered separately.

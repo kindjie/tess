@@ -13,9 +13,9 @@
   is inside the build: `INTERFACE_HEADER_SETS_TO_VERIFY` covers the public
   set only, so the header is no longer standalone-compiled on its own. It
   stays covered transitively through `tess.h`, which is swept. Its
-  primary-template assertion also told callers that the `SparseResident`
-  mapping "lands in a later slice"; that specialization is in the same
-  file, so the message now describes the real condition — a custom
+  primary-template assertion also incorrectly described the
+  `SparseResident` mapping as future work; that specialization is in the
+  same file, so the message now describes the real condition — a custom
   residency policy needs its own specialization.
 - `save_world_archive` and `load_world_archive` are now `[[nodiscard]]`,
   matching `inspect_world_archive`. In an exception-free library a

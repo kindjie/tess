@@ -22,6 +22,7 @@ enum class StrategyKind : std::uint8_t {
 };
 
 enum class BrowserPathStatus : std::uint8_t {
+  Unavailable = 0,
   Found = 1,
   InvalidStart = 2,
   InvalidGoal = 3,
@@ -38,7 +39,7 @@ struct PathPoint {
 };
 
 struct RequestSnapshot {
-  BrowserPathStatus status = BrowserPathStatus::NoPath;
+  BrowserPathStatus status = BrowserPathStatus::Unavailable;
   std::uint32_t cost = 0;
   std::uint32_t expanded_nodes = 0;
   std::uint32_t path_size = 0;
@@ -73,7 +74,7 @@ class StrategyModel {
                                 std::int32_t request_index,
                                 std::int32_t point_index) const noexcept
       -> std::optional<PathPoint>;
-  [[nodiscard]] auto cell_passable(std::int32_t x,
+  [[nodiscard]] auto tile_passable(std::int32_t x,
                                    std::int32_t y) const noexcept
       -> std::optional<bool>;
 

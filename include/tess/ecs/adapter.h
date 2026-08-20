@@ -12,7 +12,7 @@
 #include <span>
 #include <vector>
 
-// The ECS-agnostic integration layer (M10). Everything here is free of
+// The ECS-agnostic integration layer. Everything here is free of
 // third-party dependencies: concrete ECS adapters (the EnTT and Flecs
 // adapters in their respective subdirectories, or an application's own)
 // implement the concepts below and reuse the shared components, batch
@@ -332,7 +332,7 @@ class TileOccupancyIndex {
     // One avalanche over per-lane multiplies instead of three chained
     // mix() rounds (6 serial multiplies): the lanes now hash in parallel
     // and erase's backward-shift, which recomputes probe_start per
-    // displaced entry, pays one round (audit 2026-07-11 low).
+    // displaced entry, pays one round.
     //
     // The XOR combine has sign/lane-swap symmetries (Codex review:
     // (-n, n, 0) collides with (n, -n, 0)), but those inputs are out of
@@ -475,52 +475,6 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 
   stats.movement = advance_path_agents_with_index<World, Class, OccupancyTag,
                                                   ReservationTag>(
-      world, batch, runtime, index,
-      PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
-      render_deltas);
-  sink.apply(batch);
-  return stats;
-}
-
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost, typename OccupancyTag, typename ReservationTag,
-          PathAgentSource Source, PathAgentSink Sink>
-/**
- * Runs the weighted ECS tick using separate passability and cost field tags.
- *
- * `runtime` has the same exclusive-ownership requirement as the unit-cost
- * overload.
- */
-[[nodiscard]] auto tick_ecs_path_agents(
-    PathAgentTickState& state, World& world, Source& source, Sink& sink,
-    PathAgentBatch& batch, PathRequestRuntime& runtime,
-    TileOccupancyIndex& index, PathAgentTickOptions options = {},
-    const RegionGraphT<typename World::residency_type>* graph = nullptr,
-    DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
-  const auto info = source.collect(batch);
-  if (info.pathing_dirty) {
-    mark_pathing_dirty(state);
-  }
-
-  PathAgentTickStats stats;
-  stats.tick = advance_sim_tick(state.clock);
-  if (render_deltas != nullptr) {
-    // Stamp every commit this tick before movement runs.
-    render_deltas->begin_tick(stats.tick);
-  }
-
-  const bool repath_needed =
-      prepare_path_agent_processing(batch.agents(), options, stats);
-  if (state.pathing_dirty || repath_needed) {
-    stats.pathing =
-        process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
-            world, batch.agents(), runtime, options.cache_policy, graph);
-    stats.processed_paths = true;
-    state.pathing_dirty = false;
-  }
-
-  stats.movement = advance_path_agents_with_index<World, PassableTag,
-                                                  OccupancyTag, ReservationTag>(
       world, batch, runtime, index,
       PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
       render_deltas);

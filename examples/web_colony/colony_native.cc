@@ -357,7 +357,7 @@ auto run_native_self_check() -> int {
     const auto rebuilds_with_wall = impl().topology_rebuilds;
     const auto& detour = impl().tick_state.routes.routes[0];
     if (!impl().world.field<ConstructionTag>(retained_step) ||
-        impl().agents[0].status != tess::PathStatus::Found ||
+        impl().agents[0].last_result != tess::PathStatus::Found ||
         std::find(detour.begin() +
                       static_cast<std::ptrdiff_t>(impl().agents[0].path_index),
                   detour.end(), retained_step) != detour.end()) {
@@ -371,7 +371,7 @@ auto run_native_self_check() -> int {
     }
     (void)demo->tick(0.05);
     if (impl().world.field<ConstructionTag>(retained_step) ||
-        impl().agents[0].status != tess::PathStatus::Found ||
+        impl().agents[0].last_result != tess::PathStatus::Found ||
         impl().topology_rebuilds != rebuilds_with_wall + 1 ||
         impl().max_planning_queries > kMaxPlanningQueriesPerTick) {
       std::cerr << "web colony model: retained route did not recover\n";
@@ -452,7 +452,7 @@ auto run_native_self_check() -> int {
         impl().world.field<ConstructionTag>(occupied_tile) ||
         impl().shadow[shadow_index] != 0 ||
         impl().topology_rebuilds != rebuilds_after_add + 1 ||
-        impl().agents[0].status != tess::PathStatus::Found) {
+        impl().agents[0].last_result != tess::PathStatus::Found) {
       std::cerr << "web colony model: wall removal did not recover route\n";
       return 1;
     }
@@ -465,7 +465,7 @@ auto run_native_self_check() -> int {
     auto& invalid_start_agent = impl().agents[0];
     impl().world.field<PassableTag>(invalid_start_agent.position) = false;
     invalid_start_agent.phase = tess::PathAgentPhase::Blocked;
-    invalid_start_agent.status = tess::PathStatus::Found;
+    invalid_start_agent.last_result = tess::PathStatus::Found;
     impl().recover_blocked_agents(1, 1);
     const auto invalid_start_first_queries =
         impl().recover_blocked_agents(1 + kRecoveryWindowTicks, 1);
@@ -477,7 +477,7 @@ auto run_native_self_check() -> int {
     const auto invalid_start_second_queries =
         impl().recover_blocked_agents(2 + kRecoveryWindowTicks, 1);
     if (invalid_start_agent.phase != tess::PathAgentPhase::Unreachable ||
-        invalid_start_agent.status != tess::PathStatus::InvalidStart ||
+        invalid_start_agent.last_result != tess::PathStatus::InvalidStart ||
         invalid_start_second_queries != 1 ||
         impl().terrain_confirmation_pending[0] != 0) {
       std::cerr << "web colony model: invalid start retried indefinitely\n";
@@ -505,7 +505,7 @@ auto run_native_self_check() -> int {
         tess::set_path_agent_goal(impl().tick_state, impl().agents[i],
                                   enclosed_goal);
         impl().agents[i].phase = tess::PathAgentPhase::Blocked;
-        impl().agents[i].status = tess::PathStatus::Found;
+        impl().agents[i].last_result = tess::PathStatus::Found;
       }
     }
     impl().sync_settled_obstacles();
@@ -570,7 +570,7 @@ auto run_native_self_check() -> int {
     impl().world.field<OccupancyTag>(delayed_agent.position) = true;
     tess::set_path_agent_goal(impl().tick_state, delayed_agent, {112, 64, 0});
     delayed_agent.phase = tess::PathAgentPhase::Blocked;
-    delayed_agent.status = tess::PathStatus::Found;
+    delayed_agent.last_result = tess::PathStatus::Found;
     for (int y = 0; y < kHeight; ++y) {
       impl().world.field<SettledTag>({111, y, 0}) = true;
     }
@@ -601,7 +601,7 @@ auto run_native_self_check() -> int {
         tess::set_path_agent_goal(impl().tick_state, impl().agents[i],
                                   enclosed_goal);
         impl().agents[i].phase = tess::PathAgentPhase::Blocked;
-        impl().agents[i].status = tess::PathStatus::Found;
+        impl().agents[i].last_result = tess::PathStatus::Found;
       }
     }
     demo->set_replan_each_tick(1);

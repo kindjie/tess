@@ -101,11 +101,11 @@ concept StepPolicyFor =
 template <typename Class>
 using step_policy_of = typename detail::step_policy_of_impl<Class>::type;
 
-/** Returns a step policy's stable identifier. */
+/** Returns a step policy's persistent identifier. */
 template <typename Policy>
 inline constexpr StepPolicyIdentity step_policy_identity = Policy::identity;
 
-/** Returns a movement class's normalized stable step-policy identifier. */
+/** Returns a movement class's normalized persistent step-policy identifier. */
 template <typename Class>
 inline constexpr StepPolicyIdentity step_policy_identity_of =
     step_policy_identity<step_policy_of<Class>>;

@@ -33,35 +33,25 @@ struct PathTicket {
 
 namespace detail {
 
-// Portal-first eligibility and tag extraction: true exactly for the
-// legacy weighted shape MovementClass<Field<P>, FieldCost<C>> with default
-// steps — the class family the chunk-portal product builders accept. The
-// pinned DefaultSteps parameter is itself the step-policy eligibility
-// gate.
+// Portal-first eligibility: the class must use the ordinary adjacent-step
+// policy because chunk portals do not model custom regular-step rules.
 template <typename Class>
 struct portal_replan_tags {
-  static constexpr bool eligible = false;
-};
-
-template <typename PassableTagT, typename CostTagT>
-struct portal_replan_tags<movement::MovementClass<movement::Field<PassableTagT>,
-                                                  movement::FieldCost<CostTagT>,
-                                                  movement::DefaultSteps>> {
-  static constexpr bool eligible = true;
-  using passable_tag = PassableTagT;
-  using cost_tag = CostTagT;
+  static constexpr bool eligible =
+      std::derived_from<Class, movement::movement_class_tag> &&
+      std::same_as<movement::step_policy_of<Class>, movement::DefaultSteps>;
 };
 
 }  // namespace detail
 
 // How single-goal weighted replans are served.
 //
-// ExactAStar: today's behavior — the batch's singleton fallback runs raw
-// weighted A*; results are optimal.
+// ExactAStar: the batch's singleton fallback runs raw weighted A*; results are
+// optimal.
 //
 // PortalFirst: eligible singletons (dense orthogonal-lattice worlds,
-// default adjacent transitions, legacy weighted tag classes — Manhattan
-// is only an admissible lower bound on that lattice, and the premium
+// default adjacent transitions, and explicit movement classes — Manhattan
+// is an admissible lower bound on that lattice, and the premium
 // cap's guarantee rests on it) first try a chunk-portal route
 // stitched through the runtime's segment cache. Accepted routes are legal
 // and verified but may exceed the optimal cost, bounded by the premium
@@ -78,6 +68,8 @@ enum class WeightedReplanStrategy : std::uint8_t {
 
 /** Controls cache sizing, reuse, and invalidation for one processing call. */
 struct PathRuntimeCachePolicy {
+  MissingChunkPolicy missing_chunk_policy =
+      MissingChunkPolicy::ReportIndeterminate;
   // In ScopedFeasible staleness mode world changes do not advance this
   // deep-clear counter: its rationale — bounding staleness accumulated
   // behind the 64-bit fingerprint — is superseded by exact per-chunk
@@ -117,13 +109,13 @@ struct PathRuntimeCachePolicy {
   // shared cache and may evict retained unit products.
   std::size_t weighted_field_product_cache_byte_budget =
       std::numeric_limits<std::size_t>::max();
-  std::size_t max_route_entries = RouteCacheScratch::default_max_entries;
-  std::size_t max_route_path_nodes = RouteCacheScratch::default_max_path_nodes;
-  // Scoped staleness only: total budget for stored (chunk, version)
+  std::size_t max_route_entries = UnitRouteCache::default_max_entries;
+  std::size_t max_route_path_nodes = UnitRouteCache::default_max_path_nodes;
+  // Scoped staleness only: total budget for stored (chunk, content version)
   // dependency pairs, with the same oversized-skip / cap-invalidate
   // lifecycle as the path-node cap.
   std::size_t max_route_dependency_pairs =
-      RouteCacheScratch::default_max_path_nodes / 8u;
+      UnitRouteCache::default_max_path_nodes / 8u;
   std::size_t portal_segment_budget =
       WeightedPortalSegmentCache::default_segment_budget;
 };
@@ -142,8 +134,8 @@ struct WeightedPortalReplanStats {
   std::size_t premium_rejections = 0;
   std::size_t exact_fallbacks = 0;
   // Requests processed while PortalFirst was requested but the batch's
-  // instantiation is ineligible (sparse world, custom provider, non-legacy
-  // or non-default-step class): they take the exact path without an
+  // instantiation is ineligible (sparse world, custom provider, or
+  // non-default-step class): they take the exact path without an
   // attempt, and this counter is what distinguishes a misconfigured policy
   // from a disabled one. Not part of the attempts identity above.
   std::size_t ineligible_fallbacks = 0;
@@ -157,6 +149,8 @@ struct PathRuntimeStats {
   std::size_t invalid_start = 0;
   std::size_t invalid_goal = 0;
   std::size_t no_path = 0;
+  std::size_t not_computed = 0;
+  std::size_t no_candidate = 0;
   // Sparse worlds: the search could not rule out a route through a
   // non-resident chunk (PathStatus::Indeterminate). Kept distinct from
   // no_path so a stale/partial residency set is never counted as "no route".
@@ -174,7 +168,7 @@ struct PathRuntimeStats {
   std::size_t class_cache_invalidations = 0;
   std::size_t cache_clears = 0;
   std::size_t path_nodes = 0;
-  RouteCacheStats route_cache{};
+  UnitRouteCacheStats route_cache{};
   FieldProductCacheStats field_product_cache{};
   std::size_t field_product_candidate_groups = 0;
   std::size_t field_product_used_groups = 0;
@@ -189,7 +183,8 @@ struct PathRuntimeStats {
  *
  * Bind one runtime to one world. Cache fingerprints describe world content,
  * not object identity, so sharing a runtime between worlds with matching
- * version counters can serve stale routes. Results and their `PathView` data
+ * content-version counters can serve stale routes. Results and their
+ * `PathView` data
  * are borrowed from runtime-owned buffers and are invalidated by the next
  * process call or `clear_requests()`.
  *
@@ -368,12 +363,12 @@ class PathRequestRuntime {
   }
 
   /** Returns the runtime-owned unit-route cache for tuning or inspection. */
-  [[nodiscard]] auto route_cache() noexcept -> RouteCacheScratch& {
+  [[nodiscard]] auto route_cache() noexcept -> UnitRouteCache& {
     return unit_route_cache_;
   }
 
   /** Const overload of `route_cache()`. */
-  [[nodiscard]] auto route_cache() const noexcept -> const RouteCacheScratch& {
+  [[nodiscard]] auto route_cache() const noexcept -> const UnitRouteCache& {
     return unit_route_cache_;
   }
 
@@ -402,6 +397,8 @@ class PathRequestRuntime {
       stats.invalid_start = 0;
       stats.invalid_goal = 0;
       stats.no_path = 0;
+      stats.not_computed = 0;
+      stats.no_candidate = 0;
       stats.indeterminate = 0;
       stats.cost_overflow = 0;
       stats.precheck_ruled_out = 0;
@@ -450,15 +447,16 @@ class PathRequestRuntime {
     bind_unit_class(
         detail::tag_identity<movement::movement_class_of<ClassOrTag>>());
     if (graph != nullptr) {
-      precheck_prepass<ClassOrTag>(world, *graph, AdjacentTransitions{});
+      precheck_prepass<ClassOrTag>(world, *graph, policy.missing_chunk_policy,
+                                   AdjacentTransitions{});
     }
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident>) {
       // The unit field-product cache is dense-only (it sizes distance arrays by
       // the global tile count). if constexpr, not a runtime if, so the
       // dense-only process_repeated_goal_fields is never instantiated for a
-      // sparse world; the sparse unit path routes each request through
-      // cached_astar_path until a sparse field-product slice lands.
+      // sparse world; sparse unit path processing routes each request through
+      // cached_astar_path instead.
       if (policy.use_unit_field_product_cache) {
         process_repeated_goal_fields<World, ClassOrTag>(world, policy);
       }
@@ -469,7 +467,8 @@ class PathRequestRuntime {
         continue;
       }
       const auto result = cached_astar_path<World, ClassOrTag>(
-          world, requests_[i], unit_scratch_, unit_route_cache_);
+          world, requests_[i], unit_scratch_, unit_route_cache_,
+          policy.missing_chunk_policy);
       copy_result(i, result);
       record_status(result.status);
     }
@@ -494,7 +493,8 @@ class PathRequestRuntime {
     bind_unit_class(
         detail::tag_identity<movement::movement_class_of<ClassOrTag>>());
     if (graph != nullptr && graph->matches_provider(provider)) {
-      precheck_prepass<ClassOrTag>(world, *graph, provider);
+      precheck_prepass<ClassOrTag>(world, *graph, policy.missing_chunk_policy,
+                                   provider);
     }
 
     // Provider-aware products are public, but the runtime deliberately uses
@@ -505,7 +505,8 @@ class PathRequestRuntime {
         continue;
       }
       const auto result = cached_astar_path<World, ClassOrTag, Provider>(
-          world, requests_[i], unit_scratch_, unit_route_cache_, provider);
+          world, requests_[i], unit_scratch_, unit_route_cache_, provider,
+          policy.missing_chunk_policy);
       copy_result(i, result);
       record_status(result.status);
     }
@@ -526,8 +527,8 @@ class PathRequestRuntime {
       -> std::span<const PathResult> {
     static_assert(std::derived_from<Class, movement::movement_class_tag>,
                   "process_weighted_batch<World, Class, MaxCost> requires a "
-                  "MovementClass; legacy tag pairs go through the "
-                  "<World, PassableTag, CostTag, MaxCost> overload.");
+                  "MovementClass; pass a movement class such as "
+                  "PositiveCostFieldMovement.");
     return process_weighted_batch_impl<World, Class, MaxCost, Class>(
         world, policy, graph, AdjacentTransitions{});
   }
@@ -541,27 +542,10 @@ class PathRequestRuntime {
       const Provider& provider) -> std::span<const PathResult> {
     static_assert(std::derived_from<Class, movement::movement_class_tag>,
                   "process_weighted_batch<World, Class, MaxCost> requires a "
-                  "MovementClass; legacy tag pairs go through the "
-                  "<World, PassableTag, CostTag, MaxCost> overload.");
+                  "MovementClass; pass a movement class such as "
+                  "PositiveCostFieldMovement.");
     return process_weighted_batch_impl<World, Class, MaxCost, Class>(
         world, policy, graph, provider);
-  }
-
-  /**
-   * Processes a legacy passability/cost-tag pair as a weighted batch.
-   *
-   * The precheck uses the passability tag's identity class. Result lifetime and
-   * allocation behavior match `process_unit_cached()`.
-   */
-  template <typename World, typename PassableTag, typename CostTag,
-            std::uint32_t MaxCost>
-  [[nodiscard]] auto process_weighted_batch(
-      const World& world, PathRuntimeCachePolicy policy = {},
-      const RegionGraphT<typename World::residency_type>* graph = nullptr)
-      -> std::span<const PathResult> {
-    return process_weighted_batch_impl<
-        World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost,
-        PassableTag>(world, policy, graph, AdjacentTransitions{});
   }
 
  private:
@@ -583,7 +567,8 @@ class PathRequestRuntime {
       graph = nullptr;
     }
     if (graph != nullptr) {
-      precheck_prepass<PrecheckClassOrTag>(world, *graph, provider);
+      precheck_prepass<PrecheckClassOrTag>(
+          world, *graph, policy.missing_chunk_policy, provider);
     }
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident>) {
@@ -635,7 +620,8 @@ class PathRequestRuntime {
     }
     const auto batch =
         weighted_path_batch<World, BatchClass, MaxCost, Provider>(
-            world, precheck_survivors_, weighted_batch_, provider);
+            world, precheck_survivors_, weighted_batch_,
+            policy.missing_chunk_policy, provider);
     for (std::size_t s = 0; s < batch.size(); ++s) {
       const auto i = survivor_original_[s];
       copy_result(i, batch[s]);
@@ -832,8 +818,8 @@ class PathRequestRuntime {
 
   template <typename World>
   void prepare_process(const World& world, PathRuntimeCachePolicy policy) {
-    unit_route_cache_.set_caps(RouteCacheLimits{policy.max_route_entries,
-                                                policy.max_route_path_nodes});
+    unit_route_cache_.set_caps(UnitRouteCacheLimits{
+        policy.max_route_entries, policy.max_route_path_nodes});
     unit_route_cache_.set_dependency_cap(policy.max_route_dependency_pairs);
     // A staleness-mode flip clears the unit caches unconditionally (entries
     // stored under one mode's semantics are never served under the
@@ -1038,13 +1024,14 @@ class PathRequestRuntime {
   void precheck_prepass(
       const World& world,
       const RegionGraphT<typename World::residency_type>& graph,
-      const Provider& provider) {
+      MissingChunkPolicy missing_chunk_policy, const Provider& provider) {
     for (std::size_t i = 0; i < requests_.size(); ++i) {
       if (processed_[i] != 0) {
         continue;
       }
       const auto status = precheck_path<ClassOrTag>(
-          graph, world, requests_[i], precheck_scratch_, provider);
+          graph, world, requests_[i], precheck_scratch_, missing_chunk_policy,
+          provider);
       if (!precheck_rules_out_path(status)) {
         continue;
       }
@@ -1067,10 +1054,6 @@ class PathRequestRuntime {
   void process_portal_first_singletons(const World& world,
                                        const PathRuntimeCachePolicy& policy) {
     using Shape = typename World::shape_type;
-    using Tags = detail::portal_replan_tags<BatchClass>;
-    using PassableTagT = typename Tags::passable_tag;
-    using CostTagT = typename Tags::cost_tag;
-
     // O(n) goal-occurrence counts over unprocessed requests, reusing the
     // grouping scratch (any earlier fields pass has finished with it).
     constexpr auto no_group = std::numeric_limits<std::uint32_t>::max();
@@ -1124,8 +1107,7 @@ class PathRequestRuntime {
       }
       ++replan_stats.attempts;
       const auto result =
-          build_weighted_chunk_portal_route_product_cached<World, PassableTagT,
-                                                           CostTagT>(
+          build_weighted_chunk_portal_route_product_cached<World, BatchClass>(
               world, request, unit_scratch_, portal_segment_cache_,
               portal_replan_product_);
       if (result.status != PathStatus::Found) {
@@ -1195,6 +1177,9 @@ class PathRequestRuntime {
 
   void record_status(PathStatus status) noexcept {
     switch (status) {
+      case PathStatus::NotComputed:
+        ++stats_.not_computed;
+        return;
       case PathStatus::Found:
         ++stats_.found;
         return;
@@ -1212,6 +1197,9 @@ class PathRequestRuntime {
         return;
       case PathStatus::CostOverflow:
         ++stats_.cost_overflow;
+        return;
+      case PathStatus::NoCandidate:
+        ++stats_.no_candidate;
         return;
     }
   }
@@ -1240,7 +1228,7 @@ class PathRequestRuntime {
   std::vector<std::uint32_t> request_group_;
   std::vector<std::uint64_t> group_start_chunks_;
   PathScratch unit_scratch_;
-  RouteCacheScratch unit_route_cache_;
+  UnitRouteCache unit_route_cache_;
   DistanceFieldScratch unit_field_scratch_;
   GoalSet unit_field_goals_;
   DistanceFieldProduct unit_field_product_;

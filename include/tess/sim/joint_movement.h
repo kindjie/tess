@@ -267,7 +267,7 @@ auto advance_path_agents_with_joint_movement(
     bool any_pending = false;
     for (std::size_t i = 0; i < n; ++i) {
       auto& agent = agents[i];
-      if (!agent.has_goal || agent.status != PathStatus::Found) {
+      if (!agent.has_goal || agent.last_result != PathStatus::Found) {
         continue;
       }
       const auto& route = routes.routes[i];
@@ -455,7 +455,7 @@ auto advance_path_agents_with_joint_movement(
           const auto to = scratch.desired[i];
           world.template field<OccupancyTag>(to) = true;
           world.template field<ReservationTag>(to) = false;
-          if (advance_options.movement_dirty_mask != 0) {
+          if (advance_options.movement_dirty_mask) {
             world.mark_dirty(chunk_key<Shape>(chunk_coord<Shape>(from)),
                              advance_options.movement_dirty_mask,
                              Box3{from, Extent3{1, 1, 1}});
@@ -471,7 +471,7 @@ auto advance_path_agents_with_joint_movement(
           ++stats.frame.advanced;
           if (agent.position == agent.goal) {
             arrive_path_agent(agent, accounting);
-            agent.status = PathStatus::Found;
+            agent.last_result = PathStatus::Found;
             ++stats.frame.arrived;
           }
           break;
@@ -484,7 +484,7 @@ auto advance_path_agents_with_joint_movement(
             detail::block_path_agent(agent, status);
             ++stats.frame.blocked_waits;
           } else {
-            agent.status = PathStatus::NoPath;
+            agent.last_result.reset();
             agent.phase = PathAgentPhase::Unreachable;
             fail_path_agent_flow(agent, accounting);
           }

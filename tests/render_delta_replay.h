@@ -7,12 +7,12 @@
 #include <optional>
 #include <tuple>
 
-// Test-only consumer model for the M11 DeltaFrame protocol: a shadow
+// Test-only consumer model for the DeltaFrame protocol: a shadow
 // grid applied with invalidation semantics (re-reading the CURRENT world
 // for covered tiles), a shadow entity->tile map fed by entity deltas,
 // and the version contract enforced exactly as a real consumer would.
-// The section-8 acceptance "delta replay matches projected state" is
-// this type's matches_world. May allocate freely.
+// `matches_world()` verifies replay against projected state. May allocate
+// freely.
 namespace tess_test {
 
 enum class ReplayApplyStatus : std::uint8_t { Applied, NeedsBaseline };

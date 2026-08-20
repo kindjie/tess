@@ -9,7 +9,7 @@
 //
 // Two library facts shape this harness:
 //   * every search entry point defaults to
-//     MissingChunkPolicy::TreatAsBlocked, which answers NoPath instead
+//     MissingChunkPolicy::AssumeImpassable, which answers NoPath instead
 //     of asking for more chunks, so the streaming policy is always
 //     passed explicitly;
 //   * ensure_resident hands back a zeroed page, so a streamed chunk
@@ -289,7 +289,7 @@ auto SparseStream<Shape>::run() -> StreamRun {
       tess::PathScratch full_scratch;
       const auto answer = tess::astar_path<SparseWorld, PassableTag>(
           *sparse, request, full_scratch,
-          tess::MissingChunkPolicy::Indeterminate);
+          tess::MissingChunkPolicy::ReportIndeterminate);
       outcome.status = answer.status;
       outcome.cost = answer.cost;
       outcome.definitive = answer.status != tess::PathStatus::Indeterminate;
@@ -309,7 +309,8 @@ auto SparseStream<Shape>::run() -> StreamRun {
     tess::PathScratch scratch;
     for (std::size_t step = 0; step < config_.max_stream_steps; ++step) {
       const auto answer = tess::astar_path<SparseWorld, PassableTag>(
-          *sparse, request, scratch, tess::MissingChunkPolicy::Indeterminate);
+          *sparse, request, scratch,
+          tess::MissingChunkPolicy::ReportIndeterminate);
       if (answer.status != tess::PathStatus::Indeterminate) {
         // A definitive answer bounds the cost from above, because the
         // search stops on reaching the goal even when it skipped
@@ -384,7 +385,8 @@ auto SparseStream<Shape>::run() -> StreamRun {
         // evicting them as fast as they arrive. Re-search once more so
         // the recorded answer reflects the final resident set.
         const auto settled = tess::astar_path<SparseWorld, PassableTag>(
-            *sparse, request, scratch, tess::MissingChunkPolicy::Indeterminate);
+            *sparse, request, scratch,
+            tess::MissingChunkPolicy::ReportIndeterminate);
         if (settled.status != tess::PathStatus::Indeterminate) {
           const auto improves = !outcome.definitive ||
                                 (settled.status == tess::PathStatus::Found &&

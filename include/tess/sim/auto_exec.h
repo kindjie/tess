@@ -10,10 +10,10 @@
 #include <cstddef>
 #include <cstdint>
 
-// The M5 auto-exec task: one schedule task running the whole queued-ops
+// One schedule task runs the whole queued-operations
 // pipeline -- plan -> parallel phase planning -> execute (serial or pool,
 // chosen per phase) -> per-phase dirty apply -> ack drain -- over a
-// caller-owned FrameOps queue. Enqueue whenever; the pipeline runs on the
+// caller-owned OperationBatch queue. Enqueue whenever; the pipeline runs on the
 // task's cadence and both the queue and its result channel are cleared
 // together at the end of every run (the paired-clear discipline handles
 // restart at zero).
@@ -63,7 +63,7 @@ struct AutoExecRunStats {
 //
 // Planning reuses a task-owned ExecutionReport (its rows, planned ops,
 // and chunk lists are recycled between runs), so steady-state ticks plan
-// allocation-free once capacities warm up (audit 2026-07-11 M4).
+// allocation-free once capacities warm up.
 /// Schedule task that plans, executes, merges, and drains a queued-op frame.
 template <typename World, WritePolicy Policy, typename Ack, typename ChunkFn>
 class AutoExecTask {
@@ -76,7 +76,7 @@ class AutoExecTask {
                               const OpCompletion& completion,
                               const Ack* ack) noexcept;
 
-  AutoExecTask(World& world, FrameOps& ops, ChunkFn fn)
+  AutoExecTask(World& world, OperationBatch& ops, ChunkFn fn)
       : world_(&world), ops_(&ops), fn_(static_cast<ChunkFn&&>(fn)) {}
 
   void reserve_operations(std::size_t count) {
@@ -142,7 +142,7 @@ class AutoExecTask {
     last_run_.planned_ops = report.planned_count();
     last_run_.rejected_ops = report.failed_count();
 
-    auto produced_dirty = std::uint32_t{0};
+    auto produced_dirty = DirtyMask{};
     if (!report.plan().empty()) {
       const auto phases = plan_parallel_execution_phases(report.plan());
       // Policy uniformity was pre-validated against the planner-supported
@@ -244,7 +244,7 @@ class AutoExecTask {
   }
 
   World* world_;
-  FrameOps* ops_;
+  OperationBatch* ops_;
   ChunkFn fn_;
   WorkerPoolPhaseExecutor* pool_ = nullptr;
   std::size_t parallel_threshold_ = 2;

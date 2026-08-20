@@ -419,7 +419,7 @@ void BM_path_field_product_cache_stale_rejection_room_portals_512x512(
   product.reserve_dependencies(PathScaleWorld::chunk_count);
   (void)tess::build_distance_field_product<PathScaleWorld, PassableTag>(
       world, goals, product, scratch);
-  world.mark_dirty(tess::ChunkKey{0}, 1u,
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
 
   tess::FieldProductCache cache{product.byte_size() + 4096u};

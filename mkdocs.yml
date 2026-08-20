@@ -19,6 +19,7 @@ theme:
   font: false
   features:
     - content.code.copy
+    - content.tooltips
     - navigation.footer
     - navigation.indexes
     - navigation.instant
@@ -45,6 +46,7 @@ theme:
 
 markdown_extensions:
   - admonition
+  - abbr
   - attr_list
   - md_in_html
   - pymdownx.emoji:
@@ -52,6 +54,10 @@ markdown_extensions:
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight:
       anchor_linenums: true
+  - pymdownx.snippets:
+      auto_append:
+        - includes/abbreviations.md
+      check_paths: true
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -79,6 +85,7 @@ nav:
       - Diagnostics guide: guide/diagnostics.md
   - Concepts:
       - architecture/README.md
+      - Terminology: terminology.md
       - Compatibility evidence: architecture/compatibility.md
       - Shapes: architecture/shape.md
       - Storage: architecture/storage.md
@@ -119,5 +126,8 @@ exclude_docs: |
   doxygen-awesome/
   planning/
   tdd/
+
+watch:
+  - includes
 
 copyright: Copyright &copy; tess contributors

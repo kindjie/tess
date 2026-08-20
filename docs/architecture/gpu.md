@@ -74,7 +74,7 @@ The backend exposes these bounded setup and execution operations:
   WebGPU functions that are not explicitly documented as
   spontaneous-callback-safe. Because an accepted callback may outlive product
   unregistration or the backend, the consumer must revalidate its generation
-  and authoritative world version before applying derived bytes.
+  and authoritative world content version before applying derived bytes.
 - Device loss and reported device errors disable further GPU submissions.
   Stable-C validation, OOM, and internal errors arrive asynchronously through
   error scopes or an uncaptured-error callback, so a submission method's

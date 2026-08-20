@@ -175,7 +175,7 @@ TEST(TessPhaseExecutor, WorkerPoolReusesWorkersAcrossManyPhases) {
   }
 }
 
-// Pins the bounded-wakeup branch (audit 2026-07-11 M8): with 8 workers and
+// Pins the bounded-wakeup branch: with 8 workers and
 // counts of 1-3 every dispatch has fewer runs than workers, so completion
 // rides on the notify_one loop plus the wait predicate -- a lost wakeup
 // here strands the dispatcher, which the test surfaces as a hang.

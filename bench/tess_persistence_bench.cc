@@ -57,7 +57,8 @@ void BM_persistence_load_dense_512x512(benchmark::State& state) {
 
   World target;
   for (auto _ : state) {
-    auto result = tess::load_world_archive<Archive>(target, bytes, 1U);
+    auto result =
+        tess::load_world_archive<Archive>(target, bytes, tess::DirtyMask{1u});
     benchmark::DoNotOptimize(result.bytes_processed);
     benchmark::ClobberMemory();
   }

@@ -6,11 +6,11 @@ primitive, not a live replication stream or a derived-product cache format.
 
 ## Archive Schema
 
-Applications define a `PersistenceSchema` with a stable 64-bit application
+Applications define a `PersistenceSchema` with a persistent 64-bit application
 schema ID, schema version, and ordered `PersistedField` declarations. Each
-field declaration assigns a stable 64-bit field ID and field version to a tag
+field declaration assigns a persistent 64-bit field ID and field version to a tag
 already present in the world's `FieldSchema`. IDs are deliberately explicit:
-C++ type names, RTTI values, and addresses are not stable persistence keys.
+C++ type names, RTTI values, and addresses are not persistent archive keys.
 
 The initial format supports `bool`, integral, scoped-enum, `float`, and
 `double` columns whose scalar width is 1, 2, 4, or 8 bytes. Values use
@@ -32,8 +32,9 @@ or migrate them while moving to a new field/schema version.
 `save_world_archive` writes format version, shape and chunk extents, lattice
 identity/version, key-layout version, application schema identity/version,
 tess library version, residency kind, field descriptors, and canonical
-chunk-key-ordered records. Each record contains the stable chunk lifecycle
-state, active flags, entity count, and selected authoritative field columns.
+chunk-key-ordered records. Each record contains the active mask, entity count,
+and selected authoritative field columns. Chunk activity and active-category
+count derive from the mask and are not serialized separately.
 `WorldArchiveResidency` distinguishes dense and sparse envelopes. A CRC-32
 covers the complete canonical archive except the checksum's own four-byte
 slot, so accidental damage to compatibility metadata is detected before that
@@ -47,13 +48,17 @@ not representable as a returned value and follows the allocation contract in
 [`no-exceptions.md`](no-exceptions.md) instead. Inspection and loading do
 have runtime failures, and keep the shared `WorldArchiveResult`.
 
-Format v1 freezes an eight-byte magic followed by its 113-byte fixed header:
+Format v2 freezes an eight-byte magic followed by its 113-byte fixed header:
 the format version begins at byte 8, the declared body size at byte 12, the
 four-byte checksum slot at byte 20, and the descriptor/body region at byte
 121. The CRC input is the concatenation of bytes `[0, 20)` and `[24, end)`;
 the stored checksum bytes are neither zero-filled nor included. The full
 golden-byte test pins this prefix, scalar byte order, and checksum framing so a
-layout change must use a new format version rather than silently changing v1.
+layout change must use a new format version rather than silently changing v2.
+Its per-chunk prefix is 16 bytes: chunk key, active mask, and entity count.
+Format v1 is unsupported because it encoded redundant chunk activity state;
+inspection and loading return `UnsupportedFormat` rather than guessing a
+migration.
 
 `inspect_world_archive` validates the magic, lengths, checksum, dimensions,
 unique field IDs and field-descriptor encodings, dense archives' complete
@@ -68,13 +73,13 @@ Its `WorldArchiveResult` and `WorldArchiveInfo` retain the source metadata;
 
 Status precedence is intentional. Once the complete magic and format-version
 word are available, an unknown version is `UnsupportedFormat` without applying
-v1's envelope equations; a future version may extend or reinterpret that
-framing. For v1, envelope and integrity failures win before typed
+v2's envelope equations; another version may extend or reinterpret that
+framing. For v2, envelope and integrity failures win before typed
 compatibility, including a checksum failure in otherwise incompatible
 metadata. For a structurally valid archive, typed load checks shape, lattice,
 key layout, residency, schema identity, schema version, field descriptors,
 residency capacity/dense chunk completeness, and scalar encodings in that
-order. This gives callers one stable primary diagnosis without weakening the
+order. This gives callers one deterministic primary diagnosis without weakening the
 no-mutation preflight guarantee.
 
 A differing application schema version returns
@@ -87,12 +92,14 @@ schema rather than guessing a conversion.
 
 ## Loaded State
 
-Successful loads restore selected fields, active flags, stable chunk state,
-and entity counts. Dirty history, content/topology version counters, residency
+Successful loads restore selected fields, active masks, and entity counts.
+Chunk activity and active-category count derive immediately from the restored
+mask. Dirty history, content/topology version counters, residency
 generations, region graphs, paths, products, and caches are intentionally not
-serialized. Dense loads preserve each target chunk's existing version counters
-and advance both monotonically, so derived products warmed before an in-place
-load cannot become valid again through a reset-to-zero alias. Sparse loads
+serialized. Dense loads preserve each target chunk's existing content and
+topology versions and advance both monotonically, so derived products warmed
+before an in-place load cannot become valid again through a reset-to-zero
+alias. Sparse loads
 evict and rematerialize their archived resident set: page metadata counters
 restart, while each page receives a new world-monotonic residency generation.
 Sparse graphs and caches use those generations or the residency fingerprint to

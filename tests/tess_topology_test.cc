@@ -102,7 +102,7 @@ constexpr auto next_random(std::uint64_t& state) -> std::uint64_t {
 void expect_local_topologies_equal(const tess::LocalChunkTopology& lhs,
                                    const tess::LocalChunkTopology& rhs) {
   EXPECT_EQ(lhs.chunk(), rhs.chunk());
-  EXPECT_EQ(lhs.version(), rhs.version());
+  EXPECT_EQ(lhs.topology_version(), rhs.topology_version());
   ASSERT_EQ(lhs.region_ids().size(), rhs.region_ids().size());
   EXPECT_TRUE(std::equal(lhs.region_ids().begin(), lhs.region_ids().end(),
                          rhs.region_ids().begin()));
@@ -276,7 +276,7 @@ TEST(TessTopology, CapturesChunkTopologyVersion) {
   World<Shape> world;
   fill_passable(world, 1);
   world.mark_topology_dirty(
-      tess::ChunkKey{0}, 1u,
+      tess::ChunkKey{0}, tess::DirtyMask{1u},
       tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
 
   tess::LocalTopologyScratch scratch;
@@ -286,8 +286,8 @@ TEST(TessTopology, CapturesChunkTopologyVersion) {
           world, tess::ChunkKey{0}, scratch, topology);
 
   EXPECT_EQ(result.status, tess::TopologyStatus::Built);
-  EXPECT_EQ(result.version, 1u);
-  EXPECT_EQ(topology.version(), 1u);
+  EXPECT_EQ(result.topology_version_sum, 1u);
+  EXPECT_EQ(topology.topology_version(), tess::TopologyVersion{1u});
 }
 
 TEST(TessTopology, RegionGraphPairsBoundaryExitsAndFindsReachability) {
@@ -782,7 +782,7 @@ TEST(TessTopology, UpdateRegionGraphEmptyDirtySetIsNoOp) {
   EXPECT_EQ(updated.region_count, built.region_count);
   EXPECT_EQ(updated.passable_tile_count, built.passable_tile_count);
   EXPECT_EQ(updated.boundary_exit_count, built.boundary_exit_count);
-  EXPECT_EQ(updated.version, built.version);
+  EXPECT_EQ(updated.topology_version_sum, built.topology_version_sum);
   expect_graphs_equal(graph, reference);
 }
 
@@ -943,7 +943,7 @@ TEST(TessTopology, UpdateRegionGraphSingleChunkEditMatchesFullRebuild) {
   EXPECT_EQ(updated.region_count, rebuilt.region_count);
   EXPECT_EQ(updated.passable_tile_count, rebuilt.passable_tile_count);
   EXPECT_EQ(updated.boundary_exit_count, rebuilt.boundary_exit_count);
-  EXPECT_EQ(updated.version, rebuilt.version);
+  EXPECT_EQ(updated.topology_version_sum, rebuilt.topology_version_sum);
   expect_graphs_equal(graph, reference);
 
   const auto probes = std::array{
@@ -1016,7 +1016,7 @@ TEST(TessTopology, UpdateRegionGraphAllChunksDirtyMatchesFullBuild) {
   EXPECT_EQ(updated.region_count, rebuilt.region_count);
   EXPECT_EQ(updated.passable_tile_count, rebuilt.passable_tile_count);
   EXPECT_EQ(updated.boundary_exit_count, rebuilt.boundary_exit_count);
-  EXPECT_EQ(updated.version, rebuilt.version);
+  EXPECT_EQ(updated.topology_version_sum, rebuilt.topology_version_sum);
   expect_graphs_equal(graph, reference);
 }
 

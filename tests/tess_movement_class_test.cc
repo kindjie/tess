@@ -34,7 +34,7 @@ using Builder = mv::MovementClass<
     mv::SelectCost<ConstructionTag, mv::ConstantCost<50>,
                    mv::FieldCost<CostTag>>>;
 
-using Identity = mv::WalkableField<PassableTag>;
+using Identity = mv::UnitCostFieldMovement<PassableTag>;
 using ExplicitDefault =
     mv::MovementClass<mv::Field<PassableTag>, mv::UnitCost, mv::DefaultSteps>;
 using DiagonalBoth = mv::DiagonalSteps<mv::CornerRule::RequireBothClear>;
@@ -81,7 +81,7 @@ TEST(TessMovementClass, ClassesSatisfyTheConcept) {
 }
 
 TEST(TessMovementClass, MovementClassOfNormalizesTagsAndClasses) {
-  // A raw field tag normalizes to the byte-identical WalkableField.
+  // A raw field tag normalizes to the byte-identical UnitCostFieldMovement.
   static_assert(std::is_same_v<mv::movement_class_of<PassableTag>, Identity>);
   // An existing class passes through untouched.
   static_assert(std::is_same_v<mv::movement_class_of<Walker>, Walker>);
@@ -205,7 +205,8 @@ TEST(TessMovementClass, IdentityMatchesTheLegacySingleFieldScan) {
   const tess::LocalTileId open{0};
   const tess::LocalTileId blocked{1};
 
-  // WalkableField::passable == the exact legacy static_cast<bool>(field).
+  // UnitCostFieldMovement::passable == the exact legacy
+  // static_cast<bool>(field).
   EXPECT_EQ(Identity::passable(page, open),
             static_cast<bool>(page.field<PassableTag>(open)));
   EXPECT_EQ(Identity::passable(page, blocked),

@@ -13,10 +13,11 @@ namespace {
 
 struct TerrainTag {};
 struct CostTag {};
+struct ExtentTag {};
 
-constexpr std::uint32_t DirtyTerrain = 1u << 0u;
-constexpr std::uint32_t DirtyCost = 1u << 1u;
-constexpr std::uint32_t ActiveFire = 1u << 0u;
+constexpr auto DirtyTerrain = tess::DirtyMask{1u << 0u};
+constexpr auto DirtyCost = tess::DirtyMask{1u << 1u};
+constexpr auto ActiveFire = tess::ActiveMask{1u << 0u};
 
 using TerrainField = tess::Field<TerrainTag, std::uint16_t>;
 using CostField = tess::Field<CostTag, float>;
@@ -119,7 +120,7 @@ TEST(TessResidency, TinyBudgetClampsCapacityToOneWithoutUb) {
   EXPECT_FALSE(world.is_resident(tess::ChunkKey{0}));
 }
 
-TEST(TessResidency, EnsureResidentMaterializesZeroedChunkAndReportsResidency) {
+TEST(TessResidency, EnsureResidentValueInitializesChunkAndReportsResidency) {
   Sparse<Small> world{tess::ResidencyConfig{8 * page_bytes<Small>()}};
   constexpr auto key = tess::ChunkKey{5};
 
@@ -139,12 +140,35 @@ TEST(TessResidency, EnsureResidentMaterializesZeroedChunkAndReportsResidency) {
   EXPECT_EQ(page->chunk_key(), key);
   EXPECT_EQ(page->chunk_coord(), tess::chunk_coord<Small>(key));
 
-  // Freshly resident fields are zero-initialized.
+  // This scalar field's value-initialized state is zero.
   for (const auto value : page->field_span<TerrainTag>()) {
     EXPECT_EQ(value, 0u);
   }
   page->field<TerrainTag>(tess::LocalTileId{3}) = 42;
   EXPECT_EQ(world.chunk(key).field<TerrainTag>(tess::LocalTileId{3}), 42);
+}
+
+TEST(TessResidency, RematerializationValueInitializesNonzeroDefaultFields) {
+  using ExtentSchema = tess::FieldSchema<tess::Field<ExtentTag, tess::Extent3>>;
+  using ExtentWorld = tess::SparseResidentWorld<Small, ExtentSchema>;
+  ExtentWorld world{tess::ResidencyConfig{ExtentWorld::page_byte_size}};
+  constexpr auto first = tess::ChunkKey{0};
+  constexpr auto second = tess::ChunkKey{1};
+
+  world.ensure_resident(first);
+  for (const auto value : world.chunk(first).field_span<ExtentTag>()) {
+    EXPECT_EQ(value, tess::Extent3{});
+    EXPECT_EQ(value.z, 1u);
+  }
+  world.chunk(first).field<ExtentTag>(tess::LocalTileId{3}) = {4, 5, 6};
+
+  world.ensure_resident(second);
+  ASSERT_FALSE(world.is_resident(first));
+  world.ensure_resident(first);
+  for (const auto value : world.chunk(first).field_span<ExtentTag>()) {
+    EXPECT_EQ(value, tess::Extent3{});
+    EXPECT_EQ(value.z, 1u);
+  }
 }
 
 TEST(TessResidency, CoordinateAccessorsResolveThroughResidentChunks) {
@@ -182,21 +206,21 @@ TEST(TessResidency, ResidentMetadataProtocolMatchesDenseSemantics) {
   world.ensure_resident(key);
 
   world.mark_topology_dirty(key, DirtyTerrain, bounds);
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
-  EXPECT_EQ(world.meta(key).topology_version, 1u);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain);
+  EXPECT_EQ(world.meta(key).topology_version, tess::TopologyVersion{1});
 
   const auto observed = world.observe_dirty(key, DirtyTerrain);
-  EXPECT_EQ(observed.flags, DirtyTerrain);
+  EXPECT_EQ(observed.mask, DirtyTerrain);
   world.mark_dirty(key, DirtyCost, bounds);  // advances generation
   EXPECT_FALSE(world.clear_dirty_observed(key, observed));
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain | DirtyCost);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain | DirtyCost);
 
   const auto refreshed = world.observe_dirty(key, DirtyTerrain | DirtyCost);
   EXPECT_TRUE(world.clear_dirty_observed(key, refreshed));
-  EXPECT_EQ(world.dirty_flags(key), 0u);
+  EXPECT_EQ(world.dirty_mask(key), tess::DirtyMask{});
 
-  world.set_chunk_state(key, tess::ChunkState::ResidentActive);
-  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
+  world.mark_active(key, ActiveFire);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Active);
 }
 
 TEST(TessResidency, MarkContentChangedPreservesResidentMetadataAndLruState) {
@@ -213,9 +237,9 @@ TEST(TessResidency, MarkContentChangedPreservesResidentMetadataAndLruState) {
   world.mark_active(key, ActiveFire);
   const auto observed = world.observe_dirty(key, DirtyTerrain);
   const auto before = world.meta(key);
-  const auto dirty_flags = world.dirty_flags(key);
+  const auto dirty_mask_snapshot = world.dirty_mask(key);
   const auto dirty_bounds = world.dirty_bounds(key);
-  const auto active_flags = world.active_flags(key);
+  const auto active_mask_snapshot = world.active_mask(key);
   const auto generation = world.residency_generation(key);
 
   static_assert(noexcept(world.mark_content_changed(key)));
@@ -228,16 +252,17 @@ TEST(TessResidency, MarkContentChangedPreservesResidentMetadataAndLruState) {
 
   EXPECT_TRUE(world.valid(handle));
   EXPECT_EQ(world.residency_generation(key), generation);
-  EXPECT_EQ(world.meta(key).version, before.version + 1);
+  EXPECT_EQ(world.meta(key).content_version,
+            tess::ContentVersion{before.content_version.value + 1});
   EXPECT_EQ(world.meta(key).topology_version, before.topology_version);
-  EXPECT_EQ(world.meta(key).state, before.state);
-  EXPECT_EQ(world.meta(key).active_count, before.active_count);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Active);
+  EXPECT_EQ(world.active_category_count(key), 1u);
   EXPECT_EQ(world.meta(key).entity_count, before.entity_count);
-  EXPECT_EQ(world.dirty_flags(key), dirty_flags);
+  EXPECT_EQ(world.dirty_mask(key), dirty_mask_snapshot);
   EXPECT_EQ(world.dirty_bounds(key), dirty_bounds);
-  EXPECT_EQ(world.active_flags(key), active_flags);
+  EXPECT_EQ(world.active_mask(key), active_mask_snapshot);
   EXPECT_FALSE(world.clear_dirty_observed(key, observed));
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain);
 
   // Content notification is not residency access: the older key remains the
   // LRU victim when a third chunk arrives.
@@ -255,7 +280,7 @@ TEST(TessResidency, OutOfBoundsKeysAreNeverResidentAndYieldNullptr) {
   EXPECT_FALSE(world.is_resident(oob));
   EXPECT_EQ(world.try_chunk(oob), nullptr);
   EXPECT_EQ(world.try_meta(oob), nullptr);
-  EXPECT_EQ(world.residency_generation(oob), 0u);
+  EXPECT_EQ(world.residency_generation(oob), tess::ResidencyGeneration{});
 }
 
 // ensure_resident is the only residency entry point with no checked
@@ -277,7 +302,7 @@ TEST(TessResidency, EnsureResidentRefusesOutOfBoundsKeysWithoutWriting) {
   const auto handle = world.ensure_resident(oob);
 
   EXPECT_FALSE(world.valid(handle));
-  EXPECT_EQ(handle.generation, 0u);
+  EXPECT_EQ(handle.generation, tess::ResidencyGeneration{});
   EXPECT_FALSE(world.is_resident(oob));
   EXPECT_EQ(world.resident_count(), before);
   // The in-bounds neighbour is untouched.
@@ -345,7 +370,7 @@ TEST(TessResidency, ExplicitMruEvictionKeepsLruOrderForLaterVictims) {
   EXPECT_TRUE(world.is_resident(tess::ChunkKey{5}));
 }
 
-TEST(TessResidency, EvictedChunkReloadsWithFreshGenerationAndData) {
+TEST(TessResidency, RematerializedChunkHasFreshGenerationAndData) {
   Sparse<Small> world{tess::ResidencyConfig{1 * page_bytes<Small>()}};
   ASSERT_EQ(world.capacity(), 1u);
   constexpr auto key = tess::ChunkKey{4};
@@ -357,22 +382,24 @@ TEST(TessResidency, EvictedChunkReloadsWithFreshGenerationAndData) {
   world.ensure_resident(tess::ChunkKey{5});
   EXPECT_FALSE(world.is_resident(key));
   EXPECT_FALSE(world.valid(original));
-  EXPECT_EQ(world.residency_generation(key), 0u);
+  EXPECT_EQ(world.residency_generation(key), tess::ResidencyGeneration{});
 
-  const auto reloaded = world.ensure_resident(tess::ChunkKey{4});
-  EXPECT_GT(reloaded.generation, original.generation);
+  const auto rematerialized = world.ensure_resident(tess::ChunkKey{4});
+  EXPECT_GT(rematerialized.generation.value, original.generation.value);
   EXPECT_FALSE(world.valid(original));
-  EXPECT_TRUE(world.valid(reloaded));
-  // Reloaded chunk is a fresh, zeroed page; the old write is gone.
+  EXPECT_TRUE(world.valid(rematerialized));
+  // The rematerialized chunk is a fresh, value-initialized page; the old write
+  // is gone.
   EXPECT_EQ(world.chunk(key).field<TerrainTag>(tess::LocalTileId{1}), 0u);
 }
 
 // A DirtyObservation is only safe to honor while it describes the same
-// residency interval it was taken in. Reloading a chunk used to restart
+// residency interval it was taken in. Rematerializing a chunk used to restart
 // its version at zero, so an observation taken before an eviction could
-// compare equal to a mark made after the reload and clear work it never
+// compare equal to a mark made after rematerialization and clear work it never
 // saw -- exactly what the ChunkMeta contract promises cannot happen.
-TEST(TessResidency, DirtyObservationDoesNotSurviveAnEvictionAndReload) {
+TEST(TessResidency,
+     DirtyObservationDoesNotSurviveEvictionAndRematerialization) {
   Sparse<Small> world{tess::ResidencyConfig{1 * page_bytes<Small>()}};
   ASSERT_EQ(world.capacity(), 1u);
   constexpr auto key = tess::ChunkKey{4};
@@ -382,25 +409,25 @@ TEST(TessResidency, DirtyObservationDoesNotSurviveAnEvictionAndReload) {
   world.ensure_resident(key);
   world.mark_dirty(key, DirtyTerrain, bounds);
   const auto observed = world.observe_dirty(key, DirtyTerrain);
-  ASSERT_EQ(observed.flags, DirtyTerrain);
+  ASSERT_EQ(observed.mask, DirtyTerrain);
 
-  // Evict and reload. The rebuild the observation belonged to is gone.
+  // Evict and rematerialize. The rebuild the observation belonged to is gone.
   world.ensure_resident(other);
   ASSERT_FALSE(world.is_resident(key));
   world.ensure_resident(key);
 
   // New residency interval, new work, marked dirty again.
   world.mark_dirty(key, DirtyTerrain, bounds);
-  ASSERT_EQ(world.dirty_flags(key), DirtyTerrain);
+  ASSERT_EQ(world.dirty_mask(key), DirtyTerrain);
 
   // The stale observation must be refused, and the new mark must stand.
   EXPECT_FALSE(world.clear_dirty_observed(key, observed));
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain);
 
   // An observation taken in the current interval still works.
   const auto fresh = world.observe_dirty(key, DirtyTerrain);
   EXPECT_TRUE(world.clear_dirty_observed(key, fresh));
-  EXPECT_EQ(world.dirty_flags(key), 0u);
+  EXPECT_EQ(world.dirty_mask(key), tess::DirtyMask{});
 }
 
 // The same hazard one step removed: a slot reused by a *different* key
@@ -422,7 +449,7 @@ TEST(TessResidency, DirtyObservationDoesNotSurviveSlotReuseByAnotherChunk) {
   world.mark_dirty(key, DirtyCost, bounds);
 
   EXPECT_FALSE(world.clear_dirty_observed(key, observed));
-  EXPECT_EQ(world.dirty_flags(key), DirtyCost);
+  EXPECT_EQ(world.dirty_mask(key), DirtyCost);
 }
 
 // Block iteration is documented as deterministic when the domain comes
@@ -522,8 +549,8 @@ TEST(TessResidency, DirtyEnumerationVisitsOnlyResidentChunks) {
   world.mark_active(tess::ChunkKey{3}, ActiveFire);
   EXPECT_EQ(world.active_chunks(ActiveFire),
             (std::vector<tess::ChunkKey>{tess::ChunkKey{3}}));
-  EXPECT_EQ(world.chunk_state(tess::ChunkKey{3}),
-            tess::ChunkState::ResidentActive);
+  EXPECT_EQ(world.chunk_activity(tess::ChunkKey{3}),
+            tess::ChunkActivity::Active);
 }
 
 TEST(TessResidency, ResidencySurvivesProbeChainDeletionUnderKeyCollisions) {
@@ -575,7 +602,8 @@ TEST(TessResidency, WarmResidentSetAccessDoesNotAllocate) {
 }
 
 TEST(TessResidency, EvictionReusingSlotsStaysWithinCapacityAllocations) {
-  // After the slot pool is warm, evict-and-reload churn must not allocate:
+  // After the slot pool is warm, eviction/rematerialization churn must not
+  // allocate:
   // slots and the directory are fixed-capacity.
   Sparse<Small> world{tess::ResidencyConfig{2 * page_bytes<Small>()}};
 
@@ -667,7 +695,8 @@ TEST(TessNodeIndexSpace, OffsetUsesResidentSlotNotChunkKey) {
 }
 
 // Materializes `key` and marks every tile in it passable (a freshly resident
-// page is zeroed, i.e. impassable, so the search needs tiles turned on).
+// page's scalar terrain field is value-initialized to zero, so the search
+// needs tiles turned on).
 void make_chunk_passable(SparseSmall& world, tess::ChunkKey key) {
   world.ensure_resident(key);
   auto& page = world.chunk(key);
@@ -690,13 +719,13 @@ TEST(TessSparseAstar, FindsRouteWithinAndAcrossResidentChunks) {
   tess::PathScratch scratch;
 
   const auto within = sparse_astar(world, {0, 0, 0}, {10, 0, 0}, scratch,
-                                   tess::MissingChunkPolicy::TreatAsBlocked);
+                                   tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(within.status, tess::PathStatus::Found);
   EXPECT_EQ(within.cost, 10u);
 
   // Crossing the chunk-0/chunk-1 boundary succeeds because both are resident.
   const auto across = sparse_astar(world, {0, 0, 0}, {40, 0, 0}, scratch,
-                                   tess::MissingChunkPolicy::TreatAsBlocked);
+                                   tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(across.status, tess::PathStatus::Found);
   EXPECT_EQ(across.cost, 40u);
 }
@@ -711,12 +740,12 @@ TEST(TessSparseAstar, MissingChunkOnRouteIsBlockedOrIndeterminateByPolicy) {
   tess::PathScratch scratch;
 
   const auto blocked = sparse_astar(world, {0, 0, 0}, {64, 0, 0}, scratch,
-                                    tess::MissingChunkPolicy::TreatAsBlocked);
+                                    tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::NoPath);
 
   const auto indeterminate =
       sparse_astar(world, {0, 0, 0}, {64, 0, 0}, scratch,
-                   tess::MissingChunkPolicy::Indeterminate);
+                   tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 }
 
@@ -741,7 +770,7 @@ TEST(TessSparseAstar, RealWallStaysNoPathEvenUnderIndeterminate) {
 
   const auto result = tess::astar_path<SparseSolo, TerrainTag>(
       world, tess::PathRequest{{0, 0, 0}, {10, 0, 0}}, scratch,
-      tess::MissingChunkPolicy::Indeterminate);
+      tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(result.status, tess::PathStatus::NoPath);
 }
 
@@ -753,22 +782,23 @@ TEST(TessSparseAstar, NonResidentEndpointsRespectPolicy) {
   tess::PathScratch scratch;
 
   const auto blocked = sparse_astar(world, {0, 0, 0}, {40, 0, 0}, scratch,
-                                    tess::MissingChunkPolicy::TreatAsBlocked);
+                                    tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::InvalidGoal);
 
   const auto indeterminate =
       sparse_astar(world, {0, 0, 0}, {40, 0, 0}, scratch,
-                   tess::MissingChunkPolicy::Indeterminate);
+                   tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 
   // A non-resident start is symmetric: chunk 3 holds (100,0,0).
-  const auto bad_start = sparse_astar(world, {100, 0, 0}, {0, 0, 0}, scratch,
-                                      tess::MissingChunkPolicy::Indeterminate);
+  const auto bad_start =
+      sparse_astar(world, {100, 0, 0}, {0, 0, 0}, scratch,
+                   tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(bad_start.status, tess::PathStatus::Indeterminate);
 
   const auto bad_start_blocked =
       sparse_astar(world, {100, 0, 0}, {0, 0, 0}, scratch,
-                   tess::MissingChunkPolicy::TreatAsBlocked);
+                   tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(bad_start_blocked.status, tess::PathStatus::InvalidStart);
 }
 
@@ -783,7 +813,7 @@ TEST(TessSparseAstar, FindsRouteWhenResidentSlotsDifferFromChunkKeys) {
   tess::PathScratch scratch;
 
   const auto across = sparse_astar(world, {0, 0, 0}, {40, 0, 0}, scratch,
-                                   tess::MissingChunkPolicy::TreatAsBlocked);
+                                   tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(across.status, tess::PathStatus::Found);
   EXPECT_EQ(across.cost, 40u);
 }
@@ -794,12 +824,16 @@ TEST(TessSparseAstar, FindsRouteWhenResidentSlotsDifferFromChunkKeys) {
 // unweighted sparse tests one-to-one to prove the ported search behaves
 // identically at every non-resident boundary.
 struct WeightCostTag {};
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<TerrainTag>,
+                                  tess::movement::FieldCost<WeightCostTag>>;
 using WeightedSchema =
     tess::FieldSchema<TerrainField, tess::Field<WeightCostTag, std::uint32_t>>;
 using SparseWeighted = tess::SparseResidentWorld<Small, WeightedSchema>;
 
-// A freshly resident page is zeroed (impassable, zero entry cost). Weighted A*
-// needs both a passable terrain tile and a positive integral entry cost.
+// Freshly resident scalar fields are value-initialized to zero (impassable,
+// zero entry cost). Weighted A* needs both a passable terrain tile and a
+// positive integral entry cost.
 void make_chunk_weighted_passable(SparseWeighted& world, tess::ChunkKey key) {
   world.ensure_resident(key);
   auto& page = world.chunk(key);
@@ -813,7 +847,7 @@ void make_chunk_weighted_passable(SparseWeighted& world, tess::ChunkKey key) {
                                    tess::Coord3 start, tess::Coord3 goal,
                                    tess::PathScratch& scratch,
                                    tess::MissingChunkPolicy policy) {
-  return tess::weighted_astar_path<SparseWeighted, TerrainTag, WeightCostTag>(
+  return tess::weighted_astar_path<SparseWeighted, WeightedMovement>(
       world, tess::PathRequest{start, goal}, scratch, policy);
 }
 
@@ -826,13 +860,15 @@ TEST(TessSparseWeightedAstar, FindsRouteWithinAndAcrossResidentChunks) {
 
   // Sparse worlds skip the dense-only fast-path scan, so both of these route
   // through the full weighted A* over resident-slot node arrays.
-  const auto within = sparse_weighted(world, {0, 0, 0}, {10, 0, 0}, scratch,
-                                      tess::MissingChunkPolicy::TreatAsBlocked);
+  const auto within =
+      sparse_weighted(world, {0, 0, 0}, {10, 0, 0}, scratch,
+                      tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(within.status, tess::PathStatus::Found);
   EXPECT_EQ(within.cost, 10u);
 
-  const auto across = sparse_weighted(world, {0, 0, 0}, {40, 0, 0}, scratch,
-                                      tess::MissingChunkPolicy::TreatAsBlocked);
+  const auto across =
+      sparse_weighted(world, {0, 0, 0}, {40, 0, 0}, scratch,
+                      tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(across.status, tess::PathStatus::Found);
   EXPECT_EQ(across.cost, 40u);
 }
@@ -848,12 +884,12 @@ TEST(TessSparseWeightedAstar,
 
   const auto blocked =
       sparse_weighted(world, {0, 0, 0}, {64, 0, 0}, scratch,
-                      tess::MissingChunkPolicy::TreatAsBlocked);
+                      tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::NoPath);
 
   const auto indeterminate =
       sparse_weighted(world, {0, 0, 0}, {64, 0, 0}, scratch,
-                      tess::MissingChunkPolicy::Indeterminate);
+                      tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 }
 
@@ -876,9 +912,9 @@ TEST(TessSparseWeightedAstar, RealWallStaysNoPathEvenUnderIndeterminate) {
   tess::PathScratch scratch;
 
   const auto result =
-      tess::weighted_astar_path<SparseWeightedSolo, TerrainTag, WeightCostTag>(
+      tess::weighted_astar_path<SparseWeightedSolo, WeightedMovement>(
           world, tess::PathRequest{{0, 0, 0}, {10, 0, 0}}, scratch,
-          tess::MissingChunkPolicy::Indeterminate);
+          tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(result.status, tess::PathStatus::NoPath);
 }
 
@@ -891,22 +927,22 @@ TEST(TessSparseWeightedAstar, NonResidentEndpointsRespectPolicy) {
 
   const auto blocked =
       sparse_weighted(world, {0, 0, 0}, {40, 0, 0}, scratch,
-                      tess::MissingChunkPolicy::TreatAsBlocked);
+                      tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::InvalidGoal);
 
   const auto indeterminate =
       sparse_weighted(world, {0, 0, 0}, {40, 0, 0}, scratch,
-                      tess::MissingChunkPolicy::Indeterminate);
+                      tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 
   const auto bad_start =
       sparse_weighted(world, {100, 0, 0}, {0, 0, 0}, scratch,
-                      tess::MissingChunkPolicy::Indeterminate);
+                      tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(bad_start.status, tess::PathStatus::Indeterminate);
 
   const auto bad_start_blocked =
       sparse_weighted(world, {100, 0, 0}, {0, 0, 0}, scratch,
-                      tess::MissingChunkPolicy::TreatAsBlocked);
+                      tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(bad_start_blocked.status, tess::PathStatus::InvalidStart);
 }
 
@@ -919,8 +955,9 @@ TEST(TessSparseWeightedAstar, FindsRouteWhenResidentSlotsDifferFromChunkKeys) {
             static_cast<std::size_t>(0));
   tess::PathScratch scratch;
 
-  const auto across = sparse_weighted(world, {0, 0, 0}, {40, 0, 0}, scratch,
-                                      tess::MissingChunkPolicy::TreatAsBlocked);
+  const auto across =
+      sparse_weighted(world, {0, 0, 0}, {40, 0, 0}, scratch,
+                      tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(across.status, tess::PathStatus::Found);
   EXPECT_EQ(across.cost, 40u);
 }
@@ -951,7 +988,7 @@ TEST(TessSparseDistanceField, BuildsFieldAndExtractsPathAcrossResidentChunks) {
   tess::DistanceFieldScratch scratch;
 
   const auto field = sparse_build_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(field.status, tess::PathStatus::Found);
 
   const auto within = sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch);
@@ -968,8 +1005,9 @@ TEST(TessSparseDistanceField,
      ResidencyChangeBetweenBuildAndReadRefusesStaleField) {
   // The build/read split indexes the field by resident-slot offset. If the
   // resident set changes between build_distance_field and distance_field_path
-  // -- an eviction/reload can rebind a slot to a different chunk -- the reader
-  // must NOT descend the now-stale field and return a wrong Found; it returns
+  // -- eviction/rematerialization can rebind a slot to another chunk -- the
+  // reader must NOT descend the now-stale field and return a wrong Found; it
+  // returns
   // NoPath so the caller rebuilds. Budget 4 keeps both flooded chunks (and the
   // start) resident while a third load bumps the world's residency epoch, so
   // this isolates the residency-epoch guard from the non-resident-start guard.
@@ -979,19 +1017,19 @@ TEST(TessSparseDistanceField,
   tess::DistanceFieldScratch scratch;
 
   const auto field = sparse_build_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   ASSERT_EQ(field.status, tess::PathStatus::Found);
   ASSERT_EQ(sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch).status,
             tess::PathStatus::Found);
 
-  make_chunk_passable(world, tess::ChunkKey{2});  // bumps residency epoch
+  make_chunk_passable(world, tess::ChunkKey{2});  // changes residency
   ASSERT_TRUE(world.is_resident(tess::ChunkKey{0}));
   EXPECT_EQ(sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch).status,
-            tess::PathStatus::NoPath);
+            tess::PathStatus::NotComputed);
 
   // Rebuilding against the new residency restores service.
   ASSERT_EQ(sparse_build_field(world, {0, 0, 0}, scratch,
-                               tess::MissingChunkPolicy::TreatAsBlocked)
+                               tess::MissingChunkPolicy::AssumeImpassable)
                 .status,
             tess::PathStatus::Found);
   EXPECT_EQ(sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch).status,
@@ -1001,40 +1039,41 @@ TEST(TessSparseDistanceField,
 TEST(TessSparseDistanceField,
      ExplicitEvictBetweenBuildAndReadRefusesStaleField) {
   // An explicit world.evict() changes residency just like ensure_resident and
-  // must advance the residency epoch, so a field built before it is refused on
+  // must change the residency fingerprint, so a field built before it is
+  // refused on
   // read even when the start's own chunk is still resident. Regression guard:
-  // evict() must not be the one residency op that forgets to bump the epoch.
+  // evict() must not be the one residency operation omitted from freshness.
   SparseSmall world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
   make_chunk_passable(world, tess::ChunkKey{0});  // x in [0, 32)
   make_chunk_passable(world, tess::ChunkKey{1});  // x in [32, 64)
   tess::DistanceFieldScratch scratch;
 
   ASSERT_EQ(sparse_build_field(world, {0, 0, 0}, scratch,
-                               tess::MissingChunkPolicy::TreatAsBlocked)
+                               tess::MissingChunkPolicy::AssumeImpassable)
                 .status,
             tess::PathStatus::Found);
   ASSERT_EQ(sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch).status,
             tess::PathStatus::Found);
 
-  ASSERT_TRUE(world.evict(tess::ChunkKey{1}));  // residency change, no reload
+  ASSERT_TRUE(world.evict(tess::ChunkKey{1}));  // residency change only
   ASSERT_TRUE(world.is_resident(tess::ChunkKey{0}));
   EXPECT_EQ(sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch).status,
-            tess::PathStatus::NoPath);
+            tess::PathStatus::NotComputed);
 }
 
 TEST(TessSparseDistanceField, FieldReadAgainstDifferentWorldRefusesStale) {
-  // The residency fingerprint is a CONTENT hash of the resident set, not a
+  // The residency fingerprint represents the resident set, not a
   // per-world counter, so a scratch built against one world is refused when
   // read against a DIFFERENT world (a copy/swap, or a plain wrong-world bug)
   // even though both worlds performed the same number of residency ops -- a
   // bare per-world epoch would alias and serve a stale Found. Regression from
-  // the cross-lab re-review.
+  // an earlier regression.
   SparseSmall world_a{tess::ResidencyConfig{4 * page_bytes<Small>()}};
   make_chunk_passable(world_a, tess::ChunkKey{0});  // x in [0, 32)
   make_chunk_passable(world_a, tess::ChunkKey{1});  // x in [32, 64)
   tess::DistanceFieldScratch scratch;
   ASSERT_EQ(sparse_build_field(world_a, {0, 0, 0}, scratch,
-                               tess::MissingChunkPolicy::TreatAsBlocked)
+                               tess::MissingChunkPolicy::AssumeImpassable)
                 .status,
             tess::PathStatus::Found);
   ASSERT_EQ(sparse_field_path(world_a, {40, 0, 0}, {0, 0, 0}, scratch).status,
@@ -1049,18 +1088,20 @@ TEST(TessSparseDistanceField, FieldReadAgainstDifferentWorldRefusesStale) {
   ASSERT_TRUE(world_b.is_resident(tess::ChunkKey{1}));
   EXPECT_NE(world_a.residency_fingerprint(), world_b.residency_fingerprint());
   EXPECT_EQ(sparse_field_path(world_b, {40, 0, 0}, {0, 0, 0}, scratch).status,
-            tess::PathStatus::NoPath);
+            tess::PathStatus::NotComputed);
 }
 
 TEST(TessSparseDistanceField, SlotPermutedWorldsGetDistinctFingerprints) {
   // Two capacity-2 worlds reach the SAME resident set {0,1} with identical
-  // per-chunk (generation, version) but the key->slot binding PERMUTED, by
+  // per-chunk (residency generation, content version) but the key-to-slot
+  // binding permuted, by
   // evicting chunk 2 at different points (LIFO slot reuse lands chunks 0 and 1
   // in opposite slots). A distance field is indexed by resident slot, so a
-  // fingerprint over only (key, generation, version) would match while the two
+  // fingerprint over only key, generation, and content version would match
+  // while the two
   // worlds index the field oppositely -- a scratch built on one, read on the
   // other, would return a stale Found. Folding resident_slot makes the
-  // fingerprints differ. Cross-lab (codex) round-4 regression.
+  // fingerprints differ.
   const auto budget = tess::ResidencyConfig{2 * page_bytes<Small>()};
 
   SparseSmall world_a{budget};
@@ -1088,11 +1129,11 @@ TEST(TessSparseDistanceField, SlotPermutedWorldsGetDistinctFingerprints) {
   // Behavioral: a field built on A is refused when read on B.
   tess::DistanceFieldScratch scratch;
   ASSERT_EQ(sparse_build_field(world_a, {0, 0, 0}, scratch,
-                               tess::MissingChunkPolicy::TreatAsBlocked)
+                               tess::MissingChunkPolicy::AssumeImpassable)
                 .status,
             tess::PathStatus::Found);
   EXPECT_EQ(sparse_field_path(world_b, {32, 0, 0}, {0, 0, 0}, scratch).status,
-            tess::PathStatus::NoPath);
+            tess::PathStatus::NotComputed);
 }
 
 TEST(TessSparseDistanceField,
@@ -1104,7 +1145,7 @@ TEST(TessSparseDistanceField,
   tess::DistanceFieldScratch scratch;
 
   const auto blocked = sparse_build_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::Found);
 
   // The field stops at chunk 0's edge; chunk 2 is disconnected by the missing
@@ -1114,8 +1155,12 @@ TEST(TessSparseDistanceField,
   EXPECT_EQ(unreached.status, tess::PathStatus::NoPath);
 
   const auto indeterminate = sparse_build_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::Indeterminate);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
+  EXPECT_EQ(sparse_field_path(world, {64, 0, 0}, {0, 0, 0}, scratch).status,
+            tess::PathStatus::Indeterminate);
+  EXPECT_EQ(sparse_field_path(world, {40, 0, 0}, {0, 0, 0}, scratch).status,
+            tess::PathStatus::Indeterminate);
 }
 
 TEST(TessSparseDistanceField,
@@ -1138,7 +1183,7 @@ TEST(TessSparseDistanceField,
   // No neighboring chunks exist, so the flood never skips a missing chunk; a
   // genuine wall must not raise Indeterminate.
   const auto field = tess::build_distance_field<SparseSolo, TerrainTag>(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::Indeterminate);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(field.status, tess::PathStatus::Found);
 
   // The wall genuinely blocks the far side, so no path can be extracted there.
@@ -1154,11 +1199,12 @@ TEST(TessSparseDistanceField, NonResidentGoalRespectsPolicy) {
   tess::DistanceFieldScratch scratch;
 
   const auto blocked = sparse_build_field(
-      world, {40, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {40, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::InvalidGoal);
 
-  const auto indeterminate = sparse_build_field(
-      world, {40, 0, 0}, scratch, tess::MissingChunkPolicy::Indeterminate);
+  const auto indeterminate =
+      sparse_build_field(world, {40, 0, 0}, scratch,
+                         tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 }
 
@@ -1169,7 +1215,7 @@ TEST(TessSparseDistanceField, NonResidentStartPathIsInvalidStart) {
   tess::DistanceFieldScratch scratch;
 
   const auto field = sparse_build_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   ASSERT_EQ(field.status, tess::PathStatus::Found);
 
   // (40,0,0) lives in the non-resident chunk 1; it is not in the field.
@@ -1186,7 +1232,7 @@ TEST(TessSparseDistanceField, FieldWorksWhenResidentSlotsDifferFromChunkKeys) {
   tess::DistanceFieldScratch scratch;
 
   const auto field = sparse_build_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   ASSERT_EQ(field.status, tess::PathStatus::Found);
 
   const auto across = sparse_field_path(world, {40, 0, 0}, {0, 0, 0}, scratch);
@@ -1201,16 +1247,14 @@ TEST(TessSparseDistanceField, FieldWorksWhenResidentSlotsDifferFromChunkKeys) {
 [[nodiscard]] auto sparse_build_weighted_field(
     const SparseWeighted& world, tess::Coord3 goal,
     tess::DistanceFieldScratch& scratch, tess::MissingChunkPolicy policy) {
-  return tess::build_weighted_distance_field<SparseWeighted, TerrainTag,
-                                             WeightCostTag>(world, goal,
-                                                            scratch, policy);
+  return tess::build_weighted_distance_field<SparseWeighted, WeightedMovement>(
+      world, goal, scratch, policy);
 }
 
 [[nodiscard]] auto sparse_weighted_field_path(
     const SparseWeighted& world, tess::Coord3 start, tess::Coord3 goal,
     tess::DistanceFieldScratch& scratch) {
-  return tess::weighted_distance_field_path<SparseWeighted, TerrainTag,
-                                            WeightCostTag>(
+  return tess::weighted_distance_field_path<SparseWeighted, WeightedMovement>(
       world, tess::PathRequest{start, goal}, scratch);
 }
 
@@ -1223,7 +1267,7 @@ TEST(TessSparseWeightedDistanceField,
   tess::DistanceFieldScratch scratch;
 
   const auto field = sparse_build_weighted_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(field.status, tess::PathStatus::Found);
 
   const auto across =
@@ -1242,15 +1286,21 @@ TEST(TessSparseWeightedDistanceField,
   tess::DistanceFieldScratch scratch;
 
   const auto blocked = sparse_build_weighted_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::Found);
   const auto unreached =
       sparse_weighted_field_path(world, {64, 0, 0}, {0, 0, 0}, scratch);
   EXPECT_EQ(unreached.status, tess::PathStatus::NoPath);
 
   const auto indeterminate = sparse_build_weighted_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::Indeterminate);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
+  EXPECT_EQ(
+      sparse_weighted_field_path(world, {64, 0, 0}, {0, 0, 0}, scratch).status,
+      tess::PathStatus::Indeterminate);
+  EXPECT_EQ(
+      sparse_weighted_field_path(world, {40, 0, 0}, {0, 0, 0}, scratch).status,
+      tess::PathStatus::Indeterminate);
 }
 
 TEST(TessSparseWeightedDistanceField, RealWallStaysFoundUnderIndeterminate) {
@@ -1272,14 +1322,13 @@ TEST(TessSparseWeightedDistanceField, RealWallStaysFoundUnderIndeterminate) {
   tess::DistanceFieldScratch scratch;
 
   const auto field =
-      tess::build_weighted_distance_field<SparseWeightedSolo, TerrainTag,
-                                          WeightCostTag>(
-          world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::Indeterminate);
+      tess::build_weighted_distance_field<SparseWeightedSolo, WeightedMovement>(
+          world, {0, 0, 0}, scratch,
+          tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(field.status, tess::PathStatus::Found);
 
   const auto blocked =
-      tess::weighted_distance_field_path<SparseWeightedSolo, TerrainTag,
-                                         WeightCostTag>(
+      tess::weighted_distance_field_path<SparseWeightedSolo, WeightedMovement>(
           world, {{10, 0, 0}, {0, 0, 0}}, scratch);
   EXPECT_EQ(blocked.status, tess::PathStatus::NoPath);
 }
@@ -1292,11 +1341,12 @@ TEST(TessSparseWeightedDistanceField, NonResidentGoalRespectsPolicy) {
   tess::DistanceFieldScratch scratch;
 
   const auto blocked = sparse_build_weighted_field(
-      world, {40, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {40, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::InvalidGoal);
 
   const auto indeterminate = sparse_build_weighted_field(
-      world, {40, 0, 0}, scratch, tess::MissingChunkPolicy::Indeterminate);
+      world, {40, 0, 0}, scratch,
+      tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 }
 
@@ -1308,7 +1358,7 @@ TEST(TessSparseWeightedDistanceField, NonResidentStartPathIsInvalidStart) {
   tess::DistanceFieldScratch scratch;
 
   const auto field = sparse_build_weighted_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   ASSERT_EQ(field.status, tess::PathStatus::Found);
 
   const auto path =
@@ -1327,7 +1377,7 @@ TEST(TessSparseWeightedDistanceField,
   tess::DistanceFieldScratch scratch;
 
   const auto field = sparse_build_weighted_field(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   ASSERT_EQ(field.status, tess::PathStatus::Found);
 
   const auto across =
@@ -1341,8 +1391,8 @@ TEST(TessSparseWeightedDistanceField,
 [[nodiscard]] auto sparse_build_weighted_field_in_box(
     const SparseWeighted& world, tess::Coord3 goal, tess::Box3 domain,
     tess::DistanceFieldScratch& scratch, tess::MissingChunkPolicy policy) {
-  return tess::build_weighted_distance_field_in_box<SparseWeighted, TerrainTag,
-                                                    WeightCostTag>(
+  return tess::build_weighted_distance_field_in_box<SparseWeighted,
+                                                    WeightedMovement>(
       world, goal, domain, scratch, policy);
 }
 
@@ -1358,7 +1408,7 @@ TEST(TessSparseWeightedFieldInBox,
 
   const auto field = sparse_build_weighted_field_in_box(
       world, {0, 0, 0}, domain, scratch,
-      tess::MissingChunkPolicy::TreatAsBlocked);
+      tess::MissingChunkPolicy::AssumeImpassable);
   ASSERT_EQ(field.status, tess::PathStatus::Found);
 
   const auto inside =
@@ -1385,7 +1435,7 @@ TEST(TessSparseWeightedFieldInBox, MissingChunkInDomainTruncatesByPolicy) {
 
   const auto blocked = sparse_build_weighted_field_in_box(
       world, {0, 0, 0}, domain, scratch,
-      tess::MissingChunkPolicy::TreatAsBlocked);
+      tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::Found);
   const auto unreached =
       sparse_weighted_field_path(world, {70, 0, 0}, {0, 0, 0}, scratch);
@@ -1393,8 +1443,14 @@ TEST(TessSparseWeightedFieldInBox, MissingChunkInDomainTruncatesByPolicy) {
 
   const auto indeterminate = sparse_build_weighted_field_in_box(
       world, {0, 0, 0}, domain, scratch,
-      tess::MissingChunkPolicy::Indeterminate);
+      tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
+  EXPECT_EQ(
+      sparse_weighted_field_path(world, {70, 0, 0}, {0, 0, 0}, scratch).status,
+      tess::PathStatus::Indeterminate);
+  EXPECT_EQ(
+      sparse_weighted_field_path(world, {40, 0, 0}, {0, 0, 0}, scratch).status,
+      tess::PathStatus::Indeterminate);
 }
 
 TEST(TessSparseWeightedFieldInBox, NonResidentGoalRespectsPolicy) {
@@ -1408,12 +1464,12 @@ TEST(TessSparseWeightedFieldInBox, NonResidentGoalRespectsPolicy) {
 
   const auto blocked = sparse_build_weighted_field_in_box(
       world, {40, 0, 0}, domain, scratch,
-      tess::MissingChunkPolicy::TreatAsBlocked);
+      tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::InvalidGoal);
 
   const auto indeterminate = sparse_build_weighted_field_in_box(
       world, {40, 0, 0}, domain, scratch,
-      tess::MissingChunkPolicy::Indeterminate);
+      tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 }
 
@@ -1424,8 +1480,8 @@ template <std::uint32_t MaxCost>
 [[nodiscard]] auto sparse_build_bounded_weighted_field(
     const SparseWeighted& world, tess::Coord3 goal,
     tess::DistanceFieldScratch& scratch, tess::MissingChunkPolicy policy) {
-  return tess::build_bounded_weighted_distance_field<SparseWeighted, TerrainTag,
-                                                     WeightCostTag, MaxCost>(
+  return tess::build_bounded_weighted_distance_field<SparseWeighted,
+                                                     WeightedMovement, MaxCost>(
       world, goal, scratch, policy);
 }
 
@@ -1437,7 +1493,7 @@ TEST(TessSparseBoundedWeightedField, BuildsBucketFieldAndExtractsPath) {
   tess::DistanceFieldScratch scratch;
 
   const auto field = sparse_build_bounded_weighted_field<8>(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   ASSERT_EQ(field.status, tess::PathStatus::Found);
 
   const auto across =
@@ -1455,15 +1511,21 @@ TEST(TessSparseBoundedWeightedField, MissingChunkTruncatesBucketFieldByPolicy) {
   tess::DistanceFieldScratch scratch;
 
   const auto blocked = sparse_build_bounded_weighted_field<8>(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::Found);
   const auto unreached =
       sparse_weighted_field_path(world, {70, 0, 0}, {0, 0, 0}, scratch);
   EXPECT_EQ(unreached.status, tess::PathStatus::NoPath);
 
   const auto indeterminate = sparse_build_bounded_weighted_field<8>(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::Indeterminate);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
+  EXPECT_EQ(
+      sparse_weighted_field_path(world, {70, 0, 0}, {0, 0, 0}, scratch).status,
+      tess::PathStatus::Indeterminate);
+  EXPECT_EQ(
+      sparse_weighted_field_path(world, {40, 0, 0}, {0, 0, 0}, scratch).status,
+      tess::PathStatus::Indeterminate);
 }
 
 TEST(TessSparseBoundedWeightedField,
@@ -1477,11 +1539,11 @@ TEST(TessSparseBoundedWeightedField,
   tess::DistanceFieldScratch scratch;
 
   const auto blocked = sparse_build_bounded_weighted_field<8>(
-      world, goal, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, goal, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::CostOverflow);
 
   const auto indeterminate = sparse_build_bounded_weighted_field<8>(
-      world, goal, scratch, tess::MissingChunkPolicy::Indeterminate);
+      world, goal, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 }
 
@@ -1493,11 +1555,12 @@ TEST(TessSparseBoundedWeightedField, NonResidentGoalRespectsPolicy) {
   tess::DistanceFieldScratch scratch;
 
   const auto blocked = sparse_build_bounded_weighted_field<8>(
-      world, {40, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {40, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::InvalidGoal);
 
   const auto indeterminate = sparse_build_bounded_weighted_field<8>(
-      world, {40, 0, 0}, scratch, tess::MissingChunkPolicy::Indeterminate);
+      world, {40, 0, 0}, scratch,
+      tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 }
 
@@ -1514,11 +1577,11 @@ TEST(TessSparseBoundedWeightedField, OverBudgetTileFallsBackForwardingPolicy) {
   tess::DistanceFieldScratch scratch;
 
   const auto blocked = sparse_build_bounded_weighted_field<2>(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::AssumeImpassable);
   EXPECT_EQ(blocked.status, tess::PathStatus::Found);
 
   const auto indeterminate = sparse_build_bounded_weighted_field<2>(
-      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::Indeterminate);
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 }
 

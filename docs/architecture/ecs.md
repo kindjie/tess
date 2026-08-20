@@ -80,10 +80,8 @@ lifecycle.
   options, dirty_mask, graph)` is the ECS-agnostic full tick:
   `source.collect`, dirty-gated path processing (the exactly-once seam,
   identical to the `tick_*` drivers), index-synchronized movement, then
-  `sink.apply`. `tick_ecs_path_agents` provides the weighted
-  movement-class form (`<World, Class, MaxCost, ...>`) and the legacy
-  passable/cost tag-pair form (`<World, PassableTag, CostTag, MaxCost,
-  ...>`).
+  `sink.apply`. `tick_ecs_path_agents` provides the weighted movement-class
+  form (`<World, Class, MaxCost, ...>`).
 
 ## EnTT Adapter
 
@@ -133,8 +131,8 @@ two-gate build policy.
   `set_entt_path_agent_goal` / `clear_entt_path_agent_goal` (component
   writes reconciled by the next collect). Intents accept an optional
   dirty mask mirroring `commit_movement_intent`.
-- `tick_entt_unit_path_agents` / `tick_entt_path_agents` (weighted class
-  and legacy tag-pair forms) are thin instantiations of the generic
+- `tick_entt_unit_path_agents` / `tick_entt_path_agents` are thin
+  instantiations of the generic
   `tick_ecs_*` pipeline with the concrete source/sink -- there is one
   pipeline, not two. The context's `tick_state` owns the sim clock:
   drive these from at most one place per frame.
@@ -230,7 +228,7 @@ system), extending the standing one-runtime-per-(world, class) contract.
 World-scoped invalidation re-paths every active agent. The raw-span tick
 drivers retain routes and use `PathSubmitScope::NeedsOnly`, but the current ECS
 drivers intentionally use runtime-owned paths and an all-agent processing pass
-whenever collection reports a changed goal. They therefore do not yet inherit
+whenever collection reports a changed goal. They therefore do not inherit
 the retained-step optimization for mixed goal churn and occupancy waiters.
 Their work remains retry-bounded and correct, and the ECS benchmark family
 tracks collect/apply/tick costs at 1k-100k agents. Route retention inside

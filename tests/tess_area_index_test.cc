@@ -122,7 +122,8 @@ TEST(TessAreaIndex, GraphEditInvalidatesPriorIndex) {
   ASSERT_TRUE(index.is_valid(graph));
 
   world.template field<PassableTag>({0, 0, 0}) = 0;
-  world.mark_dirty(tess::ChunkKey{0}, 1u, tess::Box3{{0, 0, 0}, {1, 1, 1}});
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
+                   tess::Box3{{0, 0, 0}, {1, 1, 1}});
   tess::LocalTopologyScratch local_scratch;
   const auto dirty = std::array{tess::ChunkKey{0}};
   (void)tess::update_region_graph<World, PassableTag>(world, local_scratch,
@@ -145,7 +146,8 @@ TEST(TessAreaIndex, GraphRevisionChangesOnlyWhenGraphChanges) {
   EXPECT_EQ(graph.revision(), built_revision);
 
   world.template field<PassableTag>({0, 0, 0}) = 0;
-  world.mark_dirty(tess::ChunkKey{0}, 1u, tess::Box3{{0, 0, 0}, {1, 1, 1}});
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
+                   tess::Box3{{0, 0, 0}, {1, 1, 1}});
   const auto dirty = std::array{tess::ChunkKey{0}};
   (void)tess::update_region_graph<World, PassableTag>(world, scratch, graph,
                                                       dirty);

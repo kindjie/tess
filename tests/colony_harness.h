@@ -46,8 +46,8 @@ inline constexpr std::uint32_t kMaxCost = 4;
 
 // Terrain and occupancy carry distinct dirty masks: an agent step must
 // never trigger a terrain topology rebuild or a world-scoped replan.
-inline constexpr std::uint32_t kTerrainDirty = 1U << 0U;
-inline constexpr std::uint32_t kOccupancyDirty = 1U << 1U;
+inline constexpr auto kTerrainDirty = tess::DirtyMask{1U << 0U};
+inline constexpr auto kOccupancyDirty = tess::DirtyMask{1U << 1U};
 
 // The logical map is always 64x64; the world extent must be a whole
 // multiple of it so the raster scale is exact.
@@ -205,13 +205,13 @@ inline auto tile_cost(std::uint64_t seed, std::int64_t x, std::int64_t y)
   return static_cast<std::uint32_t>(1 + rng.below(kMaxCost));
 }
 
-// A logical cell whose own cell and four neighbours are all passable:
+// A logical tile whose own tile and four neighbours are all passable:
 // its scaled block's interior tile can be blocked without ever
 // disconnecting the world, because the block's other tiles remain and
 // carry every crossing.
-inline auto interior_logical_cells(const grid::BenchmarkMap& map)
+inline auto interior_logical_tiles(const grid::BenchmarkMap& map)
     -> std::vector<std::size_t> {
-  std::vector<std::size_t> cells;
+  std::vector<std::size_t> tiles;
   for (std::size_t y = 1; y + 1 < map.height; ++y) {
     for (std::size_t x = 1; x + 1 < map.width; ++x) {
       const auto index = y * map.width + x;
@@ -221,11 +221,11 @@ inline auto interior_logical_cells(const grid::BenchmarkMap& map)
                         map.passability[index - map.width] != 0 &&
                         map.passability[index + map.width] != 0;
       if (open) {
-        cells.push_back(index);
+        tiles.push_back(index);
       }
     }
   }
-  return cells;
+  return tiles;
 }
 
 }  // namespace detail
@@ -308,12 +308,12 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
     tess::set_path_agent_goal(tick_state, agents[i], assigned_goals[i]);
   }
 
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   ops.reserve_operations(config_.churn_chunks + 4);
 
   // Churn candidates: interior tiles of fully-open scaled blocks, in
   // scan order, excluding agent starts and goals.
-  const auto interior = detail::interior_logical_cells(map);
+  const auto interior = detail::interior_logical_tiles(map);
   std::vector<TileEdit> churn_pool;
   {
     grid::SplitMix64 rng(config_.seed ^ 0xC17U);
@@ -588,7 +588,7 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
         (void)ops.update_field(
             tess::DomainDesc::explicit_chunks(
                 std::span<const tess::ChunkKey>{&key, 1}),
-            tess::FieldAccessDesc{0, kTerrainDirty, kTerrainDirty},
+            tess::FieldAccessDesc{0, kTerrainDirty.value, kTerrainDirty},
             tess::WritePolicy::UniquePerChunk);
         ++result.counters.churn_operations;
       }

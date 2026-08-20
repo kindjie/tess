@@ -40,7 +40,7 @@ class GoalSet {
 
 /// Reports the closest reachable goal and a scratch-owned path to it.
 struct NearestTargetResult {
-  PathStatus status = PathStatus::NoPath;
+  PathStatus status = PathStatus::NotComputed;
   std::uint32_t cost = 0;
   Coord3 target{};
   std::size_t expanded_nodes = 0;
@@ -69,7 +69,7 @@ class DistanceFieldProduct {
   void reserve_dependencies(std::size_t count) { dependencies_.reserve(count); }
 
   void clear() noexcept {
-    status_ = PathStatus::NoPath;
+    status_ = PathStatus::NotComputed;
     expanded_nodes_ = 0;
     reached_nodes_ = 0;
     tile_count_ = 0;
@@ -102,7 +102,7 @@ class DistanceFieldProduct {
   }
 
   [[nodiscard]] auto dependencies() const noexcept
-      -> std::span<const ChunkVersionDependencies::ChunkVersionDependency> {
+      -> std::span<const ContentVersionDependencies::ContentVersionDependency> {
     return dependencies_.chunks();
   }
 
@@ -147,7 +147,7 @@ class DistanceFieldProduct {
     return distance_.size() * sizeof(std::uint32_t) +
            goals_.size() * sizeof(Coord3) +
            dependencies_.size() *
-               sizeof(ChunkVersionDependencies::ChunkVersionDependency);
+               sizeof(ContentVersionDependencies::ContentVersionDependency);
   }
 
  private:
@@ -213,7 +213,7 @@ class DistanceFieldProduct {
     return false;
   }
 
-  PathStatus status_ = PathStatus::NoPath;
+  PathStatus status_ = PathStatus::NotComputed;
   std::size_t expanded_nodes_ = 0;
   std::size_t reached_nodes_ = 0;
   std::size_t tile_count_ = 0;
@@ -231,7 +231,7 @@ class DistanceFieldProduct {
   std::uint64_t model_provider_revision_ = 0;
   std::vector<Coord3> goals_;
   std::vector<std::uint32_t> distance_;
-  ChunkVersionDependencies dependencies_;
+  ContentVersionDependencies dependencies_;
 };
 
 /// Summarizes field-product cache residency and lookup outcomes.
@@ -245,7 +245,7 @@ struct FieldProductCacheStats {
 };
 
 // Entries validate against world content versions, not a world instance:
-// keep one cache per world (see RouteCacheScratch fingerprint notes for the
+// keep one cache per world (see UnitRouteCache fingerprint notes for the
 // aliasing mechanism).
 /// Owns LRU-cached distance-field products within a configurable byte budget.
 ///
@@ -253,7 +253,7 @@ struct FieldProductCacheStats {
 /// plus revision, but not by world identity; use one cache per world.
 /// Historical provider revisions remain distinct entries until normal LRU
 /// eviction, so configure a finite byte budget when provider state changes
-/// without bound. A stateful provider must stay at a stable address while its
+/// without bound. A stateful provider must stay address-stable while its
 /// products can be retained, and the cache must be cleared before that object
 /// is destroyed. Moving the cache is safe because it does not move the
 /// externally owned provider. Lookup pointers remain cache-owned and are
@@ -528,7 +528,7 @@ class FieldProductCache {
         // Read the pointer BEFORE evicting. `evict_to_budget` erases from
         // `entries_`, and erasing anything at an index below `i` shifts the
         // vector, so `entries_[i]` afterwards is a different entry -- or
-        // past the end when `i` was last. The pointee itself is heap-stable
+        // past the end when `i` was last. The pointee itself is address-stable
         // through the unique_ptr, so capturing it first is sufficient.
         const auto* stored = entries_[i].product.get();
         (void)evict_to_budget();
@@ -709,11 +709,10 @@ class FieldProductCache {
 namespace detail {
 
 template <typename World, typename Model>
-void capture_field_product_dependencies(const World& world,
-                                        std::span<const std::uint64_t> touched,
-                                        std::vector<std::uint8_t>& seen,
-                                        ChunkVersionDependencies& dependencies,
-                                        const Model& model) {
+void capture_field_product_dependencies(
+    const World& world, std::span<const std::uint64_t> touched,
+    std::vector<std::uint8_t>& seen, ContentVersionDependencies& dependencies,
+    const Model& model) {
   using Shape = typename World::shape_type;
   using Traits = ShapeTraits<Shape>;
 
@@ -801,14 +800,14 @@ template <typename World, typename Tag, typename Provider>
   using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
   // Sizes its distance arrays by the global tile count and treats missing
   // chunks as blocked with no MissingChunkPolicy, so on a sparse world it would
-  // allocate for the whole (possibly astronomical) shape. Dense-only until the
-  // distance-field family is ported to NodeIndexSpace; this also transitively
+  // allocate for the whole (possibly astronomical) shape. It is intentionally
+  // dense-only; this also transitively
   // guards distance_field_product_path and nearest_target, which only consume
   // a product built here.
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "build_distance_field_product is dense-only; the sparse distance-field "
-      "slice lands later.");
+      "build_distance_field_product requires an AlwaysResidentWorld; use "
+      "build_distance_field for sparse worlds.");
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
@@ -1169,13 +1168,13 @@ template <typename World, typename Tag, typename Provider>
   using UnitClass = movement::detail::UnitMovementClass<Class>;
   using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
   const auto model = Model{provider};
-  // Indexes product.distance_ by raw tile id, so it is dense-only until the
-  // distance-field product family is ported to NodeIndexSpace. The single-goal
-  // build_distance_field / distance_field_path pair is already sparse-capable.
+  // Indexes product.distance_ by raw tile id, so it is dense-only. The
+  // single-goal build_distance_field / distance_field_path pair is already
+  // sparse-capable.
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "distance_field_product_path is dense-only; the sparse distance-field "
-      "product slice lands later.");
+      "distance_field_product_path requires an AlwaysResidentWorld; use "
+      "distance_field_path for sparse worlds.");
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   scratch.clear_path();
@@ -1204,7 +1203,7 @@ template <typename World, typename Tag, typename Provider>
       product.model_provider_instance_identity_ !=
           detail::transition_provider_instance_identity(provider) ||
       product.model_provider_revision_ != model.revision()) {
-    return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
+    return PathResult{PathStatus::NotComputed, 0, 0, 0, scratch.path_};
   }
 
   const auto start_index = detail::tile_index<Shape>(start);
@@ -1235,7 +1234,7 @@ template <typename World, typename Tag, typename Provider>
           });
       if (next == current || next_distance + 1 != current_distance) {
         scratch.path_.clear();
-        return PathResult{PathStatus::NoPath, 0, 0, product.reached_nodes_,
+        return PathResult{PathStatus::NotComputed, 0, 0, product.reached_nodes_,
                           scratch.path_};
       }
     } else {
@@ -1259,7 +1258,7 @@ template <typename World, typename Tag, typename Provider>
       if (next == current || detail::saturating_add(next_distance, next_cost) !=
                                  current_distance) {
         scratch.path_.clear();
-        return PathResult{PathStatus::NoPath, 0, 0, product.reached_nodes_,
+        return PathResult{PathStatus::NotComputed, 0, 0, product.reached_nodes_,
                           scratch.path_};
       }
     }
@@ -1307,9 +1306,8 @@ template <typename World, typename Class, typename Provider>
     return {PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
   const auto start_index = detail::tile_index<Shape>(start);
-  // LegacyWeighted intentionally keeps boolean passability independent from
-  // its cost field, but a normalized zero entry cost is still impassable to
-  // every weighted query. Check both before a cached distance can be replayed.
+  // A zero normalized entry cost is impassable to every weighted query. Check
+  // it before a cached distance can be replayed.
   if (detail::tile_entry_cost_index<World, Class>(world, start_index) == 0) {
     return {PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
@@ -1330,7 +1328,7 @@ template <typename World, typename Class, typename Provider>
       product.model_provider_instance_identity_ !=
           detail::transition_provider_instance_identity(provider) ||
       product.model_provider_revision_ != model.revision()) {
-    return {PathStatus::NoPath, 0, 0, 0, scratch.path_};
+    return {PathStatus::NotComputed, 0, 0, 0, scratch.path_};
   }
 
   auto current = start_index;
@@ -1361,7 +1359,8 @@ template <typename World, typename Class, typename Provider>
     if (next == current ||
         detail::saturating_add(next_distance, next_cost) != current_distance) {
       scratch.path_.clear();
-      return {PathStatus::NoPath, 0, 0, product.reached_nodes_, scratch.path_};
+      return {PathStatus::NotComputed, 0, 0, product.reached_nodes_,
+              scratch.path_};
     }
     current = next;
     current_distance = product.distance_[current];
@@ -1396,8 +1395,8 @@ template <typename World, typename Tag, typename Provider>
   // only transitively through distance_field_product_path below.
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "nearest_target is dense-only; the sparse distance-field product slice "
-      "lands later.");
+      "nearest_target requires an AlwaysResidentWorld and a dense distance "
+      "field product.");
   const auto path = distance_field_product_path<World, Tag, Provider>(
       world, start, product, scratch, provider);
   auto target = Coord3{};

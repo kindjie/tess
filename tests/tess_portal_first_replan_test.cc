@@ -9,6 +9,9 @@ namespace {
 
 struct PassableTag {};
 struct CostTag {};
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
@@ -52,7 +55,7 @@ void expect_legal_weighted(World& world, std::span<const tess::Coord3> path) {
   for (std::size_t i = 0; i < path.size(); ++i) {
     const auto tile = path[i];
     EXPECT_TRUE(world.template field<PassableTag>(tile))
-        << "blocked tile at index " << i;
+        << "impassable tile at index " << i;
     if (i > 0) {
       const auto prev = path[i - 1];
       const auto manhattan = std::abs(tile.x - prev.x) +
@@ -66,7 +69,7 @@ void expect_legal_weighted(World& world, std::span<const tess::Coord3> path) {
 // PathResult::path borrows the scratch, so the reference copies it out
 // before the scratch dies.
 struct ExactReference {
-  tess::PathStatus status = tess::PathStatus::NoPath;
+  tess::PathStatus status = tess::PathStatus::NotComputed;
   std::uint32_t cost = 0;
   std::uint32_t cost_scale = 1;
   std::size_t expanded_nodes = 0;
@@ -78,7 +81,7 @@ auto exact_reference(MidWorld& world, tess::PathRequest request)
     -> ExactReference {
   tess::PathScratch scratch;
   scratch.reserve_nodes(std::size_t{32} * 32);
-  const auto result = tess::weighted_astar_path<MidWorld, PassableTag, CostTag>(
+  const auto result = tess::weighted_astar_path<MidWorld, WeightedMovement>(
       world, request, scratch);
   return ExactReference{
       result.status,        result.cost,
@@ -102,15 +105,17 @@ TEST(TessPortalFirstReplan, CachedBuilderMatchesUncachedAndReusesSegments) {
 
   tess::WeightedPortalRouteProduct uncached;
   const auto baseline =
-      tess::build_weighted_chunk_portal_route_product<MidWorld, PassableTag,
-                                                      CostTag>(
+      tess::build_weighted_chunk_portal_route_product<MidWorld,
+                                                      WeightedMovement>(
           world, request, scratch, uncached);
   ASSERT_EQ(baseline.status, tess::PathStatus::Found);
 
   tess::WeightedPortalSegmentCache cache;
   tess::WeightedPortalRouteProduct product;
-  const auto cold = tess::build_weighted_chunk_portal_route_product_cached<
-      MidWorld, PassableTag, CostTag>(world, request, scratch, cache, product);
+  const auto cold =
+      tess::build_weighted_chunk_portal_route_product_cached<MidWorld,
+                                                             WeightedMovement>(
+          world, request, scratch, cache, product);
   ASSERT_EQ(cold.status, tess::PathStatus::Found);
   EXPECT_EQ(cold.cost, baseline.cost);
   ASSERT_EQ(cold.path.size(), baseline.path.size());
@@ -119,9 +124,10 @@ TEST(TessPortalFirstReplan, CachedBuilderMatchesUncachedAndReusesSegments) {
   }
 
   tess::WeightedPortalRouteProduct warm_product;
-  const auto warm = tess::build_weighted_chunk_portal_route_product_cached<
-      MidWorld, PassableTag, CostTag>(world, request, scratch, cache,
-                                      warm_product);
+  const auto warm =
+      tess::build_weighted_chunk_portal_route_product_cached<MidWorld,
+                                                             WeightedMovement>(
+          world, request, scratch, cache, warm_product);
   ASSERT_EQ(warm.status, tess::PathStatus::Found);
   EXPECT_EQ(warm.cost, cold.cost);
   EXPECT_EQ(warm.expanded_nodes, 0u);  // Every segment served from cache.
@@ -144,8 +150,8 @@ TEST(TessPortalFirstReplan, AcceptedSingletonIsLegalWithinCap) {
   policy.portal_premium_limit_num = 4;
   policy.portal_premium_limit_den = 3;
   const auto results =
-      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
-          world, policy);
+      runtime.process_weighted_batch<MidWorld, WeightedMovement, 16>(world,
+                                                                     policy);
   ASSERT_EQ(results.size(), 1u);
   ASSERT_EQ(results[0].status, tess::PathStatus::Found);
   expect_legal_weighted(world, results[0].path.span());
@@ -181,8 +187,8 @@ TEST(TessPortalFirstReplan, PremiumRejectionFallsBackToExactParity) {
   policy.portal_premium_limit_num = 1;
   policy.portal_premium_limit_den = 1;
   const auto results =
-      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
-          world, policy);
+      runtime.process_weighted_batch<MidWorld, WeightedMovement, 16>(world,
+                                                                     policy);
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].status, reference.status);
   EXPECT_EQ(results[0].cost, reference.cost);
@@ -222,8 +228,8 @@ TEST(TessPortalFirstReplan, TwoDistinctGoalSingletonsDoNotAlias) {
   policy.portal_premium_limit_num = 4;
   policy.portal_premium_limit_den = 3;
   const auto results =
-      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
-          world, policy);
+      runtime.process_weighted_batch<MidWorld, WeightedMovement, 16>(world,
+                                                                     policy);
   ASSERT_EQ(results.size(), 2u);
   for (std::size_t i = 0; i < 2; ++i) {
     ASSERT_EQ(results[i].status, tess::PathStatus::Found) << i;
@@ -278,8 +284,8 @@ TEST(TessPortalFirstReplan, MixedBatchStatsConserveAndFallbacksMatchExact) {
   policy.portal_premium_limit_num = 4;
   policy.portal_premium_limit_den = 3;
   const auto results =
-      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
-          world, policy);
+      runtime.process_weighted_batch<MidWorld, WeightedMovement, 16>(world,
+                                                                     policy);
   ASSERT_EQ(results.size(), 4u);
 
   EXPECT_EQ(results[0].status, sealed_reference.status);
@@ -308,7 +314,7 @@ TEST(TessPortalFirstReplan, DefaultStrategyIsExactWithZeroPortalStats) {
   tess::PathRequestRuntime runtime;
   (void)runtime.submit(request);
   const auto results =
-      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
+      runtime.process_weighted_batch<MidWorld, WeightedMovement, 16>(
           world, tess::PathRuntimeCachePolicy{});
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].status, reference.status);
@@ -343,8 +349,8 @@ TEST(TessPortalFirstReplan, AggregateCostOverflowFallsBackToExact) {
   policy.weighted_replan_strategy = tess::WeightedReplanStrategy::PortalFirst;
   policy.portal_premium_limit_num = 0;  // No cap: only the sentinel guards.
   const auto results =
-      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
-          world, policy);
+      runtime.process_weighted_batch<MidWorld, WeightedMovement, 16>(world,
+                                                                     policy);
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].status, tess::PathStatus::CostOverflow);
 
@@ -371,8 +377,8 @@ TEST(TessPortalFirstReplan, ZeroDenominatorDoesNotDisableTheCap) {
   policy.portal_premium_limit_num = 1;
   policy.portal_premium_limit_den = 0;
   const auto results =
-      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
-          world, policy);
+      runtime.process_weighted_batch<MidWorld, WeightedMovement, 16>(world,
+                                                                     policy);
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].status, tess::PathStatus::Found);
 
@@ -393,8 +399,8 @@ TEST(TessPortalFirstReplan, InvalidEndpointsCountNoAttempt) {
   auto policy = tess::PathRuntimeCachePolicy{};
   policy.weighted_replan_strategy = tess::WeightedReplanStrategy::PortalFirst;
   const auto results =
-      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
-          world, policy);
+      runtime.process_weighted_batch<MidWorld, WeightedMovement, 16>(world,
+                                                                     policy);
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].status, tess::PathStatus::InvalidGoal);
 
@@ -403,21 +409,25 @@ TEST(TessPortalFirstReplan, InvalidEndpointsCountNoAttempt) {
   EXPECT_EQ(stats.ineligible_fallbacks, 0u);
 }
 
-// A non-legacy movement class is compile-time ineligible: PortalFirst
+// A diagonal-step movement class is compile-time ineligible: PortalFirst
 // requests take the exact path and the ineligible counter — not silence —
 // records the misconfiguration.
 TEST(TessPortalFirstReplan, IneligibleClassBypassesWithVisibleStats) {
   MidWorld world;
   fill_world(world, true, 1);
 
-  using Walkable = tess::movement::WalkableCostField<PassableTag, CostTag>;
+  using DiagonalMovement = tess::movement::MovementClass<
+      tess::movement::AllOf<tess::movement::Field<PassableTag>,
+                            tess::movement::NotZero<CostTag>>,
+      tess::movement::FieldCost<CostTag>, tess::movement::DiagonalSteps<>>;
   tess::PathRequestRuntime runtime;
   (void)runtime.submit(
       tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{30, 28, 0}});
   auto policy = tess::PathRuntimeCachePolicy{};
   policy.weighted_replan_strategy = tess::WeightedReplanStrategy::PortalFirst;
   const auto results =
-      runtime.process_weighted_batch<MidWorld, Walkable, 16>(world, policy);
+      runtime.process_weighted_batch<MidWorld, DiagonalMovement, 16>(world,
+                                                                     policy);
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].status, tess::PathStatus::Found);
 
@@ -447,7 +457,7 @@ TEST(TessPortalFirstReplan, IdenticalBatchesAreDeterministic) {
       policy.portal_premium_limit_num = 4;
       policy.portal_premium_limit_den = 3;
       const auto results =
-          runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
+          runtime.process_weighted_batch<MidWorld, WeightedMovement, 16>(
               world, policy);
       for (const auto& result : results) {
         trace.push_back(static_cast<std::uint64_t>(result.status));

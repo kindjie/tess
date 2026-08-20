@@ -74,14 +74,14 @@ TESS_STRATEGIES_EXPORT auto tess_strategies_count() -> std::int32_t {
   return model() == nullptr ? kInvalid : 4;
 }
 
-TESS_STRATEGIES_EXPORT auto tess_strategies_cell_passable(std::int32_t x,
+TESS_STRATEGIES_EXPORT auto tess_strategies_tile_passable(std::int32_t x,
                                                           std::int32_t y)
     -> std::int32_t {
   const auto* value = model();
   if (value == nullptr) {
     return kInvalid;
   }
-  const auto selected = value->cell_passable(x, y);
+  const auto selected = value->tile_passable(x, y);
   return selected.has_value() ? (*selected ? 1 : 0) : kInvalid;
 }
 

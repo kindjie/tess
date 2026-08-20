@@ -31,12 +31,12 @@ using DeltaSchema = tess::FieldSchema<tess::Field<TerrainTag, std::uint8_t>,
                                       tess::Field<DecorTag, std::uint8_t>>;
 using DeltaWorld = tess::AlwaysResidentWorld<DeltaShape, DeltaSchema>;
 
-constexpr std::uint32_t kTerrainBit = 1U << 0U;
+constexpr auto kTerrainDirty = tess::DirtyMask{1u << 0u};
 
 void mark_tile(DeltaWorld& world, tess::Coord3 coord) {
   world.mark_dirty(
       tess::chunk_key<DeltaShape>(tess::tile_key<DeltaShape>(coord)),
-      kTerrainBit, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+      kTerrainDirty, tess::Box3{coord, tess::Extent3{1, 1, 1}});
 }
 
 // K scattered single-tile marks; collection cost tracks the dirty count
@@ -53,7 +53,7 @@ void BM_render_delta_collect_sparse(benchmark::State& state) {
       // Deterministic scatter, one tile per touched chunk.
       mark_tile(*world, tess::Coord3{(i * 61) % 512, (i * 127) % 512, 0});
     }
-    tess::collect_tile_deltas(collector, *world, kTerrainBit);
+    tess::collect_tile_deltas(collector, *world, kTerrainDirty);
     const auto frame = collector.publish();
     last_chunks = frame.chunks().size();
     benchmark::DoNotOptimize(last_chunks);
@@ -75,9 +75,9 @@ void BM_render_delta_collect_box(benchmark::State& state) {
       const auto origin = tess::Coord3{(chunk % 8) * 8, (chunk / 8) * 8, 0};
       world->mark_dirty(
           tess::chunk_key<DeltaShape>(tess::tile_key<DeltaShape>(origin)),
-          kTerrainBit, tess::Box3{origin, tess::Extent3{8, 8, 1}});
+          kTerrainDirty, tess::Box3{origin, tess::Extent3{8, 8, 1}});
     }
-    tess::collect_tile_deltas(collector, *world, kTerrainBit);
+    tess::collect_tile_deltas(collector, *world, kTerrainDirty);
     const auto frame = collector.publish();
     last_chunks = frame.chunks().size();
     benchmark::DoNotOptimize(last_chunks);
@@ -130,7 +130,7 @@ void BM_render_delta_baseline(benchmark::State& state) {
 
   std::size_t last_chunks = 0;
   for (auto _ : state) {
-    tess::collect_baseline(collector, *world, kTerrainBit);
+    tess::collect_baseline(collector, *world, kTerrainDirty);
     const auto frame = collector.publish();
     last_chunks = frame.chunks().size();
     benchmark::DoNotOptimize(last_chunks);
@@ -152,7 +152,7 @@ void BM_render_delta_collect_alloc_gate(benchmark::State& state) {
   collector.begin_tick(1);
   collector.record_move(tess::EntityHandle{1}, tess::Coord3{0, 0, 0},
                         tess::Coord3{1, 0, 0});
-  tess::collect_tile_deltas(collector, *world, kTerrainBit);
+  tess::collect_tile_deltas(collector, *world, kTerrainDirty);
   (void)collector.publish();
 
   tess::diagnostics::AllocationCounters counters;
@@ -164,7 +164,7 @@ void BM_render_delta_collect_alloc_gate(benchmark::State& state) {
     collector.begin_tick(tick++);
     collector.record_move(tess::EntityHandle{1}, tess::Coord3{0, 0, 0},
                           tess::Coord3{1, 0, 0});
-    tess::collect_tile_deltas(collector, *world, kTerrainBit);
+    tess::collect_tile_deltas(collector, *world, kTerrainDirty);
     const auto frame = collector.publish();
     auto chunks = frame.chunks().size();
     benchmark::DoNotOptimize(chunks);
@@ -207,7 +207,7 @@ void BM_render_delta_collect_scan(benchmark::State& state) {
   std::size_t last_size = 0;
   for (auto _ : state) {
     out.clear();
-    tess::collect_render_tile_deltas(out, *world, kTerrainBit);
+    tess::collect_render_tile_deltas(out, *world, kTerrainDirty);
     last_size = out.size();
     benchmark::DoNotOptimize(last_size);
   }

@@ -65,7 +65,7 @@ template <typename World>
 
 }  // namespace detail
 
-/** Stable enqueue-order identifier assigned within one `FrameOps` batch. */
+/** Enqueue-order identifier scoped to one `OperationBatch`. */
 struct OpId {
   std::uint64_t value = 0;
 
@@ -119,7 +119,7 @@ struct IntentVersions {
 
 /** Declares product families invalidated when an intent commits. */
 struct IntentInvalidations {
-  std::uint32_t field_mask = 0;
+  DirtyMask dirty_mask{};
   bool topology = false;
   bool paths = false;
   bool render = false;
@@ -184,12 +184,13 @@ struct IntentPayloadView {
    * Once the precondition holds, an empty result means the batch is empty
    * and nothing else. Before, it also meant "this view carries some other
    * type" and "this view carries nothing at all", so a caller that asked
-   * for the wrong type processed zero items every frame with no signal —
+   * for the wrong type processed zero items every operation batch with no
+   * signal —
    * the failure the assertion now names. Use `holds<T>()` where the type
    * is genuinely in question, and `bound()` to skip payloadless
    * operations.
    *
-   * The typed `FrameOps` entry points pair each `OperationKind` with the
+   * The typed `OperationBatch` entry points pair each `OperationKind` with the
    * payload type it names, so a consumer dispatching on `kind` over
    * operations from those entry points has the type fixed for it and a
    * mismatch is a caller bug. Nothing enforces that pairing on a
@@ -298,17 +299,17 @@ class DomainDesc {
     return desc;
   }
 
-  [[nodiscard]] static constexpr auto dirty_chunks(std::uint32_t flags) noexcept
+  [[nodiscard]] static constexpr auto dirty_chunks(DirtyMask mask) noexcept
       -> DomainDesc {
     DomainDesc desc{DomainKind::DirtyChunks};
-    desc.mask_ = flags;
+    desc.mask_ = mask.value;
     return desc;
   }
 
-  [[nodiscard]] static constexpr auto active_chunks(
-      std::uint32_t flags) noexcept -> DomainDesc {
+  [[nodiscard]] static constexpr auto active_chunks(ActiveMask mask) noexcept
+      -> DomainDesc {
     DomainDesc desc{DomainKind::ActiveChunks};
-    desc.mask_ = flags;
+    desc.mask_ = mask.value;
     return desc;
   }
 
@@ -320,7 +321,16 @@ class DomainDesc {
     return kind_;
   }
 
-  [[nodiscard]] constexpr auto mask() const noexcept -> std::uint32_t {
+  [[nodiscard]] constexpr auto dirty_mask() const noexcept -> DirtyMask {
+    return DirtyMask{mask_};
+  }
+
+  [[nodiscard]] constexpr auto active_mask() const noexcept -> ActiveMask {
+    return ActiveMask{mask_};
+  }
+
+  /// Returns the stored selector bits for planner identity and diagnostics.
+  [[nodiscard]] constexpr auto mask_bits() const noexcept -> std::uint32_t {
     return mask_;
   }
 
@@ -341,7 +351,7 @@ class DomainDesc {
 struct FieldAccessDesc {
   std::uint32_t read_mask = 0;
   std::uint32_t write_mask = 0;
-  std::uint32_t dirty_mask = 0;
+  DirtyMask dirty_mask = {};
 
   friend constexpr bool operator==(FieldAccessDesc lhs,
                                    FieldAccessDesc rhs) noexcept = default;
@@ -438,7 +448,7 @@ struct ResidencyDesc {
 /** Describes a direct dirty mark over a chunk domain. */
 struct MarkDirtyDesc {
   DomainDesc domain = DomainDesc::resident_chunks();
-  std::uint32_t dirty_mask = 0;
+  DirtyMask dirty_mask = {};
 };
 
 /** Non-owning typed batch consumed by a render-delta publisher. */
@@ -555,8 +565,8 @@ class PlannedOperation {
       const World& /*world*/) const noexcept -> PlannedExecutionStatus {
     static_assert(
         std::is_same_v<typename World::residency_type, AlwaysResident>,
-        "Queued-op validation requires an AlwaysResidentWorld; sparse "
-        "queued-ops support is deferred to a later slice.");
+        "Queued-op validation requires an AlwaysResidentWorld; use direct "
+        "sparse-world operations instead.");
     return detail::validate_planned_world_stamp<World>(world_stamp_);
   }
 
@@ -571,7 +581,7 @@ class PlannedOperation {
         handle(operation.handle),
         id(operation.id),
         access(OperationAccess{operation.write_policy, operation.domain.kind(),
-                               operation.domain.mask()}),
+                               operation.domain.mask_bits()}),
         field_access(operation.field_access),
         write_policy(operation.write_policy),
         priority(operation.priority),
@@ -602,10 +612,9 @@ auto PlannedOperation::create(const World& /*world*/,
                               const QueuedOperation& operation,
                               std::span<const ChunkKey> chunks)
     -> PlannedOperationCreateResult {
-  static_assert(
-      std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "Queued operations require an AlwaysResidentWorld; sparse queued-ops "
-      "support is deferred to a later slice.");
+  static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
+                "Queued operations require an AlwaysResidentWorld; use direct "
+                "sparse-world operations instead.");
 
   for (const auto key : chunks) {
     if (key.value >= World::chunk_count) {
@@ -724,8 +733,8 @@ class ExecutionPhase {
       const World& /*world*/) const noexcept -> PlannedExecutionStatus {
     static_assert(
         std::is_same_v<typename World::residency_type, AlwaysResident>,
-        "Queued-op validation requires an AlwaysResidentWorld; sparse "
-        "queued-ops support is deferred to a later slice.");
+        "Queued-op validation requires an AlwaysResidentWorld; use direct "
+        "sparse-world operations instead.");
     return detail::validate_planned_world_stamp<World>(world_stamp_);
   }
 
@@ -895,7 +904,7 @@ struct OperationReport {
 /** Associates one validated chunk with deferred dirty metadata. */
 struct PlannedDirtyRecord {
   ChunkKey chunk{};
-  std::uint32_t dirty_mask = 0;
+  DirtyMask dirty_mask = {};
   Box3 bounds{};
 };
 
@@ -978,13 +987,13 @@ class PlannedDirtyAccumulator {
   /** Records a dirty chunk only when it belongs to `world`'s shape. */
   template <typename World>
   [[nodiscard]] auto record(const World& /*world*/, ChunkKey chunk,
-                            std::uint32_t dirty_mask, Box3 bounds)
+                            DirtyMask dirty_mask, Box3 bounds)
       -> PlannedDirtyRecordStatus {
     static_assert(
         std::is_same_v<typename World::residency_type, AlwaysResident>,
-        "Queued-op dirty recording requires an AlwaysResidentWorld; sparse "
-        "queued-ops support is deferred to a later slice.");
-    if (dirty_mask == 0) {
+        "Queued-op dirty recording requires an AlwaysResidentWorld; use "
+        "direct sparse-world operations instead.");
+    if (!dirty_mask) {
       return PlannedDirtyRecordStatus::IgnoredEmptyMask;
     }
     if (chunk.value >= World::chunk_count) {
@@ -1018,8 +1027,8 @@ class PlannedDirtyAccumulator {
       -> PlannedDirtyMergeStatus {
     static_assert(
         std::is_same_v<typename World::residency_type, AlwaysResident>,
-        "Queued-op dirty validation requires an AlwaysResidentWorld; sparse "
-        "queued-ops support is deferred to a later slice.");
+        "Queued-op dirty validation requires an AlwaysResidentWorld; use "
+        "direct sparse-world operations instead.");
     if (world_stamp_ == nullptr) {
       return PlannedDirtyMergeStatus::Merged;
     }
@@ -1071,8 +1080,8 @@ class PlannedDirtyAccumulator {
     world_stamp_ = detail::planned_world_stamp<World>();
   }
 
-  void record_validated(ChunkKey chunk, std::uint32_t dirty_mask, Box3 bounds) {
-    if (dirty_mask == 0) {
+  void record_validated(ChunkKey chunk, DirtyMask dirty_mask, Box3 bounds) {
+    if (!dirty_mask) {
       return;
     }
     records_.push_back(PlannedDirtyRecord{chunk, dirty_mask, bounds});
@@ -1087,7 +1096,7 @@ auto detail::execute_validated_planned_operation_deferred_dirty(
     World& world, const PlannedOperation& operation,
     PlannedDirtyAccumulator& dirty, Fn&& fn) -> PlannedExecutionResult {
   if constexpr (BindWorld) {
-    if (operation.field_access.dirty_mask != 0) {
+    if (operation.field_access.dirty_mask) {
       dirty.bind_validated_world(world);
     }
   }
@@ -1190,8 +1199,8 @@ class PhaseDirtyPartition {
 
   void clear() noexcept { records_.clear(); }
 
-  void record(ChunkKey chunk, std::uint32_t dirty_mask, Box3 bounds) {
-    if (dirty_mask != 0) {
+  void record(ChunkKey chunk, DirtyMask dirty_mask, Box3 bounds) {
+    if (dirty_mask) {
       // Phase setup reserves one record for every possible chunk visit.
       TESS_ASSERT(records_.size() < records_.capacity());
       records_.push_back(PlannedDirtyRecord{chunk, dirty_mask, bounds});
@@ -1278,7 +1287,7 @@ class ChunkOperationIndex {
 
   // Stamped, not rewritten: `slots_` keeps its high-water size across the
   // report reuse this index exists to serve, so clearing it per plan would
-  // charge every small frame for the largest frame that came before.
+  // charge every small batch for the largest batch that came before.
   void clear() noexcept {
     nodes_.clear();
     if (++generation_ != 0) {
@@ -1566,8 +1575,7 @@ class ExecutionReport {
 
   // Clears all results while keeping every allocation -- report rows,
   // planned operations, and their chunk lists (parked in a pool) -- so a
-  // caller-owned report makes steady-state planning allocation-free
-  // (audit 2026-07-11 M4).
+  // caller-owned report makes steady-state planning allocation-free.
   void reset() {
     plan_.bump_generation();
     for (auto& planned : plan_.operations_) {
@@ -1648,16 +1656,16 @@ class ExecutionReport {
   ExecutionPlan plan_;
   std::vector<std::vector<ChunkKey>> chunk_pool_;
   // Chunk -> accepted-operation index, so hazard detection stays linear in
-  // the operations that share a chunk rather than in the whole plan
-  // (audit 2026-08-07 P1). Cleared, not freed, by `reset`.
+  // the operations that share a chunk rather than in the whole plan. Cleared,
+  // not freed, by `reset`.
   detail::ChunkOperationIndex chunk_index_;
   // Accepted operations too wide to index, in plan order. Scanned the way
   // the planner always scanned, which for these is the cheaper path.
   std::vector<std::uint32_t> wide_operations_;
 };
 
-/** Collects one frame's operations while assigning stable handles and IDs. */
-class FrameOps {
+/** Collects one operation batch while assigning batch-local handles and IDs. */
+class OperationBatch {
  public:
   void reserve_operations(std::size_t count) { operations_.reserve(count); }
 
@@ -1743,7 +1751,7 @@ class FrameOps {
     auto metadata = IntentMetadata{};
     metadata.domain = std::move(desc.domain);
     metadata.field_access.dirty_mask = desc.dirty_mask;
-    metadata.invalidations.field_mask = desc.dirty_mask;
+    metadata.invalidations.dirty_mask = desc.dirty_mask;
     return enqueue(OperationKind::MarkDirty, std::move(metadata), {}, source);
   }
 
@@ -1776,8 +1784,8 @@ class FrameOps {
     return operations_.size();
   }
 
-  // Clears queued operations for per-frame reuse while keeping the enqueue
-  // vector's capacity, so warm frame loops re-enqueue without allocating.
+  // Clears queued operations for per-batch reuse while keeping the enqueue
+  // vector's capacity, so warm batch loops re-enqueue without allocating.
   // Previously returned handles are invalidated; handle and id assignment
   // restarts at zero on the next enqueue.
   void clear() noexcept { operations_.clear(); }
@@ -1817,7 +1825,7 @@ namespace detail {
   return OperationAccess{
       op.write_policy,
       op.domain.kind(),
-      op.domain.mask(),
+      op.domain.mask_bits(),
   };
 }
 
@@ -1845,7 +1853,7 @@ template <typename World>
 
 // Fills `chunks` in place (clearing it first) so a caller-supplied vector
 // keeps its capacity across plans instead of being replaced by a fresh
-// allocation per operation (audit 2026-07-11 M4).
+// allocation per operation.
 template <typename World>
 [[nodiscard]] auto expand_domain(const World& world, const DomainDesc& domain,
                                  std::vector<ChunkKey>& chunks,
@@ -1861,10 +1869,10 @@ template <typename World>
                     domain.explicit_chunks().end());
       return true;
     case DomainKind::DirtyChunks:
-      world.collect_dirty_chunks(domain.mask(), chunks);
+      world.collect_dirty_chunks(domain.dirty_mask(), chunks);
       return true;
     case DomainKind::ActiveChunks:
-      world.collect_active_chunks(domain.mask(), chunks);
+      world.collect_active_chunks(domain.active_mask(), chunks);
       return true;
     case DomainKind::ResidentChunks:
       chunks.reserve(static_cast<std::size_t>(World::chunk_count));
@@ -2005,9 +2013,8 @@ inline constexpr std::size_t phase_index_min_operations = 16;
 [[nodiscard]] constexpr auto dirty_axis_end(std::int64_t origin,
                                             std::uint64_t extent) noexcept
     -> std::int64_t {
-  // Saturating: an unguarded origin + int64(extent) is UB for huge
-  // caller-supplied extents (audit 2026-07-11 C1); share chunk_meta's
-  // guarded helper.
+  // Saturating: an unguarded origin + int64(extent) is undefined for huge
+  // caller-supplied extents, so share chunk_meta's guarded helper.
   return detail::box_axis_end(origin, extent);
 }
 
@@ -2028,7 +2035,7 @@ inline constexpr std::size_t phase_index_min_operations = 16;
     -> std::uint64_t {
   // end >= origin, but a saturated INT64_MAX end paired with a negative
   // origin spans more than int64 can hold, so the subtraction must happen
-  // in unsigned space (mirrors chunk_meta's union; audit 2026-07-11 C1).
+  // in unsigned space, mirroring chunk_meta's union.
   return abs_delta(end, origin);
 }
 
@@ -2064,16 +2071,12 @@ template <typename World>
 auto plan_operations(const World& world,
                      std::span<const QueuedOperation> operations,
                      ExecutionReport& report) -> const ExecutionReport& {
-  // Queued operations are not yet sparse-aware: expand_domain's ResidentChunks
-  // case enumerates 0..chunk_count (an OOM on a huge sparse world, and it would
-  // yield non-resident keys the executor then writes through), so restrict the
-  // whole planner to always-resident worlds until the sparse queued-ops slice
-  // ports it. This fails loudly at compile time rather than silently OOMing --
-  // matching how every other deferred sparse-unsafe family is guarded.
-  static_assert(
-      std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "Queued operations require an AlwaysResidentWorld; sparse queued-ops "
-      "support is deferred to a later slice.");
+  // Queued operations require dense storage: ResidentChunks expands every
+  // chunk key, and the executor writes through each expanded key. Reject sparse
+  // worlds at compile time instead of enumerating non-resident chunks.
+  static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
+                "Queued operations require an AlwaysResidentWorld; use direct "
+                "sparse-world operations instead.");
   report.reset();
   report.reserve(operations.size());
 
@@ -2190,15 +2193,16 @@ template <typename World>
 }
 
 template <typename World>
-/** Validates frame operations into caller-owned reusable report storage. */
-auto plan_operations(const World& world, const FrameOps& ops,
+/** Validates an operation batch into caller-owned reusable report storage. */
+auto plan_operations(const World& world, const OperationBatch& ops,
                      ExecutionReport& report) -> const ExecutionReport& {
   return plan_operations(world, ops.operations(), report);
 }
 
 template <typename World>
-/** Validates frame operations and returns a newly allocated report. */
-[[nodiscard]] auto plan_operations(const World& world, const FrameOps& ops)
+/** Validates an operation batch and returns a newly allocated report. */
+[[nodiscard]] auto plan_operations(const World& world,
+                                   const OperationBatch& ops)
     -> ExecutionReport {
   return plan_operations(world, ops.operations());
 }
@@ -2313,7 +2317,7 @@ template <typename World>
     -> PlannedDirtyMergeResult {
   static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
                 "Queued-op dirty merge requires an AlwaysResidentWorld; sparse "
-                "queued-ops support is deferred to a later slice.");
+                "worlds must merge changes through direct operations.");
 
   const auto validation = dirty.validation_status(world);
   if (validation != PlannedDirtyMergeStatus::Merged) {
@@ -2648,8 +2652,8 @@ template <WritePolicy Policy, typename World>
     -> std::optional<BlockCtx<World, Policy>> {
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "Queued-op execution requires an AlwaysResidentWorld; sparse queued-ops "
-      "support is deferred to a later slice.");
+      "Queued-op execution requires an AlwaysResidentWorld; use direct "
+      "sparse-world operations instead.");
   if (validate_planned_operation<Policy>(world, operation) !=
       PlannedExecutionStatus::Executed) {
     return std::nullopt;
@@ -2675,7 +2679,7 @@ template <WritePolicy Policy, typename World, typename Fn>
   std::size_t chunk_count = 0;
   auto&& callback = fn;
   ctx.for_each_chunk([&](auto view) {
-    if (operation.field_access.dirty_mask != 0) {
+    if (operation.field_access.dirty_mask) {
       world.mark_dirty(view.key(), operation.field_access.dirty_mask,
                        view.bounds());
     }
@@ -2701,7 +2705,7 @@ template <WritePolicy Policy, typename World, typename Fn>
         0,
     };
   }
-  if (operation.field_access.dirty_mask != 0) {
+  if (operation.field_access.dirty_mask) {
     const auto dirty_validation = dirty.validation_status(world);
     if (dirty_validation != PlannedDirtyMergeStatus::Merged) {
       return PlannedExecutionResult{
@@ -2849,7 +2853,7 @@ template <WritePolicy Policy, typename Executor, typename World, typename Fn>
   for (std::size_t offset = 0; offset < phase.operation_count(); ++offset) {
     const auto index = phase.first_operation() + offset;
     scratch.dirty_for_operation(offset).reserve(
-        operations[index].field_access.dirty_mask == 0
+        !operations[index].field_access.dirty_mask
             ? 0
             : operations[index].chunks().size());
   }

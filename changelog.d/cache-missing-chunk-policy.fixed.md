@@ -1,11 +1,11 @@
 - `cached_astar_path` accepts a `MissingChunkPolicy`. It previously
-  hardcoded `TreatAsBlocked` with no override, so on a sparse world the
+  hardcoded the impassable assumption with no override, so on a sparse world the
   cached call returned `NoPath` where the identical uncached call returned
   `Indeterminate` — adding a route cache for performance changed
   correctness semantics. `PathStatus::Indeterminate` exists specifically
   so a caller never mistakes "not searched" for "no route exists". The
-  parameter defaults to `TreatAsBlocked`, so every existing call is
-  unchanged.
+  parameter now defaults to `ReportIndeterminate`, matching the safer default
+  across public sparse-aware path entry points.
 - The policy binds to the whole cache rather than joining the entry key,
   matching the existing `bind_class` and `bind_provider` precedent: a
   lookup under a different policy drops the cache and counts a
@@ -20,16 +20,11 @@
   always zero on a dense world.
 - `Indeterminate` results stay cacheable. They are deterministic within a
   residency epoch — any evict, reload, or in-place edit changes the
-  world-version fingerprint and drops the cache before a serve — and they
+  content-version fingerprint and drops the cache before a serve — and they
   come from the most expensive searches, so refusing to cache them would
   have traded a correctness trap for a silent performance one, aimed at
   exactly the callers who opted into correctness.
-- **`weighted_path_batch` still hardcodes `TreatAsBlocked`.** Threading
-  the policy there was implemented and then withdrawn: when several
-  requests share a goal the batch builds one reverse field, and a field
-  whose flood reaches a missing chunk reports `Indeterminate` globally, so
-  members that *were* reached came back `Indeterminate` where an
-  independent `weighted_astar_path` returns `Found`. Grouping would have
-  changed the answer — the same class of defect this change exists to
-  remove. Per-member reclassification against the completed field is the
-  fix, and it is a larger change than parameter plumbing.
+- `weighted_path_batch` accepts and preserves the same policy. When a shared
+  reverse field touches a missing chunk, reached members still return `Found`;
+  only unreached members fall back to independent A* classification. Grouping
+  therefore cannot change a request's status.

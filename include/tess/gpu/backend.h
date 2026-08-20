@@ -5,8 +5,8 @@
 #include <concepts>
 #include <cstdint>
 
-// M13 GPU backend concept: compile-time polymorphic, supplied by the
-// game or a plugin, never required. tess defines what a backend must
+// GPU backend concept: compile-time polymorphic, supplied by the game or a
+// plugin, never required. tess defines what a backend must
 // answer (capabilities) and accept (uploads, dispatches, readbacks);
 // NoGpuBackend is the default that compiles everywhere and refuses
 // everything, so CPU-only builds carry zero GPU obligations.

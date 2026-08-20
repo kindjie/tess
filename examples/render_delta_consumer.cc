@@ -1,9 +1,8 @@
-// Headless DeltaFrame consumer: the living documentation of the M11
-// frame contract. A small world publishes versioned frames of tile
-// invalidations and entity deltas; the consumer applies them into its
-// own shadow grid, deliberately drops one frame mid-run, detects the
-// version gap through delta_frame_applicable, and resyncs with a full
-// baseline. Prints the shadow after every applied frame.
+// Headless DeltaFrame consumer: a small world publishes versioned frames of
+// tile invalidations and entity deltas; the consumer applies them into its own
+// shadow grid, deliberately drops one frame mid-run, detects the version gap
+// through delta_frame_applicable, and resyncs with a full baseline. Prints the
+// shadow after every applied frame.
 #include <tess/core/config.h>
 #include <tess/tess.h>
 
@@ -22,7 +21,7 @@ using Shape = tess::Shape<tess::Extent3{16, 8}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<tess::Field<GlyphTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
-constexpr std::uint32_t kGlyphBit = 1U << 0U;
+constexpr auto kGlyphBit = tess::DirtyMask{1U << 0U};
 
 void paint(World& world, tess::Coord3 coord, char glyph) {
   world.field<GlyphTag>(coord) = static_cast<std::uint8_t>(glyph);

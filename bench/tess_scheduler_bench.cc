@@ -91,14 +91,14 @@ void BM_scheduler_dirty_trigger(benchmark::State& state) {
     (void)schedule.add_task(
         {"idle", tess::SimPhase::Movement, tess::Cadence::manual()}, task);
   }
-  (void)schedule.add_task(
-      {"consumer", tess::SimPhase::Topology, tess::Cadence::on_dirty(1u)},
-      consumer);
+  (void)schedule.add_task({"consumer", tess::SimPhase::Topology,
+                           tess::Cadence::on_dirty(tess::DirtyMask{1u})},
+                          consumer);
   schedule.seal();
 
   tess::SimClock clock;
   for (auto _ : state) {
-    schedule.notify_dirty(1u);
+    schedule.notify_dirty(tess::DirtyMask{1u});
     const auto stats = schedule.run_tick(clock);
     auto tasks_run = stats.tasks_run;
     benchmark::DoNotOptimize(tasks_run);
@@ -190,7 +190,7 @@ struct SchedKernel {
 
 void BM_scheduler_auto_exec_tick(benchmark::State& state) {
   SchedWorld world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   tess::AutoExecTask<SchedWorld, tess::WritePolicy::UniquePerChunk, SchedAck,
                      SchedKernel>
       task{world, ops, SchedKernel{}};
@@ -204,7 +204,7 @@ void BM_scheduler_auto_exec_tick(benchmark::State& state) {
   std::uint64_t executed = 0;
   for (auto _ : state) {
     (void)ops.update_field(tess::DomainDesc::resident_chunks(),
-                           tess::FieldAccessDesc{0, 1u, 1u},
+                           tess::FieldAccessDesc{0, 1u, tess::DirtyMask{1u}},
                            tess::WritePolicy::UniquePerChunk);
     (void)schedule.run_tick(clock);
     executed = task.last_run().executed_chunks;

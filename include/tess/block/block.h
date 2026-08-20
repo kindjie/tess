@@ -219,7 +219,7 @@ class ChunkDomain {
   std::span<const ChunkKey> keys_;
 };
 
-/** Owning storage whose stable key span can produce a `ChunkDomain`. */
+/** Owning storage whose key span remains valid until the next mutation. */
 class OwnedChunkDomain {
  public:
   OwnedChunkDomain() = default;
@@ -312,17 +312,17 @@ inline auto sorted_domain(std::vector<ChunkKey> keys) -> OwnedChunkDomain {
 }  // namespace detail
 
 template <typename World>
-/** Captures the chunks currently carrying any requested dirty flag. */
-[[nodiscard]] auto dirty_chunk_domain(const World& world, std::uint32_t flags)
+/** Captures the chunks currently carrying any requested dirty-mask bit. */
+[[nodiscard]] auto dirty_chunk_domain(const World& world, DirtyMask mask)
     -> OwnedChunkDomain {
-  return detail::sorted_domain(world.dirty_chunks(flags));
+  return detail::sorted_domain(world.dirty_chunks(mask));
 }
 
 template <typename World>
-/** Captures the chunks currently carrying any requested active flag. */
-[[nodiscard]] auto active_chunk_domain(const World& world, std::uint32_t flags)
+/** Captures the chunks currently carrying any requested active-mask bit. */
+[[nodiscard]] auto active_chunk_domain(const World& world, ActiveMask mask)
     -> OwnedChunkDomain {
-  return detail::sorted_domain(world.active_chunks(flags));
+  return detail::sorted_domain(world.active_chunks(mask));
 }
 
 template <typename World>
@@ -625,8 +625,9 @@ constexpr void for_each_chunk_policy_view(World& world, ChunkDomain domain,
     // the condition is fully compile-time here. The runtime-dispatching
     // for_each_chunk instantiates this template for all four policies
     // whichever one the caller passes, so a static_assert would reject a
-    // callback that only accepts ReadOnly -- code that is correct today
-    // and never reaches this branch at runtime.
+    // callback that only accepts ReadOnly, even though that callback is valid
+    // whenever the runtime policy selects ReadOnly and this branch is not
+    // reached.
     //
     // It was `assert(false)` plus a bare std::abort(). That honoured
     // NDEBUG but not TESS_ENABLE_ASSERTS, so a consumer following

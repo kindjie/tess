@@ -24,7 +24,7 @@ class ResumableWorkTask {
   [[nodiscard]] auto operator()(const ScheduleTaskContext& context)
       -> ScheduleTaskResult {
     const auto stats = queue_->advance(AsyncWorkBudget{context.budget_items});
-    return ScheduleTaskResult{0, stats.items_done, stats.pending != 0, 0};
+    return ScheduleTaskResult{{}, stats.items_done, stats.pending != 0, 0};
   }
 
  private:

@@ -3,12 +3,22 @@
 #include <tess/core/shape.h>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <span>
 #include <tuple>
 #include <type_traits>
 
 namespace tess {
+
+/** Values that can be reset safely inside fixed-capacity tile storage. */
+template <typename Value>
+concept TileFieldValue =
+    std::is_object_v<Value> && std::same_as<Value, std::remove_cv_t<Value>> &&
+    std::is_nothrow_default_constructible_v<Value> &&
+    std::is_trivially_copyable_v<Value> &&
+    std::is_trivially_copy_assignable_v<Value> &&
+    std::is_trivially_destructible_v<Value>;
 
 /**
  * Describes one structure-of-arrays field in a chunk schema.
@@ -20,6 +30,11 @@ template <typename Tag, typename Value>
 struct Field {
   using tag_type = Tag;
   using value_type = Value;
+
+  static_assert(
+      TileFieldValue<Value>,
+      "tess::Field value must be an unqualified, nothrow-default-constructible "
+      "object that is trivially copyable, assignable, and destructible");
 };
 
 namespace detail {
@@ -110,10 +125,12 @@ class ChunkPage;
 /**
  * Owns the field arrays for every local tile in one chunk.
  *
- * Storage is inline and zero-initialized. Construction and access do not
- * allocate. References and spans remain valid until the page is destroyed or
- * `reset()` reuses it; `reset()` preserves their addresses but replaces all
- * values, so callers must treat previously observed contents as invalid.
+ * Storage is inline and value-initialized. Tess-owned page storage and
+ * traversal do not allocate; an accepted user-defined nothrow initializer may
+ * own its own allocation. References and spans remain valid until the page is
+ * destroyed or `reset()` reuses it; `reset()` preserves their addresses but
+ * replaces all values, so callers must treat previously observed contents as
+ * invalid.
  * Concurrent reads are safe, but mutation requires external synchronization.
  */
 template <typename Shape, typename... Fields>
@@ -129,16 +146,18 @@ class ChunkPage<Shape, FieldSchema<Fields...>> {
       (std::size_t{0} + ... +
        sizeof(std::array<typename Fields::value_type, local_tile_count>));
 
-  /** Constructs a zero-initialized page with the supplied chunk identity. */
+  /** Constructs a value-initialized page with the supplied chunk identity. */
   constexpr ChunkPage(ChunkKey key, ChunkCoord3 coord) noexcept
       : chunk_key_(key), chunk_coord_(coord) {}
 
   /**
-   * Reassigns the chunk identity and zero-fills every field array in place.
+   * Reassigns the chunk identity and value-resets every field array in place.
    *
-   * This operation does not allocate or materialize a page-sized temporary.
-   * Existing references and spans retain their addresses but now refer to the
-   * reset page and must not be used as snapshots of the previous chunk.
+   * Tess performs no dynamic allocation and materializes no page-sized
+   * temporary. A field value's nothrow default initialization may manage its
+   * own allocation. Existing references and spans retain their addresses but
+   * now refer to the reset page and must not be used as snapshots of the
+   * previous chunk.
    */
   constexpr void reset(ChunkKey key, ChunkCoord3 coord) noexcept {
     chunk_key_ = key;

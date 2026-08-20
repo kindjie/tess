@@ -31,9 +31,9 @@ using Archive = tess::PersistenceSchema<
     0x746573732d6d6e32ull, 1,
     tess::PersistedField<ValueTag, 0x76616c75652d6d32ull, 1>>;
 
-constexpr auto kTerrain = std::uint32_t{0b0001};
-constexpr auto kLighting = std::uint32_t{0b0010};
-constexpr auto kForeign = std::uint32_t{0b0100};
+constexpr auto kTerrain = tess::DirtyMask{0b0001};
+constexpr auto kLighting = tess::DirtyMask{0b0010};
+constexpr auto kForeign = tess::DirtyMask{0b0100};
 constexpr auto kOwned = kTerrain | kLighting;
 
 class SynchronousDebtBackend {
@@ -257,10 +257,10 @@ TEST(TessChunkMaintenance, DenseSlotsCoalesceAndOwnOnlyTheirMask) {
   ASSERT_NE(view.value, nullptr);
   EXPECT_EQ(*view.value, rescan(world, key));
   EXPECT_EQ(view.token.key, key);
-  EXPECT_EQ(view.token.version, world.meta(key).version);
-  EXPECT_EQ(view.token.residency_generation, 0u);
+  EXPECT_EQ(view.token.content_version, world.meta(key).content_version);
+  EXPECT_EQ(view.token.residency_generation, tess::ResidencyGeneration{});
   EXPECT_TRUE(adapter.current(view.token));
-  EXPECT_EQ(world.dirty_flags(key), kForeign);
+  EXPECT_EQ(world.dirty_mask(key), kForeign);
   EXPECT_EQ(adapter.metrics().executions, 1u);
 }
 
@@ -270,13 +270,13 @@ TEST(TessChunkMaintenance, InvalidMarksDoNotMutateOrSchedule) {
       world, kOwned, SummaryRebuilder{}};
   const auto key = tess::ChunkKey{0};
 
-  EXPECT_EQ(adapter.mark_dirty(key, 0, one_tile_box(0)),
+  EXPECT_EQ(adapter.mark_dirty(key, tess::DirtyMask{}, one_tile_box(0)),
             maintenance::ChunkMarkResult::InvalidMask);
   EXPECT_EQ(adapter.mark_dirty(key, kForeign, one_tile_box(0)),
             maintenance::ChunkMarkResult::InvalidMask);
   EXPECT_EQ(adapter.mark_dirty(tess::ChunkKey{99}, kTerrain, one_tile_box(0)),
             maintenance::ChunkMarkResult::Missing);
-  EXPECT_EQ(world.dirty_flags(key), 0u);
+  EXPECT_TRUE(world.dirty_mask(key).empty());
   EXPECT_EQ(adapter.metrics().schedule_calls, 0u);
 }
 
@@ -299,7 +299,8 @@ TEST(TessChunkMaintenance, NewContentVersionMakesOldProductExplicitlyStale) {
   drain_to_idle(adapter);
   const auto second = adapter.product(key);
   EXPECT_EQ(second.state, maintenance::ChunkProductState::Current);
-  EXPECT_GT(second.token.version, first.token.version);
+  EXPECT_GT(second.token.content_version.value,
+            first.token.content_version.value);
 }
 
 TEST(TessChunkMaintenance, RetryRebuildsAcrossDisjointOwnerVersionAdvance) {
@@ -321,8 +322,8 @@ TEST(TessChunkMaintenance, RetryRebuildsAcrossDisjointOwnerVersionAdvance) {
 
   const auto repaired = adapter.product(key);
   EXPECT_EQ(repaired.state, maintenance::ChunkProductState::Current);
-  EXPECT_EQ(repaired.token.version, world.meta(key).version);
-  EXPECT_EQ(world.dirty_flags(key), kLighting);
+  EXPECT_EQ(repaired.token.content_version, world.meta(key).content_version);
+  EXPECT_EQ(world.dirty_mask(key), kLighting);
 }
 
 TEST(TessChunkMaintenance, QueueCapacityFailureLeavesDirtyWorkRetryable) {
@@ -336,7 +337,7 @@ TEST(TessChunkMaintenance, QueueCapacityFailureLeavesDirtyWorkRetryable) {
             maintenance::ChunkMarkResult::Accepted);
   EXPECT_EQ(adapter.mark_dirty(tess::ChunkKey{1}, kTerrain, one_tile_box(1)),
             maintenance::ChunkMarkResult::CapacityExhausted);
-  EXPECT_NE(world.dirty_flags(tess::ChunkKey{1}) & kTerrain, 0u);
+  EXPECT_FALSE((world.dirty_mask(tess::ChunkKey{1}) & kTerrain).empty());
   EXPECT_EQ(adapter.run_some(maintenance::MaintenanceBudget{1}),
             maintenance::DrainResult::Drained);
   ASSERT_EQ(adapter.retry(tess::ChunkKey{1}),
@@ -387,9 +388,9 @@ TEST(TessChunkMaintenance, InterveningMarkCannotBeClearedByOldObservation) {
             maintenance::ChunkMarkResult::Accepted);
   drain_to_idle(adapter);
 
-  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{0}) & kTerrain, 0u);
-  EXPECT_EQ(adapter.product(tess::ChunkKey{0}).token.version,
-            world.meta(tess::ChunkKey{0}).version);
+  EXPECT_TRUE((world.dirty_mask(tess::ChunkKey{0}) & kTerrain).empty());
+  EXPECT_EQ(adapter.product(tess::ChunkKey{0}).token.content_version,
+            world.meta(tess::ChunkKey{0}).content_version);
   EXPECT_EQ(adapter.metrics().executions, 2u);
 }
 
@@ -415,7 +416,7 @@ void expect_capacity_blocked_follow_up_remains_retryable() {
   ASSERT_EQ(adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
             maintenance::ChunkMarkResult::Accepted);
   EXPECT_EQ(adapter.flush(), maintenance::DrainResult::BudgetExhausted);
-  EXPECT_NE(world.dirty_flags(tess::ChunkKey{0}) & kTerrain, 0u);
+  EXPECT_FALSE((world.dirty_mask(tess::ChunkKey{0}) & kTerrain).empty());
   EXPECT_EQ(adapter.product(tess::ChunkKey{0}).state,
             maintenance::ChunkProductState::Stale);
   EXPECT_GE(adapter.metrics().capacity_failures, 1u);
@@ -425,7 +426,7 @@ void expect_capacity_blocked_follow_up_remains_retryable() {
   drain_to_idle(adapter);
   EXPECT_EQ(adapter.product(tess::ChunkKey{0}).state,
             maintenance::ChunkProductState::Current);
-  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{0}) & kTerrain, 0u);
+  EXPECT_TRUE((world.dirty_mask(tess::ChunkKey{0}) & kTerrain).empty());
   EXPECT_EQ(adapter.product(tess::ChunkKey{1}).state,
             maintenance::ChunkProductState::Current);
 }
@@ -528,7 +529,7 @@ TEST(TessChunkMaintenance, ExceptionLeavesDirtyAndRequiresExplicitRetry) {
             maintenance::ChunkMarkResult::Accepted);
 
   EXPECT_THROW(static_cast<void>(adapter.flush()), std::runtime_error);
-  EXPECT_NE(world.dirty_flags(key) & kTerrain, 0u);
+  EXPECT_FALSE((world.dirty_mask(key) & kTerrain).empty());
   EXPECT_EQ(adapter.product(key).state,
             maintenance::ChunkProductState::Unavailable);
   ASSERT_EQ(adapter.retry(key), maintenance::ScheduleResult::Accepted);
@@ -548,7 +549,7 @@ TEST(TessChunkMaintenance, SparseCapacityOneRejectsTransitionBeforeIdle) {
   ASSERT_EQ(adapter.flush(), maintenance::DrainResult::Idle);
   const auto first = adapter.ensure_resident(tess::ChunkKey{0});
   ASSERT_EQ(first.status, maintenance::ChunkResidencyStatus::Ready);
-  ASSERT_NE(first.handle.generation, 0u);
+  ASSERT_TRUE(first.handle.generation.valid());
   world.field<ValueTag>(tess::Coord3{0, 0}) = 11;
   ASSERT_EQ(adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
             maintenance::ChunkMarkResult::Accepted);
@@ -565,7 +566,7 @@ TEST(TessChunkMaintenance, SparseCapacityOneRejectsTransitionBeforeIdle) {
 
   const auto reloaded = adapter.ensure_resident(tess::ChunkKey{0});
   ASSERT_EQ(reloaded.status, maintenance::ChunkResidencyStatus::Ready);
-  EXPECT_GT(reloaded.handle.generation, first.handle.generation);
+  EXPECT_GT(reloaded.handle.generation.value, first.handle.generation.value);
   EXPECT_EQ(adapter.product(tess::ChunkKey{0}).state,
             maintenance::ChunkProductState::Unavailable);
 }
@@ -806,7 +807,7 @@ TEST(TessChunkMaintenance, AdapterIsImmovableAndMayDropPendingAtDestruction) {
     ASSERT_EQ(adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
               maintenance::ChunkMarkResult::Accepted);
   }
-  EXPECT_NE(world.dirty_flags(tess::ChunkKey{0}) & kTerrain, 0u);
+  EXPECT_FALSE((world.dirty_mask(tess::ChunkKey{0}) & kTerrain).empty());
 }
 
 }  // namespace

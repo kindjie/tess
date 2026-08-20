@@ -31,8 +31,8 @@
 //   graphs whose adjacent vertices share a cycle of length >= 3) depends on
 //   this rule.
 //
-// Like the distance-field product family, this tier is dense-only for now;
-// the sparse slice lands with the product family's NodeIndexSpace port.
+// Like the distance-field product family, this tier requires an
+// AlwaysResidentWorld because its ranking product indexes the full tile space.
 
 #include <tess/core/shape.h>
 #include <tess/sim/joint_movement.h>
@@ -226,7 +226,7 @@ struct PibtPrioritiesAccess {
 //   1. Adaptive priorities update: unarrived agents' `elapsed` increments,
 //      arrived agents reset to zero; decision order is elapsed descending
 //      with span index as the deterministic tie-break. An agent standing on
-//      a tile its class cannot pass fails `BlockedFrom` without deciding,
+//      a tile its class cannot pass fails `ImpassableFrom` without deciding,
 //      exactly as `commit_movement_intent` does.
 //   2. Each undecided agent, in that order, considers staying put plus every
 //      legal transition of its movement class (enumerated through the
@@ -248,7 +248,7 @@ struct PibtPrioritiesAccess {
 //      callbacks fire only after the whole configuration is applied. A move
 //      off the retained route drops the route (`NoPath`) so scoped
 //      resubmission replans; an agent that wanted to move and could not
-//      records an `Occupied` block (or `BlockedFrom` for an impassable
+//      records an `Occupied` block (or `ImpassableFrom` for an impassable
 //      source) with the usual retry semantics.
 /// Advances agents one step with PIBT decisions and joint-commit application.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
@@ -266,8 +266,8 @@ auto advance_path_agents_with_pibt(
   using Model = ResolvedTransitionModel<World, Class, AdjacentTransitions>;
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "advance_path_agents_with_pibt is dense-only; the sparse slice lands "
-      "with the distance-field product NodeIndexSpace port.");
+      "advance_path_agents_with_pibt requires an AlwaysResidentWorld; use "
+      "another movement tier for sparse worlds.");
   TESS_ASSERT(routes.routes.size() >= agents.size());
   auto& scratch = detail::JointMoveScratchAccess::state(scratch_storage);
   auto& decision = detail::PibtPrioritiesAccess::scratch(priorities);
@@ -361,7 +361,7 @@ auto advance_path_agents_with_pibt(
 
     // Starts agent `i` deciding: either pushes its frame or fails
     // immediately. An impassable source cannot be vacated, exactly as
-    // `commit_movement_intent` fails `BlockedFrom`; the agent keeps its tile
+    // `commit_movement_intent` fails `ImpassableFrom`; the agent keeps its tile
     // and an inheriting caller must backtrack.
     //
     // An agent with no goal, or one whose lifecycle already ended at
@@ -387,7 +387,7 @@ auto advance_path_agents_with_pibt(
       if (!detail::is_passable<World, ClassOrTag>(world, position)) {
         (void)claim(position);
         scratch.failure[i] =
-            static_cast<std::uint8_t>(MovementStatus::BlockedFrom);
+            static_cast<std::uint8_t>(MovementStatus::ImpassableFrom);
         scratch.state[i] = decided;
         return false;
       }
@@ -564,7 +564,7 @@ auto advance_path_agents_with_pibt(
       }
       world.template field<OccupancyTag>(to) = true;
       world.template field<ReservationTag>(to) = false;
-      if (advance_options.movement_dirty_mask != 0) {
+      if (advance_options.movement_dirty_mask) {
         world.mark_dirty(chunk_key<Shape>(chunk_coord<Shape>(from)),
                          advance_options.movement_dirty_mask,
                          Box3{from, Extent3{1, 1, 1}});
@@ -581,9 +581,9 @@ auto advance_path_agents_with_pibt(
         detail::resume_path_agent(agent);
       } else {
         // Off the retained route: drop it so scoped resubmission replans from
-        // the new position. Blocked-with-NoPath is the state the tick drivers
-        // already treat as "needs planning".
-        agent.status = PathStatus::NoPath;
+        // the new position. A Blocked agent with no last result is the state
+        // the tick drivers already treat as "needs planning".
+        agent.last_result.reset();
         agent.phase = PathAgentPhase::Blocked;
         agent.blocked_retries = 0;
       }
@@ -597,7 +597,7 @@ auto advance_path_agents_with_pibt(
       // other arrival site reaches this check behind the same gate.
       if (agent.has_goal && agent.position == agent.goal) {
         arrive_path_agent(agent, accounting);
-        agent.status = PathStatus::Found;
+        agent.last_result = PathStatus::Found;
         // Reset priority at the commit itself: a caller may assign a new
         // goal before the next pass, and the journey it just finished must
         // not carry its accumulated priority into the new one.

@@ -52,7 +52,7 @@ struct SpecialTransitionCandidate {
 // The provider type, live object identity, and revision are stamped on the
 // graph at build time (mirroring the movement-class stamp). Empty providers
 // have a null object identity and revision zero. A stateful provider must stay
-// at a stable address while the graph may be reused and expose
+// at an address-stable location while the graph may be reused and expose
 // `std::uint64_t transition_revision() const noexcept` and change that value
 // whenever its emitted transition set can change. update_region_graph falls
 // back to a full rebuild when any stamp differs.
@@ -109,7 +109,7 @@ template <typename P>
 // A stateful provider's address distinguishes two live instances whose local
 // revision counters happen to match. Empty providers have no instance state,
 // so nullptr preserves cache reuse across their temporary values. Retained
-// products/caches require a stateful provider to stay at a stable address;
+// products/caches require a stateful provider to stay address-stable;
 // callers must clear them before ending that lifetime because placement-new
 // reuse could repeat both address and revision.
 template <typename P>

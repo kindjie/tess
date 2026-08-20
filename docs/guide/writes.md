@@ -29,7 +29,7 @@ world.field<PassableTag>(tess::Coord2{4, 2}) = 1;
 ## Learn and specify
 
 - Teach: [getting-started §4](../getting-started.md), rung 4;
-  `examples/mvp_path.cc` is the smallest queued edit,
+  `examples/queued_path.cc` is the smallest queued edit,
   `examples/colony_2d.cc` the schedule-integrated form.
 - Specify: [queued-operations note](../architecture/queued-operations.md)
   (planning, write policies, result channels).

@@ -34,6 +34,10 @@ flowchart TB
 Tile fields are declared with `tess::Field<Tag, Value>`, where `Tag` is a
 user-defined type and `Value` is the stored tile value type. Tags are type
 handles; string or name lookup remains outside the current implementation.
+`Value` must satisfy `TileFieldValue`: it is an unqualified,
+nothrow-default-constructible object that is trivially copyable, trivially copy
+assignable, and trivially destructible. This keeps page reset deterministic and
+non-throwing. Persistability remains a narrower, separate archive contract.
 
 `tess::FieldSchema<Fields...>` rejects duplicate tag types at compile time and
 exposes:
@@ -42,9 +46,8 @@ exposes:
 - `contains<Tag>`
 - `value_type<Tag>`
 
-The public `tess::is_valid_field_schema_v<Fields...>` helper lets tests and
-future metaprogramming code detect duplicate tags without intentionally
-instantiating an invalid schema.
+The public `tess::is_valid_field_schema_v<Fields...>` helper detects duplicate
+tags without intentionally instantiating an invalid schema.
 
 ## Chunk Page
 
@@ -59,7 +62,9 @@ using ChunkFieldStorage =
 ```
 <!-- /tess-snippet -->
 
-The page performs no runtime allocation. Hot code can access each field through
+The page owns inline, value-initialized storage and performs no Tess-owned
+runtime allocation. `reset()` value-initializes every field in place and cannot
+throw. Hot code can access each field through
 contiguous typed spans:
 
 <!-- tess-snippet: storage-page-access source=examples/documentation.cc -->
@@ -106,10 +111,12 @@ The world type exposes static storage metadata:
 - `page_byte_size`
 - `storage_byte_size`
 
+These constants count Tess-owned inline page storage. They exclude dynamic
+storage and referenced objects managed by field values.
+
 `fill_field<Tag>(value)` assigns one value to the selected field across every
-tile in a dense world. The traversal performs no world-storage allocation;
-assignment of a user-defined field value may allocate or throw, leaving the
-already visited tiles assigned. The method is intentionally absent from the
+tile in a dense world. The traversal and `TileFieldValue` assignment perform
+no allocation and cannot throw. The method is intentionally absent from the
 sparse world: “every tile” would otherwise ambiguously mean every resident
 tile or materializing the complete bounded shape. Like direct `field()`
 writes, filling storage does not update dirty, active, topology, or
@@ -140,8 +147,10 @@ out-of-bounds input.
 subset of a bounded shape, so a world spanning trillions of chunks costs only
 its residency budget rather than `chunk_count` pages. It is constructed with a
 `tess::ResidencyConfig{byte_budget}`; the resident capacity is
-`byte_budget / page_byte_size` (at least one chunk). Construction allocates the
-fixed slot pool and directory once and never reallocates them.
+`byte_budget / page_byte_size` (at least one chunk). These byte counts cover
+Tess-owned inline page storage, not dynamic storage or referenced objects a
+field value manages. Construction allocates the fixed slot pool and directory
+once and never reallocates them.
 
 Residency is managed explicitly:
 
@@ -168,27 +177,29 @@ sparse_world.chunk(tess::ChunkKey{0})
 - `is_resident(key)` distinguishes a resident chunk from a `Missing` one;
   `contains(key)` reports only in-bounds-ness. Both differ from out-of-bounds.
 - Unchecked `chunk`/`meta` accessors require residency; `try_chunk`/`try_meta`
-  and `try_field` return `nullptr` for a non-resident (or out-of-bounds) chunk
-  — the residency-tolerant readers later slices build missing-chunk policy on.
+  and `try_field` return `nullptr` for a non-resident (or out-of-bounds) chunk.
+  Residency-tolerant path readers use these accessors to apply their selected
+  missing-chunk policy.
 
-Eviction and reload are generation-safe. Each residency assigns a
+Eviction and rematerialization are generation-safe. Each residency assigns a
 world-monotonic generation that is never reused, so a `ResidencyHandle` taken
 before an eviction never validates (`world.valid(handle)` returns `false`)
-against the reloaded chunk, which reuses the key but receives a strictly
-greater generation. A reloaded chunk is a fresh, zeroed page — evicted data is
-gone. `residency_generation(key)` returns 0 for a non-resident chunk.
+against the rematerialized chunk, which reuses the key but receives a strictly
+greater generation. A rematerialized chunk is a fresh, value-initialized page — evicted data is
+ended. `residency_generation(key)` returns an invalid
+`ResidencyGeneration{}` for a non-resident chunk.
 
 `resident_chunk_keys()` enumerates exactly the resident set, and the
-dirty/active queries and `mark_*` helpers behave identically to the dense world
+dirty- and active-mask queries and `mark_*` helpers behave identically to the dense world
 but iterate only resident chunks. No accessor or query scans `0..chunk_count`,
 preserving the "no hidden full-world scans" invariant at sparse scale. The
 directory uses a direct key-to-slot array when the residency capacity covers
 the bounded world's complete chunk key space. Larger key spaces use a
 fixed-capacity open-addressing map with backward-shift deletion. Both forms
-allocate once; long-lived evict/reload churn reallocates nothing, and the
+allocate once; long-lived eviction/rematerialization churn reallocates nothing, and the
 hashed form accumulates no tombstones. Both worlds share one `ChunkMeta`
-mutation implementation (`tess/storage/chunk_meta.h`), so dirty, active, and
-version semantics are identical.
+mutation implementation (`tess/storage/chunk_meta.h`), so dirty masks, active
+masks, and content-version semantics are identical.
 
 ## Chunk Metadata
 
@@ -196,13 +207,13 @@ Each always-resident world owns one cold `tess::ChunkMeta` per resident page in
 matching `ChunkKey` order, plus world-owned parallel arrays for fields scanned
 frequently. A new chunk therefore has this combined state:
 
-- `state = tess::ChunkState::ResidentSleeping`
-- `version = 0`
-- `topology_version = 0`
-- `active_count = 0`
+- `world.chunk_activity(key) = tess::ChunkActivity::Sleeping`
+- `content_version = tess::ContentVersion{}`
+- `topology_version = tess::TopologyVersion{}`
+- `world.active_category_count(key) = 0`
 - `entity_count = 0`
-- `world.dirty_flags(key) = 0`
-- `world.active_flags(key) = 0`
+- `world.dirty_mask(key) = tess::DirtyMask{}`
+- `world.active_mask(key) = tess::ActiveMask{}`
 - `world.dirty_bounds(key) = {}`
 
 Direct metadata lookup mirrors page lookup:
@@ -215,44 +226,45 @@ auto* checked = dense_world.try_meta(tess::ChunkCoord3{3, 0, 0});
 <!-- /tess-snippet -->
 
 These direct accessors are `noexcept` and do not allocate, but a `ChunkMeta`
-reference does not contain the complete dirty/active state. Dirty flags, active
-flags, and dirty bounds must be read through the world accessors and mutated
+reference does not contain the complete dirty/active state. Dirty masks, active
+masks, and dirty bounds must be read through the world accessors and mutated
 through its `mark_*`, `clear_*`, and observation APIs. Keeping those hot-scan
 columns out of `ChunkMeta` avoids pulling cold counters into bulk queries.
 
-Dirty and active flags are raw `std::uint32_t` masks. `mark_dirty` unions dirty
-bounds and increments the chunk version; `clear_dirty` clears selected bits and
-resets bounds when no dirty bits remain. `mark_active` and `clear_active`
-maintain `ChunkMeta::active_count` and move the chunk between sleeping and
-active state when the active flag set becomes nonzero or empty.
-`mark_topology_dirty` applies dirty metadata and increments both the chunk
+`DirtyMask` and `ActiveMask` are explicit 32-bit bit sets. `mark_dirty` unions
+dirty bounds and increments the content version; `clear_dirty` clears selected
+bits and resets bounds when no dirty bits remain. `mark_active` and
+`clear_active` mutate the active mask; `chunk_activity` and
+`active_category_count` derive from that single authority.
+`mark_topology_dirty` applies dirty metadata and increments both the content
 version and topology version. `mark_topology_rebuilt` increments only the
 topology version so topology products can observe rebuild/replacement events.
-`mark_content_changed` increments only the chunk version. It invalidates
-version-keyed caches and earlier `DirtyObservation`s without changing dirty
-flags or bounds, topology metadata, active state, or sparse residency state.
+`mark_content_changed` increments only the content version. It invalidates
+content-version-keyed caches and earlier `DirtyObservation`s without changing
+dirty masks or bounds, topology metadata, activity, or sparse residency state.
 Use `mark_dirty` when dirty-metadata consumers must observe the edit,
 `mark_topology_dirty` when topology freshness must change, and the schedule's
 notification protocol when an OnDirty task must run.
 
 Maintenance passes that rebuild derived state use the generation-stamped
-observe/clear pair instead of raw `clear_dirty`. `observe_dirty(key, flags)`
-snapshots the requested dirty subset, the dirty bounds, the chunk version, and
-the residency generation into a `DirtyObservation`.
-`clear_dirty_observed(key, observation)` clears exactly the observed flags
+observe/clear pair instead of raw `clear_dirty`. `observe_dirty(key, mask)`
+snapshots the requested dirty subset, the dirty bounds, the content version,
+and the residency generation into a `DirtyObservation`.
+`clear_dirty_observed(key, observation)` clears exactly the observed mask bits
 only while both stamps still match; any `mark_dirty` or
 `mark_content_changed` that lands after the observation advances the version,
-so a stale clear leaves every flag and bound in place and returns `false`, and
+so a stale clear leaves every mask bit and bound in place and returns `false`, and
 the caller re-observes before clearing. This prevents a serialized
 intervening change from being erased; it does not make simultaneous
 unsynchronized world mutation thread-safe. This is the dirty metadata
-protocol required before concurrent or budgeted maintenance may clear flags
+protocol required before concurrent or budgeted maintenance may clear masks
 it did not fully rebuild.
 
 The residency generation scopes an observation to a single residency
-interval. A sparse world assigns a fresh `ChunkMeta` when it reloads a chunk,
-restarting `version` at zero, so version equality alone would let an
-observation taken before an eviction match a mark made after the reload and
+interval. A sparse world assigns a fresh `ChunkMeta` when it rematerializes a
+chunk,
+restarting its content version at zero, so content-version equality alone would let an
+observation taken before an eviction match a mark made after rematerialization and
 clear work it never saw. An always-resident world never evicts and carries
 zero on both sides.
 
@@ -265,24 +277,24 @@ sequenceDiagram
   participant D as World dirty metadata
   participant M as Maintenance pass
 
-  W->>D: mark_dirty(flags, bounds)
-  D->>D: union flags and bounds, then increment version
-  M->>D: observe_dirty(flags)
-  D-->>M: observation(flags, bounds, version N)
+  W->>D: mark_dirty(mask, bounds)
+  D->>D: union mask and bounds, then increment content version
+  M->>D: observe_dirty(mask)
+  D-->>M: observation(mask, bounds, content version N)
   M->>M: rebuild derived state
-  W->>D: mark_dirty(new flags, new bounds)
-  D->>D: increment version to N + 1
-  M->>D: clear_dirty_observed(version N)
+  W->>D: mark_dirty(new mask, new bounds)
+  D->>D: increment content version to N + 1
+  M->>D: clear_dirty_observed(content version N)
   D-->>M: false, preserve all dirty state
-  M->>D: observe_dirty(flags)
-  D-->>M: observation at version N + 1
+  M->>D: observe_dirty(mask)
+  D-->>M: observation at content version N + 1
   M->>M: rebuild again, then clear successfully
 ```
 
-`dirty_chunks(flags)` and `active_chunks(flags)` return matching `ChunkKey`
+`dirty_chunks(mask)` and `active_chunks(mask)` return matching `ChunkKey`
 values in key order. These query helpers allocate their returned vectors; they
 are intended for planner/domain construction, not inner tile loops.
-`collect_dirty_chunks(flags, out)` and `collect_active_chunks(flags, out)`
+`collect_dirty_chunks(mask, out)` and `collect_active_chunks(mask, out)`
 append the same keys to a caller-owned vector and do not allocate when the
 caller has reserved enough capacity; the by-value queries are thin wrappers
 over them.
@@ -293,7 +305,7 @@ Sparse residency, the `ChunkDirectory`, per-chunk generations, and byte-budget
 eviction are implemented (see Sparse-Resident World). The
 [topology](topology.md) and [path](path.md) layers build on the
 residency-tolerant `try_*` readers to run supported APIs natively over sparse
-worlds and report `Indeterminate` when unloaded space prevents a definitive
+worlds and report `Indeterminate` when non-resident space prevents a definitive
 answer. Still out of scope in this layer: typed dirty/active vocabularies, full
 lifecycle states beyond sleeping/active, on-demand chunk materialization
 policy, thread ownership policies, block generation, and planner domains.

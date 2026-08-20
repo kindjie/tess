@@ -20,14 +20,14 @@
 #include <type_traits>
 #include <vector>
 
-// The M11 render bridge: versioned frames of tile, entity, and overlay
+// The render bridge: versioned frames of tile, entity, and overlay
 // deltas collected into caller-owned storage and consumed by a renderer.
 //
 // Tile deltas are INVALIDATION records, not value payloads: the consumer
 // re-reads the current world for the covered tiles when applying, which
 // is idempotent and convergent (anything changed after publish is dirty
 // again and re-invalidated next frame). Chunk dirty metadata is already
-// a cross-tick coalescer (flags OR, bounds union), so tile collection
+// a cross-tick coalescer (mask OR, bounds union), so tile collection
 // happens once per published frame through the lost-update-safe
 // observe/clear-observed protocol -- multi-tick coalescing costs nothing.
 //
@@ -35,7 +35,7 @@
 // optional collector hook and the EnTT lifecycle intents; consecutive
 // moves of one entity coalesce last-writer-wins within a frame while
 // every other kind is a non-coalescible barrier. Completeness holds for
-// the tick_ecs_*/tick_entt_* + lifecycle-intent surface; legacy span
+// the tick_ecs_*/tick_entt_* plus lifecycle-intent surface. Direct span
 // drivers bypass recording by construction.
 //
 // Coalesced entity records are NOT a serializable per-record sequence:
@@ -64,10 +64,11 @@ struct RenderVersion {
 /// Describes a chunk-level tile invalidation and any detailed tile slice.
 struct TileChunkDelta {
   ChunkKey chunk_key{};
-  std::uint32_t dirty_flags = 0;
-  // meta.version at observation time; debugging only -- clears do not
-  // bump it and sparse reloads reset it, so it is NOT the frame contract.
-  std::uint32_t chunk_version = 0;
+  DirtyMask dirty_mask{};
+  // meta.content_version at observation time; debugging only -- clears do not
+  // bump it and sparse rematerialization resets it, so it is NOT the frame
+  // contract.
+  ContentVersion content_version{};
   Box3 bounds{};
   std::uint32_t first_tile = 0;
   std::uint32_t tile_count = 0;
@@ -77,7 +78,7 @@ struct TileChunkDelta {
 struct TileDelta {
   Coord3 coord{};
   LocalTileId local_tile_id{};
-  std::uint32_t dirty_flags = 0;
+  DirtyMask dirty_mask{};
 };
 
 /// Classifies an entity presentation-state transition.
@@ -129,7 +130,7 @@ struct DeltaFrameHeader {
   std::uint64_t last_tick = 0;
   std::uint32_t ticks = 0;
   // Union of the dirty masks collected into this frame.
-  std::uint32_t dirty_mask = 0;
+  DirtyMask dirty_mask{};
   bool baseline = false;
   // Storage capacity was exceeded (or the collector was hard-reset with
   // clear()): the frame is NOT safely applicable as a delta and the
@@ -290,11 +291,11 @@ struct DeltaCollectorStats {
 
 // Caller-owned delta accumulator and frame publisher. reserve() sizes
 // every buffer once; steady state performs no allocation -- records past
-// capacity are dropped and flagged (header.truncated) rather than
+// capacity are dropped and reported through `header.truncated` rather than
 // growing storage mid-frame. The collector must be the SOLE clearing
 // owner of every dirty bit in the masks it collects: another consumer
 // clearing (or reading-then-expecting) those bits races the frame
-// protocol. Note that dirty_bounds is shared across all flag owners --
+// protocol. Note that dirty_bounds is shared across all mask owners --
 // clearing a subset mask retains the union bounds while any other
 // owner's bit is set, so interleaved ownership widens boxes
 // (conservative over-report, never wrong).
@@ -471,7 +472,7 @@ class DeltaCollector {
     return pending_tiles_.size();
   }
 
-  void note_collected_mask(std::uint32_t dirty_mask) noexcept {
+  void note_collected_mask(DirtyMask dirty_mask) noexcept {
     pending_dirty_mask_ |= dirty_mask;
   }
 
@@ -564,7 +565,7 @@ class DeltaCollector {
     pending_entities_.clear();
     pending_overlays_.clear();
     pending_overlay_nodes_.clear();
-    pending_dirty_mask_ = 0;
+    pending_dirty_mask_ = {};
     pending_ticks_ = 0;
     pending_first_tick_ = 0;
     pending_last_tick_ = 0;
@@ -596,7 +597,7 @@ class DeltaCollector {
     pending_entities_.clear();
     pending_overlays_.clear();
     pending_overlay_nodes_.clear();
-    pending_dirty_mask_ = 0;
+    pending_dirty_mask_ = {};
     pending_ticks_ = 0;
     pending_first_tick_ = 0;
     pending_last_tick_ = 0;
@@ -844,7 +845,7 @@ class DeltaCollector {
   std::vector<Coord3> pending_overlay_nodes_;
   std::vector<Coord3> published_overlay_nodes_;
   std::vector<CoalesceSlot> coalesce_slots_;
-  std::uint32_t pending_dirty_mask_ = 0;
+  DirtyMask pending_dirty_mask_{};
   std::uint64_t current_tick_ = 0;
   std::uint64_t pending_first_tick_ = 0;
   std::uint64_t pending_last_tick_ = 0;
@@ -859,7 +860,7 @@ namespace detail {
 
 // Clips a chunk's dirty bounds to its own world-space box. Every tile in
 // the result is inside the shape and resolves to this chunk. An empty
-// intersection (possible when another flag owner's marks widened the
+// intersection (possible when another mask owner's marks widened the
 // union bounds away from this chunk) degrades to the chunk's full box:
 // invalidation must stay conservative.
 // Saturating origin+extent: dirty-bound unions may carry extents at or
@@ -913,10 +914,10 @@ template <typename Shape>
 
 template <typename World>
 void collect_chunk_tile_deltas(DeltaCollector& collector, World& world,
-                               ChunkKey chunk_key, std::uint32_t dirty_mask) {
+                               ChunkKey chunk_key, DirtyMask dirty_mask) {
   using Shape = typename World::shape_type;
   const auto observed = world.observe_dirty(chunk_key, dirty_mask);
-  if (observed.flags == 0) {
+  if (!observed.mask) {
     return;
   }
   const auto clipped =
@@ -926,8 +927,8 @@ void collect_chunk_tile_deltas(DeltaCollector& collector, World& world,
 
   auto record = TileChunkDelta{};
   record.chunk_key = chunk_key;
-  record.dirty_flags = observed.flags;
-  record.chunk_version = observed.version;
+  record.dirty_mask = observed.mask;
+  record.content_version = observed.content_version;
   record.bounds = clipped;
 
   const auto threshold = collector.options().sparse_tile_threshold;
@@ -948,7 +949,7 @@ void collect_chunk_tile_deltas(DeltaCollector& collector, World& world,
           const auto coord = Coord3{x, y, z};
           const auto appended = collector.append_tile_record(
               TileDelta{coord, local_tile_id<Shape>(local_coord<Shape>(coord)),
-                        observed.flags});
+                        observed.mask});
           if (appended == DeltaCollector::kDropped) {
             fits = false;
           } else {
@@ -982,20 +983,20 @@ void collect_chunk_tile_deltas(DeltaCollector& collector, World& world,
 
 }  // namespace detail
 
-// Observes, records, and clears (observed-generation-safe) every chunk
+// Observes, records, and clears every still-current chunk
 // dirty under `dirty_mask`. Dense worlds scan all chunk metadata; sparse
 // worlds scan the resident set only (a non-resident chunk holds no data
-// and cannot be dirty). NOTE for sparse worlds: evicting and reloading a
+// and cannot be dirty). NOTE for sparse worlds: evicting and rematerializing a
 // chunk resets its metadata, so changes made while a consumer's shadow
 // held the old content are NOT re-invalidated automatically; residency
 // change records are deliberately deferred until a sparse render
-// consumer exists, and such consumers must currently treat reloads as a
+// consumer exists, and such consumers must treat rematerialization as a
 // baseline trigger themselves.
 /// Collects and safely clears matching tile-dirty observations.
 template <typename World>
 void collect_tile_deltas(DeltaCollector& collector, World& world,
-                         std::uint32_t dirty_mask) {
-  if (dirty_mask == 0) {
+                         DirtyMask dirty_mask) {
+  if (!dirty_mask) {
     return;
   }
   collector.note_collected_mask(dirty_mask);
@@ -1014,7 +1015,7 @@ void collect_tile_deltas(DeltaCollector& collector, World& world,
 }
 
 // Full-scope baseline: emits one box record covering every chunk (dense)
-// or every resident chunk (sparse) with `dirty_flags = dirty_mask`,
+// or every resident chunk (sparse) with `dirty_mask`,
 // drops pending Dirty records (superseded), clears the mask's dirty bits
 // (plain clears -- the baseline repaints everything, and later marks
 // simply re-dirty), and marks the pending frame as a baseline. Scoped
@@ -1024,7 +1025,7 @@ void collect_tile_deltas(DeltaCollector& collector, World& world,
 /// Replaces pending tile deltas with a full dense or resident-sparse baseline.
 template <typename World>
 void collect_baseline(DeltaCollector& collector, World& world,
-                      std::uint32_t dirty_mask) {
+                      DirtyMask dirty_mask) {
   using Shape = typename World::shape_type;
   using Traits = ShapeTraits<Shape>;
   collector.note_collected_mask(dirty_mask);
@@ -1034,8 +1035,8 @@ void collect_baseline(DeltaCollector& collector, World& world,
     const auto chunk = chunk_coord<Shape>(chunk_key);
     auto record = TileChunkDelta{};
     record.chunk_key = chunk_key;
-    record.dirty_flags = dirty_mask;
-    record.chunk_version = world.meta(chunk_key).version;
+    record.dirty_mask = dirty_mask;
+    record.content_version = world.meta(chunk_key).content_version;
     record.bounds =
         Box3{Coord3{static_cast<std::int64_t>(chunk.x * Traits::chunk.x),
                     static_cast<std::int64_t>(chunk.y * Traits::chunk.y),
@@ -1078,7 +1079,7 @@ inline void collect_path_overlays(DeltaCollector& collector,
   TESS_ASSERT(agents.size() == handles.size());
   for (std::size_t i = 0; i < agents.size(); ++i) {
     const auto& agent = agents[i];
-    if (!agent.has_goal || agent.status != PathStatus::Found) {
+    if (!agent.has_goal || agent.last_result != PathStatus::Found) {
       continue;
     }
     const auto result = runtime.result(agent.ticket);
@@ -1107,7 +1108,7 @@ inline void collect_path_overlays(DeltaCollector& collector,
   for (const auto index : selection) {
     TESS_ASSERT(index < agents.size());
     const auto& agent = agents[index];
-    if (!agent.has_goal || agent.status != PathStatus::Found) {
+    if (!agent.has_goal || agent.last_result != PathStatus::Found) {
       continue;
     }
     const auto result = runtime.result(agent.ticket);
@@ -1137,7 +1138,7 @@ inline void collect_path_overlays(DeltaCollector& collector,
   TESS_ASSERT(routes.routes.size() >= agents.size());
   for (std::size_t i = 0; i < agents.size(); ++i) {
     const auto& agent = agents[i];
-    if (!agent.has_goal || agent.status != PathStatus::Found) {
+    if (!agent.has_goal || agent.last_result != PathStatus::Found) {
       continue;
     }
     const PathView route{routes.routes[i]};
@@ -1166,7 +1167,7 @@ inline void collect_path_overlays(DeltaCollector& collector,
   for (const auto index : selection) {
     TESS_ASSERT(index < agents.size());
     const auto& agent = agents[index];
-    if (!agent.has_goal || agent.status != PathStatus::Found) {
+    if (!agent.has_goal || agent.last_result != PathStatus::Found) {
       continue;
     }
     const PathView route{routes.routes[index]};

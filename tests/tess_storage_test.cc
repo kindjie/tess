@@ -4,8 +4,9 @@
 #include <cstdint>
 #include <limits>
 #include <span>
-#include <stdexcept>
+#include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "allocation_counter.h"
@@ -15,33 +16,23 @@ namespace {
 struct TerrainTag {};
 struct CostTag {};
 struct RegionTag {};
-struct ThrowingTag {};
-
-struct ThrowingValue {
-  int value = 0;
-  static inline int assignments_before_throw = -1;
-
-  ThrowingValue() = default;
-  explicit ThrowingValue(int initial) : value(initial) {}
-  ThrowingValue(const ThrowingValue&) = default;
-
-  auto operator=(const ThrowingValue& other) -> ThrowingValue& {
-    if (assignments_before_throw == 0) {
-      throw std::runtime_error("injected field assignment failure");
-    }
-    if (assignments_before_throw > 0) {
-      --assignments_before_throw;
-    }
-    value = other.value;
-    return *this;
-  }
+struct FixedAggregate {
+  int first = 0;
+  float second = 0;
+};
+enum class TileKind : std::uint8_t { Empty, Solid };
+struct ThrowingAssignment {
+  ThrowingAssignment() noexcept = default;
+  ThrowingAssignment(const ThrowingAssignment&) = default;
+  auto operator=(const ThrowingAssignment&) noexcept(false)
+      -> ThrowingAssignment&;
 };
 
-constexpr std::uint32_t DirtyTerrain = 1u << 0u;
-constexpr std::uint32_t DirtyCost = 1u << 1u;
-constexpr std::uint32_t DirtyTopology = 1u << 2u;
-constexpr std::uint32_t ActiveFluid = 1u << 0u;
-constexpr std::uint32_t ActiveFire = 1u << 1u;
+constexpr auto DirtyTerrain = tess::DirtyMask{1u << 0u};
+constexpr auto DirtyCost = tess::DirtyMask{1u << 1u};
+constexpr auto DirtyTopology = tess::DirtyMask{1u << 2u};
+constexpr auto ActiveFluid = tess::ActiveMask{1u << 0u};
+constexpr auto ActiveFire = tess::ActiveMask{1u << 1u};
 
 using TopDown2D =
     tess::Shape<tess::Extent3{128, 64, 1}, tess::Extent3{32, 16, 1}>;
@@ -62,9 +53,6 @@ using Page = tess::ChunkPage<Shape, Schema>;
 template <typename Shape>
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
-using ThrowingSchema =
-    tess::FieldSchema<tess::Field<ThrowingTag, ThrowingValue>>;
-using ThrowingWorld = tess::AlwaysResidentWorld<Small2D, ThrowingSchema>;
 using SparseTopDown = tess::SparseResidentWorld<TopDown2D, Schema>;
 
 template <typename WorldType, typename Tag>
@@ -77,8 +65,59 @@ concept HasFillField =
       world.template fill_field<Tag>(value);
     };
 
+template <typename Left, typename Right>
+concept MutuallyNonConvertible = !std::is_convertible_v<Left, Right> &&
+                                 !std::is_convertible_v<Right, Left> &&
+                                 !std::is_constructible_v<Left, Right> &&
+                                 !std::is_constructible_v<Right, Left>;
+
 static_assert(HasFillField<World<TopDown2D>, TerrainTag>);
 static_assert(!HasFillField<SparseTopDown, TerrainTag>);
+static_assert(
+    noexcept(std::declval<World<TopDown2D>&>().template fill_field<TerrainTag>(
+        std::declval<const std::uint16_t&>())));
+static_assert(tess::TileFieldValue<std::uint16_t>);
+static_assert(tess::TileFieldValue<float>);
+static_assert(tess::TileFieldValue<TileKind>);
+static_assert(tess::TileFieldValue<tess::Coord2>);
+static_assert(tess::TileFieldValue<tess::Coord3>);
+static_assert(tess::TileFieldValue<tess::Extent3>);
+static_assert(tess::TileFieldValue<FixedAggregate>);
+static_assert(!tess::TileFieldValue<std::string>);
+static_assert(!tess::TileFieldValue<std::vector<int>>);
+static_assert(!tess::TileFieldValue<int&>);
+static_assert(!tess::TileFieldValue<const int>);
+static_assert(!tess::TileFieldValue<ThrowingAssignment>);
+
+static_assert(!std::is_convertible_v<std::uint32_t, tess::DirtyMask>);
+static_assert(!std::is_convertible_v<tess::DirtyMask, std::uint32_t>);
+static_assert(!std::is_convertible_v<std::uint32_t, tess::ActiveMask>);
+static_assert(!std::is_convertible_v<tess::ActiveMask, std::uint32_t>);
+static_assert(!std::is_convertible_v<std::uint64_t, tess::ContentVersion>);
+static_assert(!std::is_convertible_v<tess::ContentVersion, std::uint64_t>);
+static_assert(!std::is_convertible_v<std::uint64_t, tess::TopologyVersion>);
+static_assert(!std::is_convertible_v<tess::TopologyVersion, std::uint64_t>);
+static_assert(!std::is_convertible_v<std::uint64_t, tess::ResidencyGeneration>);
+static_assert(!std::is_convertible_v<tess::ResidencyGeneration, std::uint64_t>);
+static_assert(MutuallyNonConvertible<tess::DirtyMask, tess::ActiveMask>);
+static_assert(MutuallyNonConvertible<tess::DirtyMask, tess::ContentVersion>);
+static_assert(MutuallyNonConvertible<tess::DirtyMask, tess::TopologyVersion>);
+static_assert(
+    MutuallyNonConvertible<tess::DirtyMask, tess::ResidencyGeneration>);
+static_assert(MutuallyNonConvertible<tess::ActiveMask, tess::ContentVersion>);
+static_assert(MutuallyNonConvertible<tess::ActiveMask, tess::TopologyVersion>);
+static_assert(
+    MutuallyNonConvertible<tess::ActiveMask, tess::ResidencyGeneration>);
+static_assert(
+    MutuallyNonConvertible<tess::ContentVersion, tess::TopologyVersion>);
+static_assert(
+    MutuallyNonConvertible<tess::ContentVersion, tess::ResidencyGeneration>);
+static_assert(
+    MutuallyNonConvertible<tess::TopologyVersion, tess::ResidencyGeneration>);
+static_assert(tess::DirtyMask{}.empty());
+static_assert(tess::ActiveMask{}.empty());
+static_assert(!tess::ResidencyGeneration{}.valid());
+static_assert(tess::ResidencyGeneration{1}.valid());
 
 TEST(TessStorage, FieldSchemaAcceptsDistinctTagsAndFindsValueTypes) {
   static_assert(tess::is_valid_field_schema_v<TerrainField, CostField>);
@@ -92,6 +131,25 @@ TEST(TessStorage, FieldSchemaAcceptsDistinctTagsAndFindsValueTypes) {
   static_assert(std::is_same_v<Schema::value_type<RegionTag>, std::uint32_t>);
 
   EXPECT_EQ(Schema::field_count, 3u);
+}
+
+TEST(TessStorage, MetadataDomainsExposeOnlyExplicitRawValues) {
+  const auto dirty = tess::DirtyMask{0x12u};
+  const auto active = tess::ActiveMask{0x34u};
+  auto content = tess::ContentVersion{};
+  auto topology = tess::TopologyVersion{};
+  auto residency = tess::ResidencyGeneration{};
+
+  ++content;
+  ++topology;
+  ++residency;
+
+  EXPECT_EQ(dirty.value, 0x12u);
+  EXPECT_EQ(active.value, 0x34u);
+  EXPECT_EQ(content.value, 1u);
+  EXPECT_EQ(topology.value, 1u);
+  EXPECT_EQ(residency.value, 1u);
+  EXPECT_TRUE(residency.valid());
 }
 
 TEST(TessStorage, TopDown2DPageExposesContiguousTypedSpans) {
@@ -299,58 +357,11 @@ TEST(TessStorage, DenseWorldFillsAFieldAcrossEveryTile) {
       EXPECT_EQ(value, 0u);
     }
     const auto key = page.chunk_key();
-    EXPECT_EQ(world.dirty_flags(key), 0u);
-    EXPECT_EQ(world.active_flags(key), 0u);
-    EXPECT_EQ(world.meta(key).version, 0u);
-    EXPECT_EQ(world.meta(key).topology_version, 0u);
+    EXPECT_EQ(world.dirty_mask(key), tess::DirtyMask{});
+    EXPECT_EQ(world.active_mask(key), tess::ActiveMask{});
+    EXPECT_EQ(world.meta(key).content_version, tess::ContentVersion{0});
+    EXPECT_EQ(world.meta(key).topology_version, tess::TopologyVersion{0});
   }
-}
-
-TEST(TessStorage, DenseWorldFillLeavesMetadataAndPartialWritesOnThrow) {
-  ThrowingWorld world;
-  constexpr auto key = tess::ChunkKey{0};
-  constexpr auto bounds =
-      tess::Box3{tess::Coord3{1, 1, 0}, tess::Extent3{2, 2}};
-
-  world.mark_topology_dirty(key, DirtyTerrain, bounds);
-  world.mark_active(key, ActiveFluid);
-  world.mark_content_changed(key);
-  const auto before = world.meta(key);
-  const auto dirty_flags = world.dirty_flags(key);
-  const auto active_flags = world.active_flags(key);
-  const auto dirty_bounds = world.dirty_bounds(key);
-
-  ThrowingValue::assignments_before_throw = 3;
-  EXPECT_THROW(world.fill_field<ThrowingTag>(ThrowingValue{9}),
-               std::runtime_error);
-  ThrowingValue::assignments_before_throw = -1;
-
-  const auto values = world.field_span<ThrowingTag>(key);
-  ASSERT_EQ(values.size(), 16u);
-  for (std::size_t index = 0; index < values.size(); ++index) {
-    EXPECT_EQ(values[index].value, index < 3 ? 9 : 0);
-  }
-  EXPECT_EQ(world.meta(key).state, before.state);
-  EXPECT_EQ(world.meta(key).version, before.version);
-  EXPECT_EQ(world.meta(key).topology_version, before.topology_version);
-  EXPECT_EQ(world.meta(key).active_count, before.active_count);
-  EXPECT_EQ(world.meta(key).entity_count, before.entity_count);
-  EXPECT_EQ(world.dirty_flags(key), dirty_flags);
-  EXPECT_EQ(world.active_flags(key), active_flags);
-  EXPECT_EQ(world.dirty_bounds(key), dirty_bounds);
-
-  world.fill_field<ThrowingTag>(ThrowingValue{7});
-  for (const auto& value : world.field_span<ThrowingTag>(key)) {
-    EXPECT_EQ(value.value, 7);
-  }
-  EXPECT_EQ(world.meta(key).state, before.state);
-  EXPECT_EQ(world.meta(key).version, before.version);
-  EXPECT_EQ(world.meta(key).topology_version, before.topology_version);
-  EXPECT_EQ(world.meta(key).active_count, before.active_count);
-  EXPECT_EQ(world.meta(key).entity_count, before.entity_count);
-  EXPECT_EQ(world.dirty_flags(key), dirty_flags);
-  EXPECT_EQ(world.active_flags(key), active_flags);
-  EXPECT_EQ(world.dirty_bounds(key), dirty_bounds);
 }
 
 TEST(TessStorage, TopDownWorldAcceptsCoord2ForTileAccess) {
@@ -435,12 +446,10 @@ TEST(TessStorage, WorldHotAccessorsAreNoexcept) {
   static_assert(noexcept(const_world.try_meta(key)));
   static_assert(noexcept(world.try_meta(chunk_coord)));
   static_assert(noexcept(const_world.try_meta(chunk_coord)));
-  static_assert(noexcept(world.chunk_state(key)));
-  static_assert(noexcept(const_world.chunk_state(key)));
-  static_assert(noexcept(world.chunk_state(chunk_coord)));
-  static_assert(noexcept(const_world.chunk_state(chunk_coord)));
-  static_assert(
-      noexcept(world.set_chunk_state(key, tess::ChunkState::ResidentActive)));
+  static_assert(noexcept(world.chunk_activity(key)));
+  static_assert(noexcept(const_world.chunk_activity(key)));
+  static_assert(noexcept(world.chunk_activity(chunk_coord)));
+  static_assert(noexcept(const_world.chunk_activity(chunk_coord)));
   static_assert(noexcept(world.mark_dirty(
       key, DirtyTerrain,
       tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}})));
@@ -460,7 +469,7 @@ TEST(TessStorage, WorldHotAccessorsAreNoexcept) {
   EXPECT_EQ(world.chunks().size(), World<TopDown2D>::chunk_count);
 }
 
-TEST(TessStorage, FreshWorldFieldValuesAreZeroInitializedWithoutWrites) {
+TEST(TessStorage, FreshWorldScalarFieldsAreValueInitializedWithoutWrites) {
   const World<Chunked3D> world;
   std::size_t nonzero_values = 0;
 
@@ -487,20 +496,20 @@ TEST(TessStorage, WorldDefaultMetadataIsSleepingAndClean) {
   for (const auto key :
        {tess::ChunkKey{0}, tess::ChunkKey{5}, tess::ChunkKey{15}}) {
     const auto& meta = top_down.meta(key);
-    EXPECT_EQ(meta.state, tess::ChunkState::ResidentSleeping);
-    EXPECT_EQ(meta.version, 0u);
-    EXPECT_EQ(meta.topology_version, 0u);
-    EXPECT_EQ(top_down.dirty_flags(key), 0u);
-    EXPECT_EQ(top_down.active_flags(key), 0u);
+    EXPECT_EQ(top_down.chunk_activity(key), tess::ChunkActivity::Sleeping);
+    EXPECT_EQ(meta.content_version, tess::ContentVersion{});
+    EXPECT_EQ(meta.topology_version, tess::TopologyVersion{});
+    EXPECT_EQ(top_down.dirty_mask(key), tess::DirtyMask{});
+    EXPECT_EQ(top_down.active_mask(key), tess::ActiveMask{});
     EXPECT_EQ(top_down.dirty_bounds(key), (tess::Box3{}));
-    EXPECT_EQ(meta.active_count, 0u);
+    EXPECT_EQ(top_down.active_category_count(key), 0u);
     EXPECT_EQ(meta.entity_count, 0u);
   }
 
-  EXPECT_EQ(vertical.meta(tess::ChunkKey{6}).state,
-            tess::ChunkState::ResidentSleeping);
-  EXPECT_EQ(chunked.meta(tess::ChunkKey{42}).state,
-            tess::ChunkState::ResidentSleeping);
+  EXPECT_EQ(vertical.chunk_activity(tess::ChunkKey{6}),
+            tess::ChunkActivity::Sleeping);
+  EXPECT_EQ(chunked.chunk_activity(tess::ChunkKey{42}),
+            tess::ChunkActivity::Sleeping);
 }
 
 TEST(TessStorage, WorldLooksUpMetadataByKeyAndCoord) {
@@ -536,20 +545,20 @@ TEST(TessStorage, WorldConstMetadataAccessReturnsConstReferences) {
   EXPECT_EQ(checked->entity_count, 3u);
 }
 
-TEST(TessStorage, WorldTransitionsChunkStateExplicitly) {
+TEST(TessStorage, WorldDerivesChunkActivityFromActiveMask) {
   World<TopDown2D> world;
   constexpr auto key = tess::ChunkKey{2};
 
-  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentSleeping);
-  world.set_chunk_state(key, tess::ChunkState::ResidentActive);
-  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
-  EXPECT_EQ(world.chunk_state(tess::ChunkCoord3{2, 0, 0}),
-            tess::ChunkState::ResidentActive);
-  world.set_chunk_state(key, tess::ChunkState::ResidentSleeping);
-  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentSleeping);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Sleeping);
+  world.mark_active(key, ActiveFluid);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Active);
+  EXPECT_EQ(world.chunk_activity(tess::ChunkCoord3{2, 0, 0}),
+            tess::ChunkActivity::Active);
+  world.clear_active(key, ActiveFluid);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Sleeping);
 }
 
-TEST(TessStorage, WorldDirtyFlagsUnionClearAndIncrementVersion) {
+TEST(TessStorage, WorldDirtyMasksUnionClearAndIncrementContentVersion) {
   World<TopDown2D> world;
   constexpr auto key = tess::ChunkKey{5};
   const auto first =
@@ -558,24 +567,24 @@ TEST(TessStorage, WorldDirtyFlagsUnionClearAndIncrementVersion) {
       tess::Box3{tess::Coord3{40, 18, 0}, tess::Extent3{4, 2, 1}};
 
   world.mark_dirty(key, DirtyTerrain, first);
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
-  EXPECT_EQ(world.meta(key).version, 1u);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain);
+  EXPECT_EQ(world.meta(key).content_version, tess::ContentVersion{1});
   EXPECT_EQ(world.dirty_bounds(key), first);
 
   world.mark_dirty(key, DirtyCost | DirtyTopology, second);
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain | DirtyCost | DirtyTopology);
-  EXPECT_EQ(world.meta(key).version, 2u);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain | DirtyCost | DirtyTopology);
+  EXPECT_EQ(world.meta(key).content_version, tess::ContentVersion{2});
   EXPECT_EQ(world.dirty_bounds(key),
             (tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{12, 4, 1}}));
 
   world.clear_dirty(key, DirtyCost);
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain | DirtyTopology);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain | DirtyTopology);
   EXPECT_EQ(world.dirty_bounds(key),
             (tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{12, 4, 1}}));
   world.clear_dirty(key, DirtyTerrain | DirtyTopology);
-  EXPECT_EQ(world.dirty_flags(key), 0u);
+  EXPECT_EQ(world.dirty_mask(key), tess::DirtyMask{});
   EXPECT_EQ(world.dirty_bounds(key), (tess::Box3{}));
-  EXPECT_EQ(world.meta(key).version, 2u);
+  EXPECT_EQ(world.meta(key).content_version, tess::ContentVersion{2});
 }
 
 TEST(TessStorage, WorldDirtyBoundsUnionSaturatesHugeExtent) {
@@ -634,14 +643,14 @@ TEST(TessStorage, WorldObserveDirtyReturnsRequestedSubsetBoundsAndVersion) {
   world.mark_dirty(key, DirtyTerrain | DirtyCost, bounds);
 
   const auto observed = world.observe_dirty(key, DirtyTerrain | DirtyTopology);
-  EXPECT_EQ(observed.flags, DirtyTerrain);
+  EXPECT_EQ(observed.mask, DirtyTerrain);
   EXPECT_EQ(observed.bounds, bounds);
-  EXPECT_EQ(observed.version, world.meta(key).version);
+  EXPECT_EQ(observed.content_version, world.meta(key).content_version);
 
   const auto clean = world.observe_dirty(tess::ChunkKey{4}, DirtyTerrain);
-  EXPECT_EQ(clean.flags, 0u);
+  EXPECT_EQ(clean.mask, tess::DirtyMask{});
   EXPECT_EQ(clean.bounds, (tess::Box3{}));
-  EXPECT_EQ(clean.version, 0u);
+  EXPECT_EQ(clean.content_version, tess::ContentVersion{});
 }
 
 TEST(TessStorage, WorldClearDirtyObservedClearsExactlyObservedGeneration) {
@@ -652,12 +661,12 @@ TEST(TessStorage, WorldClearDirtyObservedClearsExactlyObservedGeneration) {
 
   world.mark_dirty(key, DirtyTerrain | DirtyCost, bounds);
   const auto observed = world.observe_dirty(key, DirtyTerrain);
-  const auto version_before = world.meta(key).version;
+  const auto version_before = world.meta(key).content_version;
 
   EXPECT_TRUE(world.clear_dirty_observed(key, observed));
-  EXPECT_EQ(world.dirty_flags(key), DirtyCost);
+  EXPECT_EQ(world.dirty_mask(key), DirtyCost);
   EXPECT_EQ(world.dirty_bounds(key), bounds);
-  EXPECT_EQ(world.meta(key).version, version_before);
+  EXPECT_EQ(world.meta(key).content_version, version_before);
 }
 
 TEST(TessStorage, WorldClearDirtyObservedPreservesMarksAfterObservation) {
@@ -675,14 +684,14 @@ TEST(TessStorage, WorldClearDirtyObservedPreservesMarksAfterObservation) {
   // the same category. The stale clear must preserve every flag and bound.
   world.mark_dirty(key, DirtyTerrain, second);
   EXPECT_FALSE(world.clear_dirty_observed(key, observed));
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain);
   EXPECT_EQ(world.dirty_bounds(key),
             (tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{14, 6, 1}}));
 
   // Re-observing the current generation makes the clear valid again.
   const auto refreshed = world.observe_dirty(key, DirtyTerrain);
   EXPECT_TRUE(world.clear_dirty_observed(key, refreshed));
-  EXPECT_EQ(world.dirty_flags(key), 0u);
+  EXPECT_EQ(world.dirty_mask(key), tess::DirtyMask{});
   EXPECT_EQ(world.dirty_bounds(key), (tess::Box3{}));
 }
 
@@ -697,9 +706,9 @@ TEST(TessStorage, WorldMarkContentChangedAdvancesOnlyContentVersion) {
   world.mark_active(key, ActiveFluid);
   const auto observed = world.observe_dirty(key, DirtyTerrain);
   const auto before = world.meta(key);
-  const auto dirty_flags = world.dirty_flags(key);
+  const auto dirty_mask_snapshot = world.dirty_mask(key);
   const auto dirty_bounds = world.dirty_bounds(key);
-  const auto active_flags = world.active_flags(key);
+  const auto active_mask_snapshot = world.active_mask(key);
 
   {
     tess_test::ScopedAllocationCounter counter;
@@ -708,16 +717,17 @@ TEST(TessStorage, WorldMarkContentChangedAdvancesOnlyContentVersion) {
     EXPECT_EQ(counter.bytes(), 0u);
   }
 
-  EXPECT_EQ(world.meta(key).version, before.version + 1);
+  EXPECT_EQ(world.meta(key).content_version,
+            tess::ContentVersion{before.content_version.value + 1});
   EXPECT_EQ(world.meta(key).topology_version, before.topology_version);
-  EXPECT_EQ(world.meta(key).state, before.state);
-  EXPECT_EQ(world.meta(key).active_count, before.active_count);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Active);
+  EXPECT_EQ(world.active_category_count(key), 1u);
   EXPECT_EQ(world.meta(key).entity_count, before.entity_count);
-  EXPECT_EQ(world.dirty_flags(key), dirty_flags);
+  EXPECT_EQ(world.dirty_mask(key), dirty_mask_snapshot);
   EXPECT_EQ(world.dirty_bounds(key), dirty_bounds);
-  EXPECT_EQ(world.active_flags(key), active_flags);
+  EXPECT_EQ(world.active_mask(key), active_mask_snapshot);
   EXPECT_FALSE(world.clear_dirty_observed(key, observed));
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain);
 }
 
 TEST(TessStorage, WorldClearDirtyObservedIgnoresEmptyObservations) {
@@ -731,9 +741,9 @@ TEST(TessStorage, WorldClearDirtyObservedIgnoresEmptyObservations) {
 
   world.mark_dirty(key, DirtyCost, bounds);
   const auto unrelated = world.observe_dirty(key, DirtyTerrain);
-  EXPECT_EQ(unrelated.flags, 0u);
+  EXPECT_EQ(unrelated.mask, tess::DirtyMask{});
   EXPECT_TRUE(world.clear_dirty_observed(key, unrelated));
-  EXPECT_EQ(world.dirty_flags(key), DirtyCost);
+  EXPECT_EQ(world.dirty_mask(key), DirtyCost);
   EXPECT_EQ(world.dirty_bounds(key), bounds);
 }
 
@@ -803,13 +813,13 @@ TEST(TessStorage, WorldTopologyDirtyAdvancesTopologyVersion) {
       tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{2, 3, 1}};
 
   world.mark_topology_dirty(key, DirtyTopology, bounds);
-  EXPECT_EQ(world.dirty_flags(key), DirtyTopology);
-  EXPECT_EQ(world.meta(key).version, 1u);
-  EXPECT_EQ(world.meta(key).topology_version, 1u);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTopology);
+  EXPECT_EQ(world.meta(key).content_version, tess::ContentVersion{1});
+  EXPECT_EQ(world.meta(key).topology_version, tess::TopologyVersion{1});
   EXPECT_EQ(world.dirty_bounds(key), bounds);
 
   world.mark_topology_rebuilt(key);
-  EXPECT_EQ(world.meta(key).topology_version, 2u);
+  EXPECT_EQ(world.meta(key).topology_version, tess::TopologyVersion{2});
 }
 
 TEST(TessStorage, WorldZeroDirtyMaskDoesNotChangeMetadata) {
@@ -818,57 +828,57 @@ TEST(TessStorage, WorldZeroDirtyMaskDoesNotChangeMetadata) {
   const auto bounds =
       tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{2, 3, 1}};
 
-  world.mark_dirty(key, 0, bounds);
-  EXPECT_EQ(world.dirty_flags(key), 0u);
+  world.mark_dirty(key, tess::DirtyMask{}, bounds);
+  EXPECT_EQ(world.dirty_mask(key), tess::DirtyMask{});
   EXPECT_EQ(world.dirty_bounds(key), (tess::Box3{}));
-  EXPECT_EQ(world.meta(key).version, 0u);
+  EXPECT_EQ(world.meta(key).content_version, tess::ContentVersion{0});
 
   world.mark_dirty(key, DirtyTerrain, bounds);
-  world.clear_dirty(key, 0);
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
+  world.clear_dirty(key, tess::DirtyMask{});
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain);
   EXPECT_EQ(world.dirty_bounds(key), bounds);
-  EXPECT_EQ(world.meta(key).version, 1u);
+  EXPECT_EQ(world.meta(key).content_version, tess::ContentVersion{1});
 }
 
-TEST(TessStorage, WorldActiveFlagsDriveStateAndActiveCount) {
+TEST(TessStorage, WorldActiveMaskDrivesActivityAndActiveCategoryCount) {
   World<TopDown2D> world;
   constexpr auto key = tess::ChunkKey{4};
 
   world.mark_active(key, ActiveFluid);
-  EXPECT_EQ(world.active_flags(key), ActiveFluid);
-  EXPECT_EQ(world.meta(key).active_count, 1u);
-  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
+  EXPECT_EQ(world.active_mask(key), ActiveFluid);
+  EXPECT_EQ(world.active_category_count(key), 1u);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Active);
 
   world.mark_active(key, ActiveFluid | ActiveFire);
-  EXPECT_EQ(world.active_flags(key), ActiveFluid | ActiveFire);
-  EXPECT_EQ(world.meta(key).active_count, 2u);
-  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
+  EXPECT_EQ(world.active_mask(key), ActiveFluid | ActiveFire);
+  EXPECT_EQ(world.active_category_count(key), 2u);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Active);
 
   world.clear_active(key, ActiveFluid);
-  EXPECT_EQ(world.active_flags(key), ActiveFire);
-  EXPECT_EQ(world.meta(key).active_count, 1u);
-  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
+  EXPECT_EQ(world.active_mask(key), ActiveFire);
+  EXPECT_EQ(world.active_category_count(key), 1u);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Active);
 
   world.clear_active(key, ActiveFire);
-  EXPECT_EQ(world.active_flags(key), 0u);
-  EXPECT_EQ(world.meta(key).active_count, 0u);
-  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentSleeping);
+  EXPECT_EQ(world.active_mask(key), tess::ActiveMask{});
+  EXPECT_EQ(world.active_category_count(key), 0u);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Sleeping);
 }
 
 TEST(TessStorage, WorldZeroActiveMaskDoesNotChangeMetadata) {
   World<TopDown2D> world;
   constexpr auto key = tess::ChunkKey{4};
 
-  world.mark_active(key, 0);
-  EXPECT_EQ(world.active_flags(key), 0u);
-  EXPECT_EQ(world.meta(key).active_count, 0u);
-  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentSleeping);
+  world.mark_active(key, tess::ActiveMask{});
+  EXPECT_EQ(world.active_mask(key), tess::ActiveMask{});
+  EXPECT_EQ(world.active_category_count(key), 0u);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Sleeping);
 
   world.mark_active(key, ActiveFluid);
-  world.clear_active(key, 0);
-  EXPECT_EQ(world.active_flags(key), ActiveFluid);
-  EXPECT_EQ(world.meta(key).active_count, 1u);
-  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
+  world.clear_active(key, tess::ActiveMask{});
+  EXPECT_EQ(world.active_mask(key), ActiveFluid);
+  EXPECT_EQ(world.active_category_count(key), 1u);
+  EXPECT_EQ(world.chunk_activity(key), tess::ChunkActivity::Active);
 }
 
 TEST(TessStorage, WorldDirtyAndActiveChunkQueriesReturnKeyOrder) {

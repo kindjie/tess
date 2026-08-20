@@ -19,21 +19,22 @@ enum class MovementStatus : std::uint8_t {
   InvalidFrom,
   InvalidTo,
   NotAdjacent,
-  BlockedFrom,
-  BlockedTo,
+  ImpassableFrom,
+  ImpassableTo,
+  Blocked,
   Occupied,
   Reserved,
-  StaleVersion,
+  StaleContent,
   StaleTopology,
 };
 static_assert(sizeof(MovementStatus) == sizeof(std::uint8_t));
 
 /// Holds optional optimistic-concurrency versions for both movement endpoints.
 struct MovementVersionCheck {
-  std::optional<std::uint32_t> from_chunk_version;
-  std::optional<std::uint32_t> to_chunk_version;
-  std::optional<std::uint32_t> from_topology_version;
-  std::optional<std::uint32_t> to_topology_version;
+  std::optional<ContentVersion> from_content_version;
+  std::optional<ContentVersion> to_content_version;
+  std::optional<TopologyVersion> from_topology_version;
+  std::optional<TopologyVersion> to_topology_version;
 };
 
 /// Describes an adjacent move and any versions it expects to remain current.
@@ -53,10 +54,11 @@ struct MovementResult {
 /// Aggregates rejected movement attempts by retry-relevant category.
 struct MovementFailureCounts {
   std::size_t invalid = 0;
+  std::size_t impassable = 0;
   std::size_t blocked = 0;
   std::size_t occupied = 0;
   std::size_t reserved = 0;
-  std::size_t stale_version = 0;
+  std::size_t stale_content = 0;
   std::size_t stale_topology = 0;
 };
 
@@ -71,8 +73,11 @@ inline void record_movement_failure(MovementFailureCounts& counts,
     case MovementStatus::NotAdjacent:
       ++counts.invalid;
       return;
-    case MovementStatus::BlockedFrom:
-    case MovementStatus::BlockedTo:
+    case MovementStatus::ImpassableFrom:
+    case MovementStatus::ImpassableTo:
+      ++counts.impassable;
+      return;
+    case MovementStatus::Blocked:
       ++counts.blocked;
       return;
     case MovementStatus::Occupied:
@@ -81,8 +86,8 @@ inline void record_movement_failure(MovementFailureCounts& counts,
     case MovementStatus::Reserved:
       ++counts.reserved;
       return;
-    case MovementStatus::StaleVersion:
-      ++counts.stale_version;
+    case MovementStatus::StaleContent:
+      ++counts.stale_content;
       return;
     case MovementStatus::StaleTopology:
       ++counts.stale_topology;
@@ -92,18 +97,19 @@ inline void record_movement_failure(MovementFailureCounts& counts,
 
 // Transient failures describe a world state that can legitimately change
 // under a routed agent (another agent passing through, a fresh wall, a
-// stale version guard); callers should re-path and retry. The remaining
+// stale content-version guard); callers should re-path and retry. The remaining
 // failures (invalid endpoints, non-adjacent steps) indicate a caller bug
 // and are terminal.
 /// Returns whether retrying after world state changes may allow the move.
 [[nodiscard]] constexpr auto is_transient_movement_failure(
     MovementStatus status) noexcept -> bool {
   switch (status) {
-    case MovementStatus::BlockedFrom:
-    case MovementStatus::BlockedTo:
+    case MovementStatus::ImpassableFrom:
+    case MovementStatus::ImpassableTo:
+    case MovementStatus::Blocked:
     case MovementStatus::Occupied:
     case MovementStatus::Reserved:
-    case MovementStatus::StaleVersion:
+    case MovementStatus::StaleContent:
     case MovementStatus::StaleTopology:
       return true;
     case MovementStatus::Moved:
@@ -120,13 +126,13 @@ namespace detail {
 [[nodiscard]] inline auto movement_versions_match_meta(
     const ChunkMeta& from_meta, const ChunkMeta& to_meta,
     const MovementVersionCheck& versions) noexcept -> MovementStatus {
-  if (versions.from_chunk_version.has_value() &&
-      from_meta.version != *versions.from_chunk_version) {
-    return MovementStatus::StaleVersion;
+  if (versions.from_content_version.has_value() &&
+      from_meta.content_version != *versions.from_content_version) {
+    return MovementStatus::StaleContent;
   }
-  if (versions.to_chunk_version.has_value() &&
-      to_meta.version != *versions.to_chunk_version) {
-    return MovementStatus::StaleVersion;
+  if (versions.to_content_version.has_value() &&
+      to_meta.content_version != *versions.to_content_version) {
+    return MovementStatus::StaleContent;
   }
   if (versions.from_topology_version.has_value() &&
       from_meta.topology_version != *versions.from_topology_version) {
@@ -141,22 +147,22 @@ namespace detail {
 
 [[nodiscard]] constexpr auto has_version_expectations(
     const MovementVersionCheck& versions) noexcept -> bool {
-  return versions.from_chunk_version.has_value() ||
-         versions.to_chunk_version.has_value() ||
+  return versions.from_content_version.has_value() ||
+         versions.to_content_version.has_value() ||
          versions.from_topology_version.has_value() ||
          versions.to_topology_version.has_value();
 }
 
 }  // namespace detail
 
-/// Returns whether every optional version in `intent` still matches.
+/// Returns whether every optional content/topology version still matches.
 template <typename World>
 [[nodiscard]] auto movement_versions_match(const World& world,
                                            MovementIntent intent) noexcept
     -> MovementStatus {
   if constexpr (std::is_same_v<typename World::residency_type,
                                SparseResident>) {
-    // A non-resident chunk has no version snapshot to compare against;
+    // A non-resident chunk has no content-version snapshot to compare against;
     // treat it as stale so the move is rejected rather than reading meta()
     // out of bounds. This holds even with no expectations set, so the
     // fast path below cannot change sparse semantics.
@@ -164,7 +170,7 @@ template <typename World>
     const auto to = world.resolve(intent.to);
     if (!world.is_resident(from.chunk_key) ||
         !world.is_resident(to.chunk_key)) {
-      return MovementStatus::StaleVersion;
+      return MovementStatus::StaleContent;
     }
     if (!detail::has_version_expectations(intent.versions)) {
       return MovementStatus::Moved;
@@ -172,10 +178,9 @@ template <typename World>
     return detail::movement_versions_match_meta(
         world.meta(from.chunk_key), world.meta(to.chunk_key), intent.versions);
   } else {
-    // The movement-scheduler path submits intents with no version
+    // The movement-scheduler path submits intents with no content-version
     // expectations at all; resolving both endpoints and reading two metas
-    // just to compare nothing was pure per-step waste (audit 2026-07-11
-    // M7).
+    // just to compare nothing is unnecessary per-step work.
     if (!detail::has_version_expectations(intent.versions)) {
       return MovementStatus::Moved;
     }
@@ -196,8 +201,8 @@ namespace detail {
 
 // Validation core: returns the resolved endpoints alongside the result so
 // commit_movement_intent reuses them for its field writes and dirty marks
-// instead of re-resolving the same coordinates 4-7x per committed step
-// (audit 2026-07-11 M7). This core is intentionally not noexcept: consumer
+// instead of re-resolving the same coordinates 4-7x per committed step. This
+// core is intentionally not noexcept: consumer
 // providers are allowed to throw during enumeration, and validation must
 // propagate that failure instead of terminating. Resolved tiles are meaningful
 // only when result.status == Moved.
@@ -230,8 +235,8 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
                                SparseResident>) {
     // try_resolve is containment-only, so an in-bounds but non-resident
     // endpoint passes the checks above. A non-resident chunk carries no data,
-    // but this is a TRANSIENT condition -- the chunk may be reloaded -- so
-    // return StaleVersion (a transient failure, matching
+    // but this is a TRANSIENT condition -- the chunk may be rematerialized --
+    // so return StaleContent (a transient failure, matching
     // movement_versions_match for the identical condition) rather than a
     // terminal InvalidFrom/InvalidTo. That routes the agent lifecycle to
     // re-plan against the now-changed residency instead of permanently
@@ -241,23 +246,23 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
     // not read as a permanent caller bug.
     if (!world.is_resident(resolved_from->chunk_key) ||
         !world.is_resident(resolved_to->chunk_key)) {
-      return fail(MovementStatus::StaleVersion);
+      return fail(MovementStatus::StaleContent);
     }
   }
   const auto& from_page = world.chunk(resolved_from->chunk_key);
   const auto& to_page = world.chunk(resolved_to->chunk_key);
   if (!Class::passable(from_page, resolved_from->local_tile_id)) {
-    return fail(MovementStatus::BlockedFrom);
+    return fail(MovementStatus::ImpassableFrom);
   }
   if (!Class::passable(to_page, resolved_to->local_tile_id)) {
-    return fail(MovementStatus::BlockedTo);
+    return fail(MovementStatus::ImpassableTo);
   }
   // Exact search rejects a zero-entry-cost goal before enumerating either
   // regular or provider transitions. The source was a valid search endpoint
   // when the route was planned; commit checks its passability above while a
   // zero-cost destination must invalidate this planned step.
   if (Class::entry_cost(to_page, resolved_to->local_tile_id) == 0) {
-    return fail(MovementStatus::BlockedTo);
+    return fail(MovementStatus::ImpassableTo);
   }
   auto transition_availability = TransitionAvailability::Blocked;
   auto is_candidate = Model::is_regular_candidate(intent.from, intent.to);
@@ -301,10 +306,10 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
     return fail(MovementStatus::NotAdjacent);
   }
   if (transition_availability == TransitionAvailability::MissingTopology) {
-    return fail(MovementStatus::StaleVersion);
+    return fail(MovementStatus::StaleTopology);
   }
   if (transition_availability != TransitionAvailability::Legal) {
-    return fail(MovementStatus::BlockedTo);
+    return fail(MovementStatus::Blocked);
   }
   if (static_cast<bool>(
           to_page.template field<OccupancyTag>(resolved_to->local_tile_id))) {
@@ -370,7 +375,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 /// On failure the world is unchanged. Success updates occupancy and, when
 /// requested, the dirty metadata maintained by the world.
 [[nodiscard]] auto commit_movement_intent(World& world, MovementIntent intent,
-                                          std::uint32_t dirty_mask = 0) noexcept
+                                          DirtyMask dirty_mask = {}) noexcept
     -> MovementResult {
   const auto validated = detail::validate_movement_intent_resolved<
       World, ClassOrTag, OccupancyTag, ReservationTag, AdjacentTransitions>(
@@ -384,7 +389,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   from_page.template field<OccupancyTag>(validated.from.local_tile_id) = false;
   to_page.template field<OccupancyTag>(validated.to.local_tile_id) = true;
   to_page.template field<ReservationTag>(validated.to.local_tile_id) = false;
-  if (dirty_mask != 0) {
+  if (dirty_mask) {
     world.mark_dirty(validated.from.chunk_key, dirty_mask,
                      Box3{intent.from, Extent3{1, 1, 1}});
     world.mark_dirty(validated.to.chunk_key, dirty_mask,
@@ -399,7 +404,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 ///
 /// Exceptions from `provider` propagate before any occupancy is mutated.
 [[nodiscard]] auto commit_movement_intent(World& world, MovementIntent intent,
-                                          std::uint32_t dirty_mask,
+                                          DirtyMask dirty_mask,
                                           const Provider& provider)
     -> MovementResult {
   const auto validated =
@@ -415,7 +420,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   from_page.template field<OccupancyTag>(validated.from.local_tile_id) = false;
   to_page.template field<OccupancyTag>(validated.to.local_tile_id) = true;
   to_page.template field<ReservationTag>(validated.to.local_tile_id) = false;
-  if (dirty_mask != 0) {
+  if (dirty_mask) {
     world.mark_dirty(validated.from.chunk_key, dirty_mask,
                      Box3{intent.from, Extent3{1, 1, 1}});
     world.mark_dirty(validated.to.chunk_key, dirty_mask,

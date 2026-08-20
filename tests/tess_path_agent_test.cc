@@ -22,6 +22,9 @@ using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
 using Runtime2D = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
 using World = tess::AlwaysResidentWorld<Runtime2D, Schema>;
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 using MovementSchema = tess::FieldSchema<
     tess::Field<PassableTag, bool>, tess::Field<CostTag, std::uint32_t>,
     tess::Field<OccupancyTag, bool>, tess::Field<ReservationTag, bool>>;
@@ -47,13 +50,15 @@ void fill_world(World& world) {
 void mark_passable(World& world, tess::Coord3 coord, bool passable) {
   world.template field<PassableTag>(coord) = passable;
   world.mark_dirty(tess::chunk_key<Runtime2D>(tess::tile_key<Runtime2D>(coord)),
-                   1u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+                   tess::DirtyMask{1u},
+                   tess::Box3{coord, tess::Extent3{1, 1, 1}});
 }
 
 void mark_cost(World& world, tess::Coord3 coord, std::uint32_t cost) {
   world.template field<CostTag>(coord) = cost;
   world.mark_dirty(tess::chunk_key<Runtime2D>(tess::tile_key<Runtime2D>(coord)),
-                   2u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+                   tess::DirtyMask{2u},
+                   tess::Box3{coord, tess::Extent3{1, 1, 1}});
 }
 
 void reserve_runtime(tess::PathRequestRuntime& runtime,
@@ -155,20 +160,20 @@ TEST(TessMovement, ProviderExceptionsPropagateThroughValidateAndCommit) {
   ASSERT_NE(from_key, to_key);
   const auto from_meta = world.meta(from_key);
   const auto to_meta = world.meta(to_key);
-  const auto from_flags = world.dirty_flags(from_key);
-  const auto to_flags = world.dirty_flags(to_key);
+  const auto from_flags = world.dirty_mask(from_key);
+  const auto to_flags = world.dirty_mask(to_key);
   const auto from_bounds = world.dirty_bounds(from_key);
   const auto to_bounds = world.dirty_bounds(to_key);
   const auto expect_unchanged = [&] {
     EXPECT_TRUE(world.template field<OccupancyTag>(from));
     EXPECT_FALSE(world.template field<OccupancyTag>(to));
     EXPECT_TRUE(world.template field<ReservationTag>(to));
-    EXPECT_EQ(world.dirty_flags(from_key), from_flags);
-    EXPECT_EQ(world.dirty_flags(to_key), to_flags);
+    EXPECT_EQ(world.dirty_mask(from_key), from_flags);
+    EXPECT_EQ(world.dirty_mask(to_key), to_flags);
     EXPECT_EQ(world.dirty_bounds(from_key), from_bounds);
     EXPECT_EQ(world.dirty_bounds(to_key), to_bounds);
-    EXPECT_EQ(world.meta(from_key).version, from_meta.version);
-    EXPECT_EQ(world.meta(to_key).version, to_meta.version);
+    EXPECT_EQ(world.meta(from_key).content_version, from_meta.content_version);
+    EXPECT_EQ(world.meta(to_key).content_version, to_meta.content_version);
     EXPECT_EQ(world.meta(from_key).topology_version,
               from_meta.topology_version);
     EXPECT_EQ(world.meta(to_key).topology_version, to_meta.topology_version);
@@ -183,12 +188,12 @@ TEST(TessMovement, ProviderExceptionsPropagateThroughValidateAndCommit) {
   EXPECT_THROW((static_cast<void>(
                    tess::commit_movement_intent<MovementWorld, PassableTag,
                                                 OccupancyTag, ReservationTag>(
-                       world, intent, 0x40u, provider))),
+                       world, intent, tess::DirtyMask{0x40u}, provider))),
                std::runtime_error);
   expect_unchanged();
 }
 
-TEST(TessMovement, ValidateRejectsBlockedFromAndCommitLeavesWorldUntouched) {
+TEST(TessMovement, ValidateRejectsImpassableFromAndCommitLeavesWorldUntouched) {
   MovementWorld world;
   fill_movement_world(world);
   world.template field<PassableTag>(tess::Coord3{0, 0, 0}) = false;
@@ -196,14 +201,14 @@ TEST(TessMovement, ValidateRejectsBlockedFromAndCommitLeavesWorldUntouched) {
 
   const auto result =
       validate_move(world, tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0});
-  EXPECT_EQ(result.status, tess::MovementStatus::BlockedFrom);
+  EXPECT_EQ(result.status, tess::MovementStatus::ImpassableFrom);
 
   const auto commit =
       tess::commit_movement_intent<MovementWorld, PassableTag, OccupancyTag,
                                    ReservationTag>(
           world, tess::MovementIntent{
                      tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}, {}});
-  EXPECT_EQ(commit.status, tess::MovementStatus::BlockedFrom);
+  EXPECT_EQ(commit.status, tess::MovementStatus::ImpassableFrom);
   EXPECT_TRUE(world.template field<OccupancyTag>(tess::Coord3{0, 0, 0}));
   EXPECT_FALSE(world.template field<OccupancyTag>(tess::Coord3{1, 0, 0}));
 }
@@ -219,26 +224,30 @@ TEST(TessMovement, ValidateRejectsStaleTopologyAndToVersionBranches) {
 
   auto result = validate_move(
       world, from, to,
-      tess::MovementVersionCheck{std::nullopt, std::nullopt,
-                                 from_meta.topology_version + 1, std::nullopt});
+      tess::MovementVersionCheck{
+          std::nullopt, std::nullopt,
+          tess::TopologyVersion{from_meta.topology_version.value + 1},
+          std::nullopt});
   EXPECT_EQ(result.status, tess::MovementStatus::StaleTopology);
 
   result = validate_move(
       world, from, to,
-      tess::MovementVersionCheck{std::nullopt, std::nullopt, std::nullopt,
-                                 to_meta.topology_version + 1});
+      tess::MovementVersionCheck{
+          std::nullopt, std::nullopt, std::nullopt,
+          tess::TopologyVersion{to_meta.topology_version.value + 1}});
   EXPECT_EQ(result.status, tess::MovementStatus::StaleTopology);
 
   result = validate_move(
       world, from, to,
-      tess::MovementVersionCheck{std::nullopt, to_meta.version + 1,
-                                 std::nullopt, std::nullopt});
-  EXPECT_EQ(result.status, tess::MovementStatus::StaleVersion);
+      tess::MovementVersionCheck{
+          std::nullopt, tess::ContentVersion{to_meta.content_version.value + 1},
+          std::nullopt, std::nullopt});
+  EXPECT_EQ(result.status, tess::MovementStatus::StaleContent);
 
   result =
       validate_move(world, from, to,
                     tess::MovementVersionCheck{
-                        from_meta.version, to_meta.version,
+                        from_meta.content_version, to_meta.content_version,
                         from_meta.topology_version, to_meta.topology_version});
   EXPECT_EQ(result.status, tess::MovementStatus::Moved);
 }
@@ -250,20 +259,22 @@ TEST(TessMovement, RecordsEveryFailureStatusInItsOwnCounter) {
   tess::record_movement_failure(counts, tess::MovementStatus::InvalidFrom);
   tess::record_movement_failure(counts, tess::MovementStatus::InvalidTo);
   tess::record_movement_failure(counts, tess::MovementStatus::NotAdjacent);
-  tess::record_movement_failure(counts, tess::MovementStatus::BlockedFrom);
-  tess::record_movement_failure(counts, tess::MovementStatus::BlockedTo);
+  tess::record_movement_failure(counts, tess::MovementStatus::ImpassableFrom);
+  tess::record_movement_failure(counts, tess::MovementStatus::ImpassableTo);
+  tess::record_movement_failure(counts, tess::MovementStatus::Blocked);
   tess::record_movement_failure(counts, tess::MovementStatus::Occupied);
   tess::record_movement_failure(counts, tess::MovementStatus::Reserved);
-  tess::record_movement_failure(counts, tess::MovementStatus::StaleVersion);
+  tess::record_movement_failure(counts, tess::MovementStatus::StaleContent);
   tess::record_movement_failure(counts, tess::MovementStatus::StaleTopology);
 
   // Moved must not count anywhere; the three invalid statuses share one
   // bucket; every remaining status has its own dedicated counter.
   EXPECT_EQ(counts.invalid, 3u);
-  EXPECT_EQ(counts.blocked, 2u);
+  EXPECT_EQ(counts.impassable, 2u);
+  EXPECT_EQ(counts.blocked, 1u);
   EXPECT_EQ(counts.occupied, 1u);
   EXPECT_EQ(counts.reserved, 1u);
-  EXPECT_EQ(counts.stale_version, 1u);
+  EXPECT_EQ(counts.stale_content, 1u);
   EXPECT_EQ(counts.stale_topology, 1u);
 }
 
@@ -272,11 +283,12 @@ TEST(TessMovement, ClassifiesTransientVersusTerminalFailures) {
   using tess::MovementStatus;
 
   // Transient: the world state can legitimately change; re-path and retry.
-  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::BlockedFrom));
-  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::BlockedTo));
+  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::ImpassableFrom));
+  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::ImpassableTo));
+  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::Blocked));
   EXPECT_TRUE(is_transient_movement_failure(MovementStatus::Occupied));
   EXPECT_TRUE(is_transient_movement_failure(MovementStatus::Reserved));
-  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::StaleVersion));
+  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::StaleContent));
   EXPECT_TRUE(is_transient_movement_failure(MovementStatus::StaleTopology));
 
   // Terminal (the false branch): success and caller bugs must never route an
@@ -310,11 +322,13 @@ TEST(TessMovement, ManhattanDistanceIsOverflowSafeAtInt64Extremes) {
 TEST(TessPathAgent, GoalAssignmentAndClearDrivePhaseLifecycle) {
   tess::PathAgentState agent{.position = tess::Coord3{0, 0, 0}};
   EXPECT_EQ(agent.phase, tess::PathAgentPhase::Idle);
+  EXPECT_EQ(agent.last_result, std::nullopt);
   EXPECT_EQ(agent.blocked_retries, 0u);
 
   agent.blocked_retries = 5;
   tess::set_path_agent_goal(agent, tess::Coord3{3, 0, 0});
   EXPECT_EQ(agent.phase, tess::PathAgentPhase::NeedsPath);
+  EXPECT_EQ(agent.last_result, std::nullopt);
   EXPECT_EQ(agent.blocked_retries, 0u);
   EXPECT_TRUE(agent.has_goal);
 
@@ -322,6 +336,7 @@ TEST(TessPathAgent, GoalAssignmentAndClearDrivePhaseLifecycle) {
   agent.blocked_retries = 3;
   tess::clear_path_agent_goal(agent);
   EXPECT_EQ(agent.phase, tess::PathAgentPhase::Idle);
+  EXPECT_EQ(agent.last_result, std::nullopt);
   EXPECT_EQ(agent.blocked_retries, 0u);
   EXPECT_FALSE(agent.has_goal);
 }
@@ -341,7 +356,7 @@ TEST(TessPathAgent, TransientMovementFailureKeepsFoundStatusAndBlocks) {
   reserve_runtime(runtime, agents.size());
   (void)tess::process_unit_path_agents<MovementWorld, PassableTag>(
       world, agents, runtime);
-  ASSERT_EQ(agents[0].status, tess::PathStatus::Found);
+  ASSERT_EQ(agents[0].last_result, tess::PathStatus::Found);
 
   const auto stats =
       tess::advance_path_agents_with_movement<MovementWorld, PassableTag,
@@ -349,7 +364,7 @@ TEST(TessPathAgent, TransientMovementFailureKeepsFoundStatusAndBlocks) {
           world, agents, runtime);
   EXPECT_EQ(stats.blocked_waits, 1u);
   EXPECT_EQ(stats.movement_failures.occupied, 1u);
-  EXPECT_EQ(agents[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(agents[0].last_result, tess::PathStatus::Found);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
   // The blocked step itself consumes no re-path budget; only the tick
   // driver's prepare pass counts attempts.
@@ -384,7 +399,7 @@ TEST(TessPathAgent, StructuralMovementFailureIsTerminalUntilNewGoal) {
   reserve_runtime(runtime, agents.size());
   (void)tess::process_unit_path_agents<MovementWorld, PassableTag>(
       world, agents, runtime);
-  ASSERT_EQ(agents[0].status, tess::PathStatus::Found);
+  ASSERT_EQ(agents[0].last_result, tess::PathStatus::Found);
 
   // An external system teleported the agent off its route; stepping to the
   // next path node is no longer an adjacent move, which indicates a caller
@@ -396,7 +411,7 @@ TEST(TessPathAgent, StructuralMovementFailureIsTerminalUntilNewGoal) {
           world, agents, runtime);
   EXPECT_EQ(stats.movement_failures.invalid, 1u);
   EXPECT_EQ(stats.blocked_waits, 0u);
-  EXPECT_EQ(agents[0].status, tess::PathStatus::NoPath);
+  EXPECT_EQ(agents[0].last_result, std::nullopt);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Unreachable);
 
   // A new goal re-arms the lifecycle.
@@ -422,8 +437,8 @@ TEST(TessPathAgent, OnCommitHookFiresOncePerSuccessfulCommit) {
   reserve_runtime(runtime, agents.size());
   (void)tess::process_unit_path_agents<MovementWorld, PassableTag>(
       world, agents, runtime);
-  ASSERT_EQ(agents[0].status, tess::PathStatus::Found);
-  ASSERT_EQ(agents[1].status, tess::PathStatus::Found);
+  ASSERT_EQ(agents[0].last_result, tess::PathStatus::Found);
+  ASSERT_EQ(agents[1].last_result, tess::PathStatus::Found);
 
   struct Commit {
     std::size_t agent_index;
@@ -477,7 +492,7 @@ TEST(TessPathAgent, OnCommitHookSkipsFailedCommits) {
   reserve_runtime(runtime, agents.size());
   (void)tess::process_unit_path_agents<MovementWorld, PassableTag>(
       world, agents, runtime);
-  ASSERT_EQ(agents[0].status, tess::PathStatus::Found);
+  ASSERT_EQ(agents[0].last_result, tess::PathStatus::Found);
 
   std::size_t commit_count = 0;
   const auto count_commit = [&commit_count](std::size_t, tess::Coord3,
@@ -496,7 +511,7 @@ TEST(TessPathAgent, OnCommitHookSkipsFailedCommits) {
   // commit is rejected before any write, so the hook stays silent.
   (void)tess::process_unit_path_agents<MovementWorld, PassableTag>(
       world, agents, runtime);
-  ASSERT_EQ(agents[0].status, tess::PathStatus::Found);
+  ASSERT_EQ(agents[0].last_result, tess::PathStatus::Found);
   agents[0].position = tess::Coord3{5, 5, 0};
   stats = tess::advance_path_agents_with_movement<MovementWorld, PassableTag,
                                                   OccupancyTag, ReservationTag>(
@@ -541,7 +556,7 @@ TEST(TessPathAgent, UnitAgentsProcessAdvanceAndArrive) {
   EXPECT_EQ(advance.arrived, 3u);
   for (const auto& agent : agents) {
     EXPECT_FALSE(agent.has_goal);
-    EXPECT_EQ(agent.status, tess::PathStatus::Found);
+    EXPECT_EQ(agent.last_result, tess::PathStatus::Found);
   }
 }
 
@@ -560,7 +575,7 @@ TEST(TessPathAgent, WeightedAgentsShareGoalAndExposeRuntimeBatchStats) {
   reserve_runtime(runtime, agents.size());
 
   const auto stats =
-      tess::process_weighted_path_agents<World, PassableTag, CostTag, 8>(
+      tess::process_weighted_path_agents<World, WeightedMovement, 8>(
           world, agents, runtime);
   EXPECT_EQ(stats.submitted, agents.size());
   EXPECT_EQ(stats.found, agents.size());
@@ -625,8 +640,8 @@ TEST(TessPathAgent, InvalidAndUnreachableGoalsDoNotMoveAgents) {
       world, agents, runtime);
   EXPECT_EQ(stats.invalid_goal, 1u);
   EXPECT_EQ(stats.no_path, 1u);
-  EXPECT_EQ(agents[0].status, tess::PathStatus::InvalidGoal);
-  EXPECT_EQ(agents[1].status, tess::PathStatus::NoPath);
+  EXPECT_EQ(agents[0].last_result, tess::PathStatus::InvalidGoal);
+  EXPECT_EQ(agents[1].last_result, tess::PathStatus::NoPath);
 
   const auto advance = tess::advance_path_agents(agents, runtime);
   EXPECT_EQ(advance.advanced, 0u);
@@ -701,12 +716,12 @@ TEST(TessPathAgent, WarmWeightedAgentProcessingDoesNotAllocate) {
 
   tess::PathRequestRuntime runtime;
   reserve_runtime(runtime, agents.size());
-  (void)tess::process_weighted_path_agents<World, PassableTag, CostTag, 8>(
+  (void)tess::process_weighted_path_agents<World, WeightedMovement, 8>(
       world, agents, runtime);
 
   tess_test::ScopedAllocationCounter counter;
   const auto stats =
-      tess::process_weighted_path_agents<World, PassableTag, CostTag, 8>(
+      tess::process_weighted_path_agents<World, WeightedMovement, 8>(
           world, agents, runtime);
 
   // As above: pin the observable result so a skipped warm frame cannot pass.

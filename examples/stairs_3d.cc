@@ -103,7 +103,8 @@ auto run() -> int {
   // semantics. Omitting it intentionally means adjacent-only transitions and
   // therefore returns GraphStale for this provider-built graph.
   const auto verdict = tess::precheck_path<PassableTag>(
-      stairs, world, {courtyard, battlement}, reach, Stairs{});
+      stairs, world, {courtyard, battlement}, reach,
+      tess::MissingChunkPolicy::ReportIndeterminate, Stairs{});
   std::cout << "precheck verdict: "
             << (verdict == tess::PrecheckStatus::Reachable ? "reachable"
                                                            : "other")

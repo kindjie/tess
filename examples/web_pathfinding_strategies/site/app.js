@@ -65,7 +65,7 @@ function bindApi(module) {
     width: wrap(module, "tess_strategies_width"),
     height: wrap(module, "tess_strategies_height"),
     count: wrap(module, "tess_strategies_count"),
-    cellPassable: wrap(module, "tess_strategies_cell_passable",
+    tilePassable: wrap(module, "tess_strategies_tile_passable",
       ["number", "number"]),
     requestCount: wrap(module, "tess_strategies_request_count", ["number"]),
     pathStatus: wrap(module, "tess_strategies_path_status",
@@ -130,13 +130,13 @@ function validateSnapshot(api) {
   const passability = [];
   for (let y = 0; y < height; ++y) {
     for (let x = 0; x < width; ++x) {
-      const cell = api.cellPassable(x, y);
-      requireValue(cell === 0 || cell === 1,
-        `Invalid map cell at ${x}:${y}`);
-      passability.push(cell === 1);
+      const tile = api.tilePassable(x, y);
+      requireValue(tile === 0 || tile === 1,
+        `Invalid map tile at ${x}:${y}`);
+      passability.push(tile === 1);
     }
   }
-  requireValue(passability.filter((cell) => !cell).length === 45,
+  requireValue(passability.filter((tile) => !tile).length === 45,
     "Unexpected obstacle map");
   const values = [];
   for (let strategy = 0; strategy < 4; ++strategy) {
@@ -247,9 +247,9 @@ function updateTopology(values) {
   setText("batch-results",
     `${values[2].requests.length} scratch-backed paths`);
   setText("field-build",
-    `Build · ${values.metrics.fieldReachedNodes} cell labels`);
+    `Build · ${values.metrics.fieldReachedNodes} tile labels`);
   setText("field-coverage",
-    `${values.metrics.fieldReachedNodes} reachable cells`);
+    `${values.metrics.fieldReachedNodes} reachable tiles`);
 }
 
 function initializeGrids(passability) {
@@ -260,17 +260,17 @@ function initializeGrids(passability) {
       tile.className = "tile";
       tile.dataset.x = String(index % 16);
       tile.dataset.y = String(Math.floor(index / 16));
-      if (!passability[index]) tile.classList.add("blocked");
+      if (!passability[index]) tile.classList.add("impassable");
       fragment.append(tile);
     }
     grid.replaceChildren(fragment);
   });
-  const blockedCounts = [...document.querySelectorAll("[data-grid]")].map(
-    (grid) => grid.querySelectorAll(".tile.blocked").length);
-  requireValue(blockedCounts.every((count) => count === 45),
-    "Obstacle cells were not rendered consistently");
-  resultBody.dataset.blockedCellsPerGrid = "45";
-  resultBody.dataset.passableCells =
+  const impassableCounts = [...document.querySelectorAll("[data-grid]")].map(
+    (grid) => grid.querySelectorAll(".tile.impassable").length);
+  requireValue(impassableCounts.every((count) => count === 45),
+    "Impassable tiles were not rendered consistently");
+  resultBody.dataset.impassableTilesPerGrid = "45";
+  resultBody.dataset.passableTiles =
     String(passability.filter(Boolean).length);
 }
 
@@ -302,7 +302,7 @@ function renderStage(stage, announce = true) {
   snapshots.forEach((snapshot, strategy) => {
     const card = document.querySelector(`[data-card="${strategy}"]`);
     clearRoutes(card);
-    card.querySelectorAll(".tile:not(.blocked)").forEach((tile) => {
+    card.querySelectorAll(".tile:not(.impassable)").forEach((tile) => {
       tile.classList.toggle("field-covered", strategy === 3 && stage >= 1);
     });
     let revealCount = 0;
@@ -334,10 +334,10 @@ function renderStage(stage, announce = true) {
       "Distance-field coverage was not rendered completely");
     requireValue(thirdRoute > 0,
       "The third distance-field route was not rendered");
-    resultBody.dataset.distanceFieldCoveredCells = String(covered);
+    resultBody.dataset.distanceFieldCoveredTiles = String(covered);
     resultBody.dataset.distanceFieldThirdRoute = "ready";
   } else {
-    delete resultBody.dataset.distanceFieldCoveredCells;
+    delete resultBody.dataset.distanceFieldCoveredTiles;
     delete resultBody.dataset.distanceFieldThirdRoute;
   }
   syncPauseControl();

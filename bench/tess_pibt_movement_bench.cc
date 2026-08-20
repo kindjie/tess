@@ -44,7 +44,7 @@ void add_agent(World& world, std::vector<tess::PathAgentState>& agents,
   agent.position = route.front();
   agent.goal = route.back();
   agent.has_goal = true;
-  agent.status = tess::PathStatus::Found;
+  agent.last_result = tess::PathStatus::Found;
   agent.phase = tess::PathAgentPhase::Following;
   world.field<OccupancyTag>(agent.position) = true;
   agents.push_back(agent);
@@ -129,7 +129,7 @@ void BM_pibt_chain_reset(benchmark::State& state) {
       world.field<OccupancyTag>(agent.position) = false;
       agent.position = routes.routes[i].front();
       agent.path_index = 0;
-      agent.status = tess::PathStatus::Found;
+      agent.last_result = tess::PathStatus::Found;
       agent.phase = tess::PathAgentPhase::Following;
       agent.has_goal = true;
       world.field<OccupancyTag>(agent.position) = true;

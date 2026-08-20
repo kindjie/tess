@@ -169,9 +169,9 @@ jobs:
             build/web-strategies-dom.html
           grep -q 'data-field-reached-nodes="211"' \
             build/web-strategies-dom.html
-          grep -q 'data-blocked-cells-per-grid="45"' \
+          grep -q 'data-impassable-tiles-per-grid="45"' \
             build/web-strategies-dom.html
-          grep -q 'data-distance-field-covered-cells="211"' \
+          grep -q 'data-distance-field-covered-tiles="211"' \
             build/web-strategies-dom.html
           grep -q 'data-distance-field-third-route="ready"' \
             build/web-strategies-dom.html

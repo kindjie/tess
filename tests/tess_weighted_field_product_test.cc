@@ -312,7 +312,8 @@ TEST(TessWeightedFieldProduct, RelevantWorldEditInvalidatesCachedProduct) {
   ASSERT_TRUE((cache.store_weighted<World, Walker>(std::move(product))));
 
   world.template field<CostTag>({1, 0, 0}) = 5;
-  world.mark_dirty(tess::ChunkKey{0}, 1u, tess::Box3{{1, 0, 0}, {1, 1, 1}});
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
+                   tess::Box3{{1, 0, 0}, {1, 1, 1}});
 
   EXPECT_EQ((cache.lookup_weighted<World, Walker>(world, goals)), nullptr);
   EXPECT_EQ(cache.stats().stale_rejections, 1u);
@@ -341,10 +342,12 @@ TEST(TessWeightedFieldProduct,
             tess::PathStatus::Found);
   ASSERT_EQ(product.dependencies().size(), 2u);
 
-  world.mark_dirty(tess::ChunkKey{2}, 1u, tess::Box3{{8, 0, 0}, {1, 1, 1}});
+  world.mark_dirty(tess::ChunkKey{2}, tess::DirtyMask{1u},
+                   tess::Box3{{8, 0, 0}, {1, 1, 1}});
   EXPECT_TRUE(product.is_valid(world));
 
-  world.mark_dirty(tess::ChunkKey{1}, 1u, tess::Box3{{4, 0, 0}, {1, 1, 1}});
+  world.mark_dirty(tess::ChunkKey{1}, tess::DirtyMask{1u},
+                   tess::Box3{{4, 0, 0}, {1, 1, 1}});
   EXPECT_FALSE(product.is_valid(world));
 }
 

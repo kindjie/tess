@@ -15,6 +15,9 @@ namespace {
 
 struct PassableTag {};
 struct CostTag {};
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
@@ -22,7 +25,7 @@ using Small2D = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
 using Mid2D = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
 using SmallWorld = tess::AlwaysResidentWorld<Small2D, Schema>;
 using MidWorld = tess::AlwaysResidentWorld<Mid2D, Schema>;
-using WeightedClass = tess::movement::LegacyWeighted<PassableTag, CostTag>;
+using WeightedClass = WeightedMovement;
 
 // Deliberately contributes an unrepresentable route that no request needs.
 // A reverse field sees the global overflow, while each request's regular
@@ -72,9 +75,8 @@ TEST(TessPathWeightedBatch, EmptyBatchYieldsNoResultsAndZeroStats) {
   fill_world(world, true, 1);
 
   tess::WeightedPathBatchScratch scratch;
-  const auto results =
-      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(world, {},
-                                                                   scratch);
+  const auto results = tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
+      world, {}, scratch);
   EXPECT_TRUE(results.empty());
 
   const auto stats = scratch.stats();
@@ -96,9 +98,8 @@ TEST(TessPathWeightedBatch, AllDistinctGoalsFallBackToAstarWithoutFields) {
       tess::PathRequest{tess::Coord3{0, 3, 0}, tess::Coord3{7, 3, 0}},
   };
   tess::WeightedPathBatchScratch scratch;
-  const auto results =
-      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
-          world, requests, scratch);
+  const auto results = tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
+      world, requests, scratch);
   ASSERT_EQ(results.size(), requests.size());
   for (std::size_t i = 0; i < results.size(); ++i) {
     EXPECT_EQ(results[i].status, tess::PathStatus::Found);
@@ -125,9 +126,8 @@ TEST(TessPathWeightedBatch, DuplicateIdenticalRequestsShareOneFieldBuild) {
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{9, 4, 0}},
   };
   tess::WeightedPathBatchScratch scratch;
-  const auto results =
-      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
-          world, requests, scratch);
+  const auto results = tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
+      world, requests, scratch);
   ASSERT_EQ(results.size(), 3u);
   for (const auto& result : results) {
     EXPECT_EQ(result.status, tess::PathStatus::Found);
@@ -154,7 +154,8 @@ TEST(TessPathWeightedBatch, GlobalFieldOverflowFallsBackPerMember) {
   tess::WeightedPathBatchScratch scratch;
 
   const auto results = tess::weighted_path_batch<SmallWorld, WeightedClass, 8>(
-      world, requests, scratch, OverflowingDetourProvider{});
+      world, requests, scratch, tess::MissingChunkPolicy::ReportIndeterminate,
+      OverflowingDetourProvider{});
 
   ASSERT_EQ(results.size(), 2u);
   for (const auto& result : results) {
@@ -180,11 +181,13 @@ TEST(TessPathWeightedBatch, PlainBatchAfterProviderBatchSizesTargetMarks) {
   // arrays but does not need the bounded builder's settle-target marks.
   const auto provider_results =
       tess::weighted_path_batch<SmallWorld, WeightedClass, 8>(
-          world, requests, scratch, OverflowingDetourProvider{});
+          world, requests, scratch,
+          tess::MissingChunkPolicy::ReportIndeterminate,
+          OverflowingDetourProvider{});
   ASSERT_EQ(provider_results.size(), requests.size());
 
   const auto plain_results =
-      tess::weighted_path_batch<SmallWorld, PassableTag, CostTag, 8>(
+      tess::weighted_path_batch<SmallWorld, WeightedMovement, 8>(
           world, requests, scratch);
   ASSERT_EQ(plain_results.size(), requests.size());
   for (const auto& result : plain_results) {
@@ -206,7 +209,7 @@ TEST(TessPathWeightedBatch, RealizedBucketOverflowAvoidsSecondFullFlood) {
   tess::WeightedPathBatchScratch batch_scratch;
 
   const auto results =
-      tess::weighted_path_batch<SmallWorld, PassableTag, CostTag, 8>(
+      tess::weighted_path_batch<SmallWorld, WeightedMovement, 8>(
           world, requests, batch_scratch);
 
   ASSERT_EQ(results.size(), 2u);
@@ -219,11 +222,11 @@ TEST(TessPathWeightedBatch, RealizedBucketOverflowAvoidsSecondFullFlood) {
   tess::DistanceFieldScratch bounded_scratch;
   tess::DistanceFieldScratch unbounded_scratch;
   const auto bounded =
-      tess::build_bounded_weighted_distance_field<SmallWorld, PassableTag,
-                                                  CostTag, 8>(world, goal,
-                                                              bounded_scratch);
+      tess::build_bounded_weighted_distance_field<SmallWorld, WeightedMovement,
+                                                  8>(world, goal,
+                                                     bounded_scratch);
   const auto unbounded =
-      tess::build_weighted_distance_field<SmallWorld, PassableTag, CostTag>(
+      tess::build_weighted_distance_field<SmallWorld, WeightedMovement>(
           world, goal, unbounded_scratch);
   EXPECT_EQ(bounded.status, tess::PathStatus::CostOverflow);
   EXPECT_EQ(unbounded.status, tess::PathStatus::CostOverflow);
@@ -231,7 +234,7 @@ TEST(TessPathWeightedBatch, RealizedBucketOverflowAvoidsSecondFullFlood) {
   const auto replay =
       tess::weighted_distance_field_path<SmallWorld, WeightedClass>(
           world, {{7, 6, 0}, goal}, bounded_scratch);
-  EXPECT_EQ(replay.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(replay.status, tess::PathStatus::NotComputed);
 }
 
 // Members of a failed shared-goal group must report the status the
@@ -240,7 +243,7 @@ TEST(TessPathWeightedBatch, RealizedBucketOverflowAvoidsSecondFullFlood) {
 // passable) before any goal check, so a member with an invalid start is
 // InvalidStart even when the shared goal is also invalid.
 // A shared-goal group whose starts all sit near the goal must stop the
-// field flood once every start has settled (audit 2026-07-11 M3) instead
+// field flood once every start has settled instead
 // of flooding the whole reachable component: reached_nodes reported by
 // the members is the build's touched count, so on this open 32x32 map it
 // must stay far below the 1024-tile full flood while costs and paths stay
@@ -257,16 +260,14 @@ TEST(TessPathWeightedBatch, NearGoalClusterTruncatesFieldFlood) {
       tess::PathRequest{tess::Coord3{16, 16, 0}, goal},
   };
   tess::WeightedPathBatchScratch scratch;
-  const auto results =
-      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
-          world, requests, scratch);
+  const auto results = tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
+      world, requests, scratch);
   ASSERT_EQ(results.size(), requests.size());
 
   tess::PathScratch oracle_scratch;
   for (std::size_t i = 0; i < requests.size(); ++i) {
-    const auto oracle =
-        tess::weighted_astar_path<MidWorld, PassableTag, CostTag>(
-            world, requests[i], oracle_scratch);
+    const auto oracle = tess::weighted_astar_path<MidWorld, WeightedMovement>(
+        world, requests[i], oracle_scratch);
     EXPECT_EQ(results[i].status, tess::PathStatus::Found);
     EXPECT_EQ(results[i].cost, oracle.cost);
     EXPECT_EQ(results[i].path.front(), requests[i].start);
@@ -303,9 +304,8 @@ TEST(TessPathWeightedBatch, UnreachableMemberFloodsFullyAndReportsNoPath) {
       tess::PathRequest{walled_start, goal},
   };
   tess::WeightedPathBatchScratch scratch;
-  const auto results =
-      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
-          world, requests, scratch);
+  const auto results = tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
+      world, requests, scratch);
   ASSERT_EQ(results.size(), 2u);
   EXPECT_EQ(results[0].status, tess::PathStatus::Found);
   EXPECT_EQ(results[0].cost, 1u);
@@ -330,9 +330,8 @@ TEST(TessPathWeightedBatch, BlockedStartMemberDoesNotHoldFloodOpen) {
       tess::PathRequest{blocked_start, goal},
   };
   tess::WeightedPathBatchScratch scratch;
-  const auto results =
-      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
-          world, requests, scratch);
+  const auto results = tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
+      world, requests, scratch);
   ASSERT_EQ(results.size(), 2u);
   EXPECT_EQ(results[0].status, tess::PathStatus::Found);
   EXPECT_EQ(results[1].status, tess::PathStatus::InvalidStart);
@@ -353,9 +352,8 @@ TEST(TessPathWeightedBatch, FailedGroupFanOutReportsPerMemberStartStatus) {
       tess::PathRequest{tess::Coord3{-1, 0, 0}, goal},
   };
   tess::WeightedPathBatchScratch scratch;
-  const auto results =
-      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
-          world, requests, scratch);
+  const auto results = tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
+      world, requests, scratch);
   ASSERT_EQ(results.size(), 3u);
   EXPECT_EQ(results[0].status, tess::PathStatus::InvalidGoal);
   EXPECT_EQ(results[1].status, tess::PathStatus::InvalidStart);
@@ -384,9 +382,8 @@ TEST(TessPathWeightedBatch, FailedGroupFanOutHonorsEntryCostPrecedence) {
       tess::PathRequest{zero_cost_start, goal},
   };
   tess::WeightedPathBatchScratch scratch;
-  const auto results =
-      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
-          world, requests, scratch);
+  const auto results = tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
+      world, requests, scratch);
   ASSERT_EQ(results.size(), 2u);
   EXPECT_EQ(results[0].status, tess::PathStatus::InvalidGoal);
   EXPECT_EQ(results[1].status, tess::PathStatus::InvalidStart);
@@ -413,7 +410,7 @@ TEST(TessPathWeightedBatch, OverMaxCostCorridorEngagesUnboundedFallback) {
   };
   tess::WeightedPathBatchScratch scratch;
   const auto results =
-      tess::weighted_path_batch<SmallWorld, PassableTag, CostTag, 4>(
+      tess::weighted_path_batch<SmallWorld, WeightedMovement, 4>(
           world, requests, scratch);
   ASSERT_EQ(results.size(), 2u);
   EXPECT_EQ(results[0].status, tess::PathStatus::Found);
@@ -427,18 +424,18 @@ TEST(TessPathWeightedBatch, OverMaxCostCorridorEngagesUnboundedFallback) {
   tess::DistanceFieldScratch bounded_scratch;
   tess::DistanceFieldScratch unbounded_scratch;
   const auto bounded =
-      tess::build_bounded_weighted_distance_field<SmallWorld, PassableTag,
-                                                  CostTag, 4>(world, goal,
-                                                              bounded_scratch);
+      tess::build_bounded_weighted_distance_field<SmallWorld, WeightedMovement,
+                                                  4>(world, goal,
+                                                     bounded_scratch);
   const auto unbounded =
-      tess::build_weighted_distance_field<SmallWorld, PassableTag, CostTag>(
+      tess::build_weighted_distance_field<SmallWorld, WeightedMovement>(
           world, goal, unbounded_scratch);
   EXPECT_EQ(bounded.status, tess::PathStatus::Found);
   EXPECT_EQ(bounded.status, unbounded.status);
   EXPECT_EQ(bounded.expanded_nodes, unbounded.expanded_nodes);
   EXPECT_EQ(bounded.reached_nodes, unbounded.reached_nodes);
   const auto replay =
-      tess::weighted_distance_field_path<SmallWorld, PassableTag, CostTag>(
+      tess::weighted_distance_field_path<SmallWorld, WeightedMovement>(
           world, {{0, 0, 0}, goal}, bounded_scratch);
   EXPECT_EQ(replay.status, tess::PathStatus::Found);
   EXPECT_EQ(replay.cost, 15u);
@@ -470,11 +467,11 @@ TEST(TessPathWeightedBatch, BoundedFieldMatchesUnboundedAcrossRandomCosts) {
     tess::DistanceFieldScratch bounded_scratch;
     tess::DistanceFieldScratch unbounded_scratch;
     const auto bounded =
-        tess::build_bounded_weighted_distance_field<MidWorld, PassableTag,
-                                                    CostTag, 8>(
-            world, goal, bounded_scratch);
+        tess::build_bounded_weighted_distance_field<MidWorld, WeightedMovement,
+                                                    8>(world, goal,
+                                                       bounded_scratch);
     const auto unbounded =
-        tess::build_weighted_distance_field<MidWorld, PassableTag, CostTag>(
+        tess::build_weighted_distance_field<MidWorld, WeightedMovement>(
             world, goal, unbounded_scratch);
     ASSERT_EQ(bounded.status, unbounded.status);
     ASSERT_EQ(bounded.status, tess::PathStatus::Found);
@@ -483,10 +480,10 @@ TEST(TessPathWeightedBatch, BoundedFieldMatchesUnboundedAcrossRandomCosts) {
     for (int i = 0; i < 60; ++i) {
       const auto start = tess::Coord3{coord_dist(rng), coord_dist(rng), 0};
       const auto lhs =
-          tess::weighted_distance_field_path<MidWorld, PassableTag, CostTag>(
+          tess::weighted_distance_field_path<MidWorld, WeightedMovement>(
               world, {start, goal}, bounded_scratch);
       const auto rhs =
-          tess::weighted_distance_field_path<MidWorld, PassableTag, CostTag>(
+          tess::weighted_distance_field_path<MidWorld, WeightedMovement>(
               world, {start, goal}, unbounded_scratch);
       ASSERT_EQ(lhs.status, rhs.status) << "seed " << seed << " start " << i;
       ASSERT_EQ(lhs.cost, rhs.cost) << "seed " << seed << " start " << i;
@@ -549,15 +546,14 @@ TEST(TessPathWeightedBatch, SeededBatchesMatchSingleRequestOracle) {
 
     tess::WeightedPathBatchScratch scratch;
     const auto results =
-        tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
+        tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
             world, requests, scratch);
     ASSERT_EQ(results.size(), requests.size());
 
     tess::PathScratch oracle_scratch;
     for (std::size_t i = 0; i < requests.size(); ++i) {
-      const auto oracle =
-          tess::weighted_astar_path<MidWorld, PassableTag, CostTag>(
-              world, requests[i], oracle_scratch);
+      const auto oracle = tess::weighted_astar_path<MidWorld, WeightedMovement>(
+          world, requests[i], oracle_scratch);
       ASSERT_EQ(results[i].status, oracle.status)
           << "seed " << seed << " request " << i;
       ASSERT_EQ(results[i].cost, oracle.cost)
@@ -621,12 +617,12 @@ TEST(TessPathWeightedBatch, WarmRepeatBatchIsAllocationFree) {
   scratch.reserve_search_nodes(std::size_t{32} * 32);
   scratch.reserve_path_nodes(4096);
 
-  auto results = tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
+  auto results = tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
       world, requests, scratch);
   ASSERT_EQ(results.size(), requests.size());
 
   tess_test::ScopedAllocationCounter counter;
-  results = tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
+  results = tess::weighted_path_batch<MidWorld, WeightedMovement, 8>(
       world, requests, scratch);
   ASSERT_EQ(results.size(), requests.size());
   EXPECT_EQ(counter.count(), 0u);

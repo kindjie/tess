@@ -15,10 +15,10 @@
 #include <type_traits>
 #include <vector>
 
-// The EnTT adapter (M10): concrete PathAgentSource/PathAgentSink types
+// The EnTT adapter: concrete PathAgentSource/PathAgentSink types
 // over an entt::registry, explicit lifecycle intents (spawn / despawn /
 // teleport / park / place -- raw registry.destroy on an on-board agent
-// leaks a permanently blocked tile, so the intents are the only
+// leaks a permanently impassable tile, so the intents are the only
 // sanctioned mutation paths), and tick_entt_* drivers that are thin
 // instantiations of the generic tick_ecs_* pipeline. Compiled only when
 // the consumer defines TESS_ENABLE_ENTT and includes
@@ -78,7 +78,7 @@ struct EnttAgentEntry {
   // Cached during the collect view walk (EnTT component addresses are
   // stable while no PathState is added/removed, and only the entry
   // vector is sorted in between), saving a registry lookup per agent in
-  // the fill loop (audit 2026-07-11 low).
+  // the fill loop.
   PathState* state = nullptr;
 };
 
@@ -119,8 +119,8 @@ template <typename World>
 }
 
 template <typename World>
-void ecs_mark_tile_dirty(World& world, Coord3 tile, std::uint32_t mask) {
-  if (mask != 0) {
+void ecs_mark_tile_dirty(World& world, Coord3 tile, DirtyMask mask) {
+  if (mask) {
     world.mark_dirty(world.resolve(tile).chunk_key, mask,
                      Box3{tile, Extent3{1, 1, 1}});
   }
@@ -236,7 +236,7 @@ static_assert(PathAgentSink<EnttPathAgentSink<>>);
 template <typename World, typename OccupancyTag>
 [[nodiscard]] auto spawn_entt_path_agent(
     entt::registry& registry, EnttPathAgentContext& context, World& world,
-    TileOccupancyIndex& index, Coord3 position, std::uint32_t dirty_mask = 0,
+    TileOccupancyIndex& index, Coord3 position, DirtyMask dirty_mask = {},
     DeltaCollector* render_deltas = nullptr) -> entt::entity {
   if (!detail::ecs_tile_resolves(world, position) ||
       static_cast<bool>(world.template field<OccupancyTag>(position)) ||
@@ -289,7 +289,7 @@ template <typename World, typename OccupancyTag>
 template <typename World, typename OccupancyTag>
 auto despawn_entt_path_agent(entt::registry& registry, World& world,
                              TileOccupancyIndex& index, entt::entity entity,
-                             std::uint32_t dirty_mask = 0,
+                             DirtyMask dirty_mask = {},
                              DeltaCollector* render_deltas = nullptr) -> bool {
   const auto* state = registry.try_get<PathState>(entity);
   if (state == nullptr) {
@@ -322,7 +322,7 @@ auto despawn_entt_path_agent(entt::registry& registry, World& world,
 template <typename World, typename OccupancyTag>
 auto teleport_entt_path_agent(entt::registry& registry, World& world,
                               TileOccupancyIndex& index, entt::entity entity,
-                              Coord3 to, std::uint32_t dirty_mask = 0,
+                              Coord3 to, DirtyMask dirty_mask = {},
                               DeltaCollector* render_deltas = nullptr) -> bool {
   auto* state = registry.try_get<PathState>(entity);
   if (state == nullptr || registry.all_of<OffBoard>(entity)) {
@@ -359,7 +359,7 @@ auto teleport_entt_path_agent(entt::registry& registry, World& world,
 template <typename World, typename OccupancyTag>
 auto park_entt_path_agent(entt::registry& registry, World& world,
                           TileOccupancyIndex& index, entt::entity entity,
-                          std::uint32_t dirty_mask = 0,
+                          DirtyMask dirty_mask = {},
                           DeltaCollector* render_deltas = nullptr) -> bool {
   auto* state = registry.try_get<PathState>(entity);
   if (state == nullptr || registry.all_of<OffBoard>(entity)) {
@@ -388,7 +388,7 @@ auto park_entt_path_agent(entt::registry& registry, World& world,
 template <typename World, typename OccupancyTag>
 auto place_entt_path_agent(entt::registry& registry, World& world,
                            TileOccupancyIndex& index, entt::entity entity,
-                           Coord3 position, std::uint32_t dirty_mask = 0,
+                           Coord3 position, DirtyMask dirty_mask = {},
                            DeltaCollector* render_deltas = nullptr) -> bool {
   auto* state = registry.try_get<PathState>(entity);
   if (state == nullptr || !registry.all_of<OffBoard>(entity)) {
@@ -466,24 +466,6 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   EnttPathAgentSink<Position> sink(registry, context);
   return tick_ecs_path_agents<World, Class, MaxCost, OccupancyTag,
                               ReservationTag>(
-      context.tick_state, world, source, sink, context.batch, runtime, index,
-      options, graph, render_deltas);
-}
-
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost, typename OccupancyTag, typename ReservationTag,
-          typename Position = EnttTilePositionAdapter>
-/** Runs the weighted EnTT pipeline using separate passability and cost tags. */
-[[nodiscard]] auto tick_entt_path_agents(
-    entt::registry& registry, EnttPathAgentContext& context, World& world,
-    PathRequestRuntime& runtime, TileOccupancyIndex& index,
-    PathAgentTickOptions options = {},
-    const RegionGraphT<typename World::residency_type>* graph = nullptr,
-    DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
-  EnttPathAgentSource source(registry, context);
-  EnttPathAgentSink<Position> sink(registry, context);
-  return tick_ecs_path_agents<World, PassableTag, CostTag, MaxCost,
-                              OccupancyTag, ReservationTag>(
       context.tick_state, world, source, sink, context.batch, runtime, index,
       options, graph, render_deltas);
 }

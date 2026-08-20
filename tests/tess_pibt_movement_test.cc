@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -64,7 +65,7 @@ auto add_agent(World& world, std::vector<tess::PathAgentState>& agents,
   agent.position = route.front();
   agent.goal = route.back();
   agent.has_goal = true;
-  agent.status = tess::PathStatus::Found;
+  agent.last_result = tess::PathStatus::Found;
   agent.phase = tess::PathAgentPhase::Following;
   world.field<OccupancyTag>(agent.position) = true;
   agents.push_back(agent);
@@ -201,9 +202,9 @@ TEST(TessPibtMovement, RingRegressionPibtSolvesWhereJointCongestionSeals) {
       world.field<SettledTag>(agent.position) = settled;
       const auto key =
           tess::chunk_key<Ring2D>(tess::chunk_coord<Ring2D>(agent.position));
-      world.mark_dirty(key, 1u << 1u,
+      world.mark_dirty(key, tess::DirtyMask{1u << 1u},
                        tess::Box3{agent.position, tess::Extent3{1, 1, 1}});
-      world.clear_dirty(key, 1u << 1u);
+      world.clear_dirty(key, tess::DirtyMask{1u << 1u});
       changed = true;
     }
     return changed;
@@ -361,13 +362,19 @@ TEST(TessPibtMovement, InheritanceYieldsAnOffRouteDetourForbidJointCannot) {
                    static_cast<std::size_t>(c.x)];
     };
     bool both_arrived = false;
+    bool saw_route_invalidation = false;
     for (int tick = 0; tick < 16 && !both_arrived; ++tick) {
       (void)tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
                                                 ReservationTag>(
           world, std::span<tess::PathAgentState>(agents), routes, priorities,
           scratch, rank);  // Forbid: no swaps needed, only yielding
+      saw_route_invalidation |= std::ranges::any_of(agents, [](const auto& a) {
+        return a.phase == tess::PathAgentPhase::Blocked &&
+               !a.last_result.has_value();
+      });
       both_arrived = !agents[0].has_goal && !agents[1].has_goal;
     }
+    EXPECT_TRUE(saw_route_invalidation);
     EXPECT_TRUE(both_arrived);
     EXPECT_EQ(agents[0].position, (tess::Coord3{5, 1, 0}));
     EXPECT_EQ(agents[1].position, (tess::Coord3{3, 1, 0}));
@@ -567,9 +574,9 @@ TEST(TessPibtMovement, ExternalOccupantsAreNeverEntered) {
   EXPECT_TRUE(world.field<OccupancyTag>(tess::Coord3{2, 1, 0}));
 }
 
-TEST(TessPibtMovement, ImpassableSourceFailsBlockedFrom) {
+TEST(TessPibtMovement, ImpassableSourceFailsImpassableFrom) {
   // Terrain changed under a standing agent: `commit_movement_intent` fails
-  // `BlockedFrom`, and so must PIBT — the agent neither moves nor yields to
+  // `ImpassableFrom`, and so must PIBT — the agent neither moves nor yields to
   // inheritance.
   World world;
   std::vector<tess::PathAgentState> agents;
@@ -590,7 +597,7 @@ TEST(TessPibtMovement, ImpassableSourceFailsBlockedFrom) {
           scratch, rank);
   EXPECT_EQ(stats.frame.advanced, 0u);
   EXPECT_EQ(agents[0].position, (tess::Coord3{2, 2, 0}));
-  EXPECT_EQ(stats.frame.movement_failures.blocked, 1u);
+  EXPECT_EQ(stats.frame.movement_failures.impassable, 1u);
   EXPECT_EQ(stats.frame.movement_failures.occupied, 0u);
 }
 
@@ -718,7 +725,7 @@ TEST(TessPibtMovement, ArrivalResetsPriorityBeforeAnyNewGoal) {
   // wait must outrank A's reset one.
   agents[0].goal = {2, 0, 0};
   agents[0].has_goal = true;
-  agents[0].status = tess::PathStatus::Found;
+  agents[0].last_result = tess::PathStatus::Found;
   agents[0].phase = tess::PathAgentPhase::Following;
   routes.routes[0] = {agents[0].position, {2, 0, 0}};
   agents[0].path_index = 0;
@@ -951,7 +958,7 @@ TEST(TessPibtMovement, InheritanceDoesNotDisplaceAnUnreachableAgent) {
   add_agent(world, agents, routes, {{2, 1, 0}, {3, 1, 0}});
 
   // Terminal until a new goal is assigned, per the path-agent contract.
-  agents[1].status = tess::PathStatus::NoPath;
+  agents[1].last_result = tess::PathStatus::NoPath;
   agents[1].phase = tess::PathAgentPhase::Unreachable;
 
   tess::PibtPriorities priorities;

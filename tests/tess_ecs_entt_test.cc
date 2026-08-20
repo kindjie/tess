@@ -516,34 +516,37 @@ TEST(TessEcsEntt, LifecycleIntentsRecordDeltasOnlyOnSuccess) {
 
   // Spawn records; a refused spawn (occupied tile) records nothing.
   const auto agent = tess::spawn_entt_path_agent<World, OccupancyTag>(
-      sim.registry, sim.context, sim.world, sim.index, tess::Coord3{2, 2, 0}, 0,
-      &collector);
+      sim.registry, sim.context, sim.world, sim.index, tess::Coord3{2, 2, 0},
+      tess::DirtyMask{}, &collector);
   ASSERT_NE(agent, static_cast<entt::entity>(entt::null));
   const auto refused = tess::spawn_entt_path_agent<World, OccupancyTag>(
-      sim.registry, sim.context, sim.world, sim.index, tess::Coord3{2, 2, 0}, 0,
-      &collector);
+      sim.registry, sim.context, sim.world, sim.index, tess::Coord3{2, 2, 0},
+      tess::DirtyMask{}, &collector);
   EXPECT_EQ(refused, static_cast<entt::entity>(entt::null));
 
   // Teleport records; a refused teleport (occupied destination) does not.
   ASSERT_TRUE((tess::teleport_entt_path_agent<World, OccupancyTag>(
-      sim.registry, sim.world, sim.index, agent, tess::Coord3{4, 4, 0}, 0,
-      &collector)));
+      sim.registry, sim.world, sim.index, agent, tess::Coord3{4, 4, 0},
+      tess::DirtyMask{}, &collector)));
   const auto blocker = sim.spawn(tess::Coord3{5, 5, 0});
   EXPECT_FALSE((tess::teleport_entt_path_agent<World, OccupancyTag>(
-      sim.registry, sim.world, sim.index, agent, tess::Coord3{5, 5, 0}, 0,
-      &collector)));
+      sim.registry, sim.world, sim.index, agent, tess::Coord3{5, 5, 0},
+      tess::DirtyMask{}, &collector)));
 
   // Park, place, and despawn record their kinds; a parked despawn
   // records nothing (the park already released the tile).
   ASSERT_TRUE((tess::park_entt_path_agent<World, OccupancyTag>(
-      sim.registry, sim.world, sim.index, agent, 0, &collector)));
-  ASSERT_TRUE((tess::place_entt_path_agent<World, OccupancyTag>(
-      sim.registry, sim.world, sim.index, agent, tess::Coord3{6, 6, 0}, 0,
+      sim.registry, sim.world, sim.index, agent, tess::DirtyMask{},
       &collector)));
+  ASSERT_TRUE((tess::place_entt_path_agent<World, OccupancyTag>(
+      sim.registry, sim.world, sim.index, agent, tess::Coord3{6, 6, 0},
+      tess::DirtyMask{}, &collector)));
   ASSERT_TRUE((tess::park_entt_path_agent<World, OccupancyTag>(
-      sim.registry, sim.world, sim.index, agent, 0, &collector)));
+      sim.registry, sim.world, sim.index, agent, tess::DirtyMask{},
+      &collector)));
   ASSERT_TRUE((tess::despawn_entt_path_agent<World, OccupancyTag>(
-      sim.registry, sim.world, sim.index, agent, 0, &collector)));
+      sim.registry, sim.world, sim.index, agent, tess::DirtyMask{},
+      &collector)));
   static_cast<void>(blocker);
 
   const auto frame = collector.publish();

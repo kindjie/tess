@@ -431,7 +431,8 @@ class QueuedScheduler : public MaintenanceScheduler {
       task.run(budget);
     } catch (...) {
       // The queue entry was consumed before invocation and is not restored.
-      // Tasks own the authoritative dirty/version state, which must remain set
+      // Tasks own the authoritative dirty-mask and content-version state,
+      // which must remain set
       // on failure; the caller decides whether explicitly scheduling a retry
       // is safe after observing the exception.
       const auto lock = std::scoped_lock{queue_mutex_};

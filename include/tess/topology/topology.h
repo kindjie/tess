@@ -97,7 +97,7 @@ struct LocalBoundaryExit {
 /**
  * Counts returned by a whole-graph build.
  *
- * Deliberately carries no status, unlike `LocalTopologyResult`.
+ * Deliberately carries no status, unlike `TopologyBuildResult`.
  * `build_region_graph` cannot fail: the dense branch iterates keys
  * 0..chunk_count so `InvalidChunk` cannot arise and `MissingChunk` does
  * not exist under `AlwaysResident`, and the sparse branch builds from
@@ -111,19 +111,19 @@ struct RegionGraphBuildResult {
   std::size_t region_count = 0;
   std::size_t passable_tile_count = 0;
   std::size_t boundary_exit_count = 0;
-  std::uint32_t version = 0;
+  std::uint64_t topology_version_sum = 0;
 };
 
 /// Counts and status returned by a local chunk build or an incremental update.
-struct LocalTopologyResult {
+struct TopologyBuildResult {
   TopologyStatus status = TopologyStatus::Built;
   std::size_t region_count = 0;
   std::size_t passable_tile_count = 0;
   std::size_t boundary_exit_count = 0;
-  std::uint32_t version = 0;
+  std::uint64_t topology_version_sum = 0;
 };
 
-/// Stable reference to a local region within a specific chunk.
+/// Reference scoped to a local region within a specific chunk topology.
 struct RegionRef {
   ChunkKey chunk{};
   LocalRegionId region{};
@@ -152,10 +152,10 @@ enum class ReachabilityStatus : std::uint8_t {
   InvalidGoal,
   // The query reached the edge of the resident set: a region on the searched
   // side has a boundary exit into a non-resident chunk, so a route through the
-  // unloaded region cannot be ruled out. Distinct from Unreachable, which means
-  // a route was definitively searched and none exists within the resident set.
-  // Only ever returned for sparse worlds. Appended last so existing enumerator
-  // values do not shift.
+  // non-resident region cannot be ruled out. Distinct from Unreachable, which
+  // means a route was definitively searched and none exists within the resident
+  // set. Only ever returned for sparse worlds. Appended last so existing
+  // enumerator values do not shift.
   Indeterminate,
 };
 
@@ -189,7 +189,7 @@ class LocalTopologyScratch {
   friend auto build_local_chunk_topology(const World& world, ChunkKey chunk,
                                          LocalTopologyScratch& scratch,
                                          class LocalChunkTopology& topology)
-      -> LocalTopologyResult;
+      -> TopologyBuildResult;
 
   std::vector<LocalTileId> stack_;
 };
@@ -265,7 +265,7 @@ class LocalChunkTopology {
   void clear() noexcept {
     chunk_ = ChunkKey{0};
     chunk_coord_ = ChunkCoord3{};
-    version_ = 0;
+    topology_version_ = {};
     region_ids_.clear();
     regions_.clear();
     boundary_exits_.clear();
@@ -277,8 +277,8 @@ class LocalChunkTopology {
     return chunk_coord_;
   }
 
-  [[nodiscard]] auto version() const noexcept -> std::uint32_t {
-    return version_;
+  [[nodiscard]] auto topology_version() const noexcept -> TopologyVersion {
+    return topology_version_;
   }
 
   [[nodiscard]] auto region_ids() const noexcept
@@ -325,11 +325,11 @@ class LocalChunkTopology {
   friend auto build_local_chunk_topology(const World& world, ChunkKey chunk,
                                          LocalTopologyScratch& scratch,
                                          LocalChunkTopology& topology)
-      -> LocalTopologyResult;
+      -> TopologyBuildResult;
 
   ChunkKey chunk_{};
   ChunkCoord3 chunk_coord_{};
-  std::uint32_t version_ = 0;
+  TopologyVersion topology_version_{};
   std::vector<LocalRegionId> region_ids_;
   std::vector<LocalRegion> regions_;
   std::vector<LocalBoundaryExit> boundary_exits_;
@@ -352,7 +352,7 @@ struct RegionGraphSparseData {
   std::vector<std::uint8_t> region_reaches_missing_;
   // Per local topology: the residency generation at build, for staleness
   // detection in update_region_graph.
-  std::vector<std::uint64_t> frozen_generations_;
+  std::vector<ResidencyGeneration> frozen_generations_;
 };
 
 template <>
@@ -494,10 +494,10 @@ class RegionGraphT {
   }
 
   // True iff this graph was built for `ClassOrTag` (normalized, so a raw tag
-  // and its WalkableField identity agree). The graph type does not encode the
-  // movement class, so a graph labeled for one class must never answer
-  // reachability for another: update_region_graph treats a mismatch as "not
-  // built for this class" (full rebuild) and is_region_graph_fresh_for
+  // and its UnitCostFieldMovement identity agree). The graph type does not
+  // encode the movement class, so a graph labeled for one class must never
+  // answer reachability for another: update_region_graph treats a mismatch as
+  // "not built for this class" (full rebuild) and is_region_graph_fresh_for
   // reports it as not fresh. False until the first build.
   template <typename ClassOrTag>
   [[nodiscard]] auto matches_class() const noexcept -> bool {
@@ -522,8 +522,8 @@ class RegionGraphT {
   // Instance-aware provider match used by incremental updates. The address
   // distinguishes two live stateful providers whose equal local revision
   // counters say nothing about one another. The provider therefore has to
-  // remain at a stable address for the graph's lifetime; clear or rebuild the
-  // graph before ending that lifetime.
+  // remain at an address-stable location for the graph's lifetime; clear or
+  // rebuild the graph before ending that lifetime.
   template <typename Provider>
   [[nodiscard]] auto matches_provider(const Provider& provider) const noexcept
       -> bool {
@@ -546,7 +546,7 @@ class RegionGraphT {
       const World& world, LocalTopologyScratch& scratch,
       RegionGraphT<typename World::residency_type>& graph,
       std::span<const ChunkKey> dirty_chunks, const Provider& provider)
-      -> LocalTopologyResult;
+      -> TopologyBuildResult;
 
   template <typename Shape, typename OtherResidency>
   friend auto reachable(const RegionGraphT<OtherResidency>& graph,
@@ -599,9 +599,9 @@ class RegionGraphT {
     if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
       // Flag every region with a boundary exit into a non-resident chunk. The
       // membership test (has_chunk) -- not portal absence -- is what separates
-      // "unknown, unloaded" from "a real wall in a resident neighbor". Keyed by
-      // the same global region index the BFS/CSR use, so reachable reads it
-      // directly.
+      // "unknown, non-resident" from "a real wall in a resident neighbor".
+      // Keyed by the same global region index the BFS/CSR use, so reachable
+      // reads it directly.
       sparse_.region_reaches_missing_.assign(
           static_cast<std::size_t>(region_count()), 0);
       for (const auto& topology : local_topologies_) {
@@ -675,7 +675,7 @@ class RegionGraphT {
 
   // Sparse only: flags every region owning a provider transition that lands
   // in a NON-RESIDENT chunk, so reachability answers Indeterminate rather
-  // than a wrong Unreachable across an unloaded special transition. Must run
+  // than a wrong Unreachable across a non-resident special transition. Must run
   // after rebuild_region_index, which reassigns the flags from boundary
   // exits alone.
   template <typename Shape, typename World, typename Provider>
@@ -1151,25 +1151,25 @@ template <typename World, typename ClassOrTag>
                                               ChunkKey chunk,
                                               LocalTopologyScratch& scratch,
                                               LocalChunkTopology& topology)
-    -> LocalTopologyResult {
+    -> TopologyBuildResult {
   using Shape = typename World::shape_type;
   using Traits = ShapeTraits<Shape>;
   using Class = movement::movement_class_of<ClassOrTag>;
 
   topology.clear();
   if (chunk.value >= Traits::chunk_count) {
-    return LocalTopologyResult{TopologyStatus::InvalidChunk, 0, 0, 0, 0};
+    return TopologyBuildResult{TopologyStatus::InvalidChunk, 0, 0, 0, 0};
   }
   if constexpr (std::is_same_v<typename World::residency_type,
                                SparseResident>) {
     if (!world.is_resident(chunk)) {
-      return LocalTopologyResult{TopologyStatus::MissingChunk, 0, 0, 0, 0};
+      return TopologyBuildResult{TopologyStatus::MissingChunk, 0, 0, 0, 0};
     }
   }
 
   topology.chunk_ = chunk;
   topology.chunk_coord_ = chunk_coord<Shape>(chunk);
-  topology.version_ = world.meta(chunk).topology_version;
+  topology.topology_version_ = world.meta(chunk).topology_version;
   topology.region_ids_.assign(
       static_cast<std::size_t>(Traits::local_tile_count), invalid_local_region);
   scratch.stack_.clear();
@@ -1236,21 +1236,33 @@ template <typename World, typename ClassOrTag>
     }
   }
 
-  return LocalTopologyResult{
-      TopologyStatus::Built,           topology.regions_.size(), passable_tiles,
-      topology.boundary_exits_.size(), topology.version_,
+  return TopologyBuildResult{
+      TopologyStatus::Built,
+      topology.regions_.size(),
+      passable_tiles,
+      topology.boundary_exits_.size(),
+      topology.topology_version_.value,
   };
 }
 
 namespace detail {
+inline void add_topology_version_sum(std::uint64_t& sum,
+                                     std::uint64_t value) noexcept {
+  if (value > std::numeric_limits<std::uint64_t>::max() - sum) {
+    fail_fast("topology version sum exhausted");
+  }
+  sum += value;
+}
+
 // A full rebuild cannot fail, so an update that falls back to one always
 // reports Built. Spelled once here rather than at each of the three
 // fallback sites.
-[[nodiscard]] constexpr auto as_local_topology_result(
-    RegionGraphBuildResult built) noexcept -> LocalTopologyResult {
-  return LocalTopologyResult{
-      TopologyStatus::Built,     built.region_count, built.passable_tile_count,
-      built.boundary_exit_count, built.version,
+[[nodiscard]] constexpr auto as_topology_build_result(
+    RegionGraphBuildResult built) noexcept -> TopologyBuildResult {
+  return TopologyBuildResult{
+      TopologyStatus::Built,      built.region_count,
+      built.passable_tile_count,  built.boundary_exit_count,
+      built.topology_version_sum,
   };
 }
 
@@ -1309,7 +1321,8 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
         result.region_count += local_result.region_count;
         result.passable_tile_count += local_result.passable_tile_count;
         result.boundary_exit_count += local_result.boundary_exit_count;
-        result.version += local_result.version;
+        detail::add_topology_version_sum(result.topology_version_sum,
+                                         local_result.topology_version_sum);
       }
     } else {
       // Sparse: build only over the resident set, sized by resident_count,
@@ -1337,7 +1350,8 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
         result.region_count += local_result.region_count;
         result.passable_tile_count += local_result.passable_tile_count;
         result.boundary_exit_count += local_result.boundary_exit_count;
-        result.version += local_result.version;
+        detail::add_topology_version_sum(result.topology_version_sum,
+                                         local_result.topology_version_sum);
         graph.sparse_.frozen_generations_[i] =
             world.residency_generation(keys[i]);
       }
@@ -1369,7 +1383,7 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
 // restores the canonical full-build portal order, so the resulting graph is
 // identical to a fresh build_region_graph over the edited world. An empty
 // dirty set leaves the graph untouched. Returns the aggregate
-// LocalTopologyResult over all chunks, mirroring build_region_graph. If the
+// TopologyBuildResult over all chunks, mirroring build_region_graph. If the
 // graph was not built for this world shape, falls back to a full build.
 template <typename World, typename ClassOrTag,
           typename Provider = AdjacentTransitions>
@@ -1378,7 +1392,7 @@ template <typename World, typename ClassOrTag,
     const World& world, LocalTopologyScratch& scratch,
     RegionGraphT<typename World::residency_type>& graph,
     std::span<const ChunkKey> dirty_chunks, const Provider& provider = {})
-    -> LocalTopologyResult {
+    -> TopologyBuildResult {
   static_assert(TransitionProviderFor<Provider, World>,
                 "update_region_graph's provider must satisfy "
                 "TransitionProviderFor (see transition_provider.h).");
@@ -1393,12 +1407,12 @@ template <typename World, typename ClassOrTag,
         !graph.template matches_shape<Shape>() ||
         !graph.template matches_class<Class>() ||
         !graph.matches_provider(provider)) {
-      return detail::as_local_topology_result(
+      return detail::as_topology_build_result(
           build_region_graph<World, Class>(world, scratch, graph, provider));
     }
     for (const auto chunk : dirty_chunks) {
       if (chunk.value >= Traits::chunk_count) {
-        return LocalTopologyResult{TopologyStatus::InvalidChunk, 0, 0, 0, 0};
+        return TopologyBuildResult{TopologyStatus::InvalidChunk, 0, 0, 0, 0};
       }
     }
 
@@ -1481,30 +1495,30 @@ template <typename World, typename ClassOrTag,
   } else {
     // Sparse: any residency change since build forces a full rebuild (the graph
     // is frozen to a residency snapshot). Exact set-equality via resident_count
-    // plus per-key generation: an evicted key reads generation 0, a reloaded
-    // key gets a strictly greater monotonic generation, so equal count with all
-    // frozen keys still at their frozen generation forces set identity.
-    // Generations are per-WORLD clocks: a graph must only ever be updated
-    // against the world it was built from (see is_region_graph_fresh).
+    // plus per-key generation: an evicted key reads generation 0, a
+    // rematerialized key gets a strictly greater monotonic generation, so equal
+    // count with all frozen keys still at their frozen generation forces set
+    // identity. Generations are per-WORLD clocks: a graph must only ever be
+    // updated against the world it was built from (see is_region_graph_fresh).
     const auto count = graph.local_topologies_.size();
     if (count != world.resident_count() ||
         graph.sparse_.frozen_generations_.size() != world.resident_count() ||
         !graph.template matches_shape<Shape>() ||
         !graph.template matches_class<Class>() ||
         !graph.matches_provider(provider)) {
-      return detail::as_local_topology_result(
+      return detail::as_topology_build_result(
           build_region_graph<World, Class>(world, scratch, graph, provider));
     }
     for (std::size_t i = 0; i < count; ++i) {
       if (world.residency_generation(graph.sparse_.topology_keys_[i]) !=
           graph.sparse_.frozen_generations_[i]) {
-        return detail::as_local_topology_result(
+        return detail::as_topology_build_result(
             build_region_graph<World, Class>(world, scratch, graph, provider));
       }
     }
     for (const auto chunk : dirty_chunks) {
       if (chunk.value >= Traits::chunk_count) {
-        return LocalTopologyResult{TopologyStatus::InvalidChunk, 0, 0, 0, 0};
+        return TopologyBuildResult{TopologyStatus::InvalidChunk, 0, 0, 0, 0};
       }
     }
 
@@ -1589,14 +1603,15 @@ template <typename World, typename ClassOrTag,
     }
   }
 
-  auto result = LocalTopologyResult{};
+  auto result = TopologyBuildResult{};
   for (const auto& topology : graph.local_topologies_) {
     result.region_count += topology.regions().size();
     for (const auto& region : topology.regions()) {
       result.passable_tile_count += region.tile_count;
     }
     result.boundary_exit_count += topology.boundary_exits().size();
-    result.version += topology.version();
+    detail::add_topology_version_sum(result.topology_version_sum,
+                                     topology.topology_version().value);
   }
   return result;
 }
@@ -1897,18 +1912,19 @@ template <typename World>
       return false;
     }
     for (std::uint64_t c = 0; c < World::chunk_count; ++c) {
-      if (graph.local_topologies_[static_cast<std::size_t>(c)].version() !=
-          world.meta(ChunkKey{c}).topology_version) {
+      if (graph.local_topologies_[static_cast<std::size_t>(c)]
+              .topology_version() != world.meta(ChunkKey{c}).topology_version) {
         return false;
       }
     }
     return true;
   } else {
     // Sparse: the frozen residency snapshot must still hold (resident_count
-    // plus per-key generation -- an evicted key reads generation 0, a reloaded
-    // key a strictly greater one), AND every resident chunk's topology version
-    // must still be current (an in-place edit). The generation is checked first
-    // so meta()/version reads only ever touch a still-resident key.
+    // plus per-key generation -- an evicted key reads generation 0, a
+    // rematerialized key a strictly greater one), AND every resident chunk's
+    // topology version must still be current (an in-place edit). The generation
+    // is checked first so metadata and topology-version reads touch only
+    // resident keys.
     const auto count = graph.local_topologies_.size();
     if (count != world.resident_count() ||
         graph.sparse_.frozen_generations_.size() != world.resident_count() ||
@@ -1917,15 +1933,16 @@ template <typename World>
     }
     for (std::size_t i = 0; i < count; ++i) {
       const auto key = graph.sparse_.topology_keys_[i];
-      // One directory probe for both facts; the by-key accessors would
-      // probe twice per chunk on this per-pathing-tick check (audit
-      // 2026-07-11 M2). A non-resident key reads generation 0 (meta null),
+      // One directory probe for both facts; the by-key accessors would probe
+      // twice per chunk on this per-pathing-tick check. A non-resident key
+      // reads generation 0 (meta null),
       // failing the generation compare before meta is touched.
       const auto ref = world.resident_ref(key);
       if (ref.generation != graph.sparse_.frozen_generations_[i]) {
         return false;
       }
-      if (graph.local_topologies_[i].version() != ref.meta->topology_version) {
+      if (graph.local_topologies_[i].topology_version() !=
+          ref.meta->topology_version) {
         return false;
       }
     }
@@ -1934,11 +1951,11 @@ template <typename World>
 }
 
 // Class-aware freshness: additionally requires the graph's movement-class
-// stamp to match `ClassOrTag` (normalized, so a raw tag and its WalkableField
-// identity agree). A graph labeled for another class is NOT fresh for this
-// one even when every topology version is current -- its labels answer a
-// different passability question. The class is the explicit first template
-// argument; `World` stays deduced.
+// stamp to match `ClassOrTag` (normalized, so a raw tag and its
+// UnitCostFieldMovement identity agree). A graph labeled for another class is
+// NOT fresh for this one even when every topology version is current -- its
+// labels answer a different passability question. The class is the explicit
+// first template argument; `World` stays deduced.
 /// Adds movement-class stamp agreement to the graph freshness check.
 template <typename ClassOrTag, typename World>
 [[nodiscard]] auto is_region_graph_fresh_for(

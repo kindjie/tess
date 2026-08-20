@@ -79,7 +79,7 @@ class DirtyMergeModel {
                        dirty_.records().size(), expected_.size());
     }
     for (const auto& record : dirty_.records()) {
-      if (record.dirty_mask == 0) {
+      if (record.dirty_mask.empty()) {
         return violation("a zero dirty mask is never recorded", 0, 1);
       }
     }
@@ -158,7 +158,7 @@ class DirtyMergeModel {
   void record(std::uint32_t chunk, std::uint32_t mask_index) {
     const auto mask = mask_for(mask_index);
     const auto status = dirty_.record(
-        world_, tess::ChunkKey{chunk}, mask,
+        world_, tess::ChunkKey{chunk}, tess::DirtyMask{mask},
         tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
     if (mask == 0) {
       // The exact status matters: callers distinguish a deliberately
@@ -183,7 +183,7 @@ class DirtyMergeModel {
     }
     const auto before = dirty_.records().size();
     const auto status = dirty_.record(
-        world_, tess::ChunkKey{9999}, mask,
+        world_, tess::ChunkKey{9999}, tess::DirtyMask{mask},
         tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
     if (status == tess::PlannedDirtyRecordStatus::Recorded ||
         dirty_.records().size() != before) {
@@ -212,7 +212,7 @@ class DirtyMergeModel {
     // isolated from earlier merges.
     std::vector<std::uint32_t> before(kChunks, 0);
     for (std::uint32_t chunk = 0; chunk < kChunks; ++chunk) {
-      before[chunk] = world_.dirty_flags(tess::ChunkKey{chunk});
+      before[chunk] = world_.dirty_mask(tess::ChunkKey{chunk}).value;
     }
 
     const auto result = tess::merge_planned_dirty(world_, dirty_);
@@ -235,7 +235,7 @@ class DirtyMergeModel {
     // check above.
     for (std::uint32_t chunk = 0; chunk < kChunks; ++chunk) {
       const auto expected_flags = before[chunk] | ored[chunk];
-      if (world_.dirty_flags(tess::ChunkKey{chunk}) != expected_flags) {
+      if (world_.dirty_mask(tess::ChunkKey{chunk}).value != expected_flags) {
         world_not_marked_ = true;
       }
     }
@@ -251,7 +251,7 @@ class DirtyMergeModel {
     }
     const auto index = chunk % kPartitions;
     const auto status = partitions_.partition(index).record(
-        world_, tess::ChunkKey{chunk}, mask,
+        world_, tess::ChunkKey{chunk}, tess::DirtyMask{mask},
         tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
     if (mask == 0) {
       if (status != tess::PlannedDirtyRecordStatus::IgnoredEmptyMask) {
@@ -305,7 +305,7 @@ class DirtyMergeModel {
     std::vector<Record> observed;
     for (const auto& record : dirty_.records()) {
       observed.push_back(Record{static_cast<std::uint32_t>(record.chunk.value),
-                                record.dirty_mask});
+                                record.dirty_mask.value});
     }
     auto modelled = expected_;
     std::sort(observed.begin(), observed.end());

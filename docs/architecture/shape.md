@@ -40,7 +40,7 @@ headers) and is exported by
   `Lattice` defaults to `lattice::Orthogonal`, preserving existing
   two-argument declarations. `lattice::HexAxial` selects an axial hex shape
   and requires both world and chunk z extents to equal one. Lattice types
-  carry explicit stable `Identity` and version constants for persistent
+  carry explicit persistent `Identity` and version constants for persistent
   metadata and derived-product stamps. The `LatticeType` concept checks that
   public lattice contract; built-ins are `lattice::Orthogonal` and
   `lattice::HexAxial`.

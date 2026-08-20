@@ -44,6 +44,7 @@
 #include <tess/spatial/tactical_assignment.h>
 #include <tess/storage/chunk_meta.h>
 #include <tess/storage/chunk_page.h>
+#include <tess/storage/metadata_types.h>
 #include <tess/storage/residency.h>
 #include <tess/storage/sparse_world.h>
 #include <tess/storage/world.h>

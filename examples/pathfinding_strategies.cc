@@ -16,12 +16,12 @@ namespace {
 
 [[nodiscard]] auto verify_obstacle_map(const demo::StrategyModel& model)
     -> bool {
-  return model.cell_passable(4, 4).value_or(false) &&
-         !model.cell_passable(4, 5).value_or(true) &&
-         model.cell_passable(8, 11).value_or(false) &&
-         !model.cell_passable(8, 10).value_or(true) &&
-         model.cell_passable(12, 6).value_or(false) &&
-         !model.cell_passable(12, 7).value_or(true);
+  return model.tile_passable(4, 4).value_or(false) &&
+         !model.tile_passable(4, 5).value_or(true) &&
+         model.tile_passable(8, 11).value_or(false) &&
+         !model.tile_passable(8, 10).value_or(true) &&
+         model.tile_passable(12, 6).value_or(false) &&
+         !model.tile_passable(12, 7).value_or(true);
 }
 
 [[nodiscard]] auto verify_invalid_checked_reads(
@@ -31,8 +31,8 @@ namespace {
          !model.request(1, 2).has_value() &&
          !model.path_point(0, 0, -1).has_value() &&
          !model.path_point(0, 0, 256).has_value() &&
-         !model.cell_passable(-1, 0).has_value() &&
-         !model.cell_passable(16, 0).has_value();
+         !model.tile_passable(-1, 0).has_value() &&
+         !model.tile_passable(16, 0).has_value();
 }
 
 }  // namespace

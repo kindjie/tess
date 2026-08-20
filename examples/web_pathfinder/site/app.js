@@ -11,7 +11,7 @@ let width = 32;
 let height = 24;
 let tool = "wall";
 let activePointer = null;
-let lastCell = null;
+let lastTile = null;
 let paintValue = true;
 let start = {x: 2, y: 12};
 let goal = {x: 29, y: 12};
@@ -86,7 +86,7 @@ function update() {
   draw();
 }
 
-function cellAt(event) {
+function tileAt(event) {
   const bounds = canvas.getBoundingClientRect();
   return {
     x: Math.max(0, Math.min(width - 1,
@@ -96,17 +96,17 @@ function cellAt(event) {
   };
 }
 
-function applyToolAt(cell) {
-  const cellKey = key(cell.x, cell.y);
+function applyToolAt(tile) {
+  const tileKey = key(tile.x, tile.y);
   if (tool === "start") {
-    if (!walls.has(cellKey) && cellKey !== key(goal.x, goal.y)) start = cell;
+    if (!walls.has(tileKey) && tileKey !== key(goal.x, goal.y)) start = tile;
   } else if (tool === "goal") {
-    if (!walls.has(cellKey) && cellKey !== key(start.x, start.y)) goal = cell;
-  } else if (cellKey !== key(start.x, start.y) &&
-             cellKey !== key(goal.x, goal.y)) {
-    api.setBlocked(cell.x, cell.y, paintValue ? 1 : 0);
-    if (paintValue) walls.add(cellKey);
-    else walls.delete(cellKey);
+    if (!walls.has(tileKey) && tileKey !== key(start.x, start.y)) goal = tile;
+  } else if (tileKey !== key(start.x, start.y) &&
+             tileKey !== key(goal.x, goal.y)) {
+    api.setImpassable(tile.x, tile.y, paintValue ? 1 : 0);
+    if (paintValue) walls.add(tileKey);
+    else walls.delete(tileKey);
   }
 }
 
@@ -133,23 +133,23 @@ canvas.addEventListener("pointerdown", (event) => {
   if (!api || activePointer !== null) return;
   activePointer = event.pointerId;
   canvas.setPointerCapture(event.pointerId);
-  const cell = cellAt(event);
-  paintValue = !walls.has(key(cell.x, cell.y));
-  applyToolAt(cell);
-  lastCell = cell;
+  const tile = tileAt(event);
+  paintValue = !walls.has(key(tile.x, tile.y));
+  applyToolAt(tile);
+  lastTile = tile;
   update();
 });
 canvas.addEventListener("pointermove", (event) => {
   if (!api || event.pointerId !== activePointer || tool !== "wall") return;
-  const cell = cellAt(event);
-  applyToolAlong(lastCell, cell);
-  lastCell = cell;
+  const tile = tileAt(event);
+  applyToolAlong(lastTile, tile);
+  lastTile = tile;
   update();
 });
 const stopDragging = (event) => {
   if (event.pointerId !== activePointer) return;
   activePointer = null;
-  lastCell = null;
+  lastTile = null;
 };
 canvas.addEventListener("pointerup", stopDragging);
 canvas.addEventListener("pointercancel", stopDragging);
@@ -171,7 +171,7 @@ createTessDemo().then((module) => {
     width: module.cwrap("tess_demo_width", "number", []),
     height: module.cwrap("tess_demo_height", "number", []),
     reset: module.cwrap("tess_demo_reset", null, []),
-    setBlocked: module.cwrap("tess_demo_set_blocked", "number",
+    setImpassable: module.cwrap("tess_demo_set_impassable", "number",
       ["number", "number", "number"]),
     find: module.cwrap("tess_demo_find_path", "number",
       ["number", "number", "number", "number"]),

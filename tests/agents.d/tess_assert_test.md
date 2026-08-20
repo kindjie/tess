@@ -10,7 +10,8 @@
   covers runtime contracts checked unconditionally rather than under
   `TESS_ASSERT`: path-result ticket publication, Schedule ids/lifecycle and
   result accounting, queue setup and reentrant mutation (including tick
-  observation), EventStream setup/assignment, and raw async callbacks. The
+  observation), EventStream setup/assignment, raw async callbacks, and
+  content/topology/residency version exhaustion. The
   same source also proves over-budget async progress settles `Failed` rather
   than asserting.
   `ResultChannel::value_for` is hardened the same way but is NOT covered

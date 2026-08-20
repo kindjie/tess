@@ -14,6 +14,8 @@ namespace {
 // [strategy-world]
 struct PassableTag {};
 struct CostTag {};
+using WeightedMovement =
+    tess::movement::PositiveCostFieldMovement<PassableTag, CostTag>;
 
 using Shape = tess::Shape<tess::Extent3{16, 16}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
@@ -40,6 +42,8 @@ constexpr auto kRequests = std::array{
 [[nodiscard]] auto browser_status(tess::PathStatus status)
     -> BrowserPathStatus {
   switch (status) {
+    case tess::PathStatus::NotComputed:
+      return BrowserPathStatus::Unavailable;
     case tess::PathStatus::Found:
       return BrowserPathStatus::Found;
     case tess::PathStatus::InvalidStart:
@@ -52,8 +56,10 @@ constexpr auto kRequests = std::array{
       return BrowserPathStatus::CostOverflow;
     case tess::PathStatus::Indeterminate:
       return BrowserPathStatus::Indeterminate;
+    case tess::PathStatus::NoCandidate:
+      return BrowserPathStatus::Unavailable;
   }
-  return BrowserPathStatus::NoPath;
+  return BrowserPathStatus::Unavailable;
 }
 
 [[nodiscard]] auto copy_result(const tess::PathResult& result)
@@ -65,7 +71,7 @@ constexpr auto kRequests = std::array{
       .path_size = bounded_u32(result.path.size()),
   };
   if (result.path.size() > snapshot.path.size()) {
-    snapshot.status = BrowserPathStatus::NoPath;
+    snapshot.status = BrowserPathStatus::Unavailable;
     snapshot.path_size = 0;
     return snapshot;
   }
@@ -79,7 +85,7 @@ constexpr auto kRequests = std::array{
 }
 
 // [strategy-obstacles]
-[[nodiscard]] constexpr auto demo_cell_passable(std::int64_t x, std::int64_t y)
+[[nodiscard]] constexpr auto demo_tile_passable(std::int64_t x, std::int64_t y)
     -> bool {
   if (x == 4) {
     return y == 4;
@@ -100,7 +106,7 @@ void configure_world(World& world,
   for (std::int64_t y = 0; y < static_cast<std::int64_t>(Shape::size.y); ++y) {
     for (std::int64_t x = 0; x < static_cast<std::int64_t>(Shape::size.x);
          ++x) {
-      const auto is_passable = demo_cell_passable(x, y);
+      const auto is_passable = demo_tile_passable(x, y);
       world.field<PassableTag>(tess::Coord2{x, y}) = is_passable ? 1U : 0U;
       const auto index = static_cast<std::size_t>(y * width + x);
       passable[index] = is_passable ? 1U : 0U;
@@ -132,7 +138,7 @@ void configure_world(World& world,
   };
   // [strategy-cache]
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   const auto first = tess::cached_astar_path<World, PassableTag>(
       world, kRequests.front(), scratch, cache);
   snapshot.requests[0] = copy_result(first);
@@ -154,7 +160,7 @@ void configure_world(World& world,
   // [strategy-batch]
   tess::WeightedPathBatchScratch scratch;
   const auto results =
-      tess::weighted_path_batch<World, PassableTag, CostTag, /*MaxCost=*/32>(
+      tess::weighted_path_batch<World, WeightedMovement, /*MaxCost=*/32>(
           world, kRequests, scratch);
   for (std::size_t index = 0; index < results.size(); ++index) {
     snapshot.requests[index] = copy_result(results[index]);
@@ -262,7 +268,7 @@ auto StrategyModel::copied_paths_valid() const noexcept -> bool {
         for (std::size_t point_index = 0; point_index < request.path_size;
              ++point_index) {
           const auto point = request.path[point_index];
-          if (!cell_passable(point.x, point.y).value_or(false)) {
+          if (!tile_passable(point.x, point.y).value_or(false)) {
             return false;
           }
         }
@@ -317,7 +323,7 @@ auto StrategyModel::path_point(std::int32_t strategy_index,
   return selected->get().path[static_cast<std::size_t>(point_index)];
 }
 
-auto StrategyModel::cell_passable(std::int32_t x, std::int32_t y) const noexcept
+auto StrategyModel::tile_passable(std::int32_t x, std::int32_t y) const noexcept
     -> std::optional<bool> {
   if (x < 0 || x >= width || y < 0 || y >= height) {
     return std::nullopt;

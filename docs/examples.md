@@ -44,7 +44,7 @@ cmake --build --preset examples
 
 ## Pathfinding and topology
 
-- [`mvp_path.cc`][mvp_path] — a small end-to-end queued-edit plus A*
+- [`queued_path.cc`][queued_path] — a small end-to-end queued-edit plus A*
   pathfinding prototype.
 - [`pathfinding_strategies_model.cc`][pathfinding_strategies] — one small
   world comparing plain A*, exact route caching, weighted batches, and
@@ -139,9 +139,9 @@ The fractional coordinates never return to simulation state.
 
 - [`chunk_maintenance.cc`][chunk_maintenance] — an experimental external
   owner that coalesces repeated chunk dirty marks into a versioned derived
-  summary, checks dirty/version state, and keeps scheduler handles out of the
-  world. The install smoke builds and runs a self-contained version of this
-  workflow against the installed package.
+  summary, checks dirty-mask and content-version state, and keeps scheduler
+  handles out of the world. The install smoke builds and runs a self-contained
+  version of this workflow against the installed package.
 - [`custom_ecs_min.cc`][custom_ecs] — the ECS adapter concepts implemented
   by a deliberately non-EnTT-shaped micro ECS.
 - [`entt_pawns.cc`][entt_pawns] — the EnTT adapter driving registry-owned
@@ -158,7 +158,7 @@ The fractional coordinates never return to simulation state.
 
 [quickstart]: https://github.com/kindjie/tess/blob/main/examples/quickstart.cc
 [colony_2d]: https://github.com/kindjie/tess/blob/main/examples/colony_2d.cc
-[mvp_path]: https://github.com/kindjie/tess/blob/main/examples/mvp_path.cc
+[queued_path]: https://github.com/kindjie/tess/blob/main/examples/queued_path.cc
 [pathfinding_strategies]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies_model.cc
 [path_agents]: https://github.com/kindjie/tess/blob/main/examples/path_agents.cc
 [stairs_3d]: https://github.com/kindjie/tess/blob/main/examples/stairs_3d.cc

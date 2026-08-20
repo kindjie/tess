@@ -43,6 +43,8 @@ using WeightedPathSchema =
 using PathWorld = tess::AlwaysResidentWorld<PathScaleShape, PathSchema>;
 using WeightedPathWorld =
     tess::AlwaysResidentWorld<PathScaleShape, WeightedPathSchema>;
+using WeightedMovement =
+    tess::movement::PositiveCostFieldMovement<PassableTag, CostTag>;
 
 constexpr auto PathNodeCount =
     PathScaleShape::size.x * PathScaleShape::size.y * PathScaleShape::size.z;
@@ -109,7 +111,7 @@ void record_tick_counters(benchmark::State& state,
 }
 
 void record_route_cache_counters(benchmark::State& state,
-                                 tess::RouteCacheStats stats) {
+                                 tess::UnitRouteCacheStats stats) {
   state.counters["cache.entries"] = static_cast<double>(stats.entries);
   state.counters["cache.hits"] = static_cast<double>(stats.hits);
   state.counters["cache.suffix_hits"] = static_cast<double>(stats.suffix_hits);
@@ -190,7 +192,7 @@ void BM_path_agent_tick_100_unit_clean_512x512(benchmark::State& state) {
       agents[i].position = starts[i];
       agents[i].goal = goal;
       agents[i].path_index = 0;
-      agents[i].status = tess::PathStatus::Found;
+      agents[i].last_result = tess::PathStatus::Found;
       agents[i].has_goal = true;
     }
 
@@ -241,7 +243,7 @@ void BM_path_agent_tick_100_unit_dirty_world_edit_512x512(
     world.template field<PassableTag>(coord) = passable ? 1 : 0;
     world.mark_dirty(
         tess::chunk_key<PathScaleShape>(tess::tile_key<PathScaleShape>(coord)),
-        1u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+        tess::DirtyMask{1u}, tess::Box3{coord, tess::Extent3{1, 1, 1}});
     ++edits;
 
     tess::mark_pathing_dirty(tick_state);
@@ -341,7 +343,7 @@ void scoped_world_edit_tick(benchmark::State& state) {
     world.template field<PassableTag>(coord) = passable ? 1 : 0;
     world.mark_dirty(
         tess::chunk_key<PathScaleShape>(tess::tile_key<PathScaleShape>(coord)),
-        1u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+        tess::DirtyMask{1u}, tess::Box3{coord, tess::Extent3{1, 1, 1}});
     ++edits;
 
     tess::mark_pathing_dirty(tick_state);
@@ -409,8 +411,8 @@ void BM_path_agent_runtime_100_weighted_shared_512x512(
   tess::PathAgentFrameStats frame_stats;
   for (auto _ : state) {
     frame_stats =
-        tess::process_weighted_path_agents<WeightedPathWorld, PassableTag,
-                                           CostTag, 8>(world, agents, runtime);
+        tess::process_weighted_path_agents<WeightedPathWorld, WeightedMovement,
+                                           8>(world, agents, runtime);
     benchmark::DoNotOptimize(frame_stats.found);
     benchmark::DoNotOptimize(runtime.results().data());
   }
@@ -452,9 +454,9 @@ void BM_path_agent_tick_100_weighted_shared_dirty_512x512(
   tess::PathAgentTickStats tick_stats;
   for (auto _ : state) {
     tess::mark_pathing_dirty(tick_state);
-    tick_stats = tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag,
-                                                 CostTag, 8>(
-        tick_state, world, agents, runtime, options);
+    tick_stats =
+        tess::tick_weighted_path_agents<WeightedPathWorld, WeightedMovement, 8>(
+            tick_state, world, agents, runtime, options);
     benchmark::DoNotOptimize(tick_stats.pathing.found);
     benchmark::DoNotOptimize(runtime.results().data());
   }
@@ -495,8 +497,8 @@ void BM_path_agent_runtime_100_weighted_mixed_512x512(benchmark::State& state) {
   tess::PathAgentFrameStats frame_stats;
   for (auto _ : state) {
     frame_stats =
-        tess::process_weighted_path_agents<WeightedPathWorld, PassableTag,
-                                           CostTag, 8>(world, agents, runtime);
+        tess::process_weighted_path_agents<WeightedPathWorld, WeightedMovement,
+                                           8>(world, agents, runtime);
     benchmark::DoNotOptimize(frame_stats.found);
     benchmark::DoNotOptimize(runtime.results().data());
   }
@@ -548,9 +550,8 @@ void BM_path_agent_tick_100_weighted_goal_churn_512x512(
   tess::PathAgentTickState tick_state;
   const auto options = tess::PathAgentTickOptions{.max_steps = 0};
   // Warm full pass: everyone plans once and turns Following.
-  (void)tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag, CostTag,
-                                        8>(tick_state, world, agents, runtime,
-                                           options);
+  (void)tess::tick_weighted_path_agents<WeightedPathWorld, WeightedMovement, 8>(
+      tick_state, world, agents, runtime, options);
 
   tess::PathAgentTickStats tick_stats;
   std::size_t churn = 0;
@@ -558,9 +559,9 @@ void BM_path_agent_tick_100_weighted_goal_churn_512x512(
     auto& agent = agents[churn % agents.size()];
     tess::set_path_agent_goal(tick_state, agent,
                               churn_goals[churn % churn_goals.size()]);
-    tick_stats = tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag,
-                                                 CostTag, 8>(
-        tick_state, world, agents, runtime, options);
+    tick_stats =
+        tess::tick_weighted_path_agents<WeightedPathWorld, WeightedMovement, 8>(
+            tick_state, world, agents, runtime, options);
     benchmark::DoNotOptimize(tick_stats.tick);
     ++churn;
   }
@@ -636,9 +637,8 @@ void portal_first_goal_churn_tick(benchmark::State& state) {
   options.cache_policy.portal_premium_limit_num = CapNum;
   options.cache_policy.portal_premium_limit_den = CapDen;
 
-  (void)tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag, CostTag,
-                                        8>(tick_state, world, agents, runtime,
-                                           options);
+  (void)tess::tick_weighted_path_agents<WeightedPathWorld, WeightedMovement, 8>(
+      tick_state, world, agents, runtime, options);
 
   // Fresh goals walk the always-passable band x in [477, 511]: the last
   // barrier column is 476, so the band's tiles are cost-1 passable by
@@ -668,9 +668,9 @@ void portal_first_goal_churn_tick(benchmark::State& state) {
                           ? sealed_goal
                           : churn_goals[churn % churn_goals.size()];
     tess::set_path_agent_goal(tick_state, agent, goal);
-    tick_stats = tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag,
-                                                 CostTag, 8>(
-        tick_state, world, agents, runtime, options);
+    tick_stats =
+        tess::tick_weighted_path_agents<WeightedPathWorld, WeightedMovement, 8>(
+            tick_state, world, agents, runtime, options);
     benchmark::DoNotOptimize(tick_stats.tick);
     const auto tick_replan = runtime.stats().portal_replan;
     sums.attempts += tick_replan.attempts;
@@ -765,9 +765,8 @@ void BM_path_agent_tick_100_weighted_fresh_churn_exact_512x512(
   reserve_runtime(runtime, agents.size());
   tess::PathAgentTickState tick_state;
   const auto options = tess::PathAgentTickOptions{.max_steps = 0};
-  (void)tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag, CostTag,
-                                        8>(tick_state, world, agents, runtime,
-                                           options);
+  (void)tess::tick_weighted_path_agents<WeightedPathWorld, WeightedMovement, 8>(
+      tick_state, world, agents, runtime, options);
 
   const auto fresh_goal = [](std::size_t index) {
     return tess::Coord3{477 + static_cast<std::int64_t>(index % 35u),
@@ -778,9 +777,9 @@ void BM_path_agent_tick_100_weighted_fresh_churn_exact_512x512(
   for (auto _ : state) {
     auto& agent = agents[churn % agents.size()];
     tess::set_path_agent_goal(tick_state, agent, fresh_goal(churn));
-    tick_stats = tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag,
-                                                 CostTag, 8>(
-        tick_state, world, agents, runtime, options);
+    tick_stats =
+        tess::tick_weighted_path_agents<WeightedPathWorld, WeightedMovement, 8>(
+            tick_state, world, agents, runtime, options);
     benchmark::DoNotOptimize(tick_stats.tick);
     ++churn;
   }
@@ -829,7 +828,7 @@ void BM_path_agent_runtime_100_unit_world_edit_512x512(
     world.template field<PassableTag>(coord) = passable ? 1 : 0;
     world.mark_dirty(
         tess::chunk_key<PathScaleShape>(tess::tile_key<PathScaleShape>(coord)),
-        1u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+        tess::DirtyMask{1u}, tess::Box3{coord, tess::Extent3{1, 1, 1}});
     ++edits;
 
     frame_stats = tess::process_unit_path_agents<PathWorld, PassableTag>(

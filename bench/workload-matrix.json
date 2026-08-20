@@ -1009,7 +1009,7 @@
         "world_extent": 1,
         "payload": 2
       },
-      "note": "arg = pair count; agents = 2x pairs; blocked base with carved passable cells",
+      "note": "arg = pair count; agents = 2x pairs; blocked base with carved passable tiles",
       "defaults": {
         "world_extent": "128x128",
         "chunk_extent": "16x16",

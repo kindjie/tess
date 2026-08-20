@@ -183,13 +183,13 @@ using MaintenanceArchive = tess::PersistenceSchema<
     0x6d61696e74656e61ULL, 1,
     tess::PersistedField<MaintenanceFieldTag, 0x6465726976656400ULL, 1>>;
 
-constexpr auto kDerivedDirty = std::uint32_t{1u << 3u};
+constexpr auto kDerivedDirty = tess::DirtyMask{1u << 3u};
 
 struct WorldDirtyTask final : maintenance::MaintenanceTask {
   MaintenanceWorld* world = nullptr;
   maintenance::MaintenanceScheduler* scheduler = nullptr;
   tess::ChunkKey key{};
-  std::uint32_t derived_version = 0;
+  tess::ContentVersion derived_version{};
   bool inject_intervening_mark = false;
 
   void run(maintenance::MaintenanceBudget& budget) override {
@@ -197,10 +197,10 @@ struct WorldDirtyTask final : maintenance::MaintenanceTask {
       return;
     }
     const auto observed = world->observe_dirty(key, kDerivedDirty);
-    if (observed.flags == 0) {
+    if (!observed.mask) {
       return;
     }
-    derived_version = observed.version;
+    derived_version = observed.content_version;
     if (inject_intervening_mark) {
       inject_intervening_mark = false;
       world->mark_dirty(key, kDerivedDirty, observed.bounds);
@@ -252,9 +252,9 @@ auto world_maintenance_hash() -> std::uint64_t {
 
   auto hash = std::uint64_t{1469598103934665603ull};
   for (const auto& task : tasks) {
-    EXPECT_EQ(world.dirty_flags(task.key) & kDerivedDirty, 0u);
-    EXPECT_EQ(task.derived_version, world.meta(task.key).version);
-    hash ^= task.derived_version;
+    EXPECT_FALSE(world.dirty_mask(task.key) & kDerivedDirty);
+    EXPECT_EQ(task.derived_version, world.meta(task.key).content_version);
+    hash ^= task.derived_version.value;
     hash *= 1099511628211ull;
   }
   return hash;
@@ -310,9 +310,9 @@ void check_intervening_world_mark() {
 
   ASSERT_TRUE(scheduler.schedule(task));
   EXPECT_TRUE(scheduler.flush());
-  EXPECT_EQ(world.dirty_flags(task.key) & kDerivedDirty, 0u);
-  EXPECT_EQ(task.derived_version, world.meta(task.key).version);
-  EXPECT_EQ(task.derived_version, 2u);
+  EXPECT_FALSE(world.dirty_mask(task.key) & kDerivedDirty);
+  EXPECT_EQ(task.derived_version, world.meta(task.key).content_version);
+  EXPECT_EQ(task.derived_version, tess::ContentVersion{2});
 }
 
 TEST(TessMaintenance, ImmediateSelfScheduleUsesConstantStackDepth) {
@@ -564,7 +564,7 @@ TEST(TessMaintenance, DirtyBitCrossTaskZeroProgressStopsEachDrain) {
   check_cross_task_zero_progress_handoff<maintenance::DirtyBitScheduler>();
 }
 
-TEST(TessMaintenance, PartialClearPreservesUnrelatedDirtyFlags) {
+TEST(TessMaintenance, PartialClearPreservesUnrelatedDirtyMaskBits) {
   maintenance::CoalescingScheduler scheduler(2);
   DirtyTask task;
   task.dirty = 0b1111u;
@@ -973,7 +973,8 @@ TEST(TessMaintenance, FlushedWorldArchiveMatchesAcrossBackends) {
   EXPECT_EQ(dirty_bit, expected);
 
   MaintenanceWorld restored;
-  EXPECT_EQ(tess::load_world_archive<MaintenanceArchive>(restored, dirty_bit, 0)
+  EXPECT_EQ(tess::load_world_archive<MaintenanceArchive>(restored, dirty_bit,
+                                                         tess::DirtyMask{})
                 .status,
             tess::WorldArchiveStatus::Ok);
   EXPECT_EQ(restored.field<MaintenanceFieldTag>({63, 57, 0}), 127u);

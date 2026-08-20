@@ -21,10 +21,10 @@
 #include <type_traits>
 #include <vector>
 
-// The Flecs adapter (M10): concrete PathAgentSource/PathAgentSink types
+// The Flecs adapter: concrete PathAgentSource/PathAgentSink types
 // over a flecs::world, explicit lifecycle intents (spawn / despawn /
 // teleport / park / place -- raw entity destruction on an on-board agent
-// leaks a permanently blocked tile, so the intents are the only
+// leaks a permanently impassable tile, so the intents are the only
 // sanctioned mutation paths), and tick_flecs_* drivers that are thin
 // instantiations of the generic tick_ecs_* pipeline. Compiled only when
 // the consumer defines TESS_ENABLE_FLECS and includes
@@ -138,8 +138,8 @@ template <typename World>
 }
 
 template <typename World>
-void flecs_mark_tile_dirty(World& world, Coord3 tile, std::uint32_t mask) {
-  if (mask != 0) {
+void flecs_mark_tile_dirty(World& world, Coord3 tile, DirtyMask mask) {
+  if (mask) {
     world.mark_dirty(world.resolve(tile).chunk_key, mask,
                      Box3{tile, Extent3{1, 1, 1}});
   }
@@ -280,7 +280,7 @@ static_assert(PathAgentSink<FlecsPathAgentSink<>>);
 template <typename World, typename OccupancyTag>
 [[nodiscard]] auto spawn_flecs_path_agent(
     flecs::world& ecs, FlecsPathAgentContext& context, World& world,
-    TileOccupancyIndex& index, Coord3 position, std::uint32_t dirty_mask = 0,
+    TileOccupancyIndex& index, Coord3 position, DirtyMask dirty_mask = {},
     DeltaCollector* render_deltas = nullptr) -> flecs::entity_t {
   detail::flecs_assert_immediate_lifecycle(ecs);
   detail::flecs_assert_context_world(ecs, context);
@@ -339,7 +339,7 @@ template <typename World, typename OccupancyTag>
 template <typename World, typename OccupancyTag>
 auto despawn_flecs_path_agent(flecs::world& ecs, World& world,
                               TileOccupancyIndex& index, flecs::entity_t entity,
-                              std::uint32_t dirty_mask = 0,
+                              DirtyMask dirty_mask = {},
                               DeltaCollector* render_deltas = nullptr) -> bool {
   detail::flecs_assert_immediate_lifecycle(ecs);
   if (!ecs.is_alive(entity)) {
@@ -379,7 +379,7 @@ template <typename World, typename OccupancyTag>
 auto teleport_flecs_path_agent(flecs::world& ecs, World& world,
                                TileOccupancyIndex& index,
                                flecs::entity_t entity, Coord3 to,
-                               std::uint32_t dirty_mask = 0,
+                               DirtyMask dirty_mask = {},
                                DeltaCollector* render_deltas = nullptr)
     -> bool {
   detail::flecs_assert_immediate_lifecycle(ecs);
@@ -422,7 +422,7 @@ auto teleport_flecs_path_agent(flecs::world& ecs, World& world,
 template <typename World, typename OccupancyTag>
 auto park_flecs_path_agent(flecs::world& ecs, World& world,
                            TileOccupancyIndex& index, flecs::entity_t entity,
-                           std::uint32_t dirty_mask = 0,
+                           DirtyMask dirty_mask = {},
                            DeltaCollector* render_deltas = nullptr) -> bool {
   detail::flecs_assert_immediate_lifecycle(ecs);
   if (!ecs.is_alive(entity)) {
@@ -457,7 +457,7 @@ auto park_flecs_path_agent(flecs::world& ecs, World& world,
 template <typename World, typename OccupancyTag>
 auto place_flecs_path_agent(flecs::world& ecs, World& world,
                             TileOccupancyIndex& index, flecs::entity_t entity,
-                            Coord3 position, std::uint32_t dirty_mask = 0,
+                            Coord3 position, DirtyMask dirty_mask = {},
                             DeltaCollector* render_deltas = nullptr) -> bool {
   detail::flecs_assert_immediate_lifecycle(ecs);
   if (!ecs.is_alive(entity)) {
@@ -546,27 +546,6 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   FlecsPathAgentSink<Position> sink(ecs, context);
   return tick_ecs_path_agents<World, Class, MaxCost, OccupancyTag,
                               ReservationTag>(
-      context.tick_state, world, source, sink, context.batch, runtime, index,
-      options, graph, render_deltas);
-}
-
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost, typename OccupancyTag, typename ReservationTag,
-          typename Position = FlecsTilePositionAdapter>
-/** Runs the weighted Flecs pipeline using separate passability and cost tags.
- */
-[[nodiscard]] auto tick_flecs_path_agents(
-    flecs::world& ecs, FlecsPathAgentContext& context, World& world,
-    PathRequestRuntime& runtime, TileOccupancyIndex& index,
-    PathAgentTickOptions options = {},
-    const RegionGraphT<typename World::residency_type>* graph = nullptr,
-    DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
-  detail::flecs_assert_immediate_lifecycle(ecs);
-  detail::flecs_assert_context_world(ecs, context);
-  FlecsPathAgentSource source(ecs, context);
-  FlecsPathAgentSink<Position> sink(ecs, context);
-  return tick_ecs_path_agents<World, PassableTag, CostTag, MaxCost,
-                              OccupancyTag, ReservationTag>(
       context.tick_state, world, source, sink, context.batch, runtime, index,
       options, graph, render_deltas);
 }

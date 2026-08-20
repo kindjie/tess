@@ -5,7 +5,7 @@ sparse-resident support as detailed below. It lives under `include/tess/path/`
 and is exported by `tess/tess.h`.
 `tess/path/path.h` remains the public umbrella for core path APIs; larger
 implementation sections may live in `include/tess/path/detail/` and are
-included from that umbrella. The route cache (`RouteCacheScratch`,
+included from that umbrella. The route cache (`UnitRouteCache`,
 `cached_astar_path`) lives in `tess/path/route_cache.h`, which the umbrella
 includes, so including `tess/path/path.h` or `tess/tess.h` keeps compiling
 the full core path surface.
@@ -35,7 +35,7 @@ flowchart LR
 ```mermaid
 flowchart TB
   accTitle: Unit-cost pathfinding strategy
-  accDescr: Shared goals favor fields, stable route reuse favors the cache, and isolated requests use A star.
+  accDescr: Shared goals favor fields, retained route reuse favors the cache, and isolated requests use A star.
 
   Unit["Unit-cost requests"] --> Shared{"Many starts share goals?"}
   Shared -->|Yes| Field["Distance field or field product"]
@@ -65,18 +65,25 @@ flowchart TB
   nodes with equal search cost and progress. A zero seed preserves canonical
   tile-index ordering; nonzero seeds can change route shape but not optimal
   cost or passability.
-- `PathStatus` reports `Found`, `InvalidStart`, `InvalidGoal`, `NoPath`,
-  `Indeterminate`, or `CostOverflow`. `Indeterminate` occurs only on sparse
+- `PathStatus` reports `NotComputed`, `Found`, `InvalidStart`, `InvalidGoal`,
+  `NoPath`, `Indeterminate`, `CostOverflow`, or `NoCandidate`. `NotComputed`
+  means a default, cleared, stale, or model-mismatched product has no current
+  result. `NoCandidate` means a bounded or heuristic strategy found no
+  candidate and an exact search is required for a reachability conclusion.
+  `Indeterminate` occurs only on sparse
   worlds: the search
   reached the edge of the resident set and could not rule out a route through a
-  non-resident chunk, so it is deliberately distinct from `NoPath` (which
-  asserts no route exists). A caller that receives `Indeterminate` can
+  non-resident chunk, so it is deliberately distinct from `NoPath`.
+  `NoPath` means no route exists in the graph considered under the selected
+  missing-chunk policy; it is a whole-world conclusion only when no unknown
+  boundary was assumed impassable. A caller that receives `Indeterminate` can
   materialize the missing chunks and retry.
   `CostOverflow` means every remaining realized route required a cost at or
   above the reserved `uint32_t` infinity sentinel; it carries no usable path.
 - `MissingChunkPolicy` selects how a search treats a step into a non-resident
-  chunk of a sparse world: `TreatAsBlocked` treats it as impassable (the search
-  stays within the resident set and may report `NoPath`), while `Indeterminate`
+  chunk of a sparse world: `AssumeImpassable` treats it as impassable (the search
+  stays within the resident set and may report `NoPath`), while
+  `ReportIndeterminate`
   returns `PathStatus::Indeterminate` rather than a possibly-wrong `NoPath` when
   the search exhausts the resident set having skipped a non-resident neighbor.
   It is inert for dense (`AlwaysResident`) worlds, where every chunk is
@@ -86,16 +93,22 @@ flowchart TB
   `start` can reach `goal` through region connectivity, without expanding the
   grid, and returns a `PrecheckStatus`. The explicit first template argument
   is the movement class the SEARCH uses (a raw passable tag normalizes to its
-  `WalkableField` identity, exactly as in `astar_path`). Only `Unreachable` --
+  `UnitCostFieldMovement` identity, exactly as in `astar_path`). Only `Unreachable` --
   the graph definitively rules out any route within known topology -- licenses
   skipping A*, reported by `precheck_rules_out_path`. Every other status means
   "run A*": `Reachable` (a region path exists; A* realizes it), `MissingChunk`
   (the search reached a boundary exit into a non-resident chunk, so a route
-  through unloaded space cannot be ruled out -- sparse worlds only),
+  through non-resident space cannot be ruled out -- sparse worlds only),
   `InvalidStart` / `InvalidGoal` (A* is authoritative on tile validity),
   `GraphStale` (the graph no longer matches the world OR was labeled for a
   different movement class or provider instance/revision), and `NoGraph` (no
   built graph supplied).
+  The overloads accept the same `MissingChunkPolicy` as authoritative search
+  and default to `ReportIndeterminate`. Under `AssumeImpassable`, a resident
+  search region cut off only by non-resident space is `Unreachable`, while a
+  non-resident endpoint is `InvalidStart` or `InvalidGoal`. The path runtime
+  forwards its selected policy to this precheck, so the optimization cannot
+  silently change the requested semantics.
   Staleness is resolved conservatively and first: an empty graph is `NoGraph`
   and a graph that fails `is_region_graph_fresh_for<ClassOrTag>` -- topology
   versions, residency snapshot, or the movement-class stamp -- is
@@ -112,36 +125,36 @@ flowchart TB
   `build_bounded_weighted_distance_field`, plus their readers
   `distance_field_path` and `weighted_distance_field_path` -- and the path
   runtime built on them: `weighted_path_batch`, the unit route cache
-  (`RouteCacheScratch`, `cached_astar_path`), and
+  (`UnitRouteCache`, `cached_astar_path`), and
   `PathRequestRuntime::process_unit_cached` / `process_weighted_batch`. The route
   cache's world fingerprint is residency-aware -- it folds each resident chunk's
-  key, `residency_generation`, and content version (`meta().version`) through an
-  order-independent sum -- so any eviction, reload, or in-place edit changes the
+  key, residency generation, and `meta().content_version` through an
+  order-independent sum -- so any eviction, rematerialization, or in-place edit changes the
   fingerprint and invalidates the whole cache before a stale route can be served.
   The two-call builder/reader distance-field API stamps
   `world.residency_fingerprint()` in `DistanceFieldScratch` at build time -- the
   route cache's terms plus each chunk's resident slot, since a distance field is
   indexed by slot where the route cache is keyed by coordinate; a reader whose
   world changed residency between the paired calls -- or a scratch read against a
-  different/copied/swapped world -- returns `NoPath` (forcing a rebuild) rather
-  than descending a slot-rebound stale field. Each single-shot
-  builder takes an optional trailing `MissingChunkPolicy` (default
-  `TreatAsBlocked`); the runtime path uses that default, so a route across a
-  non-resident chunk reports `NoPath` rather than `Indeterminate` (threading the
-  policy through the runtime is deferred). Agent movement commit is residency-safe
+  different/copied/swapped world -- returns `NotComputed` (forcing a rebuild)
+  rather than descending a slot-rebound stale field. Each single-shot
+  builder takes an optional trailing `MissingChunkPolicy` whose default is
+  `ReportIndeterminate`. Runtime, cache, batch, precheck, and path-agent layers
+  pass the selected policy through without substituting another value. Agent
+  movement commit is residency-safe
   to match: `validate_movement_intent` and `movement_versions_match` reject a move
-  into or out of a non-resident chunk with the transient `StaleVersion` (a
-  non-resident chunk is a reloadable, not terminal, condition), so an agent whose
+  into or out of a non-resident chunk with the transient `StaleContent` (a
+  non-resident chunk is a recoverable, not terminal, condition), so an agent whose
   route crosses a chunk evicted since planning re-plans against the changed
-  residency instead of stranding or walking into unloaded data. The readers are
+  residency instead of stranding or walking into non-resident data. The readers are
   pure readers (a non-resident start is `InvalidStart`). Still dense-only -- a
   compile error to
   instantiate on a sparse world -- are the distance-field product family
   (`build_distance_field_product`, `distance_field_product_path`,
   `nearest_target`), the unit field-product cache (`process_unit_cached`'s
   repeated-goal pass, guarded out for sparse worlds), and the route/portal route
-  products. Those are persistent, cross-frame cached artifacts indexed by raw tile
-  id and land with a later sparse-cache slice.
+  products. Those are retained artifacts indexed by raw tile ID and require an
+  `AlwaysResidentWorld`.
 - `PathResult` returns status, movement cost ticks, expanded-node count,
   reached-node count, a `PathView`, and `cost_scale`. Default orthogonal and
   axial-hex models use scale one. Diagonal models use scale 128: cardinal
@@ -171,7 +184,7 @@ flowchart TB
 - The optional `tess/io.h` header provides human-readable stream insertion for
   `PathStatus` and `PathView`. Streaming a path traverses its borrowed
   coordinates without extending their lifetime. The text is diagnostic output,
-  not a stable serialization format.
+  not a supported serialization format.
 - `DistanceFieldResult` returns the status and node counts for a reverse
   shared-goal field build.
 - `WeightedPathBatchStats` returns request count, unique-goal count, field
@@ -187,8 +200,8 @@ flowchart TB
 - `GoalSet`, `DistanceFieldProduct`, and `FieldProductCache` provide reusable
   unit-cost and weighted distance-field products in
   `tess/path/field_product_cache.h`.
-  Products copy stable dense field data out of scratch, track reached
-  transition and clearance chunk-version dependencies, stamp the resolved
+  Products copy retained dense field data out of scratch, track reached
+  transition and clearance content-version dependencies, stamp the resolved
   lattice/class/step model, and can be stored in a byte-budgeted LRU cache.
   Diagonal products use reverse Dijkstra for their non-unit geometric ticks;
   axial products use the six-neighbor reverse flood.
@@ -202,7 +215,7 @@ flowchart TB
   `store_weighted`. Provider instances and revisions are exact cache-key
   components: historical revisions remain reusable entries until ordinary LRU
   eviction, so callers with continually changing provider state should
-  configure a finite byte budget. A stateful provider must stay at a stable
+  configure a finite byte budget. A stateful provider must stay at an address-stable
   address while a product or cache can retain that identity, and callers must
   clear those artifacts before destroying it. Moving a cache is safe because
   the provider remains externally owned; moving the provider causes a
@@ -211,7 +224,7 @@ flowchart TB
   Provider-composed products use reverse Dijkstra even when the regular step
   scale is one, because a provider may attach a larger exact cost to a special
   edge.
-- `RouteCacheScratch` (in `tess/path/route_cache.h`) owns reusable
+- `UnitRouteCache` (in `tess/path/route_cache.h`) owns reusable
   route-cache entries and cached path nodes for exact route and same-goal
   suffix reuse. Exact `(start, goal)` lookups and suffix lookups are served
   by open-addressed flat hash indexes (power-of-two capacity, linear
@@ -222,34 +235,34 @@ flowchart TB
   that scratch, so hit and miss results share one lifetime: valid until the
   next path call that uses the same scratch. Later misses may grow
   cache-internal storage without invalidating results returned through other
-  scratches. Storage is capped (`set_caps(RouteCacheLimits)`; defaults 512
+  scratches. Storage is capped (`set_caps(UnitRouteCacheLimits)`; defaults 512
   entries and 2^20
   path nodes): an insert that would exceed either cap invalidates the whole
   cache first and counts a `cap_invalidations` stat. Lowering either cap below
   the live footprint applies the same invalidation immediately, including a
   zero cap; existing entries can never remain readable above a new limit.
-  `stats()` reports the counters as `RouteCacheStats`. `invalidate()` drops
+  `stats()` reports the counters as `UnitRouteCacheStats`. `invalidate()` drops
   cached route data and both indexes while preserving hit/miss counters;
   `clear()` drops routes and resets counters. `capture_world_versions(world)`
   and `invalidate_if_world_changed(world)` provide coarse whole-cache
-  invalidation from chunk version fingerprints.
+  invalidation from chunk content-version fingerprints.
   The cache also binds the resolved lattice, step, cost scale, provider type,
   live stateful-provider object, and provider revision. A provider rebind
   invalidates entries and increments `provider_rebinds`. Non-unit models retain
   exact hits but conservatively skip suffix reuse whose historical step-count
   arithmetic cannot recover cost.
-- `ChunkVersionDependencies` records explicit chunk/version pairs and can
-  validate whether those chunks are unchanged. It is supporting infrastructure
-  for future route products; current route-cache hits still use conservative
-  whole-cache invalidation.
+- `ContentVersionDependencies` records explicit chunk/content-version pairs
+  and can validate whether those chunks are unchanged. It is supporting
+  infrastructure for retained route products; current unit-route-cache hits
+  use conservative whole-cache invalidation by default.
 - `WeightedRouteProduct` stores one verified weighted route plus the chunk
-  versions touched by that route. Replaying it succeeds only while those chunk
-  versions are unchanged.
+  content versions touched by that route. Replaying it succeeds only while
+  those chunk content versions are unchanged.
 - `WeightedPortalRouteProduct` stores a supplied-waypoint weighted route
   product. It stitches exact weighted A* segments through caller-provided
-  portal waypoints, stores the resulting path, and validates chunk versions on
-  replay. It also supports an automatic chunk-boundary portal builder for a
-  first topology MVP, and reports candidate and boundary-scan counters for
+  portal waypoints, stores the resulting path, and validates content versions
+  on replay. It also supports an automatic chunk-boundary portal builder and
+  reports candidate and boundary-scan counters for
   that automatic builder.
 - `WeightedPortalSegmentCache` owns caller-managed weighted portal segment
   entries for repeated builds with the same portal waypoints. Entries belong
@@ -262,7 +275,7 @@ flowchart TB
   shared junction node when stitching consecutive segments) and returns a
   `SegmentHit` with the found flag, status, and cost. The cache never returns
   pointers or spans into its own storage, so `store()` growth cannot
-  invalidate a previous lookup. Found segments record chunk-version
+  invalidate a previous lookup. Found segments record content-version
   dependencies for the chunks touched by the segment path; cache hits are
   reused only while those versions still match. Failed segments are not
   cached, and stale hits leave the output storage untouched. Storage is
@@ -287,14 +300,15 @@ flowchart TB
   dependencies first. That capture appends to an unreserved vector, so a path
   crossing several chunks may reallocate more than once before the status
   comes back. Cache storage is untouched either way. See the
-  [exception-free note](no-exceptions.md), which is authoritative here. Legacy reserve and
-  store calls preserve `std::length_error` with exceptions enabled and fail
+  [exception-free note](no-exceptions.md), which is authoritative here.
+  Oversized reserve and store calls preserve `std::length_error` with
+  exceptions enabled and fail
   fast for the same detected error without exceptions.
-- `WeightedPathBatchScratch` owns reusable search scratch and stable copied
+- `WeightedPathBatchScratch` owns reusable search scratch and retained copied
   result paths for weighted batch planning.
 - `PathRequestRuntime` owns a small deterministic request/result lifecycle for
   simulation callers. `submit(request)` returns a `PathTicket`, processing
-  methods copy stable result paths into runtime-owned storage, and publish the
+  methods copy completed paths into runtime-owned storage, and publish the
   complete result batch only after every borrowed path span has been installed.
   `try_result(ticket)` returns no value for a detectable stale, out-of-range,
   or unpublished lookup; `result(ticket)` fails fast for those same conditions
@@ -316,7 +330,8 @@ flowchart TB
   any lookup in that pass.
 - `PathAgentState` and the path-agent helper functions provide the first
   simulation-facing path wrapper. Agents store position, goal, path ticket,
-  path index, status, active-goal state, and an explicit `PathAgentPhase`
+  path index, an optional `last_result`, active-goal state, and an explicit
+  `PathAgentPhase`
   lifecycle (`Idle`, `NeedsPath`, `Following`, `Blocked`, `Unreachable`)
   with a `blocked_retries` budget. The helpers submit active agents into a
   `PathRequestRuntime`, apply ticketed results, and advance agents along
@@ -328,8 +343,7 @@ flowchart TB
 - `process_unit_path_agents<World, ClassOrTag>(world, agents, runtime,
   policy)` and `process_weighted_path_agents<World, Class, MaxCost>(world,
   agents, runtime, policy)` run the current conservative synchronous agent
-  pathing loop (the weighted form also keeps its legacy `<World, PassableTag,
-  CostTag, MaxCost>` overload). They resubmit active agents each processing
+  pathing loop. They resubmit active agents each processing
   pass, so stale `PathTicket` values do not survive runtime request clears.
   Provider-aware trailing overloads bind runtime planning and retained-route
   movement commits to the same provider instance and revision.
@@ -337,9 +351,8 @@ flowchart TB
   `PathAgentTickStats` provide the first minimal path-agent tick wrapper.
   `tick_unit_path_agents<World, ClassOrTag>(state, world, agents, runtime,
   options)` and `tick_weighted_path_agents<World, Class, MaxCost>(state,
-  world, agents, runtime, options)` (plus the legacy `<World, PassableTag,
-  CostTag, MaxCost>` overloads and the `_with_movement` variants) advance the
-  clock, process paths when `state.pathing_dirty` is set or when any agent is
+  world, agents, runtime, options)` and the `_with_movement` variants advance
+  the clock, process paths when `state.pathing_dirty` is set or when any agent is
   in `NeedsPath` or has a route-invalidated `Blocked` state (with retry budget
   remaining), then move agents
   up to `options.max_steps` path nodes. Processing is SCOPED (per-agent
@@ -382,7 +395,7 @@ flowchart TB
   treated as boolean-like. It runs natively on sparse worlds, honoring
   `MissingChunkPolicy` (the pre-A* fast-path scan is compiled out there).
   The tag parameter also accepts a `tess::movement` class: a raw tag
-  normalizes to the byte-identical `WalkableField` identity class, and a
+  normalizes to the byte-identical `UnitCostFieldMovement` identity class, and a
   composed class contributes its passability predicate (unit search ignores
   entry cost).
   A trailing provider overload composes allocation-free special edges and
@@ -394,15 +407,10 @@ flowchart TB
   includes exact unit-cost direct and blocked-axis detour fast paths when
   their local optimality proofs apply. Like `astar_path`, it is
   sparse-capable and honors `MissingChunkPolicy` (the fast paths are compiled
-  out for sparse worlds). The legacy `weighted_astar_path<World, PassableTag,
-  CostTag>` overload forwards through
-  `movement::LegacyWeighted<PassableTag, CostTag>` with exactly the historical
-  semantics, including the cost-agnostic passability asymmetry; the weighted
-  distance-field family (`build_weighted_distance_field`,
-  `build_weighted_distance_field_in_box`,
-  `build_bounded_weighted_distance_field`, `weighted_distance_field_path`,
-  `weighted_path_batch`) carries the same class core + legacy-pair-forwarder
-  pairing. The class-typed cores reject raw tags at compile time — a raw tag
+  out for sparse worlds). Weighted APIs require one explicit movement class,
+  normally
+  `movement::PositiveCostFieldMovement<PassableTag, CostTag>`. They reject raw
+  tags at compile time — a raw tag
   would normalize to the unit-cost identity class and silently discard the
   cost field.
   The class-typed path, field, product, batch, cache, and runtime families
@@ -413,34 +421,36 @@ flowchart TB
   identity plus provider instance and revision; until a generic provider
   dependency index exists, provider-composed dense products conservatively
   depend on every world chunk.
-- `build_weighted_route_product<World, PassableTag, CostTag>(world, request,
+- `build_weighted_route_product<World, Class>(world, request,
   scratch, product)` builds and stores a weighted route product.
 - `weighted_route_product_path(world, product)` replays a stored weighted
   route product if its chunk dependencies are still valid.
-- `build_weighted_portal_route_product<World, PassableTag, CostTag>(world,
+- `build_weighted_portal_route_product<World, Class>(world,
   request, waypoints, scratch, product)` builds a supplied-waypoint portal
   route product.
-- `build_weighted_portal_route_product<World, PassableTag, CostTag>(world,
+- `build_weighted_portal_route_product<World, Class>(world,
   request, waypoints, scratch, segment_cache, product)` builds the same
   supplied-waypoint route product while reusing cached segment results.
-- `build_weighted_chunk_portal_route_product<World, PassableTag, CostTag>(
+- `build_weighted_chunk_portal_route_product<World, Class>(
   world, request, scratch, product)` derives adjacent chunk-boundary portal
   route candidates, chooses the lowest-score candidate, then builds the same
   weighted portal route product.
 - `weighted_portal_route_product_path(world, product)` replays a stored portal
   route product if its chunk dependencies are still valid.
-- `weighted_path_batch<World, PassableTag, CostTag, MaxCost>(world, requests,
+- `weighted_path_batch<World, Class, MaxCost>(world, requests,
   scratch)` groups weighted requests by goal, builds bounded weighted fields
-  for repeated goals, uses weighted A* for singleton goals, and returns stable
-  result spans owned by `WeightedPathBatchScratch`. A shared reverse field's
+  for repeated goals, uses weighted A* for singleton goals, and returns borrowed
+  result spans backed by `WeightedPathBatchScratch` until its next mutation. A
+  shared reverse field's
   `CostOverflow` is global rather than start-specific, so every member in that
   group retries through weighted A* to preserve exact per-request statuses.
 - `PathRequestRuntime::process_unit_cached<World, ClassOrTag>(world, policy)`
   processes the current request set through `cached_astar_path`, optionally
   reuses unit distance-field products for repeated goals when
   `policy.use_unit_field_product_cache` is set, invalidates the unit route
-  cache when chunk versions change, and returns stable result spans owned by
-  the runtime. The opt-in field-product pass only considers repeated
+  cache when chunk content versions change, and returns borrowed result spans
+  backed by the runtime until the next processing pass or request reset. The
+  opt-in field-product pass only considers repeated
   single-goal groups, requires at least
   `unit_field_product_min_start_chunks` distinct start chunks by default, and
   reports candidate, used, and skipped group counts in `PathRuntimeStats`.
@@ -451,7 +461,7 @@ flowchart TB
   Invalid out-of-shape starts are resolved to `InvalidStart` during the
   existing grouping pass before any unchecked tile-key conversion. This adds
   no second validation pass and no duplicate passability read.
-  The unit route cache keys entries on `(start, goal)` plus a world-version
+  The unit route cache keys entries on `(start, goal)` plus a content-version
   fingerprint and nothing on the movement class, so each unit process call
   binds the runtime to its (normalized) class: a rebind clears the unit
   caches -- correct even on misuse -- and counts in
@@ -471,10 +481,7 @@ flowchart TB
   that one runtime-owned cache. Whichever processing pass runs most recently
   applies its corresponding policy byte budget to the combined footprint and
   may therefore evict products retained by the other pass.
-  One movement class drives both the search and the precheck. The legacy
-  `<World, PassableTag, CostTag, MaxCost>` overload searches through
-  `movement::LegacyWeighted` and prechecks on PASSABILITY only (the raw tag's
-  identity class), matching graphs built with that tag.
+  One movement class drives both the search and the precheck.
 - Both `process_unit_cached` and `process_weighted_batch` take an optional
   trailing `const RegionGraphT<World::residency_type>*` (default `nullptr`).
   When a graph is supplied, a pre-A* pass runs `precheck_path` for each request
@@ -496,43 +503,48 @@ flowchart TB
   contract as a miss.
 - `build_distance_field<World, PassableTag>(world, goal, scratch, policy)`
   builds a unit-cost reverse distance field from one passable goal. On a sparse
-  world it floods only the resident set; under `MissingChunkPolicy::
-  Indeterminate` a field truncated by a non-resident chunk reports
+  world it floods only the resident set; under
+  `MissingChunkPolicy::ReportIndeterminate` a field truncated by a
+  non-resident chunk reports
   `PathStatus::Indeterminate` instead of `Found`.
 - `distance_field_path<World, PassableTag>(world, request, scratch)`
   reconstructs a start-to-goal path from the most recent matching field. It is
-  a pure reader: on a sparse world a non-resident start is `InvalidStart` and a
-  start the flood never reached is `NoPath`.
+  a pure reader. A reached start can still return `Found` from a field whose
+  build reported `Indeterminate`; an unreached or non-resident start preserves
+  that `Indeterminate` outcome. Under `AssumeImpassable`, the corresponding
+  outcomes are `NoPath` and `InvalidStart`. Mismatched scratch or an
+  inconsistent descent gradient is `NotComputed`, never a reachability claim.
 - `build_distance_field_product<World, PassableTag>(world, goals, product,
   scratch)` builds a multi-source unit-cost product for an ordered `GoalSet`.
 - `distance_field_product_path<World, PassableTag>(world, start, product,
   scratch)` replays a path from a valid product; `nearest_target` follows
   decreasing distances and returns a `NearestTargetResult` with the status,
   cost, reached goal coordinate, node counts, and path span.
-- `build_weighted_distance_field<World, PassableTag, CostTag>(world, goal,
-  scratch, policy = TreatAsBlocked)` builds a weighted reverse Dijkstra field
+- `build_weighted_distance_field<World, Class>(world, goal,
+  scratch, policy = ReportIndeterminate)` builds a weighted reverse Dijkstra field
   for positive integral entry costs. On a sparse world it honors
   `MissingChunkPolicy`: a field truncated by a non-resident chunk is `Found`
-  under `TreatAsBlocked` and `Indeterminate` under `Indeterminate`.
-- `build_weighted_distance_field_in_box<World, PassableTag, CostTag>(world,
-  goal, domain, scratch, policy = TreatAsBlocked)` builds the same exact
+  under `AssumeImpassable` and `Indeterminate` under `ReportIndeterminate`.
+- `build_weighted_distance_field_in_box<World, Class>(world,
+  goal, domain, scratch, policy = ReportIndeterminate)` builds the same exact
   weighted reverse field, but only inside the supplied `Box3` domain. The
   domain filter runs ahead of the residency check, so a tile outside the box is
   never reached even when its chunk is resident.
-- `build_bounded_weighted_distance_field<World, PassableTag, CostTag,
-  MaxCost>(world, goal, scratch, policy = TreatAsBlocked)` builds the same exact
+- `build_bounded_weighted_distance_field<World, Class, MaxCost>(world, goal,
+  scratch, policy = ReportIndeterminate)` builds the same exact
   weighted reverse field through a bounded bucket queue when all reached entry
   costs are between 1 and `MaxCost`. If it encounters a higher positive entry
   cost, it falls back to the general weighted field builder, forwarding the
   missing-chunk policy.
-- `weighted_distance_field_path<World, PassableTag, CostTag>(world, request,
+- `weighted_distance_field_path<World, Class>(world, request,
   scratch)` reconstructs a weighted start-to-goal path from the most
-  recent matching weighted field. It is a pure reader: on a sparse world a
-  non-resident start is `InvalidStart`.
+  recent matching weighted field and follows the same retained
+  `Indeterminate`, `InvalidStart`, `NoPath`, and `NotComputed` rules as the
+  unit-cost reader.
 
 ## Behavior
 
-The legacy raw-tag/default-step APIs on an orthogonal shape use six
+The unit-cost raw-tag/default-step APIs on an orthogonal shape use six
 axis-adjacent candidates in fixed order:
 
 ```text
@@ -592,7 +604,7 @@ non-separating blockers fall back to normal A*.
 The fast paths above are accepted with an O(world-slice) worst case
 (decision logged in `docs/planning/optimization-log.md`, 2026-07-06). The
 direct probes walk up to the Manhattan distance per axis order. A blocked
-probe triggers `is_full_axis_barrier`, which scans the blocked tile's full
+probe triggers `is_full_axis_barrier`, which scans the impassable tile's full
 axis plane: one extent line in 2D, `size.y * size.z` (or the matching pair)
 tiles in 3D. The 2D plane-gap and forced-gap scans each walk one extent
 line per blocked step, and the 3D plane-gap scan walks the whole blocked
@@ -614,7 +626,7 @@ dense per-tile state arrays and clears only nodes touched by the previous
 query, so repeated queries avoid full-world scratch resets when the search
 visits a small fraction of the world.
 
-For many agents repeating unit-cost point-to-point routes, `RouteCacheScratch`
+For many agents repeating unit-cost point-to-point routes, `UnitRouteCache`
 can amortize complete path searches. Exact `(start, goal)` hits return the
 cached path without expanding nodes. Same-goal suffix hits are also supported
 when the new start already appears inside a cached optimal path; with unit
@@ -627,10 +639,10 @@ The cache assumes the caller runs its staleness entry point
 `invalidate_if_world_changed`) when passability or movement rules change.
 
 Staleness has two modes (`UnitRouteStaleness`). The default,
-`WholeWorldExact`, is deliberately conservative: when any chunk version
+`WholeWorldExact`, is deliberately conservative: when any chunk content version
 changes the whole cache drops, and every served route is identical to fresh
 recomputation. The opt-in `ScopedFeasible` mode records each stored route's
-chunk footprint with captured versions and validates it lazily at serve
+chunk footprint with captured content versions and validates it lazily at serve
 time: entries whose crossed chunks are unchanged survive edits elsewhere.
 Surviving routes are guaranteed legal with a truthful cost and were optimal
 when stored, but an edit that opens a shortcut elsewhere can leave a served
@@ -642,18 +654,19 @@ other models' entries, and all sparse-world entries, keep whole-world
 sensitivity.
 
 Weighted route products are narrower than the route cache: they store one
-weighted path and the chunk versions for chunks touched by that path. They are
-safe for replaying that exact product while those chunks are unchanged. They do
-not prove that unrelated blocker removals could not create a shorter route, so
-they are support for future topology/portal products rather than a general
-optimality-preserving weighted route cache.
+weighted path and the chunk content versions for chunks touched by that path.
+They are safe for replaying that exact product while those chunks are
+unchanged. They do not prove that unrelated obstacle removals could not create
+a shorter route, so they support portal-route products rather than acting as a
+general optimality-preserving weighted route cache.
 
 Weighted portal route products are also exact for the supplied waypoint route,
 not for arbitrary routing. The caller provides portal waypoints from a topology
 or room graph; the product verifies each segment with weighted A*, concatenates
-the segment paths, and records chunk-version dependencies. This makes topology
+the segment paths, and records content-version dependencies. This makes topology
 evidence measurable before the repository owns a full portal graph builder.
-The automatic chunk-boundary builder is a minimal topology MVP: it tries the
+The automatic chunk-boundary builder uses a deliberately bounded candidate
+set. It tries the
 six axis-order permutations plus one greedy monotone candidate, walks from the
 start chunk to the goal chunk through adjacent chunks for each candidate,
 scans each adjacent chunk boundary for passable crossings, chooses the
@@ -683,7 +696,7 @@ the segment, but still rebuild the route-product path and dependencies.
 Every lookup and store goes through a movement-class-bound view. A class rebind
 clears the cache, is counted in `class_rebinds`, and makes stale retained views
 rebind safely on their next use.
-Segments carry chunk-version dependencies and stale entries are rejected on
+Segments carry content-version dependencies and stale entries are rejected on
 lookup (counted as stale rejections). Recomputing a stale segment appends the
 new entry next to the rejected stale one until the segment budget is reached;
 the budget-triggered sweep then compacts stale entries and their path storage
@@ -709,7 +722,7 @@ unreached.
 
 `DistanceFieldProduct` is the reusable unit-cost or weighted product form. It
 builds from one or more goals, stores an ordered goal list, copies the dense
-distance array out of scratch, and captures chunk versions for chunks reached
+distance array out of scratch, and captures chunk content versions for chunks reached
 by the field.
 Replay and nearest-target queries reject stale products before returning a
 path. `distance_at<World>(coord)` reads one tile's distance-to-nearest-goal
@@ -722,7 +735,7 @@ PIBT ranking oracle built over the same movement class the agents move
 with. `FieldProductCache` is caller-owned and exact-match only: lookup keys
 include the passability tag identity, shape-compatible tile/chunk metadata,
 and ordered goals. Products are world-sized, so the cache stores each one
-behind stable per-entry heap storage and takes ownership on
+behind address-stable per-entry heap storage and takes ownership on
 `store(DistanceFieldProduct&&)` by move; the moved-from argument is left
 empty but reusable, and no world-sized copy happens. A `lookup()` pointer
 stays valid only while its entry remains cached. Any store that replaces or
@@ -739,7 +752,7 @@ only when the matching `PathRuntimeCachePolicy` unit or weighted product flag
 is set. Runtime use is conservative: only repeated single-goal groups at or
 above the configured reuse threshold are candidates, starts must span the
 configured number of chunks, and stale products are rejected through their
-chunk-version dependencies before replay. Unit leftovers use route/suffix
+content-version dependencies before replay. Unit leftovers use route/suffix
 caching; weighted leftovers use the established bounded-field/A* batch.
 
 When weighted entry costs are known to be small bounded positive integers,
@@ -760,8 +773,9 @@ The runtime adds an opt-in strategy on top of that fallback
 (`WeightedReplanStrategy`). The default, `ExactAStar`, leaves singleton
 goals on normal weighted A* and is optimal. `PortalFirst` first tries a
 chunk-portal route stitched through the runtime's segment cache for
-eligible singletons (dense worlds, default adjacent transitions, legacy
-weighted tag classes): accepted routes are verified and legal but may
+eligible singletons (dense orthogonal-lattice worlds, default adjacent
+transitions, and explicit movement classes): accepted routes are verified and
+legal but may
 exceed the optimal cost, bounded by a premium cap relative to the
 Manhattan lower bound, and every other outcome — no candidate, a failed
 segment, a cap rejection, or an ineligible request — leaves the request
@@ -774,11 +788,11 @@ exposes the same waypoint-selection-plus-segment-cache composition to
 direct callers.
 
 The path-agent tick wrapper is intentionally small and synchronous. The
-simulation scheduler MVP in `include/tess/sim/scheduler.h` layers queued
+simulation scheduler in `include/tess/sim/scheduler.h` layers queued
 operation execution and render deltas around it, but the path tick itself only
 centralizes the common path-agent order: advance the simulation tick,
 optionally rebuild active paths after a dirty event, then move agents along
-stable runtime-owned result paths.
+runtime-owned result paths whose validity covers the tick.
 It does not observe world mutations on its own. Any edit to passability,
 movement costs, or topology-relevant movement rules must call
 `mark_pathing_dirty(state)` before the next tick that should replan (goal
@@ -794,7 +808,7 @@ This path core implements a topology precheck (`precheck_path`, wired into the
 runtime and agent ticks) and runs natively over sparse-resident worlds, but does
 not implement async tickets or rich path diagnostics. Movement commit validation,
 reservation checks, queued-operation-driven path dirtying, and render deltas
-now live in the simulation integration MVP, but pathfinding still does not
+live in the simulation integration layer, but pathfinding does not
 automatically infer every dirty cause. Callers must mark the path-agent tick
 state dirty directly or run through the scheduler with accurate dirty masks
 when world movement data or agent goals change. The implementation uses
@@ -812,11 +826,11 @@ regression coverage. Weighted A* is suitable for correctness-first weighted
 terrain queries, and weighted distance fields are suitable for weighted
 batches with substantial goal reuse. Shared-goal distance fields are suitable
 for batches with substantial goal reuse. Unit-cost and weighted distance-field
-products are suitable when a stable map can reuse a multi-goal field across
+products are suitable when an unchanged map can reuse a multi-goal field across
 frames or query batches. Runtime field-product reuse is opt-in because route
 suffix caching can be faster when many starts lie on already-cached paths; the
 runtime therefore skips opt-in product use for repeated-goal groups whose
-starts do not span enough distinct chunks. Route caches are suitable for stable
+starts do not span enough distinct chunks. Route caches are suitable for unchanged
 maps with repeated exact routes or starts that lie on cached same-goal paths.
 Local crowd coordination, tactical target assignment, hierarchical corridor
 selection, and persistent shared-goal fields now cover the broad many-agent

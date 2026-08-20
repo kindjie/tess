@@ -9,7 +9,7 @@ namespace {
 
 struct PassableTag {};
 
-constexpr std::uint32_t DirtyPassability = 1u << 0u;
+constexpr auto DirtyPassability = tess::DirtyMask{1u << 0u};
 
 using Shape = tess::Shape<tess::Extent3{8, 8}, tess::Extent3{4, 4}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
@@ -17,11 +17,11 @@ using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
 auto run() -> int {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
 
   (void)ops.update_field(
       tess::DomainDesc::resident_chunks(),
-      tess::FieldAccessDesc{0, DirtyPassability, DirtyPassability},
+      tess::FieldAccessDesc{0, DirtyPassability.value, DirtyPassability},
       tess::WritePolicy::UniquePerChunk);
 
   const auto report = tess::plan_operations(world, ops);

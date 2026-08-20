@@ -77,7 +77,7 @@ flowchart TB
   accTitle: Dirty-driven downstream work
   accDescr: Accurate dirty masks and bounds trigger scheduled maintenance, path-agent replanning, and versioned render delta publication.
 
-  Mutation["Committed mutation"] --> Dirty["Dirty flags and bounds"]
+  Mutation["Committed mutation"] --> Dirty["Dirty masks and bounds"]
   Dirty --> Triggers["OnDirty tasks and configured pathing match"]
   Triggers --> Work["Rebuild derived state and replan agents"]
   Dirty --> Collector["DeltaCollector invalidations"]
@@ -125,7 +125,7 @@ Maintained notes for implemented areas:
 - [Topology foundation](topology.md)
 - [Path foundation](path.md)
 - [Spatial coordination](spatial-coordination.md)
-- [Simulation integration MVP](simulation.md)
+- [Simulation and scheduling](simulation.md)
 - [Diagnostics foundation](diagnostics.md)
 - [ECS integration](ecs.md)
 - [GPU backend interface](gpu.md)

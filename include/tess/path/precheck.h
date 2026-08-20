@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tess/path/request.h>
 #include <tess/topology/topology.h>
 
 #include <cstdint>
@@ -19,7 +20,8 @@ enum class PrecheckStatus : std::uint8_t {
   // the ONLY status that lets the caller skip A*.
   Unreachable,
   // The search reached the edge of the resident set (a boundary exit into a
-  // non-resident chunk): a route through the unloaded region cannot be ruled
+  // non-resident chunk): a route through the non-resident region cannot be
+  // ruled
   // out, so run A*. Sparse worlds only.
   MissingChunk,
   // Start not resolvable in the graph; run A* (it is authoritative on the
@@ -69,7 +71,7 @@ enum class PrecheckStatus : std::uint8_t {
 //
 // `ClassOrTag` (explicit first template argument; `World` stays deduced) is
 // the movement class the SEARCH uses -- a raw passable tag normalizes to its
-// WalkableField identity, exactly as in astar_path. The historical
+// UnitCostFieldMovement identity, exactly as in astar_path. The historical
 // precondition that the graph be built over the same passability is now
 // ENFORCED through the graph's class stamp: a graph built for a different
 // movement class (or predating any stamp) reports GraphStale via
@@ -81,12 +83,16 @@ enum class PrecheckStatus : std::uint8_t {
 /// Only `Unreachable` proves failure. Every other result requires the caller
 /// to run authoritative pathfinding. The graph must match the exact provider
 /// instance and revision; a mismatch returns `GraphStale`. The caller owns and
-/// synchronizes scratch.
+/// synchronizes scratch. `missing_chunk_policy` matches authoritative search:
+/// the default-facing policy reports `MissingChunk`, while
+/// `AssumeImpassable` can make a resident-set boundary definitively
+/// `Unreachable` and classifies non-resident endpoints as invalid.
 template <typename ClassOrTag, typename World, typename Provider>
 [[nodiscard]] auto precheck_path(
     const RegionGraphT<typename World::residency_type>& graph,
     const World& world, PathRequest request, RegionGraphScratch& scratch,
-    const Provider& provider) -> PrecheckStatus {
+    MissingChunkPolicy missing_chunk_policy, const Provider& provider)
+    -> PrecheckStatus {
   if (graph.local_topologies().empty()) {
     return PrecheckStatus::NoGraph;
   }
@@ -102,7 +108,24 @@ template <typename ClassOrTag, typename World, typename Provider>
     case ReachabilityStatus::Unreachable:
       return PrecheckStatus::Unreachable;
     case ReachabilityStatus::Indeterminate:
-      return PrecheckStatus::MissingChunk;
+      if (missing_chunk_policy == MissingChunkPolicy::ReportIndeterminate) {
+        return PrecheckStatus::MissingChunk;
+      }
+      if constexpr (!std::is_same_v<typename World::residency_type,
+                                    AlwaysResident>) {
+        using Shape = typename World::shape_type;
+        if (contains<Shape>(request.start) &&
+            world.try_chunk(chunk_key<Shape>(
+                chunk_coord<Shape>(request.start))) == nullptr) {
+          return PrecheckStatus::InvalidStart;
+        }
+        if (contains<Shape>(request.goal) &&
+            world.try_chunk(chunk_key<Shape>(
+                chunk_coord<Shape>(request.goal))) == nullptr) {
+          return PrecheckStatus::InvalidGoal;
+        }
+      }
+      return PrecheckStatus::Unreachable;
     case ReachabilityStatus::InvalidStart:
       return PrecheckStatus::InvalidStart;
     case ReachabilityStatus::InvalidGoal:
@@ -112,13 +135,18 @@ template <typename ClassOrTag, typename World, typename Provider>
 }
 
 /// Runs the conservative precheck for ordinary adjacent transitions.
+///
+/// Sparse callers receive `MissingChunk` by default; pass
+/// `AssumeImpassable` only when the corresponding policy-relative conclusion
+/// is acceptable.
 template <typename ClassOrTag, typename World>
 [[nodiscard]] auto precheck_path(
     const RegionGraphT<typename World::residency_type>& graph,
-    const World& world, PathRequest request, RegionGraphScratch& scratch)
-    -> PrecheckStatus {
+    const World& world, PathRequest request, RegionGraphScratch& scratch,
+    MissingChunkPolicy missing_chunk_policy =
+        MissingChunkPolicy::ReportIndeterminate) -> PrecheckStatus {
   return precheck_path<ClassOrTag>(graph, world, request, scratch,
-                                   AdjacentTransitions{});
+                                   missing_chunk_policy, AdjacentTransitions{});
 }
 
 }  // namespace tess

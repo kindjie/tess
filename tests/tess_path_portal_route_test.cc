@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <set>
 
 namespace {
@@ -14,6 +16,9 @@ using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
 using Mid2D = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
 using World = tess::AlwaysResidentWorld<Mid2D, Schema>;
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 
 void fill_world(World& world) {
   for (auto& page : world.chunks()) {
@@ -30,9 +35,18 @@ void fill_world(World& world) {
 
 auto build(const World& world, tess::PathRequest request, tess::PathScratch& s,
            tess::WeightedPortalRouteProduct& product) -> tess::PathResult {
-  return tess::build_weighted_chunk_portal_route_product<World, PassableTag,
-                                                         CostTag>(
+  return tess::build_weighted_chunk_portal_route_product<World,
+                                                         WeightedMovement>(
       world, request, s, product);
+}
+
+auto build_cached(const World& world, tess::PathRequest request,
+                  tess::PathScratch& scratch,
+                  tess::WeightedPortalSegmentCache& cache,
+                  tess::WeightedPortalRouteProduct& product)
+    -> tess::PathResult {
+  return tess::build_weighted_chunk_portal_route_product_cached<
+      World, WeightedMovement>(world, request, scratch, cache, product);
 }
 
 TEST(TessPathPortalRoute, InvalidEndpointsReportBeforeCandidateSearch) {
@@ -58,7 +72,83 @@ TEST(TessPathPortalRoute, InvalidEndpointsReportBeforeCandidateSearch) {
   EXPECT_EQ(product.route_candidates(), 0u);
 }
 
-TEST(TessPathPortalRoute, NoCandidateFromSealedStartChunkReportsNoPath) {
+TEST(TessPathPortalRoute,
+     ImpassableAndZeroCostEndpointsReportBeforeCandidateSearch) {
+  World world;
+  fill_world(world);
+  constexpr auto start = tess::Coord3{0, 0, 0};
+  constexpr auto goal = tess::Coord3{31, 31, 0};
+  const auto check_both = [&](tess::PathStatus expected) {
+    tess::PathScratch scratch;
+    tess::WeightedPortalRouteProduct product;
+    const auto uncached = build(world, {start, goal}, scratch, product);
+    EXPECT_EQ(uncached.status, expected);
+    EXPECT_TRUE(uncached.path.empty());
+    EXPECT_EQ(product.route_candidates(), 0u);
+
+    tess::WeightedPortalSegmentCache cache;
+    const auto cached =
+        build_cached(world, {start, goal}, scratch, cache, product);
+    EXPECT_EQ(cached.status, expected);
+    EXPECT_TRUE(cached.path.empty());
+    EXPECT_EQ(product.route_candidates(), 0u);
+  };
+
+  world.field<PassableTag>(start) = false;
+  check_both(tess::PathStatus::InvalidStart);
+  world.field<PassableTag>(start) = true;
+
+  world.field<CostTag>(start) = 0;
+  check_both(tess::PathStatus::InvalidStart);
+  world.field<CostTag>(start) = 1;
+
+  world.field<PassableTag>(goal) = false;
+  check_both(tess::PathStatus::InvalidGoal);
+  world.field<PassableTag>(goal) = true;
+
+  world.field<CostTag>(goal) = 0;
+  check_both(tess::PathStatus::InvalidGoal);
+}
+
+TEST(TessPathPortalRoute, EveryStitchedBuilderRejectsAggregateCostOverflow) {
+  World world;
+  fill_world(world);
+  constexpr auto start = tess::Coord3{0, 0, 0};
+  constexpr auto waypoint = tess::Coord3{8, 0, 0};
+  constexpr auto goal = tess::Coord3{16, 0, 0};
+  constexpr auto high_cost =
+      std::numeric_limits<std::uint32_t>::max() / 2u + 1u;
+  world.field<CostTag>(waypoint) = high_cost;
+  world.field<CostTag>(goal) = high_cost;
+
+  const auto expect_overflow = [](const tess::PathResult& result) {
+    EXPECT_EQ(result.status, tess::PathStatus::CostOverflow);
+    EXPECT_EQ(result.cost, 0u);
+    EXPECT_TRUE(result.path.empty());
+  };
+
+  tess::PathScratch scratch;
+  tess::WeightedPortalRouteProduct product;
+  const auto request = tess::PathRequest{start, goal};
+  const auto waypoints = std::array{waypoint};
+
+  expect_overflow(
+      tess::build_weighted_portal_route_product<World, WeightedMovement>(
+          world, request, waypoints, scratch, product));
+
+  tess::WeightedPortalSegmentCache supplied_cache;
+  expect_overflow(
+      tess::build_weighted_portal_route_product<World, WeightedMovement>(
+          world, request, waypoints, scratch, supplied_cache, product));
+
+  expect_overflow(build(world, request, scratch, product));
+
+  tess::WeightedPortalSegmentCache automatic_cache;
+  expect_overflow(
+      build_cached(world, request, scratch, automatic_cache, product));
+}
+
+TEST(TessPathPortalRoute, SealedStartChunkReportsNoCandidate) {
   World world;
   fill_world(world);
   // Seal the start chunk's outgoing seams on the neighbor side: the X
@@ -75,7 +165,7 @@ TEST(TessPathPortalRoute, NoCandidateFromSealedStartChunkReportsNoPath) {
   const auto result = build(
       world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}},
       scratch, product);
-  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(result.status, tess::PathStatus::NoCandidate);
   EXPECT_TRUE(result.path.empty());
   EXPECT_TRUE(product.waypoints().empty());
   // Six axis orders plus the greedy candidate all ran and failed.
@@ -100,13 +190,41 @@ TEST(TessPathPortalRoute, SegmentFailureClearsAssembledPath) {
   const auto result = build(
       world, tess::PathRequest{tess::Coord3{0, 4, 0}, tess::Coord3{12, 4, 0}},
       scratch, product);
-  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(result.status, tess::PathStatus::NoCandidate);
   EXPECT_TRUE(result.path.empty());
   EXPECT_GT(result.expanded_nodes, 0u);
   // The candidate search itself succeeded; failure came from segment
   // stitching.
   EXPECT_EQ(product.waypoints().size(), 1u);
   EXPECT_EQ(product.waypoints().front(), (tess::Coord3{8, 4, 0}));
+}
+
+TEST(TessPathPortalRoute,
+     SelectedCandidateCanFailWhileExactSearchFindsAnotherRoute) {
+  World world;
+  fill_world(world);
+  // The straight seam pair remains passable but is isolated from both chunk
+  // interiors. The heuristic still selects it, while an exact route can detour
+  // to another crossing.
+  for (const auto coord :
+       {tess::Coord3{6, 4, 0}, tess::Coord3{7, 3, 0}, tess::Coord3{7, 5, 0},
+        tess::Coord3{9, 4, 0}, tess::Coord3{8, 3, 0}, tess::Coord3{8, 5, 0}}) {
+    world.template field<PassableTag>(coord) = false;
+  }
+
+  tess::PathScratch scratch;
+  tess::WeightedPortalRouteProduct product;
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 4, 0}, tess::Coord3{12, 4, 0}};
+  const auto heuristic = build(world, request, scratch, product);
+  EXPECT_EQ(heuristic.status, tess::PathStatus::NoCandidate);
+  EXPECT_TRUE(heuristic.path.empty());
+
+  const auto exact = tess::weighted_astar_path<World, WeightedMovement>(
+      world, request, scratch);
+  EXPECT_EQ(exact.status, tess::PathStatus::Found);
+  EXPECT_EQ(exact.path.front(), request.start);
+  EXPECT_EQ(exact.path.back(), request.goal);
 }
 
 // Every monotone axis-order candidate is blocked, but the greedy candidate

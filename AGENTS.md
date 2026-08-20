@@ -66,6 +66,16 @@ note to the affected TDD. Do not try to keep TDDs as API reference; add
 Doxygen comments to public headers as the API stabilizes, then introduce
 generated docs when useful.
 
+## Terminology Consistency
+
+When a pull request introduces, renames, or redefines a Tess domain concept,
+verify the chosen term across public APIs, comments, diagnostics, maintained
+documentation, examples, demos, and relevant tests before merging. Update
+`docs/terminology.md` and `includes/abbreviations.md` when their shared
+vocabulary changes. Preserve historical wording in TDDs, decisions, and
+experiment records unless migration context is needed; harmless local names
+do not require repository-wide normalization.
+
 ## Worktrees and Merging
 
 Coding agents work in linked worktrees (`git worktree add`), not the primary
