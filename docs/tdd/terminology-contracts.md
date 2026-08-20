@@ -1,6 +1,6 @@
 # Canonical terminology and pre-1.0 contract cleanup
 
-Status: proposed for independent review.
+Status: approved for implementation after independent review.
 
 ## Problem
 
@@ -125,13 +125,21 @@ policy own their changing inventories.
 ### Field values and page guarantees
 
 Introduce a named `TileFieldValue` concept for the value type accepted by
-`Field<Tag, Value>`. A field value must be trivially default constructible,
-trivially copyable, trivially copy assignable, and trivially destructible.
-The constraint matches Tess's inline structure-of-arrays storage, deterministic
-zero/default initialization, fixed-capacity sparse page reuse, and scalar
-persistence model. It makes the existing non-throwing, allocation-free page
-construction/reset promise true rather than weakening sparse-world exception
-safety.
+`Field<Tag, Value>`. A field value must be an unqualified object type that is
+nothrow default constructible, trivially copyable, trivially copy assignable,
+and trivially destructible. Requiring a *trivial* default constructor would
+incorrectly reject Tess's own `Coord2`, `Coord3`, and `Extent3`, whose default
+member initializers are meaningful but non-throwing.
+
+The constraint matches Tess's inline structure-of-arrays storage,
+deterministic value initialization, and fixed-capacity sparse page reuse.
+Archive persistence keeps its narrower, independently checked scalar-field
+subset; `TileFieldValue` does not imply persistability. Pages are
+value-initialized, not universally zero-initialized (`Extent3{}` deliberately
+has `z == 1`). Page traversal and storage perform no allocation during reset;
+the contract does not infer that arbitrary user-written default initialization
+is allocation-free from a type trait alone. Construction, reset, and fill
+remain `noexcept` for accepted values.
 
 Invalid field values fail at the `Field` public boundary with a library-authored
 diagnostic. The synthetic throwing assignment type used only to exercise the
@@ -147,30 +155,57 @@ model and would undermine the storage contract for no demonstrated use case.
 
 ### Derived chunk lifecycle
 
-`ChunkState` remains the readable result type, but it is no longer stored in
-`ChunkMeta`. `chunk_state(key)` derives `ResidentSleeping` or `ResidentActive`
+Replace the overly broad `ChunkState` with `ChunkActivity::{Sleeping, Active}`.
+Activity is no longer stored in `ChunkMeta`; `chunk_activity(key)` derives it
 from the world's active mask. Public `set_chunk_state` is removed. Marking and
-clearing active flags is the only authority for the state.
+clearing active flags is the only authority.
+
+Remove stored `ChunkMeta::active_count`, which is another redundant value that
+can disagree with the active mask. Diagnostics that need it use a derived
+`active_category_count(key)` accessor.
 
 Archive metadata no longer serializes an independently settable chunk state;
-the loader derives it from restored active flags. This intentionally breaks
-pre-1.0 archives and is recorded in the upgrade guide and release notes. It
-removes an invalid state rather than adding reconciliation precedence.
+the loader derives activity and category count from restored active flags.
+This changes the fixed chunk prefix, so it explicitly introduces world archive
+format v2. `world_archive_format_version` becomes 2, v2 receives immutable
+golden bytes and prefix-size assertions, and v1 input returns
+`UnsupportedFormat` from both inspection and load unless an actual migration
+reader is deliberately added. The support policy, persistence architecture,
+fuzzer, corruption cases, fixtures, upgrade guide, and release notes all move
+to the v2 contract. It removes an invalid state rather than adding
+reconciliation precedence.
 
 ### Strong scalar domains
 
 Introduce lightweight explicit value types for `DirtyMask`, `ActiveMask`,
-`ContentVersion`, `TopologyVersion`, and `ResidencyGeneration`. The wrappers
-remain aggregate-like value types, expose their underlying unsigned value, and
-provide only the bitwise or increment/equality operations meaningful to that
-domain. Public APIs no longer accept interchangeable raw dirty and active
-masks. `ChunkMeta::version` becomes `content_version`; observations,
-dependencies, movement checks, diagnostics, and archive code use the same
-name and type.
+`ContentVersion`, `TopologyVersion`, and `ResidencyGeneration`. Dirty and
+active masks are 32-bit bit sets with named empty and bitwise operations and no
+implicit cross-conversion. Content and topology versions are 64-bit,
+practically monotonic values: preserving 32-bit wrapping would leave a
+plausible ABA hole in long-running dirty observations and cache freshness.
+Advancing any version at `uint64_t` maximum fails fast rather than wrapping.
+Residency generations use the same overflow rule and reserve zero for
+absent/invalid, so an advance never emits the zero sentinel.
 
-The archive continues to encode the underlying fixed-width integers. This is
-a source-level type/name cleanup, not a width or byte-order change except for
-the independent chunk-state field removed above.
+Every wrapper is standard-layout and trivially copyable with pinned size and
+alignment. None converts implicitly to another wrapper or integer; explicit
+raw extraction occurs only at serialization, hashing, and external-adapter
+boundaries. `ChunkMeta::version` becomes `content_version`; public dependent
+spellings follow it rather than retaining generic or misleading names:
+`TileChunkDelta::content_version`,
+`MovementVersionCheck::{from,to}_content_version`, content-version dependency
+types, and stale-content statuses/counters all name the domain explicitly.
+Dirty observations, route dependencies, topology products, and movement checks
+use the corresponding strong types. Residency generation applies only to
+sparse residency intervals, not path tickets, async slots, or delta-frame view
+generations.
+
+World archives do not serialize dirty history, content versions, topology
+versions, or residency generations; loading advances fresh invalidation state,
+and its dirty mask is a caller-supplied invalidation input rather than archived
+data. Format v2 continues to encode active mask bits as fixed-width
+little-endian integers. Delta frames are a separate public data boundary and
+participate in the strong-type migration.
 
 Alternative rejected: user-defined literals. Masks and versions are usually
 computed or application-defined rather than human-authored physical units;
@@ -179,17 +214,38 @@ suffixes.
 
 ### Ownership- and scope-accurate names
 
-- `RouteCacheScratch` becomes `RouteCache`. It may continue to own internal
-  query scratch, but its public identity reflects its retained entries.
+- `RouteCacheScratch`, `RouteCacheLimits`, and `RouteCacheStats` become
+  `UnitRouteCache`, `UnitRouteCacheLimits`, and `UnitRouteCacheStats`. The
+  public identity reflects both retained ownership and the cache's unit-cost
+  scope.
 - `FrameOps` becomes `OperationBatch`. Handles and IDs are documented as
   batch-local and valid only until `clear()`; `stable handle` is removed.
-- `movement::WalkableField` becomes `movement::PassableField`, and
-  `WalkableCostField` becomes `PassableCostField` if the latter remains part of
-  the public compatibility identity surface.
-- `MissingChunkPolicy::TreatAsBlocked` becomes `TreatAsImpassable`.
+- `movement::WalkableField` becomes
+  `movement::UnitCostFieldMovement`; `WalkableCostField` becomes
+  `PositiveCostFieldMovement`. Both names identify movement-class adapters
+  rather than storage fields.
+- `MissingChunkPolicy` becomes the parallel pair `AssumeImpassable` and
+  `ReportIndeterminate`; `ReportIndeterminate` is the default for public path
+  APIs. Dense worlds are unaffected. Sparse callers must explicitly opt into
+  treating unknown space as impassable before receiving a policy-relative
+  `NoPath` across a non-resident boundary.
+- `MovementStatus::BlockedFrom` and `BlockedTo` become `ImpassableFrom` and
+  `ImpassableTo`, with matching public counters and terrain diagnostics.
+  `PathAgentPhase::Blocked` remains correct for an agent temporarily unable to
+  progress, and `TransitionAvailability::Blocked` remains correct for an
+  unavailable transition.
 
 No compatibility aliases retain the superseded names. The upgrade guide maps
 each old spelling to the new one.
+
+Remove `movement::LegacyWeighted` and the weighted
+`<World, PassableTag, CostTag>` forwarding overloads. Weighted callers name a
+movement class explicitly, normally `PositiveCostFieldMovement`. A caller that
+truly needs passability independent of a zero cost can compose
+`MovementClass<Field<PassableTag>, FieldCost<CostTag>>` explicitly. This
+removes the asymmetric compatibility path rather than carrying a type named
+`LegacyWeighted` into 1.0. Rename the current `mvp_path` example and target as
+part of the same current-language cleanup.
 
 ### Reachability result semantics
 
@@ -199,9 +255,13 @@ missing-chunk policy. `Indeterminate` means a non-resident boundary prevented a
 definitive whole-world answer. Dense searches and completed sparse searches
 that did not ignore an unknown boundary can treat `NoPath` as global.
 
-This changes no search algorithm. Tests pin the distinct sparse-policy
-outcomes and the maintained docs no longer make an unconditional global-proof
-claim.
+This changes no search algorithm. The selected policy must reach every
+sparse-capable unit and weighted A*, cached A* (including negative entries),
+boxed and product distance-field, weighted-batch, `PathRequestRuntime`,
+topology-precheck, and path-agent entry point. No runtime or batch layer may
+silently substitute `AssumeImpassable`. Tests pin the matrix of distinct
+policy outcomes and the maintained docs no longer make an unconditional
+global-proof claim.
 
 ## Documentation and tooltip design
 
@@ -218,6 +278,10 @@ generation` receive global definitions. Bare overloaded words such as
 `stable`, `exact`, `bounded`, `active`, and `frame` never receive a universal
 tooltip. Tooltips supplement visible definitions and first-use explanations;
 they are not the sole source of a contract.
+
+Configure `watch: [includes]` so local serving reloads definition changes and
+set `pymdownx.snippets.check_paths: true` so a missing shared definition file
+fails instead of silently removing all global definitions.
 
 Update public comments, diagnostics, maintained documentation, examples, and
 demos to use the canonical model. Remove current-state references to `MVP`,
@@ -237,26 +301,41 @@ cannot establish that context-sensitive language such as `exact` is truthful.
 
 ## Migration and compatibility
 
-This is a deliberate pre-1.0 source and archive break. The 1.0 upgrade guide
-lists every public rename, strong-type construction change, removed setter,
-and archive consequence. Release notes describe the adopter-visible outcome.
+This is a deliberate pre-1.0 source break and archive-format-v2 transition.
+The 1.0 upgrade guide lists every public rename, strong-type construction
+change, removed state/count field and setter, policy-default change, removed
+weighted forwarding overload, and archive consequence. Release notes describe
+the adopter-visible outcome.
 No deprecated aliases extend the ambiguous vocabulary into the 1.x contract.
 
 The change does not alter path optimality, ordering, movement rules, world
-geometry, cache policy, or scheduling cadence. Strong wrappers retain existing
-integer widths and wrap behaviour. Valid scalar field schemas retain their
-layout and performance characteristics.
+geometry, cache policy, or scheduling cadence. The safer sparse default may
+return `Indeterminate` where an omitted policy previously returned `NoPath`.
+Valid field schemas retain their inline layout and performance
+characteristics; content and topology versions deliberately widen.
 
 ## Verification
 
-- Add compile-time positive and negative checks for `TileFieldValue`, the new
-  strong scalar domains, and rejection of accidental dirty/active-mask mixing.
-- Keep page construction/reset and dense fill allocation-free and `noexcept`
-  for all accepted values; run the existing allocation-sensitive tests.
-- Test that chunk state follows active-mask transitions and cannot be restored
-  independently from an archive.
+- Add compile-time positive checks for scalar and enum values, `Coord2`,
+  `Coord3`, `Extent3`, and a fixed-size aggregate. Reject strings, vectors,
+  references, cv-qualified values, and throwing assignment at the `Field`
+  boundary with a library-authored compile-fail diagnostic.
+- Pin size, alignment, standard-layout/trivial-copy properties, explicit raw
+  extraction, zero-sentinel behavior, and rejection of every cross-domain
+  strong-type conversion.
+- Keep page construction/reset and dense fill `noexcept` for all accepted
+  values. Allocation tests prove Tess-owned page storage and traversal do not
+  allocate with representative non-allocating values; they do not claim an
+  arbitrary accepted user-written nothrow initializer cannot allocate.
+- Test that chunk activity and active-category count derive from active-mask
+  transitions and cannot be restored independently from an archive.
+- Add the archive-v2 golden and prefix contract, v1 unsupported-format cases,
+  corruption coverage, fuzz coverage, and immutable-fixture updates.
+- Test sparse page reuse after eviction: default field values, capacity,
+  directory and LRU state, handle invalidation, and nonzero generation.
 - Test both sparse missing-chunk policies and their documented `NoPath` versus
-  `Indeterminate` interpretation.
+  `Indeterminate` interpretation across the complete runtime/cache/batch/field/
+  precheck/agent matrix, including negative route-cache entries.
 - Compile and run every affected example and demo model after applying public
   renames.
 - Build MkDocs strictly, inspect the generated abbreviation markup and
@@ -264,8 +343,13 @@ layout and performance characteristics.
   checks, and exercise the site at desktop and narrow widths with keyboard and
   touch-equivalent interaction where relevant.
 - Search current authoritative surfaces for the retired public spellings and
-  stale project-chronology phrases. Historical records are excluded and retain
-  their original language.
+  stale project-chronology phrases using an intentional historical allowlist.
+  Historical changelogs, TDDs, decisions, planning records, compatibility
+  commentary, and genuine old-format descriptions retain their original
+  language.
+- Update public-surface manifests, installed consumers, compatibility fixtures,
+  upgrade examples, Doxygen, leaf/umbrella header cells, renamed example
+  targets, and synchronized documentation snippets.
 - Run focused storage, persistence, path, cache, queued-operation, scheduling,
   diagnostics, and documentation tests locally, then the repository's full
   pre-commit validation. CI remains authoritative for GCC, MSVC, sanitizer,
@@ -275,15 +359,16 @@ layout and performance characteristics.
 
 ## Review questions
 
-1. Is constraining field values the correct storage contract, or is arbitrary
-   owning per-tile state an intended use case worth redesigning sparse reset
-   around?
-2. Should all five strong scalar domains land together, or does any wrapper
-   add ceremony without preventing a credible domain mix-up?
-3. Is removing serialized chunk state preferable to retaining and validating a
-   redundant field for pre-1.0 archive migration?
-4. Do `RouteCache`, `OperationBatch`, `PassableField`, and
-   `TreatAsImpassable` accurately name the public concepts without creating a
-   worse collision or ambiguity elsewhere?
-5. Are the tooltip terms narrow enough to remain correct wherever auto-appended
+1. Does the reset-oriented `TileFieldValue` contract preserve every intended
+   field use while protecting sparse slot reuse?
+2. Are the five strong scalar domains and their exact widths/overflow rules
+   proportionate to the mix-ups and ABA failures they prevent?
+3. Is archive format v2 with active flags as the sole activity authority the
+   cleanest pre-1.0 transition, or is a v1 migration reader worth retaining?
+4. Do `UnitRouteCache`, `OperationBatch`, `UnitCostFieldMovement`,
+   `PositiveCostFieldMovement`, and the parallel missing-chunk policies create
+   the clearest 1.0 vocabulary?
+5. Is removing the asymmetric weighted tag-pair convenience preferable to
+   preserving it under a new non-legacy domain name?
+6. Are the tooltip terms narrow enough to remain correct wherever auto-appended
    definitions match?
