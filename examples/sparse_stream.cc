@@ -23,7 +23,7 @@ using HugeDense = tess::AlwaysResidentWorld<HugeShape, Schema>;
 auto stay_within_budget() -> bool {
   // [sparse-budget]
   constexpr auto budget = 16 * HugeSparse::page_byte_size;
-  HugeSparse world{tess::ResidencyConfig{budget}};  // Loads no chunks.
+  HugeSparse world{tess::ResidencyConfig{budget}};  // Materializes no chunks.
 
   for (std::uint64_t key = 0; key < 64; ++key) {
     (void)world.ensure_resident(tess::ChunkKey{key});  // LRU-evicts at cap.
@@ -59,18 +59,18 @@ auto stream_the_bridge() -> bool {
 
   // [sparse-indeterminate]
   tess::PathScratch scratch;
-  const auto blocked = tess::astar_path<StreamWorld, PassableTag>(
-      world, request, scratch, tess::MissingChunkPolicy::Indeterminate);
-  // blocked.status == PathStatus::Indeterminate: a non-resident chunk was
-  // skipped, so failure is not proven -- stream the chunk in and retry.
+  const auto pending = tess::astar_path<StreamWorld, PassableTag>(
+      world, request, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
+  // pending.status == PathStatus::Indeterminate: a non-resident chunk was
+  // skipped, so failure is not proven -- materialize the chunk and retry.
 
   (void)world.ensure_resident(tess::ChunkKey{1});
   open_row(world, 32, 63);
   const auto found = tess::astar_path<StreamWorld, PassableTag>(
-      world, request, scratch, tess::MissingChunkPolicy::Indeterminate);
+      world, request, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
   // [sparse-indeterminate]
 
-  return blocked.status == tess::PathStatus::Indeterminate &&
+  return pending.status == tess::PathStatus::Indeterminate &&
          found.status == tess::PathStatus::Found && found.cost == 95;
 }
 

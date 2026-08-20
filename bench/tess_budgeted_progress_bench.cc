@@ -603,7 +603,7 @@ void run_arrival_cells(const RunOptions& options, AstarCell& cell,
 //
 // Both cells reuse the colony harness's deterministic machinery
 // (tests/colony_harness.h): the 64x64 room-and-corridor logical map
-// raster-scaled x8, the per-tile cost stream, interior-cell churn
+// raster-scaled x8, the per-tile cost stream, interior-tile churn
 // candidates whose centre tiles can never disconnect the world, and
 // the terrain dirty mask. Their workload_refs use the family
 // identities (topology/region_graph, queued/execute) the same way the
@@ -713,10 +713,10 @@ struct ColonyTerrain {
     }
   }
 
-  // Colony churn candidates: interior logical cells whose centre tile
+  // Colony churn candidates: interior logical tiles whose centre tile
   // can never disconnect the world; grouped into events of four tiles
   // in four distinct chunks (colony seed stream kSeed ^ 0xC17).
-  const auto interior = colony::detail::interior_logical_cells(map);
+  const auto interior = colony::detail::interior_logical_tiles(map);
   check(!interior.empty(), "no interior churn candidates");
   grid::SplitMix64 rng(kSeed ^ 0xC17U);
   std::vector<char> used(512 * 512, 0);
@@ -926,7 +926,7 @@ void run_queued_per_chunk_cell(const RunOptions& options) {
     }
   };
 
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   ops.reserve_operations(8);
   tess::AutoExecTask<ColonyWorld, tess::WritePolicy::UniquePerChunk,
                      colony::BuildAck, decltype(build_fn)>
@@ -946,11 +946,12 @@ void run_queued_per_chunk_cell(const RunOptions& options) {
     state.current = &event;
     const std::uint64_t before = state.acked_tiles;
     for (const tess::ChunkKey& key : event.chunks) {
-      (void)ops.update_field(tess::DomainDesc::explicit_chunks(
-                                 std::span<const tess::ChunkKey>{&key, 1}),
-                             tess::FieldAccessDesc{0, colony::kTerrainDirty,
-                                                   colony::kTerrainDirty},
-                             tess::WritePolicy::UniquePerChunk);
+      (void)ops.update_field(
+          tess::DomainDesc::explicit_chunks(
+              std::span<const tess::ChunkKey>{&key, 1}),
+          tess::FieldAccessDesc{0, colony::kTerrainDirty.value,
+                                colony::kTerrainDirty},
+          tess::WritePolicy::UniquePerChunk);
     }
     static_cast<void>(build_task(tess::ScheduleTaskContext{queued_clock}));
     return state.acked_tiles - before;

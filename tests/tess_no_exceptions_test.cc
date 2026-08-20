@@ -329,7 +329,7 @@ struct StampKernel {
 auto auto_exec_runs_ordinary_kernel_through_pool() -> bool {
   constexpr auto dirty_terrain = std::uint32_t{1};
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   for (std::uint64_t chunk = 0; chunk < World::chunk_count; ++chunk) {
     (void)ops.update_field(
         tess::DomainDesc::explicit_chunks(
@@ -357,8 +357,7 @@ auto auto_exec_runs_ordinary_kernel_through_pool() -> bool {
   TESS_CHECK(task.last_run().executed_chunks == World::chunk_count);
   TESS_CHECK(task.last_run().merged_dirty_chunks == World::chunk_count);
   for (std::uint64_t chunk = 0; chunk < World::chunk_count; ++chunk) {
-    TESS_CHECK((world.dirty_flags(tess::ChunkKey{chunk}) & dirty_terrain) !=
-               0u);
+    TESS_CHECK((world.dirty_mask(tess::ChunkKey{chunk}) & dirty_terrain) != 0u);
   }
   TESS_CHECK(ops.empty());
   return true;

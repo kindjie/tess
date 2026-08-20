@@ -1,7 +1,7 @@
-# Simulation Integration MVP
+# Simulation and Scheduling
 
 The current simulation integration layer lives under `include/tess/sim/` and
-is exported by `tess/tess.h`. It provides the first colony-sim-facing bridge
+is exported by `tess/tess.h`. It provides the caller-driven bridge
 over storage, queued operations, path requests, movement validation, and render
 deltas.
 
@@ -11,12 +11,13 @@ deltas.
 
 - `MovementIntent` records one adjacent tile move from `from` to `to` plus
   an optional `MovementVersionCheck`.
-- `MovementVersionCheck` carries optional expected `from`/`to` chunk
+- `MovementVersionCheck` carries optional expected `from`/`to` content
   versions and `from`/`to` topology versions. Unset fields are not checked.
 - `MovementStatus` reports `Moved`, invalid endpoints (`InvalidFrom`,
-  `InvalidTo`, `NotAdjacent`), blocked endpoints (`BlockedFrom`,
-  `BlockedTo`), `Occupied` or `Reserved` destinations, and stale
-  `StaleVersion` / `StaleTopology` version guards.
+  `InvalidTo`, `NotAdjacent`), impassable endpoints (`ImpassableFrom`,
+  `ImpassableTo`), an unavailable transition (`Blocked`), `Occupied` or
+  `Reserved` destinations, and stale `StaleContent` / `StaleTopology`
+  version guards.
 - `MovementResult` returns the status plus the echoed `from`/`to`
   coordinates.
 - `is_transient_movement_failure(status)` classifies failures: blocked,
@@ -24,12 +25,13 @@ deltas.
   legitimately change under a routed agent; re-path and retry), while
   invalid endpoints and non-adjacent steps indicate a caller bug and are
   terminal.
-- `MovementFailureCounts` aggregates failures into `invalid`, `blocked`,
-  `occupied`, `reserved`, `stale_version`, and `stale_topology` buckets;
+- `MovementFailureCounts` aggregates failures into `invalid`, `impassable`,
+  `blocked`, `occupied`, `reserved`, `stale_content`, and `stale_topology`
+  buckets;
   `record_movement_failure(counts, status)` maps each non-`Moved` status
   into its bucket.
 - `movement_versions_match(world, intent)` checks only the optional version
-  guards (chunk versions first, then topology versions) and returns `Moved`
+  guards (chunk content versions first, then topology versions) and returns `Moved`
   when every set guard matches. It resolves both endpoints unchecked, so
   callers must validate coordinates first.
 - `validate_movement_intent<World, ClassOrTag, OccupancyTag,
@@ -46,7 +48,10 @@ deltas.
   a zero-entry-cost destination before classifying either a regular or
   provider edge. This mirrors exact search's endpoint precheck: a cost field
   dropping to zero after planning blocks the already-planned step as
-  `BlockedTo`, so the agent can re-plan against the changed world.
+  `ImpassableTo`, so the agent can re-plan against the changed world.
+  A blocked diagonal-clearance or provider transition reports `Blocked`
+  because the destination tile itself remains passable. Missing provider
+  topology reports `StaleTopology`, not a content-version failure.
   The from- and to-tiles may live on different pages; each endpoint's
   predicate is evaluated on its own resolved page.
 - `commit_movement_intent<World, ClassOrTag, OccupancyTag, ReservationTag>(
@@ -153,7 +158,8 @@ span, or make their tile impassable to the movement class, which is the
   options, dirty_mask)` decides one step per agent and applies the decided
   configuration with the joint commit's semantics: sources clear before
   destinations set, reservations clear on entry, a move off the retained
-  route drops it (`NoPath`) so scoped resubmission replans, and observer
+  route drops it and clears `last_result` so scoped resubmission replans, and
+  observer
   callbacks (overload) fire only after the whole configuration is applied.
   Edge conflicts follow the shared `SwapPolicy` from `JointMoveOptions`;
   vertex conflicts backtrack. The advance is dense-only (like the
@@ -227,7 +233,7 @@ preserving `occupied => standable`.
 ### Render Deltas
 
 - `RenderTileDelta` records a changed tile coordinate, chunk key, local tile
-  id, matching dirty flags, and chunk version.
+  id, matching dirty masks, and chunk content version.
 - `collect_render_tile_deltas(out, world, dirty_mask)` appends one delta per
   dirty tile in each matching chunk dirty bound. On a dense world it scans every
   chunk; on a sparse world it scans only the resident set (a non-resident chunk
@@ -248,7 +254,7 @@ The versioned frame protocol in `sim/delta_frame.h`. Tile deltas are
 invalidation records, not value payloads: the consumer re-reads the
 current world for covered tiles at apply time, which is idempotent and
 convergent. Chunk dirty metadata is already a cross-tick coalescer
-(flags OR, bounds union), so tiles are collected once per published
+(mask union, bounds union), so tiles are collected once per published
 frame through the lost-update-safe observe/clear-observed protocol.
 
 ```mermaid
@@ -268,14 +274,15 @@ stateDiagram-v2
 - `RenderVersion` is the monotonic frame-chain version. Collectors start
   at 1; value 0 is reserved for a consumer that has never applied a
   frame, so a fresh consumer can only start from a baseline.
-- `TileChunkDelta` is one chunk's record: matching dirty flags, the
+- `TileChunkDelta` is one chunk's record: its `dirty_mask`, the
   chunk-clipped bounds, and either `tile_count` per-tile entries starting
   at `first_tile` in `frame.tiles`, or `tile_count == 0` meaning
-  box-granular (repaint every tile in `bounds`). `chunk_version` is
-  debugging only -- clears do not bump it and sparse reloads reset it.
+  box-granular (repaint every tile in `bounds`). `content_version` is
+  debugging only -- clears do not bump it and sparse rematerialization resets
+  it.
   Chunk records are the only entry point; consumers never iterate
   `frame.tiles` directly.
-- `TileDelta` is one changed tile (coordinate, local tile id, flags).
+- `TileDelta` is one changed tile (coordinate, local tile id, dirty mask).
 - `EntityDeltaKind` / `EntityDelta` record entity motion and lifecycle:
   `Moved` (coalescible), and the barriers `Teleported`, `Spawned`,
   `Despawned`, `Parked`, `Placed`. `from == to` for spawns/places; parks
@@ -336,7 +343,7 @@ stateDiagram-v2
   is forced truncated unless it is a baseline, and a world swap is
   `clear()` followed by a full baseline collection. The collector must
   be the sole clearing owner of every dirty bit it collects; shared
-  `dirty_bounds` across flag owners only widens boxes (conservative).
+  `dirty_bounds` across mask owners only widens boxes (conservative).
 - `collect_baseline(collector, world, dirty_mask)` is the full-scope
   resync: one box record covering every chunk (dense) or resident chunk
   (sparse), pending Dirty records dropped as superseded, the mask's
@@ -366,16 +373,18 @@ stateDiagram-v2
   resident set. Per chunk it emits per-tile records up to the threshold
   and a clipped box record otherwise, degrading to a box record when
   tile storage cannot hold a chunk. Sparse residency change records are
-  deferred until a sparse render consumer exists; reloads reset chunk
+  deferred until a sparse render consumer exists; rematerialization resets
   metadata, so such consumers must treat them as baseline triggers.
 
 ### Path-Agent Batch Helpers
 
-- `PathAgentState` stores an agent's position, goal, `PathTicket`, path
-  index, last `PathStatus`, `PathAgentPhase`, active-goal flag, and
-  `blocked_retries` count.
-- `PathAgentPhase` is the agent lifecycle, decoupled from the last
-  `PathStatus`: `Idle` (no goal or arrived), `NeedsPath` (goal assigned, no
+- `PathAgentState` stores an agent's position, goal, `PathTicket`, path index,
+  optional `last_result`, `PathAgentPhase`, active-goal flag, and
+  `blocked_retries` count. `last_result` is absent before a search and after a
+  route-invalidating movement failure; `NoPath` appears only after a search
+  actually returns that result.
+- `PathAgentPhase` is the agent lifecycle, decoupled from the optional last
+  search result: `Idle` (no goal or arrived), `NeedsPath` (goal assigned, no
   route yet), `Following` (walking a `Found` route), `Blocked` (transient
   failure; retained-step contention waits, while route-invalidating failures
   re-path until the shared retry budget and exhaustion policy take effect),
@@ -383,9 +392,11 @@ stateDiagram-v2
   terminal until a new goal is assigned).
 - `set_path_agent_goal(agent, goal)` arms the lifecycle (`NeedsPath`, retry
   count reset); `clear_path_agent_goal(agent)` returns the agent to `Idle`.
-- `PathAgentFrameStats` counts submitted, completed, found, invalid-start,
-  invalid-goal, no-path, and indeterminate results plus `precheck_ruled_out`,
-  advanced steps, arrivals, blocked waits, and a `MovementFailureCounts`.
+- `PathAgentFrameStats` counts submitted and completed work; every
+  `PathStatus` outcome (`found`, `invalid_start`, `invalid_goal`, `no_path`,
+  `indeterminate`, `cost_overflow`, `not_computed`, and `no_candidate`);
+  `precheck_ruled_out`; advanced steps; arrivals; blocked waits; and a
+  `MovementFailureCounts`.
   `precheck_ruled_out` is the number of agents whose goal an optional topology
   precheck proved unreachable before A* (a subset of `no_path`; see the path
   runtime's `precheck_ruled_out`). `add_path_agent_stats(lhs, rhs)` accumulates
@@ -421,8 +432,7 @@ stateDiagram-v2
   inside the callback stay synchronized with the occupancy field by
   construction (the ECS adapter's hook point).
 - `process_unit_path_agents<World, ClassOrTag>(...)` and
-  `process_weighted_path_agents<World, Class, MaxCost>(...)` (plus the legacy
-  `<World, PassableTag, CostTag, MaxCost>` overload)
+  `process_weighted_path_agents<World, Class, MaxCost>(...)`
   run submit, runtime processing (cached unit or weighted batch), and result
   application as one synchronous pass. Both take an optional trailing
   `const RegionGraphT<World::residency_type>*` (default `nullptr`) that they
@@ -457,9 +467,9 @@ stateDiagram-v2
 - `PathAgentTickOptions` carries `max_steps` and `movement_dirty_mask` per tick,
   the runtime `PathRuntimeCachePolicy`, `max_blocked_retries` (default 8), and
   `blocked_exhaustion_policy`. `BlockedAgentExhaustionPolicy` defaults to
-  `RemainBlocked`, preserving the goal and last status because elapsed retries
-  do not prove `NoPath`; `MarkUnreachable` retains the historical terminal
-  behavior explicitly.
+  `RemainBlocked`, preserving the goal and optional last search result because
+  elapsed retries do not prove `NoPath`; `MarkUnreachable` selects terminal
+  exhaustion explicitly and clears the last result.
 - `PathAgentTickStats` reports the tick value, whether paths were processed,
   separate pathing and movement `PathAgentFrameStats`, and the
   `repaths_requested` count for actual searches plus `repath_exhausted` for
@@ -469,11 +479,11 @@ stateDiagram-v2
   of path processing: `NeedsPath` agents request processing with no manual
   dirty mark. `Blocked` agents consume one retry on each following tick.
   Occupied/reserved destinations retain `PathStatus::Found` and retry the
-  retained step without a search; route-invalidating transient failures use
-  their last non-Found status and request processing. At exhaustion the default
+  retained step without a search; route-invalidating transient failures clear
+  the obsolete result and request processing. At exhaustion the default
   leaves the agent `Blocked` without further automatic path processing;
-  `MarkUnreachable` instead terminalizes it and rewrites the status to
-  `NoPath` for compatibility.
+  `MarkUnreachable` instead terminalizes it and clears the optional last
+  result.
 - `BlockedAgentRecoverySchedule` selects a deterministic, caller-bounded subset
   of persistently blocked agents for expensive recovery checks. Exponential
   delay with deterministic equal jitter spreads repeated checks across the full
@@ -487,8 +497,6 @@ stateDiagram-v2
   `tick_weighted_path_agents<World, Class, MaxCost>(...)`,
   `tick_unit_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
   ReservationTag>(...)`, and `tick_weighted_path_agents_with_movement<...>`
-  (the weighted forms keep their legacy `<World, PassableTag, CostTag,
-  MaxCost[, ...]>` overloads)
   advance the clock, re-process paths when `pathing_dirty` is set or any
   agent requested processing, then advance agents — either freely or
   through movement commits with the supplied `movement_dirty_mask`. In the
@@ -625,13 +633,13 @@ flowchart TB
 <World, Policy, Ack, ChunkFn>` is one schedule task running the whole
 queued-ops pipeline -- plan, parallel phase planning, execution (serial or
 worker pool, chosen per phase by an operation-count threshold), per-phase
-dirty apply, and ack drain -- over a caller-owned `FrameOps` queue. Both the
+dirty apply, and ack drain -- over a caller-owned `OperationBatch` queue. Both the
 queue and the task's result channel are cleared together at the end of every
 successful run (the paired-clear discipline), and the run's `dirty_mask` union
 feeds the schedule so OnDirty tasks in later phases fire the same tick. The
 worker pool is the production parallel backend (see the
 [queued-operations note](queued-operations.md)); the scoped-thread executor
-is the stable per-dispatch alternative. A
+is the address-stable per-dispatch alternative. A
 planning or kernel exception preserves the caller-owned queue for inspection
 or replacement while the exception path clears transient result slots, so old
 completions cannot leak into a later run. Earlier writes may already have
@@ -685,9 +693,9 @@ throw.
   ReservationTag, Policy>(...)` runs the same sequence and commits agent
   movement through `commit_movement_intent`, marking moved-agent chunks
   dirty with the configured movement dirty mask.
-- `tick_weighted_scheduler<World, PassableTag, CostTag, MaxCost, Policy>(...)`
-  runs the same sequence through the weighted path-agent batch tick.
-- `tick_weighted_movement_scheduler<World, PassableTag, CostTag, MaxCost,
+- `tick_weighted_scheduler<World, Class, MaxCost, Policy>(...)` runs the same
+  sequence through the weighted path-agent batch tick.
+- `tick_weighted_movement_scheduler<World, Class, MaxCost,
   OccupancyTag, ReservationTag, Policy>(...)` combines the weighted batch
   tick with movement commits and the movement dirty mask.
 
@@ -732,7 +740,7 @@ game-specific job logic, AI decisions, UI state, and content rules.
 
 The intended per-frame order for current consumers is:
 
-1. Enqueue field edits in `FrameOps` with accurate `FieldAccessDesc` masks.
+1. Enqueue field edits in `OperationBatch` with accurate `FieldAccessDesc` masks.
 2. Call a scheduler tick with a callback that applies each planned chunk view.
 3. Let the scheduler mark pathing dirty when executed operations dirtied
    configured movement-relevant fields.
@@ -778,8 +786,8 @@ stateDiagram-v2
 
 `MovementIntent` version guards are opt-in. They are useful when an external
 system collected path or move intents before queued world edits were applied.
-If a stored expected chunk version or topology version no longer matches, the
-move fails with `StaleVersion` or `StaleTopology` before occupancy changes are
+If a stored expected chunk content version or topology version no longer matches, the
+move fails with `StaleContent` or `StaleTopology` before occupancy changes are
 committed. The scheduler's own movement ticks submit intents without version
 guards; their steps are validated against live world state instead.
 

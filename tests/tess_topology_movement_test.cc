@@ -64,7 +64,7 @@ void mark_construction(World& world) {
 void expect_local_topologies_equal(const tess::LocalChunkTopology& lhs,
                                    const tess::LocalChunkTopology& rhs) {
   EXPECT_EQ(lhs.chunk(), rhs.chunk());
-  EXPECT_EQ(lhs.version(), rhs.version());
+  EXPECT_EQ(lhs.topology_version(), rhs.topology_version());
   ASSERT_EQ(lhs.region_ids().size(), rhs.region_ids().size());
   EXPECT_TRUE(std::equal(lhs.region_ids().begin(), lhs.region_ids().end(),
                          rhs.region_ids().begin()));
@@ -101,7 +101,7 @@ TEST(TessTopologyMovement, IdentityLabelsMatchTheLegacyTagBuild) {
   const auto tag_result =
       tess::build_region_graph<World, PassableTag>(world, scratch, by_tag);
   const auto class_result =
-      tess::build_region_graph<World, mv::WalkableField<PassableTag>>(
+      tess::build_region_graph<World, mv::UnitCostFieldMovement<PassableTag>>(
           world, scratch, by_class);
 
   EXPECT_EQ(tag_result.region_count, class_result.region_count);
@@ -224,8 +224,9 @@ TEST(TessTopologyMovement, FreshnessIsPerClass) {
   // a stamp match, and a raw tag shares its identity class's stamp.
   EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
   EXPECT_TRUE(tess::is_region_graph_fresh_for<PassableTag>(world, graph));
-  EXPECT_TRUE((tess::is_region_graph_fresh_for<mv::WalkableField<PassableTag>>(
-      world, graph)));
+  EXPECT_TRUE(
+      (tess::is_region_graph_fresh_for<mv::UnitCostFieldMovement<PassableTag>>(
+          world, graph)));
   EXPECT_FALSE(tess::is_region_graph_fresh_for<Walker>(world, graph));
   EXPECT_FALSE(tess::is_region_graph_fresh_for<Builder>(world, graph));
 
@@ -453,7 +454,7 @@ TEST(TessTopologyMovement, ProviderIncrementalUpdateEqualsFullRebuild) {
 // Ownership rejection must be consistent across every enumeration of a
 // provider. Dropping a misowned edge from the portal pass while the sparse
 // missing-reach pass still honored it reported Indeterminate -- "a route
-// might exist through unloaded chunks" -- for an edge the graph had already
+// might exist through non-resident chunks" -- for an edge the graph had already
 // refused to build a portal for.
 TEST(TessTopologyMovement, MisownedProviderEdgeDoesNotMarkMissingReach) {
   using ThreeChunk =
@@ -906,16 +907,17 @@ TEST(TessTopologyMovement, OutOfRangeStairValueReadsAsNone) {
   expect_graphs_equal(graph, plain);
 }
 
-// Codex review: WalkableCostField must not advertise the span fast path --
-// its predicate reads two fields, so the topology flood must evaluate it per
+// Codex review: PositiveCostFieldMovement must not advertise the span fast path
+// -- its predicate reads two fields, so the topology flood must evaluate it per
 // tile (this test is primarily "it compiles"; it also pins the behavior that
 // zero-cost tiles hold no label).
-TEST(TessTopologyMovement, WalkableCostFieldLabelsExcludeZeroCostTiles) {
+TEST(TessTopologyMovement,
+     PositiveCostFieldMovementLabelsExcludeZeroCostTiles) {
   struct WeightTag {};
   using CostSchema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
                                        tess::Field<WeightTag, std::uint32_t>>;
   using CostWorld = tess::AlwaysResidentWorld<TopDown2D, CostSchema>;
-  using CostWalker = mv::WalkableCostField<PassableTag, WeightTag>;
+  using CostWalker = mv::PositiveCostFieldMovement<PassableTag, WeightTag>;
   static_assert(!mv::HasPassableSpan<CostWalker>);
 
   CostWorld world;

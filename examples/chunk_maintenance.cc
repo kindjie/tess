@@ -35,7 +35,7 @@ struct RebuildHeightSummary {
 };
 
 auto run_example() -> bool {
-  constexpr auto height_dirty = std::uint32_t{1};
+  constexpr auto height_dirty = tess::DirtyMask{1};
   World world;
   maintenance::ChunkMaintenanceAdapter<World, HeightSummary,
                                        RebuildHeightSummary>
@@ -54,7 +54,8 @@ auto run_example() -> bool {
   }
 
   // Scheduling is coalescing: 32 offers produce one rebuild here. The task
-  // inspects dirty/version state; it does not count schedule calls as jobs.
+  // inspects dirty-mask/content-version state; it does not count schedule
+  // calls as jobs.
   if (adapter.flush() != maintenance::DrainResult::Drained ||
       adapter.flush() != maintenance::DrainResult::Idle) {
     return false;
@@ -63,15 +64,15 @@ auto run_example() -> bool {
   const auto metrics = adapter.metrics();
   if (product.state != maintenance::ChunkProductState::Current ||
       product.value == nullptr || product.value->sum == 0 ||
-      product.token.version != world.meta(key).version ||
-      world.dirty_flags(key) != 0 || metrics.schedule_calls != 32 ||
+      product.token.content_version != world.meta(key).content_version ||
+      !world.dirty_mask(key).empty() || metrics.schedule_calls != 32 ||
       metrics.executions != 1) {
     return false;
   }
 
   std::cout << "offers=" << metrics.schedule_calls
             << " rebuilds=" << metrics.executions
-            << " version=" << product.token.version
+            << " content_version=" << product.token.content_version.value
             << " sum=" << product.value->sum << '\n';
   return true;
 }

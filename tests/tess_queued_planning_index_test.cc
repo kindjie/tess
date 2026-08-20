@@ -7,7 +7,7 @@
 #include <random>
 #include <vector>
 
-// Planning index (audit-2026-08-07 P1): hazard detection and parallel-phase
+// Planning-index hazard detection and parallel-phase
 // grouping consult a chunk-keyed index instead of scanning every accepted
 // operation. Both were quadratic in the operation count.
 //
@@ -23,8 +23,8 @@ namespace {
 struct TerrainTag {};
 struct CostTag {};
 
-constexpr std::uint32_t DirtyTerrain = 1u << 0u;
-constexpr std::uint32_t DirtyCost = 1u << 1u;
+constexpr auto DirtyTerrain = tess::DirtyMask{1u << 0u};
+constexpr auto DirtyCost = tess::DirtyMask{1u << 1u};
 
 // 16 x 16 chunks. Wider than `index_max_chunks_per_operation`, so a
 // whole-domain operation here is one the planner keeps OUT of the index --
@@ -94,11 +94,11 @@ static_assert(ChunkCount > tess::detail::index_max_chunks_per_operation,
 
 [[nodiscard]] auto random_field_access(std::mt19937& rng)
     -> tess::FieldAccessDesc {
-  auto mask =
-      std::uniform_int_distribution<std::uint32_t>{0, DirtyTerrain | DirtyCost};
+  auto mask = std::uniform_int_distribution<std::uint32_t>{
+      0, (DirtyTerrain | DirtyCost).value};
   const auto reads = mask(rng);
   const auto writes = mask(rng);
-  return tess::FieldAccessDesc{reads, writes, writes};
+  return tess::FieldAccessDesc{reads, writes, tess::DirtyMask{writes}};
 }
 
 // The indexed lookup must return the identical operation the linear scan
@@ -161,8 +161,8 @@ TEST(TessQueuedPlanningIndex, IndexedHazardMatchesLinearScan) {
 }
 
 // `clear` keeps the index's storage for reuse (the caller-owned report
-// recycles it every frame), so a stale entry surviving the clear would
-// blame an operation that is no longer in the plan.
+// recycles it every operation batch), so a stale entry surviving the clear
+// would blame an operation that is no longer in the plan.
 TEST(TessQueuedPlanningIndex, ClearedIndexReportsNoSharing) {
   auto index = tess::detail::ChunkOperationIndex{};
   const auto chunks =
@@ -224,7 +224,7 @@ TEST(TessQueuedPlanningIndex, PhaseGroupingMatchesAllPairsScan) {
     for (const std::uint32_t op_count : {2u, 8u, 15u, 16u, 17u, 24u, 40u}) {
       for (int trial = 0; trial < 16; ++trial) {
         World world;
-        tess::FrameOps ops;
+        tess::OperationBatch ops;
         auto read_only = std::bernoulli_distribution{0.6};
         // A minority of whole-domain operations, so the wide path through
         // grouping is exercised: those are kept out of the index and
@@ -240,7 +240,8 @@ TEST(TessQueuedPlanningIndex, PhaseGroupingMatchesAllPairsScan) {
           // every phase is a singleton and grouping has nothing to decide.
           auto access = random_field_access(rng);
           if (read_only(rng)) {
-            access = tess::FieldAccessDesc{access.read_mask, 0, 0};
+            access =
+                tess::FieldAccessDesc{access.read_mask, 0, tess::DirtyMask{}};
           }
           // Parallel phase planning rejects any policy outside these two, and
           // a rejected plan would exercise none of the grouping loop.
@@ -325,10 +326,10 @@ TEST(TessQueuedPlanningIndex, ClosedPhaseOverlapDoesNotSplitAPhase) {
     std::uint32_t write;
   };
   constexpr auto Pattern = std::array{
-      Op{0, DirtyTerrain},
-      Op{1, DirtyTerrain},
-      Op{1, DirtyCost},
-      Op{0, DirtyCost},
+      Op{0, DirtyTerrain.value},
+      Op{1, DirtyTerrain.value},
+      Op{1, DirtyCost.value},
+      Op{0, DirtyCost.value},
   };
 
   // Run the pattern at both sides of the index cutoff. Below it grouping
@@ -337,7 +338,7 @@ TEST(TessQueuedPlanningIndex, ClosedPhaseOverlapDoesNotSplitAPhase) {
   // chunk pairs, which never conflict across pairs.
   for (const std::size_t pairs : {std::size_t{1}, std::size_t{8}}) {
     World world;
-    tess::FrameOps ops;
+    tess::OperationBatch ops;
     // Interleaved: every pair's step 0, then every pair's step 1, and so
     // on. Emitting the pairs one after another instead would let a pair's
     // step 2 close a phase that a later pair's step 0 then reopens, and the
@@ -348,7 +349,7 @@ TEST(TessQueuedPlanningIndex, ClosedPhaseOverlapDoesNotSplitAPhase) {
             tess::ChunkKey{entry.chunk + (2 * pair)}};
         (void)ops.update_field(
             tess::DomainDesc::explicit_chunks(chunks),
-            tess::FieldAccessDesc{0, entry.write, entry.write},
+            tess::FieldAccessDesc{0, entry.write, tess::DirtyMask{entry.write}},
             tess::WritePolicy::UniquePerChunk);
       }
     }

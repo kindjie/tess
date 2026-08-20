@@ -7,13 +7,38 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <vector>
 
 namespace tess {
 
 namespace detail {
 
-template <typename World, typename PassableTag>
+template <typename World, typename Class>
+[[nodiscard]] auto weighted_endpoint_failure(const World& world,
+                                             PathRequest request)
+    -> std::optional<PathStatus> {
+  using Shape = typename World::shape_type;
+  if (!contains<Shape>(request.start) ||
+      !is_passable<World, Class>(world, request.start)) {
+    return PathStatus::InvalidStart;
+  }
+  if (!contains<Shape>(request.goal) ||
+      !is_passable<World, Class>(world, request.goal)) {
+    return PathStatus::InvalidGoal;
+  }
+  const auto start = tile_index<Shape>(request.start);
+  const auto goal = tile_index<Shape>(request.goal);
+  if (tile_entry_cost_index<World, Class>(world, start) == 0) {
+    return PathStatus::InvalidStart;
+  }
+  if (tile_entry_cost_index<World, Class>(world, goal) == 0) {
+    return PathStatus::InvalidGoal;
+  }
+  return std::nullopt;
+}
+
+template <typename World, typename Class>
 [[nodiscard]] auto build_greedy_chunk_portal_candidate(
     const World& world, PathRequest request, std::vector<Coord3>& waypoints)
     -> PortalRouteCandidate {
@@ -34,9 +59,9 @@ template <typename World, typename PassableTag>
     const auto consider = [&](ChunkCoord3 next_chunk) {
       auto portal = Coord3{};
       auto scan_tiles = std::size_t{0};
-      if (!memoized_chunk_portal<World, PassableTag>(
-              world, current_chunk, next_chunk, current, request.goal, portal,
-              &scan_tiles)) {
+      if (!memoized_chunk_portal<World, Class>(world, current_chunk, next_chunk,
+                                               current, request.goal, portal,
+                                               &scan_tiles)) {
         result.scan_tiles += scan_tiles;
         return;
       }
@@ -99,7 +124,7 @@ template <typename World, typename PassableTag>
 // `product.best_waypoints_`, with candidate/scan statistics accumulated on
 // the product. Returns false when no goal-monotone candidate exists — the
 // heuristic-tier limitation documented on the public builder below.
-template <typename World, typename PassableTag>
+template <typename World, typename Class>
 [[nodiscard]] auto select_chunk_portal_waypoints(
     const World& world, PathRequest request,
     WeightedPortalRouteProduct& product) -> bool {
@@ -122,7 +147,7 @@ template <typename World, typename PassableTag>
   auto best_score = std::numeric_limits<std::uint32_t>::max();
   product.best_waypoints_.clear();
   for (const auto& order : orders) {
-    const auto candidate = build_chunk_portal_candidate<World, PassableTag>(
+    const auto candidate = build_chunk_portal_candidate<World, Class>(
         world, request, order, product.candidate_waypoints_);
     ++product.route_candidates_;
     product.portal_scan_tiles_ += candidate.scan_tiles;
@@ -137,9 +162,8 @@ template <typename World, typename PassableTag>
     }
   }
   {
-    const auto candidate =
-        build_greedy_chunk_portal_candidate<World, PassableTag>(
-            world, request, product.candidate_waypoints_);
+    const auto candidate = build_greedy_chunk_portal_candidate<World, Class>(
+        world, request, product.candidate_waypoints_);
     ++product.route_candidates_;
     product.portal_scan_tiles_ += candidate.scan_tiles;
     if (candidate.found && (!found_route || candidate.score < best_score)) {
@@ -156,48 +180,43 @@ template <typename World, typename PassableTag>
 
 // HEURISTIC TIER: candidates walk only goal-monotone chunk staircases (each
 // step moves one chunk closer on some axis) and only the single
-// best-scoring candidate is stitched, so a NoPath from this builder means
-// "no route found by this tier", NOT "no route exists" -- topologies that
-// require a chunk detour away from the goal (or whose best seam tile is
-// sealed off) yield NoPath here while weighted_astar_path finds a route.
-// Callers needing an authoritative answer must fall back to
-// weighted_astar_path on NoPath. Promoting this to a distinct
-// non-authoritative status is deferred to the next API rev.
+// best-scoring candidate is stitched. `NoCandidate` means this tier found no
+// route candidate; it is not a reachability conclusion. Topologies that
+// require a chunk detour away from the goal (or whose best seam tile is sealed
+// off) can return `NoCandidate` here while weighted_astar_path finds a route.
+// Callers needing an authoritative answer must fall back to exact search.
 /// Builds a weighted route from chunk-portal candidates and A* segments.
 ///
 /// The returned path borrows `product`; subsequent product mutation invalidates
 /// it. Building reuses caller-owned `scratch` and product capacities.
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 [[nodiscard]] auto build_weighted_chunk_portal_route_product(
     const World& world, PathRequest request, PathScratch& scratch,
     WeightedPortalRouteProduct& product) -> PathResult {
   using Shape = typename World::shape_type;
   // Builds a portal route over the dense chunk-portal topology graph and tracks
-  // chunk-version dependencies; dense-only until sparse topology (Slice 4) and
-  // the sparse route-cache slice land. Its per-segment weighted A* already runs
-  // natively on sparse worlds via weighted_astar_path.
+  // content-version dependencies. The portal topology is dense-only; direct
+  // weighted A* runs natively on sparse worlds.
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "build_weighted_chunk_portal_route_product is dense-only; it needs "
-      "sparse topology and route-cache support from a later slice.");
+      "build_weighted_chunk_portal_route_product requires an "
+      "AlwaysResidentWorld; use weighted_astar_path for sparse worlds.");
 
   product.clear();
   product.request_ = request;
 
-  if (!contains<Shape>(request.start)) {
-    product.status_ = PathStatus::InvalidStart;
-    return PathResult{product.status_, 0, 0, 0, product.path_};
-  }
-  if (!contains<Shape>(request.goal)) {
-    product.status_ = PathStatus::InvalidGoal;
+  if (const auto failure =
+          detail::weighted_endpoint_failure<World, Class>(world, request)) {
+    product.status_ = *failure;
+    detail::capture_failure_dependencies<Shape>(world, request, product.status_,
+                                                product.dependencies_);
     return PathResult{product.status_, 0, 0, 0, product.path_};
   }
 
-  const auto found_route =
-      detail::select_chunk_portal_waypoints<World, PassableTag>(world, request,
-                                                                product);
+  const auto found_route = detail::select_chunk_portal_waypoints<World, Class>(
+      world, request, product);
   if (!found_route) {
-    product.status_ = PathStatus::NoPath;
+    product.status_ = PathStatus::NoCandidate;
     // Failure results depend on world content the portal scans sampled;
     // depend on every chunk so any edit invalidates a replayed failure.
     product.dependencies_.capture_all(world);
@@ -207,26 +226,35 @@ template <typename World, typename PassableTag, typename CostTag>
                             product.best_waypoints_.end());
 
   auto from = request.start;
-  auto total_cost = std::uint32_t{0};
+  auto total_cost = std::uint64_t{0};
   auto total_expanded = std::size_t{0};
   auto total_reached = std::size_t{0};
   auto append_segment = [&](PathRequest segment_request) {
-    const auto result = weighted_astar_path<World, PassableTag, CostTag>(
-        world, segment_request, scratch);
+    const auto result =
+        weighted_astar_path<World, Class>(world, segment_request, scratch);
     total_expanded += result.expanded_nodes;
     total_reached += result.reached_nodes;
     if (result.status != PathStatus::Found) {
       product.path_.clear();
-      product.status_ = result.status;
+      product.status_ = PathStatus::NoCandidate;
       product.expanded_nodes_ = total_expanded;
       product.reached_nodes_ = total_reached;
       // Same failure-dependency contract as build_weighted_route_product;
       // the failing segment's endpoints are the offending tiles.
       detail::capture_failure_dependencies<Shape>(
-          world, segment_request, result.status, product.dependencies_);
+          world, request, product.status_, product.dependencies_);
       return false;
     }
-    total_cost = detail::saturating_add(total_cost, result.cost);
+    total_cost += result.cost;
+    if (total_cost >= std::numeric_limits<std::uint32_t>::max()) {
+      product.path_.clear();
+      product.status_ = PathStatus::CostOverflow;
+      product.expanded_nodes_ = total_expanded;
+      product.reached_nodes_ = total_reached;
+      detail::capture_failure_dependencies<Shape>(
+          world, request, product.status_, product.dependencies_);
+      return false;
+    }
     product.segment_.assign(result.path.begin(), result.path.end());
     for (std::size_t i = product.path_.empty() ? 0u : 1u;
          i < product.segment_.size(); ++i) {
@@ -248,7 +276,7 @@ template <typename World, typename PassableTag, typename CostTag>
   }
 
   product.status_ = PathStatus::Found;
-  product.cost_ = total_cost;
+  product.cost_ = static_cast<std::uint32_t>(total_cost);
   product.expanded_nodes_ = total_expanded;
   product.reached_nodes_ = total_reached;
   for (const auto coord : product.path_) {
@@ -259,7 +287,7 @@ template <typename World, typename PassableTag, typename CostTag>
                     product.reached_nodes_, product.path_};
 }
 
-// Same heuristic tier and NoPath semantics as the uncached builder above:
+// Same heuristic tier and NoCandidate semantics as the uncached builder above:
 // chunk-portal candidates select the waypoints, and stitching runs through
 // the class-bound segment cache so repeated corridors serve without fresh
 // searches. Unlike the uncached builder, the product records segment-level
@@ -267,40 +295,34 @@ template <typename World, typename PassableTag, typename CostTag>
 // replay product, and its returned path borrows the product exactly like
 // the other builders.
 /// Builds a chunk-portal weighted route through the segment cache.
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 [[nodiscard]] auto build_weighted_chunk_portal_route_product_cached(
     const World& world, PathRequest request, PathScratch& scratch,
     WeightedPortalSegmentCache& cache, WeightedPortalRouteProduct& product)
     -> PathResult {
-  using Shape = typename World::shape_type;
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "build_weighted_chunk_portal_route_product_cached is dense-only; it "
-      "needs sparse topology and route-cache support from a later slice.");
+      "build_weighted_chunk_portal_route_product_cached requires an "
+      "AlwaysResidentWorld; use weighted_astar_path for sparse worlds.");
 
   product.clear();
   product.request_ = request;
 
-  if (!contains<Shape>(request.start)) {
-    product.status_ = PathStatus::InvalidStart;
-    return PathResult{product.status_, 0, 0, 0, product.path_};
-  }
-  if (!contains<Shape>(request.goal)) {
-    product.status_ = PathStatus::InvalidGoal;
+  if (const auto failure =
+          detail::weighted_endpoint_failure<World, Class>(world, request)) {
+    product.status_ = *failure;
     return PathResult{product.status_, 0, 0, 0, product.path_};
   }
 
-  if (!detail::select_chunk_portal_waypoints<World, PassableTag>(world, request,
-                                                                 product)) {
-    product.status_ = PathStatus::NoPath;
+  if (!detail::select_chunk_portal_waypoints<World, Class>(world, request,
+                                                           product)) {
+    product.status_ = PathStatus::NoCandidate;
     return PathResult{product.status_, 0, 0, 0, product.path_};
   }
   product.waypoints_.assign(product.best_waypoints_.begin(),
                             product.best_waypoints_.end());
 
-  auto class_cache =
-      cache
-          .template for_class<movement::LegacyWeighted<PassableTag, CostTag>>();
+  auto class_cache = cache.template for_class<Class>();
   auto from = request.start;
   // Segment costs accumulate in 64 bits: each segment cost is
   // representable, but a stitched total at or above the uint32 infinity
@@ -316,14 +338,14 @@ template <typename World, typename PassableTag, typename CostTag>
       total_cost += hit.cost;
       return true;
     }
-    const auto result = weighted_astar_path<World, PassableTag, CostTag>(
-        world, segment_request, scratch);
+    const auto result =
+        weighted_astar_path<World, Class>(world, segment_request, scratch);
     class_cache.store(world, segment_request, result);
     total_expanded += result.expanded_nodes;
     total_reached += result.reached_nodes;
     if (result.status != PathStatus::Found) {
       product.path_.clear();
-      product.status_ = result.status;
+      product.status_ = PathStatus::NoCandidate;
       product.expanded_nodes_ = total_expanded;
       product.reached_nodes_ = total_reached;
       return false;

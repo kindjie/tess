@@ -55,7 +55,7 @@ template <typename World, typename Tag>
     const Space residency{world};
     if (!residency.is_resident_index(
             detail::tile_index<Shape>(request.start))) {
-      return PathResult{policy == MissingChunkPolicy::Indeterminate
+      return PathResult{policy == MissingChunkPolicy::ReportIndeterminate
                             ? PathStatus::Indeterminate
                             : PathStatus::InvalidStart,
                         0, 0, 0, scratch.path_};
@@ -71,7 +71,7 @@ template <typename World, typename Tag>
   if constexpr (!Space::is_dense) {
     const Space residency{world};
     if (!residency.is_resident_index(detail::tile_index<Shape>(request.goal))) {
-      return PathResult{policy == MissingChunkPolicy::Indeterminate
+      return PathResult{policy == MissingChunkPolicy::ReportIndeterminate
                             ? PathStatus::Indeterminate
                             : PathStatus::InvalidGoal,
                         0, 0, 0, scratch.path_};
@@ -648,8 +648,8 @@ template <typename World, typename Tag>
     if (scratch.open_.empty()) {
       // Saturating, mirroring the weighted core: a wrapped f would
       // mis-partition the two-bucket dial and let the goal close with a
-      // non-optimal g (audit 2026-07-11 C3; needs ~2^32-tile distances,
-      // not constructible today, guarded for symmetry).
+      // non-optimal g. That needs roughly 2^32-tile distances, but the guard
+      // keeps this implementation symmetric with the weighted core.
       current_f = detail::saturating_add(current_f, 2);
       scratch.open_.swap(scratch.open_next_);
     }
@@ -736,7 +736,7 @@ template <typename World, typename Tag>
   }
 
   if constexpr (!Space::is_dense) {
-    if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
+    if (crossed_missing && policy == MissingChunkPolicy::ReportIndeterminate) {
       return PathResult{PathStatus::Indeterminate, 0, expanded_nodes,
                         scratch.touched_count_, scratch.path_};
     }
@@ -777,8 +777,7 @@ template <typename World, typename Class, typename Provider>
     PathTieBreak tie_break) -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_astar_path<World, Class> requires a MovementClass; "
-                "legacy tag pairs go through the <World, PassableTag, CostTag> "
-                "overload.");
+                "pass a movement class such as PositiveCostFieldMovement.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
   using Model = ResolvedTransitionModel<World, Class, Provider>;
@@ -805,7 +804,7 @@ template <typename World, typename Class, typename Provider>
     const Space residency{world};
     if (!residency.is_resident_index(
             detail::tile_index<Shape>(request.start))) {
-      return PathResult{policy == MissingChunkPolicy::Indeterminate
+      return PathResult{policy == MissingChunkPolicy::ReportIndeterminate
                             ? PathStatus::Indeterminate
                             : PathStatus::InvalidStart,
                         0,
@@ -825,7 +824,7 @@ template <typename World, typename Class, typename Provider>
   if constexpr (!Space::is_dense) {
     const Space residency{world};
     if (!residency.is_resident_index(detail::tile_index<Shape>(request.goal))) {
-      return PathResult{policy == MissingChunkPolicy::Indeterminate
+      return PathResult{policy == MissingChunkPolicy::ReportIndeterminate
                             ? PathStatus::Indeterminate
                             : PathStatus::InvalidGoal,
                         0,
@@ -1130,7 +1129,7 @@ template <typename World, typename Class, typename Provider>
   }
 
   if constexpr (!Space::is_dense) {
-    if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
+    if (crossed_missing && policy == MissingChunkPolicy::ReportIndeterminate) {
       return make_result(PathStatus::Indeterminate, 0, expanded_nodes,
                          scratch.touched_count_, scratch.path_);
     }
@@ -1157,28 +1156,4 @@ template <typename World, typename Class>
     -> PathResult {
   return weighted_astar_path<World, Class, AdjacentTransitions>(
       world, request, scratch, policy, AdjacentTransitions{}, tie_break);
-}
-
-// Legacy <PassableTag, CostTag> forwarder: one movement class replaces the
-// tag pair; LegacyWeighted preserves the historical semantics exactly,
-// including the cost-agnostic passability asymmetry.
-template <typename World, typename PassableTag, typename CostTag>
-[[nodiscard]] auto weighted_astar_path(const World& world, PathRequest request,
-                                       PathScratch& scratch,
-                                       MissingChunkPolicy policy)
-    -> PathResult {
-  return weighted_astar_path<World,
-                             movement::LegacyWeighted<PassableTag, CostTag>>(
-      world, request, scratch, policy);
-}
-
-template <typename World, typename PassableTag, typename CostTag>
-[[nodiscard]] auto weighted_astar_path(const World& world, PathRequest request,
-                                       PathScratch& scratch,
-                                       PathTieBreak tie_break,
-                                       MissingChunkPolicy policy)
-    -> PathResult {
-  return weighted_astar_path<World,
-                             movement::LegacyWeighted<PassableTag, CostTag>>(
-      world, request, scratch, tie_break, policy);
 }

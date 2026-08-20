@@ -56,7 +56,8 @@ What is guaranteed when something throws:
   callback. Reentrant follow-ups coalesced into that same synchronous
   call-local invocation are consumed with it; independently retained accepted
   maintenance offers remain reachable. The callback owner must keep its
-  authoritative dirty/version state suitable for an explicit retry decision.
+  authoritative dirty-mask and content-version state suitable for an explicit
+  retry decision.
 
 Those propagation and rollback guarantees apply to exception-enabled builds.
 The exception-free path performs successful work and status-based rollback
@@ -307,7 +308,7 @@ existing call resolution unchanged. Such variants can accept the
 `astar_path` and `cached_astar_path`.
 
 Note that `weighted_path_batch` is residency-generic and *does* compile
-against a sparse world, but currently hardcodes `TreatAsBlocked`: it
+against a sparse world, but currently hardcodes `AssumeImpassable`: it
 answers `NoPath` across a missing chunk rather than `Indeterminate`.
 Adding a policy-aware variant there is open work and remains subject to the
 additive-entry-point rule above.

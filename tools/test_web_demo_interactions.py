@@ -158,7 +158,7 @@ def open_page(
 
 
 def cell_center(page: BrowserPage, x: int, y: int) -> tuple[float, float]:
-  """Return viewport coordinates for a colony cell center."""
+  """Return viewport coordinates for a colony tile center."""
   value = page.evaluate(
     "(() => {"
     "const canvas = document.querySelector('#world');"
@@ -169,7 +169,7 @@ def cell_center(page: BrowserPage, x: int, y: int) -> tuple[float, float]:
     "})()"
   )
   if not isinstance(value, list) or len(value) != 2:
-    raise RuntimeError("could not locate colony cell")
+    raise RuntimeError("could not locate colony tile")
   return float(value[0]), float(value[1])
 
 
@@ -192,7 +192,7 @@ def mouse(
 
 
 def click_cell(page: BrowserPage, x: int, y: int) -> None:
-  """Click the center of one colony cell."""
+  """Click the center of one colony tile."""
   point = cell_center(page, x, y)
   mouse(page, "mousePressed", point, True)
   mouse(page, "mouseReleased", point)
@@ -203,7 +203,7 @@ def drag_cells(
   start: tuple[int, int],
   end: tuple[int, int],
 ) -> None:
-  """Drag between colony cells with one sampled move."""
+  """Drag between colony tiles with one sampled move."""
   start_point = cell_center(page, *start)
   end_point = cell_center(page, *end)
   mouse(page, "mousePressed", start_point, True)
@@ -217,7 +217,7 @@ def wall_state(page: BrowserPage, x: int, y: int) -> bool:
 
 
 def bresenham(start: tuple[int, int], end: tuple[int, int]):
-  """Yield the cells the browser's line interpolation must touch."""
+  """Yield the tiles the browser's line interpolation must touch."""
   x, y = start
   end_x, end_y = end
   dx = abs(end_x - x)
@@ -250,7 +250,7 @@ def test_colony(browser: str, base_url: str, timeout: float) -> None:
 
     click_cell(page, 64, 64)
     if not wall_state(page, 64, 64):
-      raise RuntimeError("open-cell click did not add a wall")
+      raise RuntimeError("open-tile click did not add a wall")
     click_cell(page, 64, 64)
     if wall_state(page, 64, 64):
       raise RuntimeError("wall click did not remove the wall")
@@ -268,7 +268,7 @@ def test_colony(browser: str, base_url: str, timeout: float) -> None:
     end = (57, 62)
     drag_cells(page, start, end)
     if not all(wall_state(page, x, y) for x, y in bresenham(start, end)):
-      raise RuntimeError("fast drag did not interpolate every wall cell")
+      raise RuntimeError("fast drag did not interpolate every wall tile")
 
 
 def test_traffic_layout(

@@ -28,7 +28,7 @@ struct RebuildSummary {
 }  // namespace
 
 int main() {
-  constexpr auto value_dirty = std::uint32_t{1};
+  constexpr auto value_dirty = tess::DirtyMask{1};
   World world;
   maintenance::ChunkMaintenanceAdapter<World, Summary, RebuildSummary> adapter{
       world, value_dirty, RebuildSummary{}};
@@ -45,8 +45,9 @@ int main() {
   const auto product = adapter.product(key);
   return product.state == maintenance::ChunkProductState::Current &&
                  product.value != nullptr && product.value->sum == 17 &&
-                 product.token.version == world.meta(key).version &&
-                 world.dirty_flags(key) == 0 && adapter.current(product.token)
+                 product.token.content_version ==
+                     world.meta(key).content_version &&
+                 world.dirty_mask(key).empty() && adapter.current(product.token)
              ? 0
              : 1;
 }

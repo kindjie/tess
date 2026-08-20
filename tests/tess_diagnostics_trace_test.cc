@@ -377,7 +377,7 @@ TEST(TessTraceBuffer, TraceIsAllocationFree) {
 
 struct PlannerTerrainTag {};
 
-constexpr std::uint32_t kPlannerDirtyTerrain = 1u << 0u;
+constexpr auto kPlannerDirtyTerrain = tess::DirtyMask{1u << 0u};
 
 using PlannerShape =
     tess::Shape<tess::Extent3{64, 32, 1}, tess::Extent3{32, 16, 1}>;
@@ -402,10 +402,10 @@ using PlannerWorld = tess::AlwaysResidentWorld<PlannerShape, PlannerSchema>;
 
 TEST(TessPlannerTrace, RecordsPlanDecisionsForConflictingPlan) {
   PlannerWorld world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   constexpr auto writes_terrain = tess::FieldAccessDesc{
       0,
-      kPlannerDirtyTerrain,
+      kPlannerDirtyTerrain.value,
       kPlannerDirtyTerrain,
   };
   // Two operations writing the same chunk's terrain: the second is a
@@ -431,10 +431,10 @@ TEST(TessPlannerTrace, RecordsPlanDecisionsForConflictingPlan) {
 
 TEST(TessPlannerTrace, RecordsPhaseAssignmentDecisions) {
   PlannerWorld world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   constexpr auto writes_terrain = tess::FieldAccessDesc{
       0,
-      kPlannerDirtyTerrain,
+      kPlannerDirtyTerrain.value,
       kPlannerDirtyTerrain,
   };
   // Two operations on different chunks: both plan, and the second merges into

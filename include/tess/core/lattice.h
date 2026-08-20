@@ -5,7 +5,7 @@
 
 namespace tess::lattice {
 
-/** Stable identifier persisted with lattice-dependent products. */
+/** Persistent identifier stored with lattice-dependent products. */
 enum class Identity : std::uint32_t {
   Orthogonal = 0x4f525448,
   HexAxial = 0x48455841,

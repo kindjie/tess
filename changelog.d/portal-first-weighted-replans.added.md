@@ -1,7 +1,7 @@
 - Opt-in portal-first serving for single-goal weighted replans:
   `PathRuntimeCachePolicy::weighted_replan_strategy =
   WeightedReplanStrategy::PortalFirst` routes eligible singletons (dense
-  worlds, default adjacent transitions, legacy weighted tag classes)
+  worlds, default adjacent transitions, explicit movement classes)
   through a chunk-portal route stitched via the runtime's segment cache
   before falling back to exact A*. Accepted routes are legal and
   verified but may exceed the optimal cost, bounded by a premium cap

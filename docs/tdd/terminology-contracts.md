@@ -1,6 +1,8 @@
 # Canonical terminology and pre-1.0 contract cleanup
 
-Status: approved for implementation after independent review.
+Status: implemented; retained as historical design intent. Current contracts
+live in the public headers, maintained architecture pages, and
+`docs/terminology.md`.
 
 ## Problem
 
@@ -13,8 +15,8 @@ audit found three contract-level contradictions:
   sparse chunks as impassable;
 - `ChunkState` is described as derived from active flags, while public setters
   can make the stored state disagree with those flags; and
-- `ChunkPage` promises allocation-free, non-throwing construction and reset
-  for an unconstrained field value whose construction or assignment may
+- `ChunkPage` promised allocation-free, non-throwing construction and reset
+  for an unconstrained field value whose construction or assignment could
   allocate or throw.
 
 The same audit found overloaded or stale terms across public APIs, diagnostics,
@@ -136,15 +138,16 @@ deterministic value initialization, and fixed-capacity sparse page reuse.
 Archive persistence keeps its narrower, independently checked scalar-field
 subset; `TileFieldValue` does not imply persistability. Pages are
 value-initialized, not universally zero-initialized (`Extent3{}` deliberately
-has `z == 1`). Page traversal and storage perform no allocation during reset;
-the contract does not infer that arbitrary user-written default initialization
-is allocation-free from a type trait alone. Construction, reset, and fill
-remain `noexcept` for accepted values.
+has `z == 1`). Page traversal and storage perform no Tess-owned allocation
+during reset; the contract does not infer that arbitrary user-written default
+initialization is allocation-free from a type trait alone. Construction,
+reset, and fill remain `noexcept` for accepted values.
 
 Invalid field values fail at the `Field` public boundary with a library-authored
 diagnostic. The synthetic throwing assignment type used only to exercise the
 formerly unconstrained `fill_field` contract is removed. `fill_field` becomes
-unconditionally non-throwing and performs no allocation for valid field values.
+unconditionally non-throwing and performs no Tess-owned allocation for valid
+field values. An accepted user initializer may still manage its own allocation.
 
 Alternative rejected: allow arbitrary owning values and make page reset
 throwing. `SparseResidentWorld::ensure_resident` currently evicts a victim
@@ -158,14 +161,14 @@ model and would undermine the storage contract for no demonstrated use case.
 Replace the overly broad `ChunkState` with `ChunkActivity::{Sleeping, Active}`.
 Activity is no longer stored in `ChunkMeta`; `chunk_activity(key)` derives it
 from the world's active mask. Public `set_chunk_state` is removed. Marking and
-clearing active flags is the only authority.
+clearing active-mask bits is the only authority.
 
 Remove stored `ChunkMeta::active_count`, which is another redundant value that
 can disagree with the active mask. Diagnostics that need it use a derived
 `active_category_count(key)` accessor.
 
 Archive metadata no longer serializes an independently settable chunk state;
-the loader derives activity and category count from restored active flags.
+the loader derives activity and category count from the restored active mask.
 This changes the fixed chunk prefix, so it explicitly introduces world archive
 format v2. `world_archive_format_version` becomes 2, v2 receives immutable
 golden bytes and prefix-size assertions, and v1 input returns
@@ -200,6 +203,10 @@ use the corresponding strong types. Residency generation applies only to
 sparse residency intervals, not path tickets, async slots, or delta-frame view
 generations.
 
+The experimental `ChunkMaintenanceAdapter` uses the same domains: owned and
+marked masks are `DirtyMask`, while product tokens carry `ContentVersion` and
+`ResidencyGeneration`.
+
 World archives do not serialize dirty history, content versions, topology
 versions, or residency generations; loading advances fresh invalidation state,
 and its dirty mask is a caller-supplied invalidation input rather than archived
@@ -220,6 +227,11 @@ suffixes.
   scope.
 - `FrameOps` becomes `OperationBatch`. Handles and IDs are documented as
   batch-local and valid only until `clear()`; `stable handle` is removed.
+- `LocalTopologyResult` becomes `TopologyBuildResult` because the same result
+  describes local builds and whole-graph updates. Its aggregate field, and the
+  matching `RegionGraphBuildResult` field, become `topology_version_sum` with
+  an unsigned scalar type: the value is a sum for comparison, not one chunk's
+  `TopologyVersion`.
 - `movement::WalkableField` becomes
   `movement::UnitCostFieldMovement`; `WalkableCostField` becomes
   `PositiveCostFieldMovement`. Both names identify movement-class adapters
@@ -231,6 +243,9 @@ suffixes.
   `NoPath` across a non-resident boundary.
 - `MovementStatus::BlockedFrom` and `BlockedTo` become `ImpassableFrom` and
   `ImpassableTo`, with matching public counters and terrain diagnostics.
+  `MovementStatus::Blocked` reports an unavailable transition between
+  otherwise passable endpoints, while missing provider topology reports
+  `StaleTopology`.
   `PathAgentPhase::Blocked` remains correct for an agent temporarily unable to
   progress, and `TransitionAvailability::Blocked` remains correct for an
   unavailable transition.
@@ -244,8 +259,8 @@ movement class explicitly, normally `PositiveCostFieldMovement`. A caller that
 truly needs passability independent of a zero cost can compose
 `MovementClass<Field<PassableTag>, FieldCost<CostTag>>` explicitly. This
 removes the asymmetric compatibility path rather than carrying a type named
-`LegacyWeighted` into 1.0. Rename the current `mvp_path` example and target as
-part of the same current-language cleanup.
+`LegacyWeighted` into 1.0. Rename the `mvp_path` example and target as part of
+the same language cleanup.
 
 ### Reachability result semantics
 
@@ -254,14 +269,26 @@ policy-relative: no route exists in the graph considered under the selected
 missing-chunk policy. `Indeterminate` means a non-resident boundary prevented a
 definitive whole-world answer. Dense searches and completed sparse searches
 that did not ignore an unknown boundary can treat `NoPath` as global.
+`NotComputed` represents default, cleared, stale, or model-mismatched products
+without making a reachability claim. `NoCandidate` reports that a bounded or
+heuristic tier found no candidate and requires exact-search fallback.
+Two-call sparse field readers retain an indeterminate build for unreached and
+non-resident starts; inconsistent field gradients return `NotComputed`.
 
 This changes no search algorithm. The selected policy must reach every
 sparse-capable unit and weighted A*, cached A* (including negative entries),
-boxed and product distance-field, weighted-batch, `PathRequestRuntime`,
-topology-precheck, and path-agent entry point. No runtime or batch layer may
-silently substitute `AssumeImpassable`. Tests pin the matrix of distinct
+boxed and bounded distance-field, weighted-batch, `PathRequestRuntime`,
+topology-precheck, and path-agent entry point. Dense-only retained distance
+products remain outside the sparse policy surface. No runtime or batch layer
+may silently substitute `AssumeImpassable`. Tests pin the matrix of distinct
 policy outcomes and the maintained docs no longer make an unconditional
 global-proof claim.
+
+`PathAgentState` records the last search result as an optional
+`last_result`. Goal assignment, route invalidation, and non-search lifecycle
+transitions clear it rather than inventing `NoPath`; an actual search result,
+including a policy-relative `NoPath`, remains present. `PathAgentPhase` is the
+only lifecycle authority.
 
 ## Documentation and tooltip design
 

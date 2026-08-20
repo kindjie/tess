@@ -14,6 +14,6 @@
 - The paired sentinel representing `include/tess/sim/` measured thread
   creation rather than the code that directory owns, and was the widest
   interval of the twelve sentinels; it is replaced by a compute-bound cell.
-- `RouteCacheScratch` no longer copies its whole suffix slot table before
+- `UnitRouteCache` no longer copies its whole suffix slot table before
   reassigning it. No measurable effect on the owning benchmark family, which
   is recorded as such rather than presented as a win.

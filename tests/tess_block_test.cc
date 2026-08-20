@@ -19,10 +19,10 @@ struct alignas(alignof(std::max_align_t)) MaxAligned {
   unsigned char data[alignof(std::max_align_t)];
 };
 
-constexpr std::uint32_t DirtyTerrain = 1u << 0u;
-constexpr std::uint32_t DirtyCost = 1u << 1u;
-constexpr std::uint32_t ActiveFluid = 1u << 0u;
-constexpr std::uint32_t ActiveFire = 1u << 1u;
+constexpr auto DirtyTerrain = tess::DirtyMask{1u << 0u};
+constexpr auto DirtyCost = tess::DirtyMask{1u << 1u};
+constexpr auto ActiveFluid = tess::ActiveMask{1u << 0u};
+constexpr auto ActiveFire = tess::ActiveMask{1u << 1u};
 
 using TopDown2D =
     tess::Shape<tess::Extent3{128, 64, 1}, tess::Extent3{32, 16, 1}>;

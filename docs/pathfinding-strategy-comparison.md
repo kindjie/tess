@@ -66,7 +66,7 @@ internal data structure is not a rejection of the broader research idea.
 
 - **Four-ary open-list heap** —
   <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
-  It helped a few A* cells but substantially regressed weighted field builds
+  It helped a few A* benchmark cases but substantially regressed weighted field builds
   and failed the second-platform non-regression gate
   ([evidence][quad-heap-rejection]).
 - **Dynamic congestion prices in the colony demo** —
@@ -117,12 +117,14 @@ The example uses three solid vertical walls with alternating single-tile gaps.
 Every open tile has unit passability and cost, so each strategy must solve the
 same visible obstacle course and the returned costs remain comparable. The
 demo model copies each borrowed path before the next scratch mutation so the
-browser reads stable C++ result snapshots.
+browser reads read-only C++ result snapshots.
 
 <!-- tess-snippet: strategy-world source=examples/pathfinding_strategies_model.cc -->
 ```cpp
 struct PassableTag {};
 struct CostTag {};
+using WeightedMovement =
+    tess::movement::PositiveCostFieldMovement<PassableTag, CostTag>;
 
 using Shape = tess::Shape<tess::Extent3{16, 16}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
@@ -133,7 +135,7 @@ using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
 <!-- tess-snippet: strategy-obstacles source=examples/pathfinding_strategies_model.cc -->
 ```cpp
-[[nodiscard]] constexpr auto demo_cell_passable(std::int64_t x, std::int64_t y)
+[[nodiscard]] constexpr auto demo_tile_passable(std::int64_t x, std::int64_t y)
     -> bool {
   if (x == 4) {
     return y == 4;
@@ -183,7 +185,7 @@ Use it when goals are mostly distinct, the map changes too often for retained
 routes to survive, or the request count is small enough that the direct call is
 already below the application budget.
 
-## Route cache: repeated paths on a stable map
+## Route cache: repeated paths on an unchanged map
 
 `cached_astar_path` stores exact routes and same-goal suffixes. A first request
 still performs A*; a repeat can return without expanding search nodes.
@@ -191,7 +193,7 @@ still performs A*; a repeat can return without expanding search nodes.
 <!-- tess-snippet: strategy-cache source=examples/pathfinding_strategies_model.cc -->
 ```cpp
 tess::PathScratch scratch;
-tess::RouteCacheScratch cache;
+tess::UnitRouteCache cache;
 const auto first = tess::cached_astar_path<World, PassableTag>(
     world, kRequests.front(), scratch, cache);
 snapshot.requests[0] = copy_result(first);
@@ -217,7 +219,7 @@ strategy inside the batch.
 ```cpp
 tess::WeightedPathBatchScratch scratch;
 const auto results =
-    tess::weighted_path_batch<World, PassableTag, CostTag, /*MaxCost=*/32>(
+    tess::weighted_path_batch<World, WeightedMovement, /*MaxCost=*/32>(
         world, kRequests, scratch);
 for (std::size_t index = 0; index < results.size(); ++index) {
   snapshot.requests[index] = copy_result(results[index]);

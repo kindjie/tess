@@ -92,7 +92,7 @@ using Traveler = tess::movement::MovementClass<
         tess::movement::Not<tess::movement::Field<SettledTag>>>,
     tess::movement::FieldCost<CostTag>>;
 constexpr std::uint32_t kMaxCost = 1;
-constexpr std::uint32_t kTerrainDirty = 1U << 0U;
+constexpr auto kTerrainDirty = tess::DirtyMask{1U << 0U};
 
 struct BuildAck {
   std::size_t tiles = 0;
@@ -137,7 +137,7 @@ struct ColonyModel::Impl {
   tess::JointMoveScratch joint_scratch;
   tess::RegionGraphScratch graph_scratch;
   tess::RegionGraph graph;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   tess::DeltaCollector deltas;
   std::vector<WallEdit> pending_walls;
   std::vector<std::uint8_t> merge_claims;
@@ -287,7 +287,7 @@ struct ColonyModel::Impl {
       world.field<SettledTag>(agent.position) = settled;
       // Settling is a world edit as far as the unit route cache is concerned,
       // because `Traveler` reads this field: the tile just changed
-      // passability. That cache invalidates on chunk versions, and a plain
+      // passability. That cache invalidates on content versions, and a plain
       // field write bumps none, so without this the next replan can be handed
       // a cached route straight through the tile that has just become
       // impassable -- and the agent then retries that step forever, kept alive
@@ -403,7 +403,7 @@ struct ColonyModel::Impl {
     std::fill(merge_claims.begin(), merge_claims.end(), std::uint8_t{0});
     for (std::size_t i = 0; i < agents.size(); ++i) {
       const auto& agent = agents[i];
-      if (!agent.has_goal || agent.status != tess::PathStatus::Found ||
+      if (!agent.has_goal || agent.last_result != tess::PathStatus::Found ||
           agent.phase != tess::PathAgentPhase::Blocked ||
           i >= tick_state.routes.routes.size()) {
         continue;
@@ -483,7 +483,7 @@ struct ColonyModel::Impl {
           crowd_blocked[index] = 0;
           tess::fail_path_agent_flow(agent, tick_state.flow_accounting);
           agent.phase = tess::PathAgentPhase::Unreachable;
-          agent.status = terrain_route.status;
+          agent.last_result = terrain_route.status;
         }
         recovery_schedule.record_attempt(index, tick, recovery_options);
         continue;
@@ -495,7 +495,7 @@ struct ColonyModel::Impl {
         crowd_blocked[index] = 0;
         tess::fail_path_agent_flow(agent, tick_state.flow_accounting);
         agent.phase = tess::PathAgentPhase::Unreachable;
-        agent.status = tess::PathStatus::NoPath;
+        agent.last_result = tess::PathStatus::NoPath;
       } else {
         // A Blocked agent is not settled, but clear its marker defensively so
         // publication lag cannot make the exact query reject its start.
@@ -534,10 +534,10 @@ struct ColonyModel::Impl {
             crowd_blocked[index] = 0;
             tess::fail_path_agent_flow(agent, tick_state.flow_accounting);
             agent.phase = tess::PathAgentPhase::Unreachable;
-            agent.status = terrain_route.status;
+            agent.last_result = terrain_route.status;
           }
         } else if (route.status == tess::PathStatus::Found &&
-                   agent.status != tess::PathStatus::Found) {
+                   agent.last_result != tess::PathStatus::Found) {
           // Route rebuilding shares the same exact-query budget on later
           // ticks; do not wake the synchronous all-agent driver.
           (void)replan_queue.request(index, agent);
@@ -652,7 +652,7 @@ struct ColonyModel::Impl {
       demo->last_movement_waits = stats.movement.blocked_waits;
       // A colony can stop dead without any agent being durably blocked --
       // two agents each standing on the tile the other needs will block, be
-      // refunded, and block again forever. Nobody reports that today, so the
+      // refunded, and block again forever. No caller reports that state, so the
       // page reads "Colony running" over a frozen grid. Count consecutive
       // ticks in which not one agent moved; the page turns that into a
       // stalled message. Arrival is progress, so a colony waiting out the
@@ -702,7 +702,7 @@ struct ColonyModel::Impl {
     const auto key = tess::chunk_key<Shape>(tess::chunk_coord<Shape>(coord));
     (void)ops.update_field(
         tess::DomainDesc::explicit_chunks({&key, 1}),
-        tess::FieldAccessDesc{0, kTerrainDirty, kTerrainDirty},
+        tess::FieldAccessDesc{0, kTerrainDirty.value, kTerrainDirty},
         tess::WritePolicy::UniquePerChunk);
     return true;
   }

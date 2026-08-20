@@ -71,21 +71,21 @@ TEST(TessUpgrade1_0, PathRequestReplacesStartGoalPairs) {
 TEST(TessUpgrade1_0, OptionsReplaceAdjacentCacheAndMovementIntegers) {
   constexpr auto max_entries = std::size_t{8};
   constexpr auto max_path_nodes = std::size_t{64};
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
 
   // [upgrade-route-cache-limits]
   // Before:
   // cache.set_caps(max_entries, max_path_nodes);
 
   // After:
-  cache.set_caps(tess::RouteCacheLimits{max_entries, max_path_nodes});
+  cache.set_caps(tess::UnitRouteCacheLimits{max_entries, max_path_nodes});
   // [upgrade-route-cache-limits]
 
   World world;
   std::array<tess::PathAgentState, 0> agents{};
   tess::PathRequestRuntime runtime;
   constexpr auto max_steps = std::size_t{2};
-  constexpr auto movement_dirty_mask = std::uint32_t{4};
+  constexpr auto movement_dirty_mask = tess::DirtyMask{4};
 
   // [upgrade-agent-options]
   // Before:
@@ -158,7 +158,7 @@ TEST(TessUpgrade1_0, OutputsPrecedeScratchAndDirtyDestinationsPrecedeSources) {
   tess::PlannedDirtyPartitions partitions;
   tess::PlannedDirtyAccumulator dirty_scratch;
   std::vector<tess::RenderTileDelta> render_deltas;
-  constexpr auto dirty_mask = std::uint32_t{1};
+  constexpr auto dirty_mask = tess::DirtyMask{1};
 
   // [upgrade-parameter-order]
   // Before:

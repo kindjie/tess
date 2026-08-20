@@ -15,13 +15,12 @@ namespace tess {
 
 // How the unit route cache treats world edits between batches.
 //
-// WholeWorldExact: any chunk-version change anywhere drops every entry
-// (today's behavior); served routes are always identical to fresh
-// recomputation.
+// WholeWorldExact: any content-version change anywhere drops every entry;
+// served routes are always identical to fresh recomputation.
 //
 // ScopedFeasible: entries record the chunks their route crosses and are
 // retired only when one of those chunks changes. Surviving routes are
-// guaranteed LEGAL (every step walkable under the current world) with a
+// guaranteed LEGAL (every step passable under the current world) with a
 // truthful served cost, and they were optimal when stored — but an edit
 // elsewhere that OPENS a shortcut can leave a served route suboptimal
 // until it is naturally retired. Under blocking-only (graph-monotone)
@@ -29,14 +28,14 @@ namespace tess {
 // special transitions qualify for scoped footprints; other models' entries
 // carry whole-world sensitivity and behave as in exact mode. Dense
 // (AlwaysResident) worlds only; sparse worlds fall back to exact behavior.
-/// Staleness policy for RouteCacheScratch (see enumerator comments).
+/// Staleness policy for UnitRouteCache (see enumerator comments).
 enum class UnitRouteStaleness : std::uint8_t {
   WholeWorldExact,
   ScopedFeasible,
 };
 
 /// Snapshot of unit-route cache occupancy, hits, misses, and invalidations.
-struct RouteCacheStats {
+struct UnitRouteCacheStats {
   // Resident entries INCLUDING scoped-mode tombstones awaiting compaction;
   // live_entries excludes them.
   std::size_t entries = 0;
@@ -64,7 +63,7 @@ struct RouteCacheStats {
 };
 
 /// Bounds retained route count and aggregate cached path-node storage.
-struct RouteCacheLimits {
+struct UnitRouteCacheLimits {
   std::size_t max_entries = 512;
   std::size_t max_path_nodes = std::size_t{1} << 20U;
 };
@@ -86,13 +85,13 @@ struct RouteCacheLimits {
 // storage; it does not mean "unlimited".
 // Stateful-provider bindings include object address plus revision so two live
 // instances cannot alias. Copies/moves of the cache retain that external
-// binding; the provider itself must remain at a stable address, and callers
+// binding; the provider itself must remain address-stable, and callers
 // must clear bound caches before ending its lifetime.
-/// Bounded scratch cache for exact and same-goal suffix unit routes.
+/// Bounded cache for exact and same-goal suffix unit routes.
 ///
 /// Class and provider identities are process-local; do not share this cache
 /// across a dynamic-library boundary.
-class RouteCacheScratch {
+class UnitRouteCache {
  public:
   static constexpr std::size_t default_max_entries = 512;
   static constexpr std::size_t default_max_path_nodes = std::size_t{1} << 20u;
@@ -100,7 +99,7 @@ class RouteCacheScratch {
   // A cap of 0 disables storage (every request recomputes); a single route
   // larger than max_path_nodes is skipped without disturbing resident
   // entries (counted in stats().oversized_skips).
-  void set_caps(RouteCacheLimits limits) noexcept {
+  void set_caps(UnitRouteCacheLimits limits) noexcept {
     max_entries_ = limits.max_entries;
     max_path_nodes_ = limits.max_path_nodes;
     // The normal over-cap insertion policy invalidates the whole cache. Apply
@@ -131,7 +130,7 @@ class RouteCacheScratch {
     // policy bound across a clear() makes the next lookup under the other
     // policy count a rebind and invalidate an already-empty cache.
     policy_bound_ = false;
-    bound_policy_ = MissingChunkPolicy::TreatAsBlocked;
+    bound_policy_ = MissingChunkPolicy::ReportIndeterminate;
     hits_ = 0;
     suffix_hits_ = 0;
     misses_ = 0;
@@ -183,7 +182,7 @@ class RouteCacheScratch {
   // under one MissingChunkPolicy must never be served to a caller who asked
   // for the other: the two disagree precisely on the terminal status when a
   // search exhausted the resident set having skipped a non-resident
-  // neighbour -- NoPath under TreatAsBlocked, Indeterminate under
+  // neighbour -- NoPath under AssumeImpassable, Indeterminate under
   // Indeterminate. Binding at whole-cache granularity rather than widening
   // the key keeps Found entries, which are policy-invariant and are the
   // entire suffix-index substrate, from being duplicated per policy.
@@ -229,7 +228,7 @@ class RouteCacheScratch {
     staleness_ = staleness;
     has_world_fingerprint_ = false;
     world_fingerprint_ = 0;
-    version_snapshot_.clear();
+    content_version_snapshot_.clear();
   }
 
   [[nodiscard]] auto staleness() const noexcept -> UnitRouteStaleness {
@@ -254,7 +253,7 @@ class RouteCacheScratch {
   // Scoped-mode analog of invalidate_if_world_changed, and the single
   // staleness entry point for both modes: exact mode (and sparse worlds,
   // which scoped V1 excludes) delegates to the fingerprint drop; scoped
-  // dense mode compares an exact per-chunk version snapshot — no hashing
+  // dense mode compares an exact per-content version snapshot — no hashing
   // in the staleness decision — and on any difference bumps the epoch that
   // lazy per-entry validation checks against. Returns true when a world
   // change was detected (entries dropped in exact mode; revalidation armed
@@ -268,10 +267,11 @@ class RouteCacheScratch {
       if (staleness_ != UnitRouteStaleness::ScopedFeasible) {
         return invalidate_if_world_changed(world);
       }
-      if (version_snapshot_.size() != World::chunk_count) {
-        version_snapshot_.resize(World::chunk_count);
+      if (content_version_snapshot_.size() != World::chunk_count) {
+        content_version_snapshot_.resize(World::chunk_count);
         for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
-          version_snapshot_[i] = world.meta(ChunkKey{i}).version;
+          content_version_snapshot_[i] =
+              world.meta(ChunkKey{i}).content_version;
         }
         // Entries stored before the first refresh were stamped with the
         // current epoch, but edits between their store and this baseline
@@ -290,9 +290,9 @@ class RouteCacheScratch {
       // update in one loop rather than gathering for a memcmp.
       auto changed = false;
       for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
-        const auto version = world.meta(ChunkKey{i}).version;
-        if (version_snapshot_[i] != version) {
-          version_snapshot_[i] = version;
+        const auto content_version = world.meta(ChunkKey{i}).content_version;
+        if (content_version_snapshot_[i] != content_version) {
+          content_version_snapshot_[i] = content_version;
           changed = true;
         }
       }
@@ -320,14 +320,14 @@ class RouteCacheScratch {
   }
 
   // The fingerprint identifies world CONTENT VERSIONS, not a world
-  // instance: two same-shape worlds whose chunks carry identical version
-  // counters (e.g. both populated without mark_dirty) alias, and a cache
-  // reused across them would serve one world's routes for the other. Keep
-  // one cache per world; only the sparse path self-identifies its world
-  // (residency_generation is world-monotonic).
+  // instance: two same-shape worlds whose chunks carry identical
+  // content-version counters (e.g. both populated without mark_dirty) alias,
+  // and a cache reused across them would serve one world's routes for the
+  // other. Keep one cache per world; only the sparse path self-identifies its
+  // world (residency_generation is world-monotonic).
   template <typename World>
   void capture_world_versions(const World& world) noexcept {
-    world_fingerprint_ = world_version_fingerprint(world);
+    world_fingerprint_ = world_content_fingerprint(world);
     has_world_fingerprint_ = true;
   }
 
@@ -338,7 +338,7 @@ class RouteCacheScratch {
       capture_world_versions(world);
       return false;
     }
-    const auto current = world_version_fingerprint(world);
+    const auto current = world_content_fingerprint(world);
     if (current == world_fingerprint_) {
       return false;
     }
@@ -348,8 +348,8 @@ class RouteCacheScratch {
     return true;
   }
 
-  [[nodiscard]] auto stats() const noexcept -> RouteCacheStats {
-    return RouteCacheStats{
+  [[nodiscard]] auto stats() const noexcept -> UnitRouteCacheStats {
+    return UnitRouteCacheStats{
         entries_.size(),
         hits_,
         suffix_hits_,
@@ -371,7 +371,7 @@ class RouteCacheScratch {
   struct Entry {
     Coord3 start{};
     Coord3 goal{};
-    PathStatus status = PathStatus::NoPath;
+    PathStatus status = PathStatus::NotComputed;
     std::uint32_t cost = 0;
     std::uint32_t cost_scale = 1;
     std::size_t expanded_nodes = 0;
@@ -390,10 +390,10 @@ class RouteCacheScratch {
   };
 
   // One collapsed (chunk, captured content version) dependency of a stored
-  // route; validation compares against the chunk's current version.
+  // route; validation compares against the chunk's current content version.
   struct DepPair {
     std::uint64_t key = 0;
-    std::uint32_t version = 0;
+    ContentVersion content_version{};
   };
 
   struct SuffixSlot {
@@ -403,12 +403,12 @@ class RouteCacheScratch {
 
   template <typename World, typename Tag>
   friend auto cached_astar_path(const World& world, PathRequest request,
-                                PathScratch& scratch, RouteCacheScratch& cache,
+                                PathScratch& scratch, UnitRouteCache& cache,
                                 MissingChunkPolicy policy) -> PathResult;
 
   template <typename World, typename Tag, typename Provider>
   friend auto cached_astar_path(const World& world, PathRequest request,
-                                PathScratch& scratch, RouteCacheScratch& cache,
+                                PathScratch& scratch, UnitRouteCache& cache,
                                 const Provider& provider,
                                 MissingChunkPolicy policy) -> PathResult;
 
@@ -502,7 +502,7 @@ class RouteCacheScratch {
 
   // Scoped-mode serve gate: exact mode always serves; a scoped entry
   // already validated this epoch serves on one compare; otherwise its
-  // dependency pairs are walked against current chunk versions —
+  // dependency pairs are walked against current content versions —
   // whole-world entries fail unconditionally — and the entry is either
   // stamped or retired. Retiring here cannot orphan a better match: store
   // only runs after a live-match miss, so the retired entry was the only
@@ -524,7 +524,8 @@ class RouteCacheScratch {
     ++revalidations_;
     for (std::size_t i = 0; i < entry.dep_count; ++i) {
       const auto& dep = deps_[entry.dep_offset + i];
-      if (world.meta(ChunkKey{dep.key}).version != dep.version) {
+      if (world.meta(ChunkKey{dep.key}).content_version !=
+          dep.content_version) {
         retire(entry);
         return false;
       }
@@ -586,7 +587,7 @@ class RouteCacheScratch {
     const auto dep_offset = deps_.size();
     paths_.insert(paths_.end(), result.path.begin(), result.path.end());
     for (const auto key : dep_scratch_) {
-      deps_.push_back(DepPair{key, world.meta(ChunkKey{key}).version});
+      deps_.push_back(DepPair{key, world.meta(ChunkKey{key}).content_version});
     }
     entries_.push_back(Entry{
         request.start,
@@ -726,7 +727,7 @@ class RouteCacheScratch {
   std::vector<SuffixSlot> suffix_slots_;
   // Scoped mode: exact per-chunk content versions as of the last refresh
   // (never hashed), and the epoch lazy validation stamps against.
-  std::vector<std::uint32_t> version_snapshot_;
+  std::vector<ContentVersion> content_version_snapshot_;
   std::uint64_t change_epoch_ = 1;
   std::uint64_t ineligible_synced_epoch_ = 0;
   std::size_t dead_count_ = 0;
@@ -749,7 +750,7 @@ class RouteCacheScratch {
   // MissingChunkPolicy the entries were computed under. Unset until the
   // first lookup binds it; see bind_missing_chunk_policy.
   bool policy_bound_ = false;
-  MissingChunkPolicy bound_policy_ = MissingChunkPolicy::TreatAsBlocked;
+  MissingChunkPolicy bound_policy_ = MissingChunkPolicy::ReportIndeterminate;
   // Movement-class identity the entries are bound to (0 = unbound); see
   // bind_class.
   std::uintptr_t bound_class_ = 0;
@@ -760,17 +761,17 @@ class RouteCacheScratch {
   bool has_world_fingerprint_ = false;
 
   template <typename World>
-  [[nodiscard]] static auto world_version_fingerprint(
+  [[nodiscard]] static auto world_content_fingerprint(
       const World& world) noexcept -> std::uint64_t {
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident>) {
-      // Dense: fold every chunk's content version (meta().version) in order.
+      // Dense: fold every chunk's content version in order.
       auto fingerprint = std::uint64_t{0xcbf29ce484222325ull};
       for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
-        const auto version = world.meta(ChunkKey{i}).version;
+        const auto content_version = world.meta(ChunkKey{i}).content_version;
         fingerprint ^= i + 0x9e3779b97f4a7c15ull + (fingerprint << 6u) +
                        (fingerprint >> 2u);
-        fingerprint ^= version;
+        fingerprint ^= content_version.value;
         fingerprint *= 0x100000001b3ull;
       }
       return fingerprint;
@@ -778,10 +779,12 @@ class RouteCacheScratch {
       // Sparse: fold only the resident set (bounded by resident_count, never
       // chunk_count; meta()/residency_generation() are called only for keys
       // from resident_chunk_keys(), so never on a non-resident slot). Each
-      // chunk contributes (key, residency_generation, content version):
-      // version catches in-place edits, and residency_generation -- world-
-      // monotonic and strictly greater on any reload, so it changes even when
-      // ensure_resident resets version to 0 -- catches evict/reload/swap. The
+      // chunk contributes (key, residency_generation, content version): the
+      // content version catches in-place edits, and residency_generation --
+      // world-monotonic and strictly greater on any rematerialization, so it
+      // changes even
+      // when ensure_resident resets the content version to 0 -- catches
+      // eviction/rematerialization/swap. The
       // per-key terms combine by a COMMUTATIVE sum, because
       // resident_chunk_keys() order is not stable (eviction swap-with-last
       // reorders it); an order- dependent chain would false-invalidate on a
@@ -794,8 +797,8 @@ class RouteCacheScratch {
       auto acc = std::uint64_t{0};
       for (const auto key : world.resident_chunk_keys()) {
         auto h = mix(key.value);
-        h ^= mix(h + world.residency_generation(key));
-        h ^= mix(h + static_cast<std::uint64_t>(world.meta(key).version));
+        h ^= mix(h + world.residency_generation(key).value);
+        h ^= mix(h + world.meta(key).content_version.value);
         acc += h;
       }
       return mix(acc + static_cast<std::uint64_t>(world.resident_count()) +
@@ -824,7 +827,7 @@ class RouteCacheScratch {
 template <typename World, typename Tag, typename Provider>
 [[nodiscard]] auto cached_astar_path(const World& world, PathRequest request,
                                      PathScratch& scratch,
-                                     RouteCacheScratch& cache,
+                                     UnitRouteCache& cache,
                                      const Provider& provider,
                                      MissingChunkPolicy policy) -> PathResult {
   using Class = movement::movement_class_of<Tag>;
@@ -832,7 +835,7 @@ template <typename World, typename Tag, typename Provider>
   using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
   const auto model = Model{provider};
   // Bind the cache to this call's movement class (normalized, so a raw tag
-  // and its WalkableField identity share entries): entries key on
+  // and its UnitCostFieldMovement identity share entries): entries key on
   // (start, goal) only, so a direct caller alternating classes must never be
   // served the other class's route -- the rebind drops the cache instead.
   cache.bind_class(detail::tag_identity<movement::movement_class_of<Tag>>());
@@ -844,15 +847,16 @@ template <typename World, typename Tag, typename Provider>
   // cache for a generic caller that alternates policies across world types.
   constexpr bool dense =
       std::is_same_v<typename World::residency_type, AlwaysResident>;
-  cache.bind_missing_chunk_policy(dense ? MissingChunkPolicy::TreatAsBlocked
+  cache.bind_missing_chunk_policy(dense ? MissingChunkPolicy::AssumeImpassable
                                         : policy);
   // The cache stores absolute Coord3 keys and routes only (no residency-slot
   // state). Correctness on sparse rests entirely on the residency-aware
-  // world_version_fingerprint plus prepare_process invalidating the whole
+  // world_content_fingerprint plus prepare_process invalidating the whole
   // cache before any serve — sparse worlds are excluded from ScopedFeasible
   // mode in V1 and always take the exact-fingerprint lifecycle: any evict,
-  // reload, or in-place edit changes the fingerprint and drops the cache, so
-  // a stale route can never be served. A miss runs sparse-native astar_path.
+  // rematerialization, or in-place edit changes the fingerprint and drops the
+  // cache, so a stale route can never be served. A miss runs sparse-native
+  // astar_path.
   //
   // Scope eligibility mirrors the suffix-reuse condition: with unit step
   // cost and no special transitions, every tile an accepted step reads lies
@@ -916,7 +920,7 @@ template <typename World, typename Tag>
 /// Finds a cached empty-provider route or computes and stores one.
 [[nodiscard]] auto cached_astar_path(const World& world, PathRequest request,
                                      PathScratch& scratch,
-                                     RouteCacheScratch& cache,
+                                     UnitRouteCache& cache,
                                      MissingChunkPolicy policy) -> PathResult {
   return cached_astar_path<World, Tag, AdjacentTransitions>(
       world, request, scratch, cache, AdjacentTransitions{}, policy);

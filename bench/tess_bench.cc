@@ -43,8 +43,8 @@ struct TerrainTag {};
 struct CostTag {};
 struct PassableTag {};
 
-constexpr std::uint32_t DirtyTerrain = 1u << 0u;
-constexpr std::uint32_t DirtyCost = 1u << 1u;
+constexpr auto DirtyTerrain = tess::DirtyMask{1u << 0u};
+constexpr auto DirtyCost = tess::DirtyMask{1u << 1u};
 
 using StorageSchema = tess::FieldSchema<tess::Field<TerrainTag, std::uint16_t>,
                                         tess::Field<CostTag, float>>;
@@ -65,6 +65,8 @@ using PathRealisticWorld =
 using PathScaleWorld = tess::AlwaysResidentWorld<PathScaleShape, PathSchema>;
 using WeightedPathScaleWorld =
     tess::AlwaysResidentWorld<PathScaleShape, WeightedPathSchema>;
+using WeightedMovement =
+    tess::movement::PositiveCostFieldMovement<PassableTag, CostTag>;
 using PathLargeWorld = tess::AlwaysResidentWorld<PathLargeShape, PathSchema>;
 using PathVerticalScaleWorld =
     tess::AlwaysResidentWorld<PathVerticalScaleShape, PathSchema>;
@@ -120,7 +122,7 @@ void record_path_counters(benchmark::State& state,
 }
 
 void record_route_cache_counters(benchmark::State& state,
-                                 tess::RouteCacheStats stats) {
+                                 tess::UnitRouteCacheStats stats) {
   state.counters["cache.entries"] = static_cast<double>(stats.entries);
   state.counters["cache.hits"] = static_cast<double>(stats.hits);
   state.counters["cache.suffix_hits"] = static_cast<double>(stats.suffix_hits);
@@ -503,7 +505,7 @@ void BM_world_metadata_lookup_by_key(benchmark::State& state) {
   auto key = tess::ChunkKey{0};
   for (auto _ : state) {
     auto& meta = world.meta(key);
-    benchmark::DoNotOptimize(meta.version);
+    benchmark::DoNotOptimize(meta.content_version.value);
     key.value = (key.value + 17) % StorageWorld::chunk_count;
   }
 }
@@ -623,8 +625,9 @@ void BM_block_dirty_domain_iteration(benchmark::State& state) {
   for (auto _ : state) {
     std::uint64_t sum = 0;
     tess::for_each_chunk(
-        world, domain, tess::WritePolicy::ReadOnly,
-        [&](auto view) { sum += view.key().value + view.meta().version; });
+        world, domain, tess::WritePolicy::ReadOnly, [&](auto view) {
+          sum += view.key().value + view.meta().content_version.value;
+        });
     benchmark::DoNotOptimize(sum);
   }
 }
@@ -644,7 +647,8 @@ void BM_block_context_iteration_2d(benchmark::State& state) {
     ctx.for_each_chunk([&](auto view) {
       auto terrain = view.template field_span<TerrainTag>();
       terrain[0] = static_cast<std::uint16_t>(view.key().value);
-      sum += terrain[0] + view.meta().version + view.bounds().extent.x;
+      sum += terrain[0] + view.meta().content_version.value +
+             view.bounds().extent.x;
     });
     benchmark::DoNotOptimize(sum);
   }
@@ -753,9 +757,9 @@ void BM_block_chunk_boundary_scan(benchmark::State& state) {
 
 void BM_queued_execute_resident_update(benchmark::State& state) {
   StorageWorld world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   (void)ops.update_field(tess::DomainDesc::resident_chunks(),
-                         tess::FieldAccessDesc{0, DirtyTerrain, 0},
+                         tess::FieldAccessDesc{0, DirtyTerrain.value, {}},
                          tess::WritePolicy::UniquePerChunk);
   const auto report = tess::plan_operations(world, ops);
   const auto& plan = report.plan();
@@ -780,9 +784,9 @@ void BM_queued_execute_resident_update(benchmark::State& state) {
 // against the resultless ceiling above.
 void BM_queued_execute_resident_update_with_results(benchmark::State& state) {
   StorageWorld world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   (void)ops.update_field(tess::DomainDesc::resident_chunks(),
-                         tess::FieldAccessDesc{0, DirtyTerrain, 0},
+                         tess::FieldAccessDesc{0, DirtyTerrain.value, {}},
                          tess::WritePolicy::UniquePerChunk);
   const auto report = tess::plan_operations(world, ops);
   const auto& plan = report.plan();
@@ -1175,7 +1179,7 @@ void run_weighted_astar_512x512(benchmark::State& state,
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   // Untimed setup run captures the expected cost for the post-loop check.
   const auto expected =
-      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+      tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
           world, request, scratch);
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
@@ -1183,8 +1187,9 @@ void run_weighted_astar_512x512(benchmark::State& state,
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
     TESS_PATH_DIAG_RUN(
-        result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
-                                           CostTag>(world, request, scratch));
+        result =
+            tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
+                world, request, scratch));
     auto cost = result.cost;
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
@@ -1247,7 +1252,7 @@ void BM_path_weighted_astar_batch_100_mixed_512x512(benchmark::State& state) {
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   const auto expected_last =
-      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+      tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
           world, requests.back(), scratch);
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
@@ -1259,8 +1264,9 @@ void BM_path_weighted_astar_batch_100_mixed_512x512(benchmark::State& state) {
     total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
-      result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
-                                         CostTag>(world, request, scratch);
+      result =
+          tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
+              world, request, scratch);
       total_cost += result.cost;
       total_expanded += result.expanded_nodes;
     });
@@ -1865,12 +1871,12 @@ void BM_path_cached_astar_batch_100_mixed_repeated_room_portals_512x512(
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.reserve_routes(requests.size());
   cache.reserve_path_nodes(path_node_count<PathScaleShape>());
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
-  tess::RouteCacheStats cache_stats;
+  tess::UnitRouteCacheStats cache_stats;
   std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
@@ -1949,12 +1955,12 @@ void BM_path_cached_astar_batch_100_suffix_open_512x512(
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.reserve_routes(requests.size());
   cache.reserve_path_nodes(path_node_count<PathScaleShape>());
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
-  tess::RouteCacheStats cache_stats;
+  tess::UnitRouteCacheStats cache_stats;
   std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 

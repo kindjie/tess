@@ -38,7 +38,7 @@ using Walker = tess::movement::MovementClass<
     tess::movement::FieldCost<CostTag>>;
 constexpr std::uint32_t kMaxCost = 4;
 
-constexpr std::uint32_t kTerrainDirty = 1U << 0U;
+constexpr auto kTerrainDirty = tess::DirtyMask{1U << 0U};
 
 // One queued construction order: a wall segment along y in column `x`.
 struct WallOrder {
@@ -59,7 +59,7 @@ struct Colony {
   tess::PathAgentTickState tick_state;
   tess::LocalTopologyScratch topo_scratch;
   tess::RegionGraph graph;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   WallOrder pending_wall{};
   tess::DeltaCollector deltas;
   std::size_t built_tiles = 0;
@@ -184,7 +184,7 @@ auto run() -> int {
         (void)colony.ops.update_field(
             tess::DomainDesc::explicit_chunks(
                 std::span<const tess::ChunkKey>{&key, 1}),
-            tess::FieldAccessDesc{0, kTerrainDirty, kTerrainDirty},
+            tess::FieldAccessDesc{0, kTerrainDirty.value, kTerrainDirty},
             tess::WritePolicy::UniquePerChunk);
       }
       std::cout << "frame 4: wall ordered across the corridor\n";

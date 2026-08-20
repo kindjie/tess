@@ -18,6 +18,8 @@ Published on the documentation site:
   headless-server framings of the shipped examples.
 - [Architecture](architecture/README.md): maintained design notes that should
   track implementation.
+- [Terminology](terminology.md): canonical nouns, actions, states, time units,
+  and qualifiers shared by the public API and maintained documentation.
 - [Performance](performance.md): adopter-facing benchmark expectations and
   the trend snapshot.
 - [Pathfinding strategy comparison](pathfinding-strategy-comparison.md):

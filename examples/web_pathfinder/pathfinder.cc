@@ -55,12 +55,13 @@ TESS_DEMO_EXPORT void tess_demo_reset() {
   demo.path = {};
 }
 
-TESS_DEMO_EXPORT auto tess_demo_set_blocked(int x, int y, int blocked) -> int {
+TESS_DEMO_EXPORT auto tess_demo_set_impassable(int x, int y, int impassable)
+    -> int {
   if (!in_bounds(x, y)) {
     return 0;
   }
   auto& demo = state();
-  demo.world.field<PassableTag>(coord(x, y)) = blocked == 0 ? 1 : 0;
+  demo.world.field<PassableTag>(coord(x, y)) = impassable == 0 ? 1 : 0;
   demo.path = {};
   return 1;
 }
@@ -109,7 +110,7 @@ int main() {
       return 1;
     }
     for (int y = 0; y < kHeight; ++y) {
-      tess_demo_set_blocked(kWidth / 2, y, 1);
+      tess_demo_set_impassable(kWidth / 2, y, 1);
     }
     if (tess_demo_find_path(0, 0, kWidth - 1, kHeight - 1) != 0) {
       return 1;

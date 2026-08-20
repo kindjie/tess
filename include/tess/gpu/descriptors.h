@@ -8,7 +8,7 @@
 #include <limits>
 #include <type_traits>
 
-// M13 GPU descriptors: dependency-free, byte-level storage facts derived from
+// GPU descriptors: dependency-free, byte-level storage facts derived from
 // the field schema and chunk layout for compile-time-polymorphic backends.
 // CPU results remain authoritative. No GPU API is included here; the optional
 // WebGPU implementation is separately gated in webgpu_backend.h, so CPU-only

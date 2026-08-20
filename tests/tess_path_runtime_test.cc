@@ -17,6 +17,9 @@ namespace {
 
 struct PassableTag {};
 struct CostTag {};
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
@@ -43,7 +46,8 @@ void fill_world(World& world) {
 void mark_cost(World& world, tess::Coord3 coord, std::uint32_t cost) {
   world.template field<CostTag>(coord) = cost;
   world.mark_dirty(tess::chunk_key<Runtime2D>(tess::tile_key<Runtime2D>(coord)),
-                   1u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+                   tess::DirtyMask{1u},
+                   tess::Box3{coord, tess::Extent3{1, 1, 1}});
 }
 
 struct ThrowAfterTrivialRequestProvider {
@@ -150,7 +154,7 @@ TEST(TessPathRuntime, UnitCachedRequestsReuseAndInvalidateRoutes) {
   EXPECT_EQ(stats.route_cache.suffix_hits, 1u);
 
   world.template field<PassableTag>(tess::Coord3{1, 0, 0}) = false;
-  world.mark_dirty(tess::ChunkKey{0}, 1u,
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{1, 0, 0}, tess::Extent3{1, 1, 1}});
 
   results = runtime.process_unit_cached<World, PassableTag>(world);
@@ -325,7 +329,7 @@ TEST(TessPathRuntime, UnitFieldProductCacheRejectsStaleProductsAfterEdit) {
   ASSERT_EQ(results.size(), 2u);
   EXPECT_EQ(runtime.stats().field_product_cache.entries, 1u);
 
-  world.mark_dirty(tess::ChunkKey{0}, 1u,
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
   results = runtime.process_unit_cached<World, PassableTag>(world, policy);
   ASSERT_EQ(results.size(), 2u);
@@ -372,7 +376,7 @@ TEST(TessPathRuntime,
   EXPECT_EQ(runtime.stats().field_product_cache.entries, 1u);
 
   world.template field<PassableTag>(tess::Coord3{8, 0, 0}) = true;
-  world.mark_dirty(tess::ChunkKey{1}, 1u,
+  world.mark_dirty(tess::ChunkKey{1}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{8, 0, 0}, tess::Extent3{1, 1, 1}});
   (void)runtime.submit(
       tess::PathRequest{tess::Coord3{8, 0, 0}, tess::Coord3{0, 0, 0}});
@@ -410,7 +414,7 @@ TEST(TessPathRuntime, UnitFieldProductCacheClearsOnWorldChangeCadence) {
   (void)runtime.process_unit_cached<World, PassableTag>(world, policy);
   EXPECT_EQ(runtime.stats().cache_clears, 0u);
 
-  world.mark_dirty(tess::ChunkKey{0}, 1u,
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
   (void)runtime.process_unit_cached<World, PassableTag>(world, policy);
 
@@ -488,8 +492,8 @@ TEST(TessPathRuntime, WeightedBatchHandlesManyAgentsAndCacheClearCadence) {
       .invalidate_unit_route_cache_on_world_change = true,
   };
 
-  auto results = runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
-      world, policy);
+  auto results =
+      runtime.process_weighted_batch<World, WeightedMovement, 8>(world, policy);
   ASSERT_EQ(results.size(), 16u);
   for (const auto result : results) {
     EXPECT_EQ(result.status, tess::PathStatus::Found);
@@ -504,16 +508,16 @@ TEST(TessPathRuntime, WeightedBatchHandlesManyAgentsAndCacheClearCadence) {
   EXPECT_EQ(stats.cache_clears, 0u);
 
   mark_cost(world, tess::Coord3{1, 0, 0}, 4);
-  results = runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
-      world, policy);
+  results =
+      runtime.process_weighted_batch<World, WeightedMovement, 8>(world, policy);
   ASSERT_EQ(results.size(), 16u);
   stats = runtime.stats();
   EXPECT_EQ(stats.world_cache_invalidations, 1u);
   EXPECT_EQ(stats.cache_clears, 0u);
 
   mark_cost(world, tess::Coord3{2, 0, 0}, 5);
-  results = runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
-      world, policy);
+  results =
+      runtime.process_weighted_batch<World, WeightedMovement, 8>(world, policy);
   ASSERT_EQ(results.size(), 16u);
   stats = runtime.stats();
   EXPECT_EQ(stats.world_cache_invalidations, 1u);
@@ -543,8 +547,8 @@ TEST(TessPathRuntime, WeightedFieldProductsReuseAcrossProcessingCalls) {
   const auto policy = tess::PathRuntimeCachePolicy{
       .use_weighted_field_product_cache = true,
   };
-  auto results = runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
-      world, policy);
+  auto results =
+      runtime.process_weighted_batch<World, WeightedMovement, 8>(world, policy);
   ASSERT_EQ(results.size(), 3u);
   for (const auto result : results) {
     EXPECT_EQ(result.status, tess::PathStatus::Found);
@@ -559,8 +563,8 @@ TEST(TessPathRuntime, WeightedFieldProductsReuseAcrossProcessingCalls) {
   EXPECT_EQ(stats.field_product_used_groups, 1u);
   EXPECT_EQ(stats.weighted_batch.requests, 0u);
 
-  results = runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
-      world, policy);
+  results =
+      runtime.process_weighted_batch<World, WeightedMovement, 8>(world, policy);
   ASSERT_EQ(results.size(), 3u);
   stats = runtime.stats();
   // The second pass reuses the stored product: one real hit, no rebuild.
@@ -589,8 +593,7 @@ TEST(TessPathRuntime, OversizeWeightedProductSkipsDuplicateFieldBuild) {
   };
 
   const auto results =
-      runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(world,
-                                                                     policy);
+      runtime.process_weighted_batch<World, WeightedMovement, 8>(world, policy);
 
   ASSERT_EQ(results.size(), 3u);
   for (const auto result : results) {
@@ -622,15 +625,15 @@ TEST(TessPathRuntime, WeightedFieldProductWarmReplayDoesNotAllocate) {
   const auto policy = tess::PathRuntimeCachePolicy{
       .use_weighted_field_product_cache = true,
   };
-  (void)runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(world,
-                                                                       policy);
+  (void)runtime.process_weighted_batch<World, WeightedMovement, 8>(world,
+                                                                   policy);
 
   {
     tess_test::ScopedAllocationCounter counter;
     for (int i = 0; i < 10; ++i) {
       const auto results =
-          runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
-              world, policy);
+          runtime.process_weighted_batch<World, WeightedMovement, 8>(world,
+                                                                     policy);
       EXPECT_EQ(results.size(), 3u);
       EXPECT_EQ(runtime.stats().field_product_used_groups, 1u);
     }
@@ -661,7 +664,7 @@ TEST(TessPathRuntime, PortalSegmentCacheStatsTrackAccessorStoresAndClear) {
   const auto waypoints = std::array{tess::Coord3{15, 0, 0}};
 
   const auto built =
-      tess::build_weighted_portal_route_product<World, PassableTag, CostTag>(
+      tess::build_weighted_portal_route_product<World, WeightedMovement>(
           world, request, waypoints, scratch, runtime.portal_segment_cache(),
           product);
 
@@ -719,7 +722,7 @@ TEST(TessPathRuntime, EmptyRequestListProcessesToEmptyResults) {
   EXPECT_TRUE(unit_results.empty());
 
   const auto weighted_results =
-      runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(world);
+      runtime.process_weighted_batch<World, WeightedMovement, 8>(world);
   EXPECT_TRUE(weighted_results.empty());
 
   const auto stats = runtime.stats();
@@ -769,7 +772,7 @@ TEST(TessPathRuntime, FailureStatusCountersTallyMixedBatches) {
   tess::PathRequestRuntime weighted_runtime;
   submit_mixed(weighted_runtime);
   const auto weighted_results =
-      weighted_runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
+      weighted_runtime.process_weighted_batch<World, WeightedMovement, 8>(
           world);
   ASSERT_EQ(weighted_results.size(), 4u);
   stats = weighted_runtime.stats();
@@ -819,8 +822,7 @@ TEST(TessPathRuntime, WeightedFieldCacheRejectsZeroCostStart) {
   };
 
   const auto results =
-      runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(world,
-                                                                     policy);
+      runtime.process_weighted_batch<World, WeightedMovement, 8>(world, policy);
 
   ASSERT_EQ(results.size(), 2u);
   EXPECT_EQ(results[0].status, tess::PathStatus::InvalidStart);
@@ -1105,7 +1107,7 @@ TEST(TessPathRuntime, RepeatedGoalGroupingWarmFrameIsAllocationFree) {
 // `process_unit_cached` and not by the weighted batch, so a caller on the
 // weighted planner does not hit it. examples/web_colony/colony_model.cc
 // performs the bump regardless, because the obligation attaches to editing a
-// field the movement class reads rather than to the planner in use today.
+// field the movement class reads rather than to the selected planner.
 struct ClosedTag {};
 
 using GateSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
@@ -1169,7 +1171,7 @@ TEST(PathRuntimeRouteCache, ClosingATileNeedsAVersionBumpToBeSeen) {
 
   // Same edit, now announced. The replan detours via row 1.
   world.mark_content_changed(key);
-  EXPECT_EQ(world.dirty_flags(key), 0u);
+  EXPECT_EQ(world.dirty_mask(key), tess::DirtyMask{});
   const auto detour = plan_through_gate(world, runtime);
   ASSERT_FALSE(detour.empty());
   EXPECT_FALSE(route_uses(detour, gate));

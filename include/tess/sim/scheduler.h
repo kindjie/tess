@@ -19,8 +19,8 @@ struct SimSchedulerState {
 
 /// Configures dirty propagation, path-agent work, and render-delta clearing.
 struct SimSchedulerOptions {
-  std::uint32_t pathing_dirty_mask = 0;
-  std::uint32_t render_dirty_mask = 0;
+  DirtyMask pathing_dirty_mask{};
+  DirtyMask render_dirty_mask{};
   PathAgentTickOptions path_agent_options{};
   bool clear_render_dirty = false;
 };
@@ -38,7 +38,7 @@ struct SimSchedulerStats {
 
 /// Plans and executes one immutable queued-operation frame against `world`.
 template <typename World, WritePolicy Policy, typename Fn>
-auto run_queued_operations(World& world, const FrameOps& ops, Fn&& fn)
+auto run_queued_operations(World& world, const OperationBatch& ops, Fn&& fn)
     -> SimSchedulerStats {
   SimSchedulerStats stats;
   stats.op_report = plan_operations(world, ops);
@@ -61,7 +61,7 @@ namespace detail {
 // `PathAgentTickStats`.
 template <typename World, WritePolicy Policy, typename Fn, typename PathTick>
 auto tick_scheduler_core(SimSchedulerState& state, World& world,
-                         const FrameOps& ops,
+                         const OperationBatch& ops,
                          std::vector<RenderTileDelta>& render_deltas, Fn&& fn,
                          const SimSchedulerOptions& options,
                          PathTick&& path_tick) -> SimSchedulerStats {
@@ -74,10 +74,10 @@ auto tick_scheduler_core(SimSchedulerState& state, World& world,
   // refreshed over partially applied plans too.
   const bool any_op_wrote =
       stats.executed_ops || stats.op_execution.chunk_count > 0;
-  if (any_op_wrote && options.pathing_dirty_mask != 0) {
+  if (any_op_wrote && options.pathing_dirty_mask) {
     for (const auto& report : stats.op_report.operations()) {
       if (report.status == OperationStatus::Planned &&
-          (report.field_access.dirty_mask & options.pathing_dirty_mask) != 0) {
+          (report.field_access.dirty_mask & options.pathing_dirty_mask)) {
         mark_pathing_dirty(state.path_agents);
         break;
       }
@@ -101,7 +101,8 @@ auto tick_scheduler_core(SimSchedulerState& state, World& world,
 /// Runs queued work, unit-cost path agents, and render-delta collection.
 template <typename World, typename PassableTag, WritePolicy Policy, typename Fn>
 auto tick_unit_scheduler(SimSchedulerState& state, World& world,
-                         const FrameOps& ops, std::span<PathAgentState> agents,
+                         const OperationBatch& ops,
+                         std::span<PathAgentState> agents,
                          PathRequestRuntime& runtime,
                          std::vector<RenderTileDelta>& render_deltas, Fn&& fn,
                          SimSchedulerOptions options = {})
@@ -118,7 +119,7 @@ template <typename World, typename PassableTag, typename OccupancyTag,
           typename ReservationTag, WritePolicy Policy, typename Fn>
 /// Runs a unit-cost tick whose agent steps commit occupancy changes.
 auto tick_unit_movement_scheduler(SimSchedulerState& state, World& world,
-                                  const FrameOps& ops,
+                                  const OperationBatch& ops,
                                   std::span<PathAgentState> agents,
                                   PathRequestRuntime& runtime,
                                   std::vector<RenderTileDelta>& render_deltas,
@@ -133,11 +134,11 @@ auto tick_unit_movement_scheduler(SimSchedulerState& state, World& world,
       });
 }
 
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost, WritePolicy Policy, typename Fn>
+template <typename World, typename Class, std::uint32_t MaxCost,
+          WritePolicy Policy, typename Fn>
 /// Runs queued work, bounded weighted agents, and render-delta collection.
 auto tick_weighted_scheduler(SimSchedulerState& state, World& world,
-                             const FrameOps& ops,
+                             const OperationBatch& ops,
                              std::span<PathAgentState> agents,
                              PathRequestRuntime& runtime,
                              std::vector<RenderTileDelta>& render_deltas,
@@ -145,25 +146,25 @@ auto tick_weighted_scheduler(SimSchedulerState& state, World& world,
     -> SimSchedulerStats {
   return detail::tick_scheduler_core<World, Policy>(
       state, world, ops, render_deltas, std::forward<Fn>(fn), options, [&] {
-        return tick_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
+        return tick_weighted_path_agents<World, Class, MaxCost>(
             state.path_agents, world, agents, runtime,
             options.path_agent_options);
       });
 }
 
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost, typename OccupancyTag, typename ReservationTag,
-          WritePolicy Policy, typename Fn>
+template <typename World, typename Class, std::uint32_t MaxCost,
+          typename OccupancyTag, typename ReservationTag, WritePolicy Policy,
+          typename Fn>
 /// Runs a bounded weighted tick whose agent steps commit occupancy changes.
 auto tick_weighted_movement_scheduler(
-    SimSchedulerState& state, World& world, const FrameOps& ops,
+    SimSchedulerState& state, World& world, const OperationBatch& ops,
     std::span<PathAgentState> agents, PathRequestRuntime& runtime,
     std::vector<RenderTileDelta>& render_deltas, Fn&& fn,
     SimSchedulerOptions options = {}) -> SimSchedulerStats {
   return detail::tick_scheduler_core<World, Policy>(
       state, world, ops, render_deltas, std::forward<Fn>(fn), options, [&] {
         return tick_weighted_path_agents_with_movement<
-            World, PassableTag, CostTag, MaxCost, OccupancyTag, ReservationTag>(
+            World, Class, MaxCost, OccupancyTag, ReservationTag>(
             state.path_agents, world, agents, runtime,
             options.path_agent_options);
       });

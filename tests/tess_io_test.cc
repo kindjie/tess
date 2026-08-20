@@ -21,14 +21,16 @@ TEST(TessIoTest, StreamsCoordinatesAndExtents) {
 TEST(TessIoTest, StreamsEveryPathStatus) {
   std::ostringstream output;
 
-  output << tess::PathStatus::Found << ' ' << tess::PathStatus::InvalidStart
-         << ' ' << tess::PathStatus::InvalidGoal << ' '
-         << tess::PathStatus::NoPath << ' ' << tess::PathStatus::Indeterminate
-         << ' ' << tess::PathStatus::CostOverflow;
+  output << tess::PathStatus::NotComputed << ' ' << tess::PathStatus::Found
+         << ' ' << tess::PathStatus::InvalidStart << ' '
+         << tess::PathStatus::InvalidGoal << ' ' << tess::PathStatus::NoPath
+         << ' ' << tess::PathStatus::Indeterminate << ' '
+         << tess::PathStatus::CostOverflow << ' '
+         << tess::PathStatus::NoCandidate;
 
   EXPECT_EQ(output.str(),
-            "Found InvalidStart InvalidGoal NoPath "
-            "Indeterminate CostOverflow");
+            "NotComputed Found InvalidStart InvalidGoal NoPath "
+            "Indeterminate CostOverflow NoCandidate");
 }
 
 TEST(TessIoTest, StreamsUnknownPathStatusNumerically) {

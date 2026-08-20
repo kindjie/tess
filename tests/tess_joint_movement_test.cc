@@ -52,7 +52,7 @@ auto add_agent(World& world, std::vector<tess::PathAgentState>& agents,
   agent.position = route.front();
   agent.goal = route.back();
   agent.has_goal = true;
-  agent.status = tess::PathStatus::Found;
+  agent.last_result = tess::PathStatus::Found;
   agent.phase = tess::PathAgentPhase::Following;
   world.field<OccupancyTag>(agent.position) = true;
   agents.push_back(agent);
@@ -179,7 +179,7 @@ TEST(TessJointMovement, HeadOnPairFollowsSwapPolicy) {
     EXPECT_EQ(stats.frame.movement_failures.occupied, 2u);
     // Occupancy failures retain the Found route for a same-step retry.
     EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
-    EXPECT_EQ(agents[0].status, tess::PathStatus::Found);
+    EXPECT_EQ(agents[0].last_result, tess::PathStatus::Found);
   }
 
   {
@@ -222,7 +222,7 @@ TEST(TessJointMovement, CyclesFreeNoTilesSoFollowersWait) {
   EXPECT_EQ(stats.frame.advanced, 4u);
   EXPECT_EQ(agents[4].position, (tess::Coord3{3, 1, 0}));
   EXPECT_EQ(agents[4].phase, tess::PathAgentPhase::Blocked);
-  EXPECT_EQ(agents[4].status, tess::PathStatus::Found);
+  EXPECT_EQ(agents[4].last_result, tess::PathStatus::Found);
   // The rotation left (2, 1) occupied by the cycle's own predecessor.
   EXPECT_TRUE(world.field<OccupancyTag>(tess::Coord3{2, 1, 0}));
 }
@@ -297,8 +297,8 @@ TEST(TessJointMovement, PermitOnDeadlockWaitsForTheBlockedBudget) {
   EXPECT_EQ(stats.swaps_denied, 1u);
 
   agents[0].blocked_retries = 4;
-  agents[0].status = tess::PathStatus::Found;  // retained by the denial
-  agents[1].status = tess::PathStatus::Found;
+  agents[0].last_result = tess::PathStatus::Found;  // retained by the denial
+  agents[1].last_result = tess::PathStatus::Found;
   stats = joint(world, agents, routes, scratch, options);
   EXPECT_EQ(stats.frame.advanced, 2u);
   EXPECT_EQ(stats.swaps, 1u);
@@ -353,10 +353,10 @@ TEST(TessJointMovement, ImpassableNextTileInvalidatesTheRoute) {
   tess::JointMoveScratch scratch;
   const auto stats = joint(world, agents, routes, scratch);
   EXPECT_EQ(stats.frame.advanced, 0u);
-  EXPECT_EQ(stats.frame.movement_failures.blocked, 1u);
+  EXPECT_EQ(stats.frame.movement_failures.impassable, 1u);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
   // Route-invalidating failures drop Found so scoped resubmission replans.
-  EXPECT_EQ(agents[0].status, tess::PathStatus::NoPath);
+  EXPECT_EQ(agents[0].last_result, std::nullopt);
 }
 
 TEST(TessJointMovement, SharedFreeDestinationGoesToTheEarlierAgent) {
@@ -386,16 +386,16 @@ TEST(TessJointMovement, DirtyMaskMarksBothChunksPerMove) {
       tess::chunk_key<Joint2D>(tess::chunk_coord<Joint2D>({7, 1, 0}));
   const auto to_key =
       tess::chunk_key<Joint2D>(tess::chunk_coord<Joint2D>({8, 1, 0}));
-  const auto from_version = world.meta(from_key).version;
-  const auto to_version = world.meta(to_key).version;
+  const auto from_version = world.meta(from_key).content_version;
+  const auto to_version = world.meta(to_key).content_version;
 
   tess::JointMoveScratch scratch;
   const auto stats =
       joint(world, agents, routes, scratch, tess::JointMoveOptions{},
-            tess::PathAgentAdvanceOptions{1u, 1u});
+            tess::PathAgentAdvanceOptions{1u, tess::DirtyMask{1u}});
   EXPECT_EQ(stats.frame.advanced, 1u);
-  EXPECT_GT(world.meta(from_key).version, from_version);
-  EXPECT_GT(world.meta(to_key).version, to_version);
+  EXPECT_GT(world.meta(from_key).content_version.value, from_version.value);
+  EXPECT_GT(world.meta(to_key).content_version.value, to_version.value);
 }
 
 TEST(TessJointMovement, MaxStepsZeroSpendsNoBudgetAndMovesNothing) {
@@ -407,7 +407,7 @@ TEST(TessJointMovement, MaxStepsZeroSpendsNoBudgetAndMovesNothing) {
   tess::JointMoveScratch scratch;
   const auto stats =
       joint(world, agents, routes, scratch, tess::JointMoveOptions{},
-            tess::PathAgentAdvanceOptions{0u, 0u});
+            tess::PathAgentAdvanceOptions{0u, tess::DirtyMask{}});
   EXPECT_EQ(stats.frame.advanced, 0u);
   EXPECT_EQ(agents[0].position, (tess::Coord3{1, 1, 0}));
 }
@@ -425,7 +425,7 @@ TEST(TessJointMovement, MultiStepDrainsAChainFurther) {
   tess::JointMoveScratch scratch;
   const auto stats =
       joint(world, agents, routes, scratch, tess::JointMoveOptions{},
-            tess::PathAgentAdvanceOptions{2u, 0u});
+            tess::PathAgentAdvanceOptions{2u, tess::DirtyMask{}});
   EXPECT_EQ(stats.frame.advanced, 4u);
   EXPECT_EQ(agents[0].position, (tess::Coord3{3, 1, 0}));
   EXPECT_EQ(agents[1].position, (tess::Coord3{4, 1, 0}));

@@ -5,4 +5,4 @@
   fails instead in strict required-data mode. Note: the cache-verifier
   readiness flag is hardcoded off in `tests/CMakeLists.txt`
   (`TESS_GRID_BENCHMARK_CACHE_VERIFIER_READY=0`), so the pass branch is
-  currently unreachable — today the test only ever skips or fails.
+  currently unreachable — the test only ever skips or fails.

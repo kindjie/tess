@@ -35,9 +35,11 @@ using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
 
 // [getting-world]
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
+using WeightedMovement =
+    tess::movement::PositiveCostFieldMovement<PassableTag, CostTag>;
 // [getting-world]
 
-constexpr std::uint32_t kTerrainDirty = 1u << 0u;
+constexpr auto kTerrainDirty = tess::DirtyMask{1u << 0u};
 
 void write_one_tile(World& world) {
   // [getting-direct-write]
@@ -218,7 +220,7 @@ auto plan_weighted_batch(World& world) -> bool {
       tess::PathRequest{tess::Coord2{0, 2}, tess::Coord2{31, 31}},
   };
   const auto results =
-      tess::weighted_path_batch<World, PassableTag, CostTag, /*MaxCost=*/128>(
+      tess::weighted_path_batch<World, WeightedMovement, /*MaxCost=*/128>(
           world, requests, scratch);
   // [path-batch]
 
@@ -237,7 +239,7 @@ auto plan_weighted_batch(World& world) -> bool {
 auto reuse_cached_route(World& world) -> bool {
   // [route-cache]
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   const auto request =
       tess::PathRequest{tess::Coord2{0, 0}, tess::Coord2{31, 31}};
 
@@ -284,7 +286,7 @@ int main() {
 #if TESS_HAS_EXCEPTIONS
   try {
 #endif
-    World world;  // Allocates every chunk; all fields start zero-initialized.
+    World world;  // Allocates every chunk; all fields start value-initialized.
     const auto ok = find_path(world) && check_topology(world) &&
                     run_schedule() && collect_deltas(world) &&
                     access_chunk_page() && access_dense_world() &&

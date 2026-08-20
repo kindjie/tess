@@ -18,7 +18,8 @@
   decision boundary and native
   percentile campaign seam without making wall-clock timing authoritative. It
   covers the comparison article's scoped algorithm/strategy status contract,
-  documentation navigation,
+  documentation navigation, the canonical terminology reference and exact
+  global-tooltip configuration,
   dependencies, licensing, accessibility, readiness, and browser-smoke
   contracts. Assertions intentionally inspect source text so hook-backstop CI
   catches drift without requiring Emscripten or a browser; keep literal checks

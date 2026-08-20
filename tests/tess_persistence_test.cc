@@ -29,6 +29,8 @@ enum LegacyMode : std::uint8_t {
 
 static_assert(tess::detail::archive_scalar_supported_v<ScopedMode>);
 static_assert(!tess::detail::archive_scalar_supported_v<LegacyMode>);
+static_assert(tess::detail::world_archive_format_version == 2);
+static_assert(tess::detail::world_archive_chunk_prefix_size == 16);
 
 using Shape = tess::Shape<tess::Extent3{8, 4, 1}, tess::Extent3{4, 2, 1}>;
 using OtherShape = tess::Shape<tess::Extent3{16, 4, 1}, tess::Extent3{4, 2, 1}>;
@@ -78,7 +80,7 @@ using ShortCircuitArchive = tess::PersistenceSchema<
 using ShortCircuitWorld =
     tess::AlwaysResidentWorld<TinyShape, ShortCircuitFields>;
 
-constexpr std::uint32_t kLoadDirty = 1U << 6U;
+constexpr auto kLoadDirty = tess::DirtyMask{1U << 6U};
 constexpr std::size_t kBodySizeOffset = 12;
 constexpr std::size_t kChecksumOffset = 20;
 constexpr std::size_t kKeyLayoutOffset = 80;
@@ -214,28 +216,28 @@ TEST(TessPersistence, WideLatticeVersionStillWritesAFixedWidthHeader) {
 TEST(TessPersistence, CanonicalFormatMatchesGoldenBytes) {
   TinyWorld source;
   source.field<TinyTag>({0, 0, 0}) = 0xab;
-  source.mark_active(tess::ChunkKey{0}, 0x01020304U);
-  source.set_chunk_state(tess::ChunkKey{0}, tess::ChunkState::ResidentActive);
+  source.mark_active(tess::ChunkKey{0}, tess::ActiveMask{0x01020304U});
   source.meta(tess::ChunkKey{0}).entity_count = 0x05060708U;
 
   std::vector<std::byte> bytes;
   ASSERT_GT(tess::save_world_archive<TinyArchive>(source, bytes).bytes_written,
             0U);
   // This literal is intentionally independent of the archive writer: it locks
-  // the complete v1 envelope, metadata, scalar encoding, and CRC byte order.
+  // the complete v2 envelope, metadata, scalar encoding, and CRC byte order.
   const auto golden = decode_hex(
-      "54455353574c4400010000002300000000000000ce87ce2c0100000000000000"
+      "54455353574c4400020000002200000000000000064495810100000000000000"
       "0100000000000000010000000000000001000000000000000100000000000000"
       "01000000000000004854524f0100000001000000080706050403020109000000"
       "000000000c000000000000000101000000010000000000000018171615141312"
-      "110300000001010000000000000000000000010403020108070605ab");
+      "1103000000010100000000000000000000000403020108070605ab");
   EXPECT_EQ(bytes, golden);
 
   TinyWorld restored;
   ASSERT_EQ(tess::load_world_archive<TinyArchive>(restored, golden).status,
             tess::WorldArchiveStatus::Ok);
   EXPECT_EQ(restored.field<TinyTag>({0, 0, 0}), 0xab);
-  EXPECT_EQ(restored.active_flags(tess::ChunkKey{0}), 0x01020304U);
+  EXPECT_EQ(restored.active_mask(tess::ChunkKey{0}),
+            tess::ActiveMask{0x01020304U});
   EXPECT_EQ(restored.meta(tess::ChunkKey{0}).entity_count, 0x05060708U);
 }
 
@@ -245,7 +247,7 @@ TEST(TessPersistence, DenseArchiveRoundTripsAuthoritativeFieldsAndMetadata) {
     fill_chunk(source, tess::ChunkKey{key},
                static_cast<std::uint16_t>(key * 20));
   }
-  source.mark_active(tess::ChunkKey{2}, 0x5U);
+  source.mark_active(tess::ChunkKey{2}, tess::ActiveMask{0x5U});
   source.meta(tess::ChunkKey{2}).entity_count = 7;
 
   std::vector<std::byte> bytes;
@@ -271,16 +273,17 @@ TEST(TessPersistence, DenseArchiveRoundTripsAuthoritativeFieldsAndMetadata) {
   for (std::uint64_t key = 0; key < DenseWorld::chunk_count; ++key) {
     expect_chunk(restored, tess::ChunkKey{key},
                  static_cast<std::uint16_t>(key * 20));
-    EXPECT_EQ(restored.dirty_flags(tess::ChunkKey{key}), kLoadDirty);
+    EXPECT_EQ(restored.dirty_mask(tess::ChunkKey{key}), kLoadDirty);
     EXPECT_EQ(restored.dirty_bounds(tess::ChunkKey{key}),
               (tess::Box3{tess::coord<Shape>(
                               tess::chunk_coord<Shape>(tess::ChunkKey{key}),
                               tess::LocalTileId{}),
                           Shape::chunk}));
   }
-  EXPECT_EQ(restored.active_flags(tess::ChunkKey{2}), 0x5U);
+  EXPECT_EQ(restored.active_mask(tess::ChunkKey{2}), tess::ActiveMask{0x5U});
   EXPECT_EQ(restored.meta(tess::ChunkKey{2}).entity_count, 7U);
-  EXPECT_EQ(restored.meta(tess::ChunkKey{2}).topology_version, 1U);
+  EXPECT_EQ(restored.meta(tess::ChunkKey{2}).topology_version,
+            tess::TopologyVersion{1U});
 }
 
 TEST(TessPersistence, FloatingScalarBitPatternsRoundTripExactly) {
@@ -314,7 +317,7 @@ TEST(TessPersistence,
 
   constexpr auto kFirstFieldOffset =
       kHeaderSize + EnumArchive::field_count * kFieldDescriptorSize +
-      sizeof(std::uint64_t) + sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2;
+      sizeof(std::uint64_t) + sizeof(std::uint32_t) * 2;
   bytes[kFirstFieldOffset] = std::byte{0xfe};
   bytes[kFirstFieldOffset + 1] = std::byte{2};
   refresh_archive_checksum(bytes);
@@ -345,7 +348,7 @@ TEST(TessPersistence, DenseLoadInvalidatesWarmDerivedProducts) {
     auto terrain = target.template field_span<TerrainTag>(tess::ChunkKey{key});
     std::fill(terrain.begin(), terrain.end(), 1);
     target.mark_dirty(
-        tess::ChunkKey{key}, 1U,
+        tess::ChunkKey{key}, tess::DirtyMask{1U},
         {tess::coord<Shape>(tess::chunk_coord<Shape>(tess::ChunkKey{key}),
                             tess::LocalTileId{}),
          Shape::chunk});
@@ -385,8 +388,10 @@ TEST(TessPersistence, CanonicalBytesDoNotDependOnMutationOrder) {
     fill_chunk(second, tess::ChunkKey{key},
                static_cast<std::uint16_t>(key * 10));
   }
-  first.mark_dirty(tess::ChunkKey{0}, 1U, {{0, 0, 0}, {1, 1, 1}});
-  second.mark_dirty(tess::ChunkKey{3}, 2U, {{6, 2, 0}, {1, 1, 1}});
+  first.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1U},
+                   {{0, 0, 0}, {1, 1, 1}});
+  second.mark_dirty(tess::ChunkKey{3}, tess::DirtyMask{2U},
+                    {{6, 2, 0}, {1, 1, 1}});
 
   std::vector<std::byte> first_bytes;
   std::vector<std::byte> second_bytes;
@@ -398,7 +403,7 @@ TEST(TessPersistence, CanonicalBytesDoNotDependOnMutationOrder) {
   EXPECT_EQ(first_bytes, second_bytes);
 
   constexpr auto kChunkRecordSize =
-      sizeof(std::uint64_t) + sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2 +
+      sizeof(std::uint64_t) + sizeof(std::uint32_t) * 2 +
       DenseWorld::local_tile_count * (sizeof(std::uint16_t) + sizeof(float));
   constexpr auto kFirstChunkOffset =
       kHeaderSize + Archive::field_count * kFieldDescriptorSize;
@@ -521,7 +526,7 @@ TEST(TessPersistence, ClassifiesEnvelopeAndChunkCompatibilityStatuses) {
             tess::WorldArchiveStatus::InvalidMagic);
 
   changed = bytes;
-  write_unsigned_le(changed, 8, std::uint32_t{2});
+  write_unsigned_le(changed, 8, std::uint32_t{1});
   refresh_archive_checksum(changed);
   EXPECT_EQ(tess::inspect_world_archive(changed).status,
             tess::WorldArchiveStatus::UnsupportedFormat);
@@ -540,10 +545,10 @@ TEST(TessPersistence, ClassifiesEnvelopeAndChunkCompatibilityStatuses) {
             tess::WorldArchiveStatus::ResidencyMismatch);
 
   changed = bytes;
-  const auto first_chunk_state = kHeaderSize +
-                                 Archive::field_count * kFieldDescriptorSize +
-                                 sizeof(std::uint64_t);
-  changed[first_chunk_state] = std::byte{2};
+  const auto first_chunk_key =
+      kHeaderSize + Archive::field_count * kFieldDescriptorSize;
+  write_unsigned_le(changed, first_chunk_key,
+                    std::uint64_t{DenseWorld::chunk_count});
   refresh_archive_checksum(changed);
   EXPECT_EQ(tess::inspect_world_archive(changed).status,
             tess::WorldArchiveStatus::InvalidChunk);
@@ -560,7 +565,7 @@ TEST(TessPersistence, ClassifiesMagicBeforeVersionSpecificEnvelopeLength) {
                              tess::detail::world_archive_magic.end());
   future.resize(future.size() + sizeof(std::uint32_t));
   write_unsigned_le(future, tess::detail::world_archive_magic.size(),
-                    std::uint32_t{2});
+                    std::uint32_t{3});
   EXPECT_EQ(tess::inspect_world_archive(future).status,
             tess::WorldArchiveStatus::UnsupportedFormat);
 }
@@ -666,7 +671,7 @@ TEST(TessPersistence, DenseInspectionRequiresEveryLogicalChunk) {
   ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
 
   constexpr auto kChunkRecordSize =
-      sizeof(std::uint64_t) + sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2 +
+      sizeof(std::uint64_t) + sizeof(std::uint32_t) * 2 +
       DenseWorld::local_tile_count * (sizeof(std::uint16_t) + sizeof(float));
   static_assert(DenseWorld::chunk_count > 1);
   bytes.resize(bytes.size() - kChunkRecordSize);
@@ -702,7 +707,7 @@ TEST(TessPersistence, SparseArchiveIsCanonicalAndCapacityChecked) {
   EXPECT_EQ(first_bytes, second_bytes);
 
   constexpr auto kChunkRecordSize =
-      sizeof(std::uint64_t) + sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2 +
+      sizeof(std::uint64_t) + sizeof(std::uint32_t) * 2 +
       SparseWorld::local_tile_count * (sizeof(std::uint16_t) + sizeof(float));
   constexpr auto kFirstChunkOffset =
       kHeaderSize + Archive::field_count * kFieldDescriptorSize;
@@ -754,7 +759,7 @@ TEST(TessPersistence, SparseLoadRematerializesPagesWithNewGenerations) {
     fill_chunk(source, key, static_cast<std::uint16_t>(key.value * 10));
     fill_chunk(target, key, static_cast<std::uint16_t>(key.value * 20));
     target.mark_topology_dirty(
-        key, 1U,
+        key, tess::DirtyMask{1U},
         {tess::coord<Shape>(tess::chunk_coord<Shape>(key), tess::LocalTileId{}),
          Shape::chunk});
   }
@@ -772,9 +777,12 @@ TEST(TessPersistence, SparseLoadRematerializesPagesWithNewGenerations) {
             tess::WorldArchiveStatus::Ok);
 
   EXPECT_FALSE(target.valid(old_handle));
-  EXPECT_GT(target.residency_generation(tess::ChunkKey{1}), old_generation);
-  EXPECT_EQ(target.meta(tess::ChunkKey{1}).version, 1U);
-  EXPECT_EQ(target.meta(tess::ChunkKey{1}).topology_version, 1U);
+  EXPECT_GT(target.residency_generation(tess::ChunkKey{1}).value,
+            old_generation.value);
+  EXPECT_EQ(target.meta(tess::ChunkKey{1}).content_version,
+            tess::ContentVersion{1U});
+  EXPECT_EQ(target.meta(tess::ChunkKey{1}).topology_version,
+            tess::TopologyVersion{1U});
   EXPECT_FALSE(tess::is_region_graph_fresh(target, graph));
 }
 

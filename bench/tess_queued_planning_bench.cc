@@ -23,7 +23,7 @@ void planning_bench_check(bool condition, const char* message) {
 struct TerrainTag {};
 struct CostTag {};
 
-constexpr std::uint32_t kDirtyTerrain = 1u << 0u;
+constexpr auto kDirtyTerrain = tess::DirtyMask{1u << 0u};
 
 using PlanningSchema = tess::FieldSchema<tess::Field<TerrainTag, std::uint16_t>,
                                          tess::Field<CostTag, float>>;
@@ -57,12 +57,12 @@ void BM_queued_plan_frame(benchmark::State& state) {
     keys.push_back(tess::ChunkKey{static_cast<std::uint64_t>(i)});
   }
 
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   for (std::size_t i = 0; i < Operations; ++i) {
     (void)ops.update_field(
         tess::DomainDesc::explicit_chunks(
             std::span<const tess::ChunkKey>{keys.data() + i, 1}),
-        tess::FieldAccessDesc{0, kDirtyTerrain, kDirtyTerrain},
+        tess::FieldAccessDesc{0, kDirtyTerrain.value, kDirtyTerrain},
         tess::WritePolicy::UniquePerChunk);
   }
 
@@ -92,10 +92,10 @@ void BM_queued_plan_frame(benchmark::State& state) {
 template <std::size_t Operations>
 void BM_queued_plan_frame_dense(benchmark::State& state) {
   PlanningWorld world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   for (std::size_t i = 0; i < Operations; ++i) {
     (void)ops.update_field(tess::DomainDesc::resident_chunks(),
-                           tess::FieldAccessDesc{kDirtyTerrain, 0, 0},
+                           tess::FieldAccessDesc{kDirtyTerrain.value, 0, {}},
                            tess::WritePolicy::ReadOnly);
   }
 

@@ -13,8 +13,8 @@ template <typename World, typename Class, std::uint32_t MaxCost>
     std::span<const std::uint64_t> settle_targets) -> DistanceFieldResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "build_bounded_weighted_distance_field<World, Class, MaxCost> "
-                "requires a MovementClass; legacy tag pairs go through the "
-                "<World, PassableTag, CostTag, MaxCost> overload.");
+                "requires a MovementClass; pass a movement class such as "
+                "PositiveCostFieldMovement.");
   static_assert(
       MaxCost > 0,
       "bounded weighted pathfinding requires MaxCost greater than zero");
@@ -39,10 +39,11 @@ template <typename World, typename Class, std::uint32_t MaxCost>
   if constexpr (!Space::is_dense) {
     const Space residency{world};
     if (!residency.is_resident_index(detail::tile_index<Shape>(goal))) {
-      return DistanceFieldResult{policy == MissingChunkPolicy::Indeterminate
-                                     ? PathStatus::Indeterminate
-                                     : PathStatus::InvalidGoal,
-                                 0, 0};
+      return DistanceFieldResult{
+          policy == MissingChunkPolicy::ReportIndeterminate
+              ? PathStatus::Indeterminate
+              : PathStatus::InvalidGoal,
+          0, 0};
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
@@ -91,12 +92,12 @@ template <typename World, typename Class, std::uint32_t MaxCost>
   TESS_ASSERT(settle_targets.empty() ||
               scratch.target_generation_.size() == node_count);
 
-  // Early termination is armed only under TreatAsBlocked: an exhausted
+  // Early termination is armed only under AssumeImpassable: an exhausted
   // Indeterminate-policy flood must discover whether it ever skipped a
   // non-resident neighbor, and stopping early could miss that boundary
   // and misreport Indeterminate as Found.
   auto targets_remaining = std::size_t{0};
-  bool arm_early_termination = policy == MissingChunkPolicy::TreatAsBlocked;
+  bool arm_early_termination = policy == MissingChunkPolicy::AssumeImpassable;
   if constexpr (Space::is_dense) {
     arm_early_termination = true;
   }
@@ -153,6 +154,7 @@ template <typename World, typename Class, std::uint32_t MaxCost>
     if (targets_remaining != 0 && scratch.is_settle_target(current_offset)) {
       --targets_remaining;
       if (targets_remaining == 0) {
+        scratch.publish_build_status(PathStatus::Found);
         return DistanceFieldResult{PathStatus::Found, expanded_nodes,
                                    scratch.touched_.size()};
       }
@@ -167,7 +169,7 @@ template <typename World, typename Class, std::uint32_t MaxCost>
         detail::saturating_add(current_distance, current_entry_cost);
     if (next_distance == infinite_distance) {
       if constexpr (!Space::is_dense) {
-        if (policy == MissingChunkPolicy::Indeterminate) {
+        if (policy == MissingChunkPolicy::ReportIndeterminate) {
           // Overflow is exceptional, so pay for the exact heap flood here.
           // Unlike the bucket fast path, it can keep examining the finite
           // frontier after one saturated relaxation and therefore preserve
@@ -235,11 +237,13 @@ template <typename World, typename Class, std::uint32_t MaxCost>
   }
 
   if constexpr (!Space::is_dense) {
-    if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
+    if (crossed_missing && policy == MissingChunkPolicy::ReportIndeterminate) {
+      scratch.publish_build_status(PathStatus::Indeterminate);
       return DistanceFieldResult{PathStatus::Indeterminate, expanded_nodes,
                                  scratch.touched_.size()};
     }
   }
+  scratch.publish_build_status(PathStatus::Found);
   return DistanceFieldResult{PathStatus::Found, expanded_nodes,
                              scratch.touched_.size()};
 }
@@ -277,16 +281,15 @@ namespace detail {
 // O(resident_count) fingerprint recompute: standalone readers must verify
 // (the field may be stale against this world), but weighted_path_batch
 // reads each field against the same const world it just built it from, so
-// it verifies once per group and skips the per-member recompute
-// (audit 2026-07-11 M2).
+// it verifies once per group and skips the per-member recompute.
 template <typename World, typename Class, typename Provider>
 [[nodiscard]] auto weighted_distance_field_path_core(
     const World& world, PathRequest request, DistanceFieldScratch& scratch,
     bool verify_residency, const Provider& provider) -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_distance_field_path<World, Class> requires a "
-                "MovementClass; legacy tag pairs go through the "
-                "<World, PassableTag, CostTag> overload.");
+                "MovementClass; pass a movement class such as "
+                "PositiveCostFieldMovement.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
   using Model = ResolvedTransitionModel<World, Class, Provider>;
@@ -301,19 +304,6 @@ template <typename World, typename Class, typename Provider>
   if (!contains<Shape>(request.start)) {
     return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
-  if constexpr (!Space::is_dense) {
-    // Pure reader: a non-resident start is not in the field (its slot would be
-    // out of bounds). The field's own truncation status came from the build.
-    const Space residency{world};
-    if (!residency.is_resident_index(
-            detail::tile_index<Shape>(request.start))) {
-      return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
-    }
-  }
-  TESS_DIAG_EVENT(path_start_passability_check);
-  if (!detail::is_passable<World, Class>(world, request.start)) {
-    return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
-  }
   if (!contains<Shape>(request.goal)) {
     return make_result(PathStatus::InvalidGoal, 0, 0, 0, scratch.path_);
   }
@@ -322,7 +312,21 @@ template <typename World, typename Class, typename Provider>
       !scratch.template model_matches<Model>(
           model, detail::transition_provider_instance_identity(provider)) ||
       (verify_residency && !scratch.residency_matches(world))) {
-    return make_result(PathStatus::NoPath, 0, 0, 0, scratch.path_);
+    return make_result(PathStatus::NotComputed, 0, 0, 0, scratch.path_);
+  }
+  if constexpr (!Space::is_dense) {
+    const Space residency{world};
+    if (!residency.is_resident_index(
+            detail::tile_index<Shape>(request.start))) {
+      const auto status = scratch.build_status_ == PathStatus::Indeterminate
+                              ? PathStatus::Indeterminate
+                              : PathStatus::InvalidStart;
+      return make_result(status, 0, 0, 0, scratch.path_);
+    }
+  }
+  TESS_DIAG_EVENT(path_start_passability_check);
+  if (!detail::is_passable<World, Class>(world, request.start)) {
+    return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
 
   const Space space{world};
@@ -335,8 +339,8 @@ template <typename World, typename Class, typename Provider>
   auto current_distance =
       scratch.distance_at(space.offset(current), infinite_distance);
   if (current_distance == infinite_distance) {
-    return make_result(PathStatus::NoPath, 0, 0, scratch.touched_.size(),
-                       scratch.path_);
+    return make_result(scratch.unresolved_path_status(), 0, 0,
+                       scratch.touched_.size(), scratch.path_);
   }
 
   const auto total_cost = current_distance;
@@ -356,6 +360,10 @@ template <typename World, typename Class, typename Provider>
               if (neighbor_offset == Space::npos_offset) {
                 return;
               }
+            }
+            if (!detail::is_passable_index<World, Class>(world,
+                                                         neighbor_index)) {
+              return;
             }
             const auto neighbor_distance =
                 scratch.distance_at(neighbor_offset, infinite_distance);
@@ -398,7 +406,7 @@ template <typename World, typename Class, typename Provider>
 
     if (next == current) {
       scratch.path_.clear();
-      return make_result(PathStatus::NoPath, 0, 0, scratch.touched_.size(),
+      return make_result(PathStatus::NotComputed, 0, 0, scratch.touched_.size(),
                          scratch.path_);
     }
 
@@ -425,7 +433,8 @@ template <typename World, typename Class>
 /// Reconstructs a minimum-cost path through the last matching weighted field.
 ///
 /// The returned path borrows `scratch` until its next mutation. A mismatched
-/// goal or sparse residency snapshot returns `NoPath`.
+/// goal or sparse residency snapshot returns `NotComputed`; an unreached start
+/// preserves an indeterminate sparse build.
 template <typename World, typename Class>
 [[nodiscard]] auto weighted_distance_field_path(const World& world,
                                                 PathRequest request,
@@ -485,21 +494,21 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 [[nodiscard]] auto weighted_path_batch(const World& world,
                                        std::span<const PathRequest> requests,
                                        WeightedPathBatchScratch& scratch,
+                                       MissingChunkPolicy policy,
                                        const Provider& provider)
     -> std::span<const PathResult> {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_path_batch<World, Class, MaxCost> requires a "
-                "MovementClass; legacy tag pairs go through the "
-                "<World, PassableTag, CostTag, MaxCost> overload.");
+                "MovementClass; pass a movement class such as "
+                "PositiveCostFieldMovement.");
   // Residency-agnostic: fans out to weighted_astar_path,
   // build_bounded_weighted_distance_field (-> build_weighted_distance_field on
   // cost overflow), weighted_distance_field_path, and
   // detail::weighted_group_member_failure, all sparse-native. Grouping is
   // Coord3/request-index space; node arrays live in the callees' scratch sized
-  // by NodeIndexSpace::capacity_hint. With the default
-  // MissingChunkPolicy::TreatAsBlocked a non-resident chunk reads as a wall, so
-  // the batch yields NoPath (not Indeterminate) across a missing chunk; policy
-  // threading is deferred.
+  // by NodeIndexSpace::capacity_hint.
+  // The selected missing-chunk policy is preserved through every shared-field
+  // and A* fallback path.
   scratch.clear();
   scratch.results_.resize(requests.size());
   scratch.offsets_.assign(requests.size(), 0);
@@ -574,8 +583,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     if (goal_count == 1) {
       ++scratch.stats_.astar_fallbacks;
       const auto result = weighted_astar_path<World, Class, Provider>(
-          world, requests[i], scratch.astar_scratch_,
-          MissingChunkPolicy::TreatAsBlocked, provider);
+          world, requests[i], scratch.astar_scratch_, policy, provider);
       scratch.offsets_[i] = scratch.paths_.size();
       scratch.sizes_[i] = result.path.size();
       scratch.paths_.insert(scratch.paths_.end(), result.path.begin(),
@@ -622,12 +630,11 @@ template <typename World, typename Class, std::uint32_t MaxCost,
       if constexpr (std::is_same_v<Provider, AdjacentTransitions>) {
         return detail::build_bounded_weighted_distance_field_core<World, Class,
                                                                   MaxCost>(
-            world, requests[i].goal, scratch.field_scratch_,
-            MissingChunkPolicy::TreatAsBlocked, scratch.settle_targets_);
+            world, requests[i].goal, scratch.field_scratch_, policy,
+            scratch.settle_targets_);
       } else {
         return build_weighted_distance_field<World, Class, Provider>(
-            world, requests[i].goal, scratch.field_scratch_,
-            MissingChunkPolicy::TreatAsBlocked, provider);
+            world, requests[i].goal, scratch.field_scratch_, policy, provider);
       }
     }();
     // The field was just built from this same const world, so the stamp
@@ -638,11 +645,23 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     for (auto member = members_begin; member < members_end; ++member) {
       const auto j = static_cast<std::size_t>(scratch.group_members_[member]);
       const auto result = [&] {
-        if (field.status == PathStatus::Found) {
-          return detail::weighted_distance_field_path_core<World, Class,
-                                                           Provider>(
-              world, requests[j], scratch.field_scratch_,
-              /*verify_residency=*/false, provider);
+        if (field.status == PathStatus::Found ||
+            field.status == PathStatus::Indeterminate) {
+          const auto field_path =
+              detail::weighted_distance_field_path_core<World, Class, Provider>(
+                  world, requests[j], scratch.field_scratch_,
+                  /*verify_residency=*/false, provider);
+          if (field_path.status == PathStatus::Found ||
+              field.status == PathStatus::Found) {
+            return field_path;
+          }
+          // An Indeterminate build may still contain complete paths for starts
+          // reached before the flood touched unknown space. Reconstruct those
+          // as Found; retry only unreached members independently so grouping
+          // cannot weaken or strengthen their per-request status.
+          ++scratch.stats_.astar_fallbacks;
+          return weighted_astar_path<World, Class, Provider>(
+              world, requests[j], scratch.astar_scratch_, policy, provider);
         }
         if (field.status == PathStatus::CostOverflow) {
           // Overflow is global to the reverse field: one irrelevant saturated
@@ -651,8 +670,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
           // Found and only requests that realize overflow report it.
           ++scratch.stats_.astar_fallbacks;
           return weighted_astar_path<World, Class, Provider>(
-              world, requests[j], scratch.astar_scratch_,
-              MissingChunkPolicy::TreatAsBlocked, provider);
+              world, requests[j], scratch.astar_scratch_, policy, provider);
         }
         return detail::weighted_group_member_failure<World, Class, Provider>(
             world, requests[j], field);
@@ -684,47 +702,9 @@ template <typename World, typename Class, std::uint32_t MaxCost>
 /// Solves a bounded weighted batch without special transitions.
 [[nodiscard]] auto weighted_path_batch(const World& world,
                                        std::span<const PathRequest> requests,
-                                       WeightedPathBatchScratch& scratch)
+                                       WeightedPathBatchScratch& scratch,
+                                       MissingChunkPolicy policy)
     -> std::span<const PathResult> {
   return weighted_path_batch<World, Class, MaxCost, AdjacentTransitions>(
-      world, requests, scratch, AdjacentTransitions{});
-}
-
-// --- legacy <PassableTag, CostTag> forwarders
-// --------------------------------- One movement class replaces the tag pair;
-// LegacyWeighted preserves the historical semantics exactly, including the
-// cost-agnostic passability asymmetry (the region graph may be more permissive
-// than the weighted search, never the reverse).
-
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost>
-[[nodiscard]] auto build_bounded_weighted_distance_field(
-    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
-    MissingChunkPolicy policy) -> DistanceFieldResult {
-  return build_bounded_weighted_distance_field<
-      World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost>(
-      world, goal, scratch, policy);
-}
-
-template <typename World, typename PassableTag, typename CostTag>
-/// Reconstructs a weighted path using separate legacy field tags.
-[[nodiscard]] auto weighted_distance_field_path(const World& world,
-                                                PathRequest request,
-                                                DistanceFieldScratch& scratch)
-    -> PathResult {
-  return weighted_distance_field_path<
-      World, movement::LegacyWeighted<PassableTag, CostTag>>(world, request,
-                                                             scratch);
-}
-
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost>
-/// Solves a weighted batch using separate legacy passability and cost tags.
-[[nodiscard]] auto weighted_path_batch(const World& world,
-                                       std::span<const PathRequest> requests,
-                                       WeightedPathBatchScratch& scratch)
-    -> std::span<const PathResult> {
-  return weighted_path_batch<
-      World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost>(
-      world, requests, scratch);
+      world, requests, scratch, policy, AdjacentTransitions{});
 }

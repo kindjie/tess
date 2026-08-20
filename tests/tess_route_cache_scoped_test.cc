@@ -26,19 +26,20 @@ void fill_passable(World& world, bool value) {
 }
 
 // Every edit goes through mark_dirty: a raw field write does not advance
-// meta().version, and scoped staleness (like the exact fingerprint) only
-// sees marked writes.
+// meta().content_version, and scoped staleness (like the exact fingerprint)
+// only sees marked writes.
 template <typename World>
 void set_passable_marked(World& world, tess::Coord3 coord, bool value) {
   using Shape = typename World::shape_type;
   world.template field<PassableTag>(coord) = value;
-  world.mark_dirty(tess::chunk_key<Shape>(tess::tile_key<Shape>(coord)), 1u,
+  world.mark_dirty(tess::chunk_key<Shape>(tess::tile_key<Shape>(coord)),
+                   tess::DirtyMask{1u},
                    tess::Box3{coord, tess::Extent3{1, 1, 1}});
 }
 
 template <typename World>
 auto route(const World& world, tess::Coord3 start, tess::Coord3 goal,
-           tess::PathScratch& scratch, tess::RouteCacheScratch& cache)
+           tess::PathScratch& scratch, tess::UnitRouteCache& cache)
     -> tess::PathResult {
   return tess::cached_astar_path<World, PassableTag>(
       world, tess::PathRequest{start, goal}, scratch, cache);
@@ -55,7 +56,7 @@ void expect_legal(World& world, const tess::PathResult& result) {
   for (std::size_t i = 0; i < result.path.size(); ++i) {
     const auto tile = result.path[i];
     EXPECT_TRUE(world.template field<PassableTag>(tile))
-        << "blocked tile served at index " << i;
+        << "impassable tile served at index " << i;
     if (i > 0) {
       const auto prev = result.path[i - 1];
       const auto manhattan = std::abs(tile.x - prev.x) +
@@ -73,7 +74,7 @@ TEST(TessRouteCacheScoped, OffFootprintEditKeepsEntryServing) {
   fill_passable(world, true);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
 
@@ -102,7 +103,7 @@ TEST(TessRouteCacheScoped, CrossedChunkEditRetiresAndFreshEntryServes) {
   fill_passable(world, true);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
 
@@ -139,7 +140,7 @@ TEST(TessRouteCacheScoped, DeadSuffixOccupantIsReplacedByFreshStore) {
   fill_passable(world, true);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
 
@@ -180,9 +181,9 @@ TEST(TessRouteCacheScoped, RetireCompactionDuringServeIsSafe) {
   fill_passable(world, true);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
-  cache.set_caps(tess::RouteCacheLimits{
-      1, tess::RouteCacheScratch::default_max_path_nodes});
+  tess::UnitRouteCache cache;
+  cache.set_caps(tess::UnitRouteCacheLimits{
+      1, tess::UnitRouteCache::default_max_path_nodes});
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
 
@@ -207,7 +208,7 @@ TEST(TessRouteCacheScoped, ToggledEditsAlwaysServeLegalRoutes) {
   fill_passable(world, true);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
 
@@ -262,12 +263,12 @@ TEST(TessRouteCacheScoped, ToggledEditsAlwaysServeLegalRoutes) {
 TEST(TessRouteCacheScoped, NoPathCachedPerEpochAndRetiredOnAnyChange) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);
-  // Wall off the goal corner cell (7,7).
+  // Wall off the goal corner tile (7,7).
   set_passable_marked(world, {6, 7, 0}, false);
   set_passable_marked(world, {7, 6, 0}, false);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
 
@@ -305,7 +306,7 @@ TEST(TessRouteCacheScoped, MonotoneEditsServeFreshOptimalCost) {
   fill_passable(world, true);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
 
@@ -320,7 +321,7 @@ TEST(TessRouteCacheScoped, MonotoneEditsServeFreshOptimalCost) {
     tess::PathScratch fresh_scratch;
     const auto fresh = tess::astar_path<decltype(world), PassableTag>(
         world, tess::PathRequest{{3, 0, 0}, {3, 7, 0}}, fresh_scratch,
-        tess::MissingChunkPolicy::TreatAsBlocked);
+        tess::MissingChunkPolicy::AssumeImpassable);
     ASSERT_EQ(fresh.status, tess::PathStatus::Found);
     EXPECT_EQ(served.cost, fresh.cost);
   }
@@ -334,7 +335,7 @@ TEST(TessRouteCacheScoped, OversizedDependencyFootprintIsSkipped) {
   fill_passable(world, true);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
 
@@ -364,7 +365,7 @@ TEST(TessRouteCacheScoped, AggregateDependencyBudgetInvalidates) {
   fill_passable(world, true);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   cache.set_dependency_cap(2);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
@@ -394,7 +395,7 @@ TEST(TessRouteCacheScoped, EditBeforeFirstRefreshStillRetires) {
   fill_passable(world, true);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
 
   // Store with NO prior refresh (the documented direct-caller hazard).
@@ -420,7 +421,7 @@ TEST(TessRouteCacheScoped, ModeFlipDropsEntries) {
   fill_passable(world, true);
 
   tess::PathScratch scratch;
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   const auto first = route(world, {3, 0, 0}, {3, 7, 0}, scratch, cache);
   ASSERT_EQ(first.status, tess::PathStatus::Found);
   ASSERT_EQ(cache.stats().entries, 1u);
@@ -441,7 +442,7 @@ TEST(TessRouteCacheScoped, IdenticalSequencesProduceIdenticalTraces) {
     tess::AlwaysResidentWorld<TopDown2D, Schema> world;
     fill_passable(world, true);
     tess::PathScratch scratch;
-    tess::RouteCacheScratch cache;
+    tess::UnitRouteCache cache;
     cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
     (void)cache.refresh_if_world_changed(world);
 

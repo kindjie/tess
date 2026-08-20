@@ -23,7 +23,7 @@ Within the 1.x release line, tess preserves source compatibility for:
   each rooted at `tess-<version>/` with the complete installed `include/tess/`
   tree;
 - direct membership of the stable aggregate headers; and
-- archive format v1, including loading fixtures produced by earlier 1.x
+- archive format v2, including loading fixtures produced by earlier 1.x
   releases.
 
 Direct aggregate membership remains unconditional. Existing aggregate types

@@ -28,6 +28,8 @@ inline auto operator<<(std::ostream& output, Extent3 value) -> std::ostream& {
 inline auto operator<<(std::ostream& output, PathStatus status)
     -> std::ostream& {
   switch (status) {
+    case PathStatus::NotComputed:
+      return output << "NotComputed";
     case PathStatus::Found:
       return output << "Found";
     case PathStatus::InvalidStart:
@@ -40,6 +42,8 @@ inline auto operator<<(std::ostream& output, PathStatus status)
       return output << "Indeterminate";
     case PathStatus::CostOverflow:
       return output << "CostOverflow";
+    case PathStatus::NoCandidate:
+      return output << "NoCandidate";
   }
   return output << "PathStatus(" << static_cast<unsigned>(status) << ')';
 }

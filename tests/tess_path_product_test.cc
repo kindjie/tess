@@ -9,6 +9,9 @@ namespace {
 
 struct PassableTag {};
 struct CostTag {};
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 struct StairTag {};
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
@@ -74,7 +77,7 @@ TEST(TessPathProduct, ProductsWithoutDependenciesAreInvalid) {
 }
 
 // A NoPath product must not replay after a world edit that could open the
-// route: failure results capture every chunk version, so any edit
+// route: failure results capture every chunk content version, so any edit
 // invalidates them.
 TEST(TessPathProduct, WeightedRouteProductNoPathInvalidatesAfterOpeningEdit) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
@@ -91,19 +94,19 @@ TEST(TessPathProduct, WeightedRouteProductNoPathInvalidatesAfterOpeningEdit) {
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
 
   const auto built =
-      tess::build_weighted_route_product<decltype(world), PassableTag, CostTag>(
+      tess::build_weighted_route_product<decltype(world), WeightedMovement>(
           world, request, scratch, product);
   ASSERT_EQ(built.status, tess::PathStatus::NoPath);
   EXPECT_EQ(product.dependencies().size(), decltype(world)::chunk_count);
   EXPECT_TRUE(product.is_valid(world));
 
   world.template field<PassableTag>(tess::Coord3{4, 0, 0}) = true;
-  world.mark_dirty(tess::ChunkKey{1}, 1u,
+  world.mark_dirty(tess::ChunkKey{1}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{4, 0, 0}, tess::Extent3{1, 1, 1}});
   EXPECT_FALSE(product.is_valid(world));
 
   const auto rebuilt =
-      tess::build_weighted_route_product<decltype(world), PassableTag, CostTag>(
+      tess::build_weighted_route_product<decltype(world), WeightedMovement>(
           world, request, scratch, product);
   EXPECT_EQ(rebuilt.status, tess::PathStatus::Found);
 }
@@ -125,20 +128,20 @@ TEST(TessPathProduct,
   const auto waypoints = std::array{tess::Coord3{2, 2, 0}};
 
   const auto built =
-      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                CostTag>(
+      tess::build_weighted_portal_route_product<decltype(world),
+                                                WeightedMovement>(
           world, request, waypoints, scratch, product);
   ASSERT_EQ(built.status, tess::PathStatus::NoPath);
   EXPECT_EQ(product.dependencies().size(), decltype(world)::chunk_count);
 
   world.template field<PassableTag>(tess::Coord3{4, 0, 0}) = true;
-  world.mark_dirty(tess::ChunkKey{1}, 1u,
+  world.mark_dirty(tess::ChunkKey{1}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{4, 0, 0}, tess::Extent3{1, 1, 1}});
   EXPECT_FALSE(product.is_valid(world));
 
   const auto rebuilt =
-      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                CostTag>(
+      tess::build_weighted_portal_route_product<decltype(world),
+                                                WeightedMovement>(
           world, request, waypoints, scratch, product);
   EXPECT_EQ(rebuilt.status, tess::PathStatus::Found);
 }
@@ -158,16 +161,16 @@ TEST(TessPathProduct, WeightedPortalRouteProductRebuildsFromOwnWaypoints) {
   const auto waypoints = std::array{tess::Coord3{4, 3, 0}};
 
   const auto built =
-      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                CostTag>(
+      tess::build_weighted_portal_route_product<decltype(world),
+                                                WeightedMovement>(
           world, request, waypoints, scratch, product);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   const auto first_cost = built.cost;
   const auto first_size = built.path.size();
 
   const auto rebuilt =
-      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                CostTag>(
+      tess::build_weighted_portal_route_product<decltype(world),
+                                                WeightedMovement>(
           world, request, product.waypoints(), scratch, product);
   ASSERT_EQ(rebuilt.status, tess::PathStatus::Found);
   EXPECT_EQ(rebuilt.cost, first_cost);
@@ -195,20 +198,20 @@ TEST(TessPathProduct, SegmentCacheOverloadFailureInvalidatesAfterOpeningEdit) {
   const auto waypoints = std::array{tess::Coord3{2, 2, 0}};
 
   const auto built =
-      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                CostTag>(
+      tess::build_weighted_portal_route_product<decltype(world),
+                                                WeightedMovement>(
           world, request, waypoints, scratch, cache, product);
   ASSERT_EQ(built.status, tess::PathStatus::NoPath);
   EXPECT_EQ(product.dependencies().size(), decltype(world)::chunk_count);
 
   world.template field<PassableTag>(tess::Coord3{4, 0, 0}) = true;
-  world.mark_dirty(tess::ChunkKey{1}, 1u,
+  world.mark_dirty(tess::ChunkKey{1}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{4, 0, 0}, tess::Extent3{1, 1, 1}});
   EXPECT_FALSE(product.is_valid(world));
 
   const auto rebuilt =
-      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                CostTag>(
+      tess::build_weighted_portal_route_product<decltype(world),
+                                                WeightedMovement>(
           world, request, waypoints, scratch, cache, product);
   EXPECT_EQ(rebuilt.status, tess::PathStatus::Found);
 }
@@ -228,16 +231,16 @@ TEST(TessPathProduct, SegmentCacheOverloadRebuildsFromOwnWaypoints) {
   const auto waypoints = std::array{tess::Coord3{4, 3, 0}};
 
   const auto built =
-      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                CostTag>(
+      tess::build_weighted_portal_route_product<decltype(world),
+                                                WeightedMovement>(
           world, request, waypoints, scratch, cache, product);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   const auto first_cost = built.cost;
   const auto first_size = built.path.size();
 
   const auto rebuilt =
-      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                CostTag>(
+      tess::build_weighted_portal_route_product<decltype(world),
+                                                WeightedMovement>(
           world, request, product.waypoints(), scratch, cache, product);
   ASSERT_EQ(rebuilt.status, tess::PathStatus::Found);
   EXPECT_EQ(rebuilt.cost, first_cost);
@@ -262,8 +265,8 @@ TEST(TessPathProduct, WeightedPortalRouteProductRebuildsFromOwnPathSpan) {
   const auto waypoints = std::array{tess::Coord3{4, 3, 0}};
 
   const auto built =
-      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                CostTag>(
+      tess::build_weighted_portal_route_product<decltype(world),
+                                                WeightedMovement>(
           world, request, waypoints, scratch, product);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   const auto replay = tess::weighted_portal_route_product_path(world, product);
@@ -271,8 +274,8 @@ TEST(TessPathProduct, WeightedPortalRouteProductRebuildsFromOwnPathSpan) {
   const auto node_count = replay.path.size();
 
   const auto rebuilt =
-      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                CostTag>(
+      tess::build_weighted_portal_route_product<decltype(world),
+                                                WeightedMovement>(
           world, request, replay.path, scratch, product);
   ASSERT_EQ(rebuilt.status, tess::PathStatus::Found);
   EXPECT_EQ(product.waypoints().size(), node_count);
@@ -294,26 +297,59 @@ TEST(TessPathProduct, InvalidGoalProductDependsOnlyOnOffendingChunk) {
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}};
 
   const auto built =
-      tess::build_weighted_route_product<decltype(world), PassableTag, CostTag>(
+      tess::build_weighted_route_product<decltype(world), WeightedMovement>(
           world, request, scratch, product);
   ASSERT_EQ(built.status, tess::PathStatus::InvalidGoal);
   EXPECT_LT(product.dependencies().size(), decltype(world)::chunk_count);
 
-  world.mark_dirty(tess::ChunkKey{1}, 1u,
+  world.mark_dirty(tess::ChunkKey{1}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{4, 0, 0}, tess::Extent3{1, 1, 1}});
   EXPECT_TRUE(product.is_valid(world));
   EXPECT_EQ(tess::weighted_route_product_path(world, product).status,
             tess::PathStatus::InvalidGoal);
 
   world.template field<PassableTag>(tess::Coord3{7, 7, 0}) = true;
-  world.mark_dirty(tess::ChunkKey{3}, 1u,
+  world.mark_dirty(tess::ChunkKey{3}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{7, 7, 0}, tess::Extent3{1, 1, 1}});
   EXPECT_FALSE(product.is_valid(world));
 
   const auto rebuilt =
-      tess::build_weighted_route_product<decltype(world), PassableTag, CostTag>(
+      tess::build_weighted_route_product<decltype(world), WeightedMovement>(
           world, request, scratch, product);
   EXPECT_EQ(rebuilt.status, tess::PathStatus::Found);
+}
+
+TEST(TessPathProduct, AutomaticPortalInvalidEndpointTracksOnlyEndpointChunks) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  world.template field<PassableTag>(tess::Coord3{0, 0, 0}) = false;
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::WeightedPortalRouteProduct product;
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}};
+
+  const auto built =
+      tess::build_weighted_chunk_portal_route_product<decltype(world),
+                                                      WeightedMovement>(
+          world, request, scratch, product);
+  ASSERT_EQ(built.status, tess::PathStatus::InvalidStart);
+  EXPECT_FALSE(product.dependencies().empty());
+
+  world.mark_dirty(tess::ChunkKey{1}, tess::DirtyMask{1u},
+                   tess::Box3{tess::Coord3{4, 0, 0}, tess::Extent3{1, 1, 1}});
+  EXPECT_TRUE(product.is_valid(world));
+  EXPECT_EQ(tess::weighted_portal_route_product_path(world, product).status,
+            tess::PathStatus::InvalidStart);
+
+  world.template field<PassableTag>(tess::Coord3{0, 0, 0}) = true;
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
+                   tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
+  EXPECT_FALSE(product.is_valid(world));
+  EXPECT_EQ(tess::weighted_portal_route_product_path(world, product).status,
+            tess::PathStatus::NotComputed);
 }
 
 // A fully-blocked chunk is never touched by the flood, but its chunks must
@@ -344,7 +380,7 @@ TEST(TessPathProduct, DistanceFieldProductInvalidatesAfterUnreachedChunkEdit) {
             tess::PathStatus::Found);
 
   world.template field<PassableTag>(tess::Coord3{4, 0, 0}) = true;
-  world.mark_dirty(tess::ChunkKey{1}, 1u,
+  world.mark_dirty(tess::ChunkKey{1}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{4, 0, 0}, tess::Extent3{1, 1, 1}});
   EXPECT_FALSE(product.is_valid(world));
 
@@ -425,7 +461,7 @@ TEST(TessPathProduct, ProductRejectsAnotherResolvedModel) {
       tess::distance_field_product_path<decltype(world), DiagonalClass>(
           world, tess::Coord3{0, 0, 0}, product, scratch);
 
-  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(result.status, tess::PathStatus::NotComputed);
 }
 
 TEST(TessPathProduct, CacheNormalizesRawTagAndIdentityClass) {
@@ -444,9 +480,10 @@ TEST(TessPathProduct, CacheNormalizesRawTagAndIdentityClass) {
             tess::PathStatus::Found);
   ASSERT_TRUE((cache.store<decltype(world), PassableTag>(std::move(product))));
 
-  EXPECT_NE((cache.lookup<decltype(world), mv::WalkableField<PassableTag>>(
-                world, goals)),
-            nullptr);
+  EXPECT_NE(
+      (cache.lookup<decltype(world), mv::UnitCostFieldMovement<PassableTag>>(
+          world, goals)),
+      nullptr);
 }
 
 TEST(TessPathProduct, ProviderProductAndCacheStampStairModel) {
@@ -482,7 +519,7 @@ TEST(TessPathProduct, ProviderProductAndCacheStampStairModel) {
   EXPECT_EQ((tess::distance_field_product_path<StairWorld, DefaultClass>(
                  world, foot, product, scratch))
                 .status,
-            tess::PathStatus::NoPath);
+            tess::PathStatus::NotComputed);
 
   tess::FieldProductCache cache;
   EXPECT_FALSE((cache.store<StairWorld, DefaultClass>(std::move(product))));

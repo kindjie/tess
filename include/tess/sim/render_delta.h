@@ -18,8 +18,8 @@ struct RenderTileDelta {
   Coord3 coord{};
   ChunkKey chunk_key{};
   LocalTileId local_tile_id{};
-  std::uint32_t dirty_flags = 0;
-  std::uint32_t chunk_version = 0;
+  DirtyMask dirty_mask{};
+  ContentVersion content_version{};
 };
 
 namespace detail {
@@ -27,9 +27,8 @@ namespace detail {
 [[nodiscard]] constexpr auto axis_end(std::int64_t origin,
                                       std::uint64_t extent) noexcept
     -> std::int64_t {
-  // Saturating: an unguarded origin + int64(extent) is UB for huge
-  // caller-supplied extents (audit 2026-07-11 C1); share chunk_meta's
-  // guarded helper.
+  // Saturating: an unguarded origin + int64(extent) is undefined for huge
+  // caller-supplied extents, so share chunk_meta's guarded helper.
   return box_axis_end(origin, extent);
 }
 
@@ -38,15 +37,14 @@ namespace detail {
 // per-chunk logic stays single-sourced.
 template <typename World>
 void emit_chunk_render_deltas(const World& world, ChunkKey chunk_key,
-                              std::uint32_t dirty_mask,
+                              DirtyMask dirty_mask,
                               std::vector<RenderTileDelta>& out) {
   using Shape = typename World::shape_type;
-  // One observation carries the masked flags, bounds, and version -- the
-  // flag word and bounds live in the world's SoA columns, not ChunkMeta
-  // (audit 2026-07-11 M5).
+  // One observation carries the selected mask, bounds, and content version --
+  // mask and bounds live in the world's SoA columns, not ChunkMeta.
   const auto observed = world.observe_dirty(chunk_key, dirty_mask);
-  const auto flags = observed.flags;
-  if (flags == 0) {
+  const auto mask = observed.mask;
+  if (!mask) {
     return;
   }
   const auto& dirty_bounds = observed.bounds;
@@ -82,8 +80,8 @@ void emit_chunk_render_deltas(const World& world, ChunkKey chunk_key,
             coord,
             chunk_key,
             local_tile_id<Shape>(local_coord<Shape>(coord)),
-            flags,
-            observed.version,
+            mask,
+            observed.content_version,
         });
       }
     }
@@ -98,8 +96,8 @@ void emit_chunk_render_deltas(const World& world, ChunkKey chunk_key,
 /// `out`; reserve it first when allocation-free collection is required.
 template <typename World>
 void collect_render_tile_deltas(std::vector<RenderTileDelta>& out,
-                                const World& world, std::uint32_t dirty_mask) {
-  if (dirty_mask == 0) {
+                                const World& world, DirtyMask dirty_mask) {
+  if (!dirty_mask) {
     return;
   }
 
@@ -120,8 +118,7 @@ void collect_render_tile_deltas(std::vector<RenderTileDelta>& out,
 
 /// Collects matching dirty tiles into a newly allocated result vector.
 template <typename World>
-[[nodiscard]] auto render_tile_deltas(const World& world,
-                                      std::uint32_t dirty_mask)
+[[nodiscard]] auto render_tile_deltas(const World& world, DirtyMask dirty_mask)
     -> std::vector<RenderTileDelta> {
   std::vector<RenderTileDelta> deltas;
   collect_render_tile_deltas(deltas, world, dirty_mask);
@@ -130,8 +127,8 @@ template <typename World>
 
 /// Clears `dirty_mask` from all dense or resident sparse chunks.
 template <typename World>
-void clear_render_delta_dirty(World& world, std::uint32_t dirty_mask) noexcept {
-  if (dirty_mask == 0) {
+void clear_render_delta_dirty(World& world, DirtyMask dirty_mask) noexcept {
+  if (!dirty_mask) {
     return;
   }
   if constexpr (std::is_same_v<typename World::residency_type,

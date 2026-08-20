@@ -18,7 +18,8 @@ using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
 void mark_passable(World& world, tess::Coord3 coord, bool passable) {
   world.template field<PassableTag>(coord) = passable;
-  world.mark_dirty(tess::chunk_key<Shape>(tess::tile_key<Shape>(coord)), 1u,
+  world.mark_dirty(tess::chunk_key<Shape>(tess::tile_key<Shape>(coord)),
+                   tess::DirtyMask{1u},
                    tess::Box3{coord, tess::Extent3{1, 1, 1}});
 }
 

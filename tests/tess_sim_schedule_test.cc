@@ -38,8 +38,8 @@ static_assert(requires(tess::Schedule& schedule, tess::ScheduleTaskDesc desc,
   schedule.add_task(desc, context, nullptr);
 });
 
-constexpr std::uint32_t DirtyTerrain = 1u << 0u;
-constexpr std::uint32_t DirtyConstruction = 1u << 1u;
+constexpr auto DirtyTerrain = tess::DirtyMask{1u << 0u};
+constexpr auto DirtyConstruction = tess::DirtyMask{1u << 1u};
 constexpr std::uint32_t EventArrived = 1u << 0u;
 constexpr std::uint32_t EventBlocked = 1u << 1u;
 
@@ -48,7 +48,7 @@ struct LogTask {
   std::string label;
   std::vector<std::string>* log = nullptr;
   tess::ScheduleTaskResult result{};
-  std::uint32_t last_pending = 0;
+  tess::DirtyMask last_pending{};
   std::uint32_t last_budget = 0;
   std::uint32_t last_events = 0;
 
@@ -191,7 +191,7 @@ TEST(TessSchedule, OnDirtyFiresIffOwnMaskBitsArePending) {
   EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);
 
   // A foreign bit alone never fires a task.
-  schedule.notify_dirty(1u << 7u);
+  schedule.notify_dirty(tess::DirtyMask{1u << 7u});
   EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);
 }
 
@@ -431,7 +431,7 @@ struct DrainTask {
     const auto batch = std::min(context.budget_items, remaining);
     remaining -= batch;
     per_tick.push_back(batch);
-    return tess::ScheduleTaskResult{0, batch, remaining > 0};
+    return tess::ScheduleTaskResult{{}, batch, remaining > 0};
   }
 };
 
@@ -580,21 +580,23 @@ TEST(TessSchedule, FrameDriverKeepsEveryNExactAcrossSpeedAndBacklog) {
 TEST(TessSchedule, RequestRunPokesOnDirtyWithZeroMask) {
   LogTask task{"gated"};
   tess::Schedule schedule;
-  const auto id = schedule.add_task(
-      {"gated", tess::SimPhase::Topology, tess::Cadence::on_dirty(1u)}, task);
+  const auto id =
+      schedule.add_task({"gated", tess::SimPhase::Topology,
+                         tess::Cadence::on_dirty(tess::DirtyMask{1u})},
+                        task);
   schedule.seal();
 
   tess::SimClock clock;
   schedule.request_run(id);
-  task.last_pending = 0xffffffffu;
+  task.last_pending = tess::DirtyMask{0xffffffffu};
   EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);
-  EXPECT_EQ(task.last_pending, 0u);
+  EXPECT_EQ(task.last_pending, tess::DirtyMask{});
   EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);  // consumed
 }
 
 // A task callback that throws must not latch the schedule "in run" --
 // the next tick would fail the reentrancy assert even though the
-// schedule state is recoverable (audit 2026-07-11 C2).
+// schedule state is recoverable.
 TEST(TessSchedule, ThrowingTaskDoesNotLatchInRun) {
   struct ThrowOnceTask {
     bool armed = true;
@@ -665,7 +667,7 @@ TEST(TessSchedule, ThrowingTaskDoesNotPhaseShiftLaterEveryNTasks) {
 
 struct ThrowOnceTriggeredTask {
   bool should_throw = true;
-  std::uint32_t pending_dirty = 0;
+  tess::DirtyMask pending_dirty{};
   std::uint32_t pending_events = 0;
 
   auto operator()(const tess::ScheduleTaskContext& context)

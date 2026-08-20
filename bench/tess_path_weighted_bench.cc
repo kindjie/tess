@@ -22,6 +22,8 @@ using WeightedPathSchema =
                       tess::Field<CostTag, std::uint32_t>>;
 using WeightedPathScaleWorld =
     tess::AlwaysResidentWorld<PathScaleShape, WeightedPathSchema>;
+using WeightedMovement =
+    tess::movement::PositiveCostFieldMovement<PassableTag, CostTag>;
 
 template <typename Shape>
 [[nodiscard]] constexpr auto path_node_count() noexcept -> std::size_t {
@@ -221,7 +223,7 @@ template <typename World>
     -> std::uint64_t {
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  const auto result = tess::weighted_astar_path<World, PassableTag, CostTag>(
+  const auto result = tess::weighted_astar_path<World, WeightedMovement>(
       world, request, scratch);
   bench_check(result.status == tess::PathStatus::Found,
               "setup reference path not found");
@@ -394,7 +396,7 @@ void BM_path_weighted_portal_product_room_portals_512x512(
   tess::PathScratch optimal_scratch;
   optimal_scratch.reserve_nodes(path_node_count<PathScaleShape>());
   const auto optimal =
-      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+      tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
           world, request, optimal_scratch);
   bench_check(optimal.status == tess::PathStatus::Found,
               "setup optimal path not found");
@@ -410,7 +412,7 @@ void BM_path_weighted_portal_product_room_portals_512x512(
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
     TESS_PATH_DIAG_RUN(result = tess::build_weighted_portal_route_product<
-                           WeightedPathScaleWorld, PassableTag, CostTag>(
+                           WeightedPathScaleWorld, WeightedMovement>(
                            world, request, waypoints, scratch, product));
     auto cost = result.cost;
     benchmark::DoNotOptimize(cost);
@@ -437,7 +439,7 @@ void BM_path_weighted_portal_product_replay_room_portals_512x512(
   tess::PathScratch optimal_scratch;
   optimal_scratch.reserve_nodes(path_node_count<PathScaleShape>());
   const auto optimal =
-      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+      tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
           world, request, optimal_scratch);
   bench_check(optimal.status == tess::PathStatus::Found,
               "setup optimal path not found");
@@ -449,7 +451,7 @@ void BM_path_weighted_portal_product_replay_room_portals_512x512(
   product.reserve_dependencies(64);
   auto result =
       tess::build_weighted_portal_route_product<WeightedPathScaleWorld,
-                                                PassableTag, CostTag>(
+                                                WeightedMovement>(
           world, request, waypoints, scratch, product);
 
   for (auto _ : state) {
@@ -477,7 +479,7 @@ void BM_path_weighted_chunk_portal_product_room_portals_512x512(
   tess::PathScratch optimal_scratch;
   optimal_scratch.reserve_nodes(path_node_count<PathScaleShape>());
   const auto optimal =
-      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+      tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
           world, request, optimal_scratch);
   bench_check(optimal.status == tess::PathStatus::Found,
               "setup optimal path not found");
@@ -493,7 +495,7 @@ void BM_path_weighted_chunk_portal_product_room_portals_512x512(
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
     TESS_PATH_DIAG_RUN(result = tess::build_weighted_chunk_portal_route_product<
-                           WeightedPathScaleWorld, PassableTag, CostTag>(
+                           WeightedPathScaleWorld, WeightedMovement>(
                            world, request, scratch, product));
     auto cost = result.cost;
     benchmark::DoNotOptimize(cost);
@@ -519,7 +521,7 @@ void BM_path_weighted_chunk_portal_product_replay_room_portals_512x512(
   tess::PathScratch optimal_scratch;
   optimal_scratch.reserve_nodes(path_node_count<PathScaleShape>());
   const auto optimal =
-      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+      tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
           world, request, optimal_scratch);
   bench_check(optimal.status == tess::PathStatus::Found,
               "setup optimal path not found");
@@ -531,7 +533,7 @@ void BM_path_weighted_chunk_portal_product_replay_room_portals_512x512(
   product.reserve_dependencies(64);
   auto result =
       tess::build_weighted_chunk_portal_route_product<WeightedPathScaleWorld,
-                                                      PassableTag, CostTag>(
+                                                      WeightedMovement>(
           world, request, scratch, product);
 
   for (auto _ : state) {
@@ -626,7 +628,7 @@ void BM_path_weighted_portal_segment_cache_room_portals_512x512(
   tess::PathScratch optimal_scratch;
   optimal_scratch.reserve_nodes(path_node_count<PathScaleShape>());
   const auto optimal =
-      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+      tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
           world, request, optimal_scratch);
   bench_check(optimal.status == tess::PathStatus::Found,
               "setup optimal path not found");
@@ -641,12 +643,12 @@ void BM_path_weighted_portal_segment_cache_room_portals_512x512(
   product.reserve_dependencies(64);
   auto result =
       tess::build_weighted_portal_route_product<WeightedPathScaleWorld,
-                                                PassableTag, CostTag>(
+                                                WeightedMovement>(
           world, request, waypoints, scratch, cache, product);
 
   for (auto _ : state) {
     result = tess::build_weighted_portal_route_product<WeightedPathScaleWorld,
-                                                       PassableTag, CostTag>(
+                                                       WeightedMovement>(
         world, request, waypoints, scratch, cache, product);
     auto cost = result.cost;
     benchmark::DoNotOptimize(cost);
@@ -691,7 +693,7 @@ void BM_path_weighted_portal_segment_cache_batch_100_room_portals_512x512(
     total_cost = 0;
     for (const auto request : requests) {
       result = tess::build_weighted_portal_route_product<WeightedPathScaleWorld,
-                                                         PassableTag, CostTag>(
+                                                         WeightedMovement>(
           world, request, waypoints, scratch, cache, product);
       total_expanded += result.expanded_nodes;
       total_cost += result.cost;
@@ -731,14 +733,14 @@ void BM_path_weighted_portal_endpoint_segments_batch_100_room_portals_512x512(
     total_first_expanded = 0;
     total_cost = 0;
     for (const auto request : requests) {
-      result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
-                                         CostTag>(
-          world, tess::PathRequest{request.start, first_portal}, scratch);
+      result =
+          tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
+              world, tess::PathRequest{request.start, first_portal}, scratch);
       total_first_expanded += result.expanded_nodes;
       total_cost += result.cost;
     }
     result =
-        tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+        tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
             world, tess::PathRequest{last_portal, requests.front().goal},
             scratch);
     last_expanded = result.expanded_nodes;
@@ -791,20 +793,20 @@ void BM_path_weighted_portal_first_field_cache_batch_100_room_portals_512x512(
     total_reconstruct_expanded = 0;
     total_cost = 0;
     field = tess::build_weighted_distance_field_in_box<WeightedPathScaleWorld,
-                                                       PassableTag, CostTag>(
+                                                       WeightedMovement>(
         world, first_portal,
         tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{33, 32, 1}},
-        field_scratch);
+        field_scratch, tess::MissingChunkPolicy::ReportIndeterminate);
     for (const auto request : requests) {
       const auto first =
           tess::weighted_distance_field_path<WeightedPathScaleWorld,
-                                             PassableTag, CostTag>(
+                                             WeightedMovement>(
               world, tess::PathRequest{request.start, first_portal},
               field_scratch);
       total_reconstruct_expanded += first.expanded_nodes;
       total_cost += first.cost;
       result = tess::build_weighted_portal_route_product<WeightedPathScaleWorld,
-                                                         PassableTag, CostTag>(
+                                                         WeightedMovement>(
           world, tess::PathRequest{first_portal, request.goal}, tail_waypoints,
           segment_scratch, cache, product);
       total_cost += result.cost;
@@ -849,8 +851,9 @@ void BM_path_weighted_astar_batch_100_shared_sparse_512x512(
     total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
-      result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
-                                         CostTag>(world, request, scratch);
+      result =
+          tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
+              world, request, scratch);
       total_cost += result.cost;
       total_expanded += result.expanded_nodes;
     });
@@ -887,11 +890,12 @@ void BM_path_weighted_distance_field_batch_100_shared_sparse_512x512(
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(
         field = tess::build_weighted_distance_field<WeightedPathScaleWorld,
-                                                    PassableTag, CostTag>(
-            world, goal, scratch);
+                                                    WeightedMovement>(
+            world, goal, scratch,
+            tess::MissingChunkPolicy::ReportIndeterminate);
         for (const auto request : requests) {
           result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
-                                                      PassableTag, CostTag>(
+                                                      WeightedMovement>(
               world, request, scratch);
           total_cost += result.cost;
           total_expanded += result.expanded_nodes;
@@ -935,12 +939,14 @@ void BM_path_bounded_weighted_distance_field_batch_100_shared_sparse_512x512(
     total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(
-        field = tess::build_bounded_weighted_distance_field<
-            WeightedPathScaleWorld, PassableTag, CostTag, 7>(world, goal,
-                                                             scratch);
+        field =
+            tess::build_bounded_weighted_distance_field<WeightedPathScaleWorld,
+                                                        WeightedMovement, 7>(
+                world, goal, scratch,
+                tess::MissingChunkPolicy::ReportIndeterminate);
         for (const auto request : requests) {
           result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
-                                                      PassableTag, CostTag>(
+                                                      WeightedMovement>(
               world, request, scratch);
           total_cost += result.cost;
           total_expanded += result.expanded_nodes;
@@ -982,8 +988,9 @@ void BM_path_weighted_astar_batch_100_multigoal_sparse_512x512(
     total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
-      result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
-                                         CostTag>(world, request, scratch);
+      result =
+          tess::weighted_astar_path<WeightedPathScaleWorld, WeightedMovement>(
+              world, request, scratch);
       total_cost += result.cost;
       total_expanded += result.expanded_nodes;
     });
@@ -1031,15 +1038,16 @@ void BM_path_weighted_distance_field_batch_100_multigoal_sparse_512x512(
         continue;
       }
       field = tess::build_weighted_distance_field<WeightedPathScaleWorld,
-                                                  PassableTag, CostTag>(
-          world, requests[i].goal, scratch);
+                                                  WeightedMovement>(
+          world, requests[i].goal, scratch,
+          tess::MissingChunkPolicy::ReportIndeterminate);
       total_field_expanded += field.expanded_nodes;
       for (const auto request : requests) {
         if (request.goal != requests[i].goal) {
           continue;
         }
         result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
-                                                    PassableTag, CostTag>(
+                                                    WeightedMovement>(
             world, request, scratch);
         total_cost += result.cost;
         total_expanded += result.expanded_nodes;
@@ -1097,15 +1105,16 @@ void BM_path_bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512(
       }
       field =
           tess::build_bounded_weighted_distance_field<WeightedPathScaleWorld,
-                                                      PassableTag, CostTag, 7>(
-              world, requests[i].goal, scratch);
+                                                      WeightedMovement, 7>(
+              world, requests[i].goal, scratch,
+              tess::MissingChunkPolicy::ReportIndeterminate);
       total_field_expanded += field.expanded_nodes;
       for (const auto request : requests) {
         if (request.goal != requests[i].goal) {
           continue;
         }
         result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
-                                                    PassableTag, CostTag>(
+                                                    WeightedMovement>(
             world, request, scratch);
         total_cost += result.cost;
         total_expanded += result.expanded_nodes;
@@ -1153,8 +1162,8 @@ void BM_path_weighted_batch_planner_100_multigoal_sparse_512x512(
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(
         results =
-            tess::weighted_path_batch<WeightedPathScaleWorld, PassableTag,
-                                      CostTag, 7>(world, requests, scratch));
+            tess::weighted_path_batch<WeightedPathScaleWorld, WeightedMovement,
+                                      7>(world, requests, scratch));
     for (const auto result : results) {
       total_cost += result.cost;
       total_expanded += result.expanded_nodes;
@@ -1214,9 +1223,8 @@ void BM_path_weighted_batch_planner_100_multigoal_sparse_resident_512x512(
   for (auto _ : state) {
     total_cost = 0;
     total_expanded = 0;
-    results =
-        tess::weighted_path_batch<SparseScaleWorld, PassableTag, CostTag, 7>(
-            world, requests, scratch);
+    results = tess::weighted_path_batch<SparseScaleWorld, WeightedMovement, 7>(
+        world, requests, scratch);
     for (const auto result : results) {
       total_cost += result.cost;
       total_expanded += result.expanded_nodes;
@@ -1265,8 +1273,9 @@ void BM_path_weighted_batch_planner_100_neargoal_open_512x512(
   for (auto _ : state) {
     total_cost = 0;
     total_expanded = 0;
-    results = tess::weighted_path_batch<WeightedPathScaleWorld, PassableTag,
-                                        CostTag, 7>(world, requests, scratch);
+    results =
+        tess::weighted_path_batch<WeightedPathScaleWorld, WeightedMovement, 7>(
+            world, requests, scratch);
     for (const auto result : results) {
       total_cost += result.cost;
       total_expanded += result.expanded_nodes;

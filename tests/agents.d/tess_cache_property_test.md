@@ -36,7 +36,7 @@
   directly — fill to budget, refresh the oldest entry, force one
   eviction — and is the test that owns the LRU claim; inverting its
   expectations makes it fail, which is what establishes it can.
-  A second model covers `RouteCacheScratch`, whose policy is different
+  A second model covers `UnitRouteCache`, whose policy is different
   enough that a shared model would assert something false: it has NO
   eviction, so an insert breaching either the entry or node cap
   invalidates the WHOLE cache, and a single route longer than the node

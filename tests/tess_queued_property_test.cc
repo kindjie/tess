@@ -197,11 +197,17 @@ class QueuedPlanModel {
       case 0:
         return {};
       case 1:
-        return {.read_mask = 0b01, .write_mask = 0, .dirty_mask = 0};
+        return {.read_mask = 0b01,
+                .write_mask = 0,
+                .dirty_mask = tess::DirtyMask{0}};
       case 2:
-        return {.read_mask = 0, .write_mask = 0b01, .dirty_mask = 0b01};
+        return {.read_mask = 0,
+                .write_mask = 0b01,
+                .dirty_mask = tess::DirtyMask{0b01}};
       default:
-        return {.read_mask = 0, .write_mask = 0b10, .dirty_mask = 0b10};
+        return {.read_mask = 0,
+                .write_mask = 0b10,
+                .dirty_mask = tess::DirtyMask{0b10}};
     }
   }
 
@@ -519,7 +525,7 @@ class QueuedPlanModel {
   }
 
   PropertyWorld world_{};
-  tess::FrameOps ops_{};
+  tess::OperationBatch ops_{};
   tess::ExecutionReport report_{};
   tess::ExecutionPhasePlan phases_{};
   std::vector<std::uint32_t> payload_ = std::vector<std::uint32_t>(4, 0);
@@ -596,7 +602,7 @@ TEST(TessQueuedProperty, TheSweepReachesEveryPlanningOutcomeItCanReach) {
   }
 
   // Every planning outcome this model CAN reach. InvalidIdentity is
-  // absent on purpose and the test name says so: FrameOps always
+  // absent on purpose and the test name says so: OperationBatch always
   // assigns dense identities, so only the span overload can produce a
   // non-dense one. That path is covered by the focused test below
   // rather than pretended to be covered here.
@@ -611,7 +617,7 @@ TEST(TessQueuedProperty, TheSweepReachesEveryPlanningOutcomeItCanReach) {
   EXPECT_TRUE(reached(tess::OperationStatus::InvalidFieldAccess))
       << "no sequence reached a read-only operation with a write mask";
   EXPECT_FALSE(reached(tess::OperationStatus::InvalidIdentity))
-      << "FrameOps produced a non-dense identity, which it must never do";
+      << "OperationBatch produced a non-dense identity, which it must never do";
 
   EXPECT_GT(hazards, 0U) << "no sequence produced a hazard conflict, so the "
                             "hazard and conflict-diagnostic rules were never "
@@ -628,9 +634,9 @@ TEST(TessQueuedProperty, TheSweepReachesEveryPlanningOutcomeItCanReach) {
 }
 
 TEST(TessQueuedProperty, TheSpanOverloadRejectsNonDenseIdentity) {
-  // The random model cannot reach this: FrameOps assigns handle and id
+  // The random model cannot reach this: OperationBatch assigns handle and id
   // from the enqueue index, so every batch it builds is dense by
-  // construction. Density is therefore a FrameOps guarantee, and what
+  // construction. Density is therefore a OperationBatch guarantee, and what
   // the planner promises for arbitrary input is the opposite -- that it
   // REJECTS a non-dense batch rather than trusting it. Covered here so
   // the claim is tested rather than assumed.

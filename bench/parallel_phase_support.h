@@ -52,7 +52,7 @@ struct PhaseWorldTraits {
       static_cast<std::size_t>(ChunkExtent.x * ChunkExtent.y * ChunkExtent.z);
 };
 
-inline constexpr std::uint32_t kDirtyTerrain = 1u << 0u;
+inline constexpr auto kDirtyTerrain = tess::DirtyMask{1u << 0u};
 
 template <typename World>
 [[nodiscard]] auto chunk_keys() -> std::vector<tess::ChunkKey> {
@@ -65,12 +65,12 @@ template <typename World>
   return keys;
 }
 
-inline void enqueue_per_chunk_updates(tess::FrameOps& ops,
+inline void enqueue_per_chunk_updates(tess::OperationBatch& ops,
                                       std::span<const tess::ChunkKey> keys) {
   for (std::size_t i = 0; i < keys.size(); ++i) {
     (void)ops.update_field(
         tess::DomainDesc::explicit_chunks(keys.subspan(i, 1)),
-        tess::FieldAccessDesc{0, kDirtyTerrain, kDirtyTerrain},
+        tess::FieldAccessDesc{0, kDirtyTerrain.value, kDirtyTerrain},
         tess::WritePolicy::UniquePerChunk);
   }
 }
@@ -112,7 +112,7 @@ void run_parallel_phase(benchmark::State& state, const Executor& executor,
   constexpr auto count = static_cast<std::size_t>(World::chunk_count);
 
   const auto keys = chunk_keys<World>();
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   enqueue_per_chunk_updates(ops, keys);
   const auto report = tess::plan_operations(world, ops);
   bench_check(report.ok(), "parallel bench plan failed");

@@ -8,7 +8,7 @@
 #include <limits>
 #include <type_traits>
 
-// Movement vocabulary DSL (M6). A MovementClass is a compile-time TYPE that
+// Movement vocabulary DSL. A MovementClass is a compile-time type that
 // fuses a passability predicate and an entry-cost expression, both composed
 // from typed-field leaves. Every leaf reads the constexpr
 // ChunkPage::field<Tag>(LocalTileId) at the (page, tile) seam -- world-scope
@@ -23,7 +23,7 @@ namespace tess::movement {
 /// Marks types that implement the compile-time movement-class contract.
 struct movement_class_tag {};
 
-// --- boolean TERMS over typed fields -----------------------------------------
+// --- Boolean terms over typed fields -----------------------------------------
 
 // Truthy iff the named field is truthy at the tile.
 /// Evaluates the truthiness of field `Tag` at a resolved tile.
@@ -194,15 +194,15 @@ concept MovementClassFor = std::derived_from<C, movement_class_tag> &&
                              } -> std::convertible_to<std::uint32_t>;
                            };
 
-// --- identity / default classes (backward compatibility) ---------------------
+// --- field adapters ----------------------------------------------------------
 
-// The identity class for the legacy single-field, unweighted world. It is a
+// The identity class for a single-field, unweighted world. It is a
 // distinct struct (NOT an alias) so it can carry the raw passability tag and
 // expose passable_span: per-class region labeling uses that fast path to keep
 // the identity flood a byte-identical field_span<Tag> scan.
 /// Adapts a truthy passability field to unit-cost movement.
 template <typename PassableTag>
-struct WalkableField : MovementClass<Field<PassableTag>, UnitCost> {
+struct UnitCostFieldMovement : MovementClass<Field<PassableTag>, UnitCost> {
   using passable_tag = PassableTag;
 
   template <typename Page>
@@ -217,35 +217,28 @@ struct WalkableField : MovementClass<Field<PassableTag>, UnitCost> {
 // two fields, so a raw single-field span scan would label cost-zero tiles.
 /// Combines a truthy field and positive cost field into weighted movement.
 template <typename PassableTag, typename CostTag>
-struct WalkableCostField
+struct PositiveCostFieldMovement
     : MovementClass<AllOf<Field<PassableTag>, NotZero<CostTag>>,
                     FieldCost<CostTag>> {};
-
-// Weighted class preserving the legacy asymmetry: passability ignores cost
-// (graph is more permissive than the weighted search, never the reverse), used
-// by the legacy <World, PassableTag, CostTag> forwarders.
-/// Preserves legacy weighted semantics where cost does not affect passability.
-template <typename PassableTag, typename CostTag>
-using LegacyWeighted = MovementClass<Field<PassableTag>, FieldCost<CostTag>>;
 
 // True for classes that expose the field_span fast path. `passable_tag` is
 // the advertisement: a class declaring it promises its passability predicate
 // is exactly the raw truthiness of that one field and MUST provide the
 // matching passable_span (the topology flood scans it verbatim). Composed
-// classes -- including WalkableCostField, whose predicate reads two fields --
-// must not declare it.
+// classes -- including PositiveCostFieldMovement, whose predicate reads two
+// fields -- must not declare it.
 /// Checks whether a movement class advertises the exact field-span fast path.
 template <typename C>
 concept HasPassableSpan = requires { typename C::passable_tag; };
 
 // Normalize a template argument that is EITHER a movement class OR a raw field
-// tag, so every legacy <World, PassableTag> call site compiles unchanged and
-// resolves to the byte-identical WalkableField.
+// tag, so every unit-cost <World, PassableTag> call site compiles unchanged and
+// resolves to the byte-identical UnitCostFieldMovement.
 /// Normalizes either a movement class or a raw passability field tag.
 template <typename T>
 using movement_class_of =
     std::conditional_t<std::derived_from<T, movement_class_tag>, T,
-                       WalkableField<T>>;
+                       UnitCostFieldMovement<T>>;
 
 namespace detail {
 

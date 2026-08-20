@@ -84,14 +84,14 @@ void run_resolved_bench(benchmark::State& state, World& world,
   scratch.reserve_nodes(
       static_cast<std::size_t>(World::chunk_count * World::local_tile_count));
   auto result = tess::weighted_astar_path<World, Class>(
-      world, request, scratch, tess::MissingChunkPolicy::TreatAsBlocked,
+      world, request, scratch, tess::MissingChunkPolicy::AssumeImpassable,
       provider);
   const auto expected_cost = result.cost;
   check_resolved_path<World, Class>(world, result, request, provider);
 
   for (auto _ : state) {
     result = tess::weighted_astar_path<World, Class>(
-        world, request, scratch, tess::MissingChunkPolicy::TreatAsBlocked,
+        world, request, scratch, tess::MissingChunkPolicy::AssumeImpassable,
         provider);
     benchmark::DoNotOptimize(result.path.data());
   }

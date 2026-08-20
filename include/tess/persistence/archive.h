@@ -19,7 +19,8 @@
 
 namespace tess {
 
-/// Declares one authoritative field and its stable archive identity/version.
+/// Declares one authoritative field and its persistent archive
+/// identity/version.
 template <typename Tag, std::uint64_t Id, std::uint32_t Version = 1>
 struct PersistedField {
   using tag_type = Tag;
@@ -49,7 +50,7 @@ consteval bool unique_persisted_field_tags() {
 
 }  // namespace detail
 
-/// Defines the stable application schema carried by one world archive.
+/// Defines the persistent application schema carried by one world archive.
 template <std::uint64_t Id, std::uint32_t Version, typename... Fields>
 struct PersistenceSchema {
   static_assert(detail::unique_persisted_field_ids<Fields...>(),
@@ -140,7 +141,7 @@ inline constexpr std::array<std::byte, 8> world_archive_magic{
     std::byte{'T'}, std::byte{'E'}, std::byte{'S'}, std::byte{'S'},
     std::byte{'W'}, std::byte{'L'}, std::byte{'D'}, std::byte{0},
 };
-inline constexpr std::uint32_t world_archive_format_version = 1;
+inline constexpr std::uint32_t world_archive_format_version = 2;
 inline constexpr std::uint32_t world_archive_key_layout_version = 1;
 
 inline constexpr std::size_t world_archive_header_size = 121;
@@ -148,7 +149,7 @@ inline constexpr std::size_t world_archive_checksum_offset = 20;
 inline constexpr std::size_t world_archive_checksum_size =
     sizeof(std::uint32_t);
 inline constexpr std::size_t world_archive_field_desc_size = 17;
-inline constexpr std::size_t world_archive_chunk_prefix_size = 17;
+inline constexpr std::size_t world_archive_chunk_prefix_size = 16;
 inline constexpr std::uint32_t world_archive_max_fields = 1024;
 
 // The header stores the lattice version in a fixed 32-bit field, while
@@ -157,14 +158,14 @@ inline constexpr std::uint32_t world_archive_max_fields = 1024;
 // save `Ok` and then fail to load, because the truncated stored value can
 // never equal the full-width trait the load compares it against. A lattice
 // whose version cannot be represented simply cannot be persisted in
-// format v1, so both paths reject it at compile time instead.
+// format v2, so both paths reject it at compile time instead.
 template <typename Shape>
 constexpr void assert_lattice_version_is_representable() noexcept {
   static_assert(
       static_cast<std::uint64_t>(ShapeTraits<Shape>::lattice_version) <=
           std::numeric_limits<std::uint32_t>::max(),
       "lattice_version exceeds the 32-bit archive header field; a world "
-      "using this lattice cannot be persisted in archive format v1");
+      "using this lattice cannot be persisted in archive format v2");
 }
 
 enum class ArchiveScalarKind : std::uint8_t {
@@ -411,8 +412,8 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
     return fail(WorldArchiveStatus::Truncated);
   }
   // The version is the only format-independent value after the magic. A
-  // future format may extend or reinterpret the v1 envelope, so classifying
-  // it must not depend on satisfying v1's length or checksum equations.
+  // future format may extend or reinterpret the v2 envelope, so classifying
+  // it must not depend on satisfying v2's length or checksum equations.
   if (info.format_version != world_archive_format_version) {
     return fail(WorldArchiveStatus::UnsupportedFormat);
   }
@@ -505,8 +506,9 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
         !checked_add(bytes_per_tile, field.width, bytes_per_tile)) {
       return fail(WorldArchiveStatus::Corrupt);
     }
-    // IDs are the stable join key used by typed loading. Blessing duplicates
-    // during inspection would report Ok for an archive no schema can load.
+    // IDs are the persistent join key used by typed loading. Blessing
+    // duplicates during inspection would report Ok for an archive no schema can
+    // load.
     if (std::any_of(parsed.fields.begin(), parsed.fields.end(),
                     [&](const ArchiveFieldDesc& existing) {
                       return existing.id == field.id;
@@ -564,15 +566,12 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
   auto previous_key = std::uint64_t{};
   for (std::uint64_t i = 0; i < info.chunk_count; ++i) {
     auto key = std::uint64_t{};
-    auto state = std::uint8_t{};
     auto active = std::uint32_t{};
     auto entities = std::uint32_t{};
-    if (!body_cursor.read_unsigned_le(key) || !body_cursor.read_byte(state) ||
+    if (!body_cursor.read_unsigned_le(key) ||
         !body_cursor.read_unsigned_le(active) ||
         !body_cursor.read_unsigned_le(entities) || key >= logical_chunks ||
-        (i != 0 && key <= previous_key) ||
-        state > static_cast<std::uint8_t>(ChunkState::ResidentActive) ||
-        !body_cursor.skip(field_bytes)) {
+        (i != 0 && key <= previous_key) || !body_cursor.skip(field_bytes)) {
       return fail(WorldArchiveStatus::InvalidChunk);
     }
     previous_key = key;
@@ -758,29 +757,28 @@ void prepare_world_for_load(World& world,
 }
 
 template <typename World>
-void restore_chunk_metadata(World& world, ChunkKey key, ChunkState state,
-                            std::uint32_t active_flags,
+void restore_chunk_metadata(World& world, ChunkKey key, ActiveMask active_mask,
                             std::uint32_t entity_count,
-                            std::uint32_t invalidation_flags) {
-  world.clear_dirty(key, std::numeric_limits<std::uint32_t>::max());
-  world.clear_active(key, std::numeric_limits<std::uint32_t>::max());
+                            DirtyMask invalidation_mask) {
+  world.clear_dirty(key, DirtyMask{std::numeric_limits<std::uint32_t>::max()});
+  world.clear_active(key,
+                     ActiveMask{std::numeric_limits<std::uint32_t>::max()});
   auto& meta = world.meta(key);
-  const auto old_version = meta.version;
+  const auto old_content_version = meta.content_version;
   const auto old_topology_version = meta.topology_version;
   meta = ChunkMeta{};
-  meta.version = old_version;
+  meta.content_version = old_content_version;
   meta.topology_version = old_topology_version;
   meta.entity_count = entity_count;
-  world.mark_active(key, active_flags);
-  world.set_chunk_state(key, state);
+  world.mark_active(key, active_mask);
   const auto bounds =
       Box3{coord<typename World::shape_type>(
                chunk_coord<typename World::shape_type>(key), LocalTileId{}),
            World::shape_type::chunk};
-  if (invalidation_flags != 0) {
-    world.mark_topology_dirty(key, invalidation_flags, bounds);
+  if (invalidation_mask) {
+    world.mark_topology_dirty(key, invalidation_mask, bounds);
   } else {
-    ++meta.version;
+    ++meta.content_version;
     world.mark_topology_rebuilt(key);
   }
 }
@@ -794,7 +792,7 @@ void restore_chunk_metadata(World& world, ChunkKey key, ChunkState state,
 }
 
 /**
- * Serializes selected authoritative fields and stable chunk metadata.
+ * Serializes selected authoritative fields and selected chunk metadata.
  *
  * Output is canonical little-endian and replaces `out`. Derived products,
  * dirty history, topology versions, and residency generations are omitted.
@@ -823,8 +821,7 @@ template <typename Archive, typename World>
   }
   for (const auto key : keys) {
     detail::append_unsigned_le(body, key.value);
-    body.push_back(static_cast<std::byte>(world.chunk_state(key)));
-    detail::append_unsigned_le(body, world.active_flags(key));
+    detail::append_unsigned_le(body, world.active_mask(key).value);
     detail::append_unsigned_le(body, world.meta(key).entity_count);
     detail::append_chunk_fields<Archive>(world, key, body);
   }
@@ -904,12 +901,13 @@ template <typename Archive, typename World>
  * version differences return `MigrationRequired`; applications explicitly
  * route those bytes through their own migration before retrying. Successful
  * loads invalidate derived topology for every loaded chunk with
- * `invalidation_flags` and never restore caches or generation counters.
+ * `invalidation_mask` and never restore caches or generation counters.
  */
 template <typename Archive, typename World>
 [[nodiscard]] auto load_world_archive(
     World& world, std::span<const std::byte> bytes,
-    std::uint32_t invalidation_flags = 0xffffffffU) -> WorldArchiveResult {
+    DirtyMask invalidation_mask = DirtyMask{
+        std::numeric_limits<std::uint32_t>::max()}) -> WorldArchiveResult {
   static_assert(detail::archive_fields_supported<Archive, World>(),
                 "Archive fields must exist in the world and use supported "
                 "scalar value types.");
@@ -972,8 +970,7 @@ template <typename Archive, typename World>
     auto key = std::uint64_t{};
     static_cast<void>(key_cursor.read_unsigned_le(key));
     keys.push_back(ChunkKey{key});
-    static_cast<void>(
-        key_cursor.skip(sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2));
+    static_cast<void>(key_cursor.skip(sizeof(std::uint32_t) * 2));
     // Decode every scalar before preparing sparse residency or writing any
     // field. This second pass is deliberate: scalar-level damage (including
     // an invalid bool following a valid enum) must retain the load operation's
@@ -987,19 +984,16 @@ template <typename Archive, typename World>
   detail::ArchiveCursor cursor(parsed.body.subspan(parsed.chunks_offset));
   for (const auto key : keys) {
     auto encoded_key = std::uint64_t{};
-    auto state = std::uint8_t{};
-    auto active_flags = std::uint32_t{};
+    auto active_mask = std::uint32_t{};
     auto entity_count = std::uint32_t{};
     static_cast<void>(cursor.read_unsigned_le(encoded_key));
-    static_cast<void>(cursor.read_byte(state));
-    static_cast<void>(cursor.read_unsigned_le(active_flags));
+    static_cast<void>(cursor.read_unsigned_le(active_mask));
     static_cast<void>(cursor.read_unsigned_le(entity_count));
     if (!detail::read_chunk_fields<Archive>(world, key, cursor)) {
       return fail(WorldArchiveStatus::Corrupt);
     }
-    detail::restore_chunk_metadata(world, key, static_cast<ChunkState>(state),
-                                   active_flags, entity_count,
-                                   invalidation_flags);
+    detail::restore_chunk_metadata(world, key, ActiveMask{active_mask},
+                                   entity_count, invalidation_mask);
   }
   parsed.result.bytes_processed = bytes.size();
   return parsed.result;

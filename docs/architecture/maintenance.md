@@ -63,8 +63,8 @@ rather than promotes, the existing backends:
   call-local invocation are consumed with it; every independently retained
   accepted offer remains reachable. This is observable with the immediate
   backend, whose reentrant follow-ups belong to its active call frame. The
-  exception itself propagates verbatim; authoritative dirty/version state
-  remains responsible for deciding whether to retry.
+  exception itself propagates verbatim; authoritative dirty-mask and
+  content-version state remains responsible for deciding whether to retry.
   `FixedRegistrationBackend` optionally adds `register_task()` and `seal()` as
   a required pair for implementations such as dirty-bit. At facade sealing,
   each live slot is registered once in slot order before one backend seal. Both
@@ -94,8 +94,8 @@ rather than promotes, the existing backends:
   Callback exceptions continue to propagate verbatim; the contract does not
   replace their type and message with a status. The throwing invocation and
   synchronous call-local follow-ups are consumed, independently retained
-  accepted work remains reachable, and authoritative dirty/version state
-  remains responsible for the caller's retry decision.
+  accepted work remains reachable, and authoritative dirty-mask and
+  content-version state remains responsible for the caller's retry decision.
 - `try_release()` returns a `ReleaseResult` that distinguishes release, invalid
   identity, and missing idle evidence. Release never cancels work. After
   sealing, a separate drain must return `Idle` after the last accepted schedule
@@ -111,8 +111,9 @@ signal, or make world/residency mutation safe. An adapter must separately own
 the producer and residency transition around its quiescent boundary: close and
 join producers before the drain that establishes `Idle`, then keep them closed
 through the residency transition. Likewise, canonical archive equality is
-useful authoritative-state evidence but cannot validate dirty flags, versions,
-residency generations, or derived products, which archives intentionally omit.
+useful authoritative-state evidence but cannot validate dirty masks, content
+or topology versions, residency generations, or derived products, which
+archives intentionally omit.
 
 ## External Chunk Adapter
 
@@ -146,7 +147,7 @@ archive load is reconciled explicitly at the same quiescent boundary. Tasks
 recheck `resident_ref()` before unchecked sparse access, but those checks do
 not make unsynchronized world mutation safe.
 
-Each completed product carries `ChunkProductToken{key, version,
+Each completed product carries `ChunkProductToken{key, content_version,
 residency_generation}` and is classified as unavailable, stale, or current.
 The callback writes derived state only; authoritative fields and archive bytes
 do not depend on backend selection. After a successful callback the adapter
@@ -155,12 +156,13 @@ observed bits. An intervening mark or residency change leaves the token stale
 and work retryable. Because the product token records the shared chunk content
 version, a disjoint dirty owner can also stale it without setting this
 adapter's bits. An explicit `retry()` rebuilds that version drift even when the
-owned observation is empty and never clears the other owner's flags. A
+owned observation is empty and never clears the other owner's mask bits. A
 callback exception propagates verbatim, may leave a partial but stale product,
-leaves the owned dirty signal or shared-version drift intact, and requires an
-explicit caller retry.
+leaves the owned dirty signal or shared content-version drift intact, and
+requires an explicit caller retry.
 
-`mark_dirty()` records authoritative dirty/version state before scheduling,
+`mark_dirty()` records authoritative dirty-mask/content-version state before
+scheduling,
 so queue capacity failure cannot erase the retry signal. Scheduling remains
 coalescing. If a generation-safe clear fails and its follow-up cannot enter a
 bounded comparison queue, a preallocated per-slot bit retains that logical
@@ -173,16 +175,16 @@ supplied budget. Explicit `retry()` or unbounded `flush()` performs
 re-admission. Warmed adapter scheduling and draining allocate only if the user
 rebuild callback does. The self-checking
 `examples/chunk_maintenance.cc` shows 32 offers collapsing into one rebuild
-while inspecting the dirty flags, content version, product token, and backend
+while inspecting the dirty mask, content version, product token, and backend
 metrics. An installed-package consumer compiles and runs the same workflow.
 
 Queued backends allocate their pointer ring only during construction. A task
 must outlive its scheduler or a completed `flush()`. Destroying a scheduler
 with pending tasks drops the non-owning pointers without executing them.
 Capacity exhaustion returns false; the authoritative dirty signal must remain
-set so the caller can retry. Tasks inspect versions or dirty flags, clear only
-the state they actually rebuilt, and may schedule follow-up work when budgeted
-work remains. A queued task that successfully schedules any synchronous
+set so the caller can retry. Tasks inspect content versions or dirty masks,
+clear only the state they actually rebuilt, and may schedule follow-up work
+when budgeted work remains. A queued task that successfully schedules any
 follow-up on its executing thread without consuming budget stops that drain
 with `false` instead of allowing direct or cross-task rescheduling to spin
 forever. The follow-up remains queued for caller intervention. A schedule call
@@ -207,8 +209,9 @@ tasks remain pending for a later drain.
 
 A queued backend removes an entry before invoking its task. If the task throws,
 the exception propagates and that queue entry is not restored. The task's
-authoritative dirty/version state must remain set; after inspecting partial
-effects, the caller decides whether explicitly scheduling a retry is safe.
+authoritative dirty-mask and content-version state must remain set; after
+inspecting partial effects, the caller decides whether explicitly scheduling a
+retry is safe.
 
 Coalescing is not exact-event delivery. Authoritative gameplay events remain
 on exact queues and simulation phases. Explicit flush points define when a

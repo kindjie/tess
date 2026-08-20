@@ -28,7 +28,7 @@ static_assert(!std::is_default_constructible_v<tess::ExecutionPhase>);
 static_assert(
     !std::is_constructible_v<tess::ExecutionPhase, std::size_t, std::size_t>);
 
-void enqueue_unique(tess::FrameOps& ops, tess::ChunkKey chunk) {
+void enqueue_unique(tess::OperationBatch& ops, tess::ChunkKey chunk) {
   const auto chunks = std::vector{chunk};
   (void)ops.update_field(tess::DomainDesc::explicit_chunks(chunks),
                          tess::WritePolicy::UniquePerChunk);
@@ -37,7 +37,7 @@ void enqueue_unique(tess::FrameOps& ops, tess::ChunkKey chunk) {
 TEST(TessExecutionPhaseSafety, PhaseFromAnotherPlanCannotDispatchOperations) {
   PhaseWorld world;
 
-  tess::FrameOps safe_ops;
+  tess::OperationBatch safe_ops;
   enqueue_unique(safe_ops, tess::ChunkKey{0});
   enqueue_unique(safe_ops, tess::ChunkKey{1});
   const auto safe_report = tess::plan_operations(world, safe_ops);
@@ -50,7 +50,7 @@ TEST(TessExecutionPhaseSafety, PhaseFromAnotherPlanCannotDispatchOperations) {
 
   // Zero field masks let both same-chunk mutations pass hazard validation,
   // but parallel-phase planning must still separate their chunk ownership.
-  tess::FrameOps conflicting_ops;
+  tess::OperationBatch conflicting_ops;
   enqueue_unique(conflicting_ops, tess::ChunkKey{0});
   enqueue_unique(conflicting_ops, tess::ChunkKey{0});
   const auto conflicting_report = tess::plan_operations(world, conflicting_ops);
@@ -101,7 +101,7 @@ TEST(TessExecutionPhaseSafety,
      WrongWorldRejectsBeforeScratchChannelOrCallbackMutation) {
   PhaseWorld planning_world;
   ForeignPhaseWorld execution_world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   enqueue_unique(ops, tess::ChunkKey{0});
   const auto report = tess::plan_operations(planning_world, ops);
   ASSERT_TRUE(report.ok());
@@ -134,7 +134,7 @@ TEST(TessExecutionPhaseSafety,
      ForeignDirtyAccumulatorRejectsBeforeSerialPhaseCallback) {
   PhaseWorld world;
   ForeignPhaseWorld foreign_world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   enqueue_unique(ops, tess::ChunkKey{0});
   const auto report = tess::plan_operations(world, ops);
   ASSERT_TRUE(report.ok());
@@ -144,7 +144,7 @@ TEST(TessExecutionPhaseSafety,
 
   tess::PlannedDirtyAccumulator dirty;
   ASSERT_EQ(
-      dirty.record(foreign_world, tess::ChunkKey{0}, 1u,
+      dirty.record(foreign_world, tess::ChunkKey{0}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}}),
       tess::PlannedDirtyRecordStatus::Recorded);
   std::atomic_size_t callback_calls{0};
@@ -167,7 +167,7 @@ TEST(TessExecutionPhaseSafety, ReplanningAReportExpiresItsIssuedPhases) {
   PhaseWorld world;
   tess::ExecutionReport report;
 
-  tess::FrameOps safe_ops;
+  tess::OperationBatch safe_ops;
   enqueue_unique(safe_ops, tess::ChunkKey{0});
   enqueue_unique(safe_ops, tess::ChunkKey{1});
   tess::plan_operations(world, safe_ops, report);
@@ -177,7 +177,7 @@ TEST(TessExecutionPhaseSafety, ReplanningAReportExpiresItsIssuedPhases) {
   ASSERT_EQ(safe_phases.phases().size(), 1u);
   const auto expired_phase = safe_phases.phases()[0];
 
-  tess::FrameOps conflicting_ops;
+  tess::OperationBatch conflicting_ops;
   enqueue_unique(conflicting_ops, tess::ChunkKey{0});
   enqueue_unique(conflicting_ops, tess::ChunkKey{0});
   tess::plan_operations(world, conflicting_ops, report);
@@ -203,7 +203,7 @@ TEST(TessExecutionPhaseSafety, ReplanningAReportExpiresItsIssuedPhases) {
 TEST(TessExecutionPhaseSafety, ReplacingAReportExpiresItsIssuedPhases) {
   PhaseWorld world;
 
-  tess::FrameOps safe_ops;
+  tess::OperationBatch safe_ops;
   enqueue_unique(safe_ops, tess::ChunkKey{0});
   enqueue_unique(safe_ops, tess::ChunkKey{1});
   auto report = tess::plan_operations(world, safe_ops);
@@ -213,7 +213,7 @@ TEST(TessExecutionPhaseSafety, ReplacingAReportExpiresItsIssuedPhases) {
   ASSERT_EQ(safe_phases.phases().size(), 1u);
   const auto expired_phase = safe_phases.phases()[0];
 
-  tess::FrameOps conflicting_ops;
+  tess::OperationBatch conflicting_ops;
   enqueue_unique(conflicting_ops, tess::ChunkKey{0});
   enqueue_unique(conflicting_ops, tess::ChunkKey{0});
   auto replacement = tess::plan_operations(world, conflicting_ops);

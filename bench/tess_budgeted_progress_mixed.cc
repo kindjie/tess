@@ -107,7 +107,7 @@ struct MixedSuite {
     std::vector<colony::TileEdit> churn_pool;
     std::size_t churn_cursor = 0;
     std::vector<colony::TileEdit> pending_edits;
-    tess::FrameOps ops;
+    tess::OperationBatch ops;
     MixedBuildFn build_fn;
     std::optional<
         tess::AutoExecTask<MixedWorld, tess::WritePolicy::UniquePerChunk,
@@ -212,11 +212,12 @@ struct MixedSuite {
           }
         }
         for (const auto& key : keys) {
-          (void)ops.update_field(tess::DomainDesc::explicit_chunks(
-                                     std::span<const tess::ChunkKey>{&key, 1}),
-                                 tess::FieldAccessDesc{0, colony::kTerrainDirty,
-                                                       colony::kTerrainDirty},
-                                 tess::WritePolicy::UniquePerChunk);
+          (void)ops.update_field(
+              tess::DomainDesc::explicit_chunks(
+                  std::span<const tess::ChunkKey>{&key, 1}),
+              tess::FieldAccessDesc{0, colony::kTerrainDirty.value,
+                                    colony::kTerrainDirty},
+              tess::WritePolicy::UniquePerChunk);
         }
         realized_edits.insert(realized_edits.end(), pending_edits.begin(),
                               pending_edits.end());
@@ -304,7 +305,7 @@ struct MixedSuite {
     }
 
     stack->ops.reserve_operations(kMixedChurnChunks + 4);
-    const auto interior = colony::detail::interior_logical_cells(map);
+    const auto interior = colony::detail::interior_logical_tiles(map);
     {
       grid::SplitMix64 rng(kSeed ^ 0xC17U);
       std::vector<char> reserved(static_cast<std::size_t>(kExtent * kExtent),

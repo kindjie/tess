@@ -20,8 +20,8 @@ namespace {
 struct TerrainTag {};
 struct CostTag {};
 
-constexpr std::uint32_t DirtyTerrain = 1u << 0u;
-constexpr std::uint32_t DirtyCost = 1u << 1u;
+constexpr auto DirtyTerrain = tess::DirtyMask{1u << 0u};
+constexpr auto DirtyCost = tess::DirtyMask{1u << 1u};
 
 using TopDown2D =
     tess::Shape<tess::Extent3{64, 32, 1}, tess::Extent3{32, 16, 1}>;
@@ -49,12 +49,12 @@ static_assert(
     std::is_nothrow_invocable_v<StampTask::ResultHook, void*, tess::OpHandle,
                                 const tess::OpCompletion&, const Ack*>);
 
-void enqueue_stamps(tess::FrameOps& ops, std::size_t count) {
+void enqueue_stamps(tess::OperationBatch& ops, std::size_t count) {
   for (std::uint64_t chunk = 0; chunk < count; ++chunk) {
     (void)ops.update_field(
         tess::DomainDesc::explicit_chunks(
             std::vector<tess::ChunkKey>{tess::ChunkKey{chunk}}),
-        tess::FieldAccessDesc{0, DirtyTerrain, DirtyTerrain},
+        tess::FieldAccessDesc{0, DirtyTerrain.value, DirtyTerrain},
         tess::WritePolicy::UniquePerChunk);
   }
 }
@@ -85,7 +85,7 @@ struct DrainLog {
 
 TEST(TessAutoExec, RunsThePipelineAndFeedsOnDirtyTasks) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   StampTask task{world, ops, StampKernel{}};
   task.reserve_operations(4);
   DrainLog drained;
@@ -129,19 +129,20 @@ TEST(TessAutoExec, RunsThePipelineAndFeedsOnDirtyTasks) {
     EXPECT_EQ(
         world.chunk(tess::ChunkKey{chunk}).template field_span<TerrainTag>()[0],
         static_cast<std::uint16_t>(chunk + 11));
-    EXPECT_NE(world.dirty_flags(tess::ChunkKey{chunk}) & DirtyTerrain, 0u);
+    EXPECT_NE(world.dirty_mask(tess::ChunkKey{chunk}) & DirtyTerrain,
+              tess::DirtyMask{});
   }
 
   // An idle tick is a no-op that produces no dirty.
   const auto idle = schedule.run_tick(clock);
-  EXPECT_EQ(idle.dirty_mask_produced, 0u);
+  EXPECT_EQ(idle.dirty_mask_produced, tess::DirtyMask{});
   EXPECT_EQ(task.last_run().status, tess::AutoExecStatus::Idle);
   EXPECT_EQ(probe.fires, 1u);
 }
 
 TEST(TessAutoExec, CapacityFallbackPublishesEveryStartedDirtyRecord) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   StampTask task{world, ops, StampKernel{}};
   task.reserve_operations(4);
   enqueue_stamps(ops, 4);
@@ -157,7 +158,8 @@ TEST(TessAutoExec, CapacityFallbackPublishesEveryStartedDirtyRecord) {
   EXPECT_EQ(task.last_run().executed_chunks, 4u);
   EXPECT_EQ(task.last_run().merged_dirty_chunks, 4u);
   for (std::uint64_t chunk = 0; chunk < 4; ++chunk) {
-    EXPECT_NE(world.dirty_flags(tess::ChunkKey{chunk}) & DirtyTerrain, 0u);
+    EXPECT_NE(world.dirty_mask(tess::ChunkKey{chunk}) & DirtyTerrain,
+              tess::DirtyMask{});
   }
 }
 
@@ -168,7 +170,7 @@ TEST(TessAutoExec, MatchesTheManualPipelineGolden) {
   World manual_world;
 
   // Auto side, through a schedule tick.
-  tess::FrameOps auto_ops;
+  tess::OperationBatch auto_ops;
   StampTask task{auto_world, auto_ops, StampKernel{}};
   tess::Schedule schedule;
   (void)schedule.add_task(
@@ -179,7 +181,7 @@ TEST(TessAutoExec, MatchesTheManualPipelineGolden) {
   (void)schedule.run_tick(clock);
 
   // Manual side, the pre-existing pipeline.
-  tess::FrameOps manual_ops;
+  tess::OperationBatch manual_ops;
   enqueue_stamps(manual_ops, 4);
   const auto report = tess::plan_operations(manual_world, manual_ops);
   ASSERT_TRUE(report.ok());
@@ -205,8 +207,9 @@ TEST(TessAutoExec, MatchesTheManualPipelineGolden) {
     for (std::size_t i = 0; i < auto_span.size(); ++i) {
       ASSERT_EQ(auto_span[i], manual_span[i]) << chunk << ":" << i;
     }
-    EXPECT_EQ(auto_world.meta(key).version, manual_world.meta(key).version);
-    EXPECT_EQ(auto_world.dirty_flags(key), manual_world.dirty_flags(key));
+    EXPECT_EQ(auto_world.meta(key).content_version,
+              manual_world.meta(key).content_version);
+    EXPECT_EQ(auto_world.dirty_mask(key), manual_world.dirty_mask(key));
   }
 }
 
@@ -217,12 +220,12 @@ TEST(TessAutoExec, SerialAndPoolRunsAreIdentical) {
   World serial_world;
   World pool_world;
 
-  tess::FrameOps serial_ops;
+  tess::OperationBatch serial_ops;
   StampTask serial_task{serial_world, serial_ops, StampKernel{}};
   DrainLog serial_drained;
   serial_task.set_result_hook(&serial_drained, DrainLog::hook);
 
-  tess::FrameOps pool_ops;
+  tess::OperationBatch pool_ops;
   StampTask pool_task{pool_world, pool_ops, StampKernel{}};
   DrainLog pool_drained;
   pool_task.set_result_hook(&pool_drained, DrainLog::hook);
@@ -258,8 +261,9 @@ TEST(TessAutoExec, SerialAndPoolRunsAreIdentical) {
     const auto key = tess::ChunkKey{chunk};
     EXPECT_EQ(serial_world.chunk(key).template field_span<TerrainTag>()[0],
               pool_world.chunk(key).template field_span<TerrainTag>()[0]);
-    EXPECT_EQ(serial_world.meta(key).version, pool_world.meta(key).version);
-    EXPECT_EQ(serial_world.dirty_flags(key), pool_world.dirty_flags(key));
+    EXPECT_EQ(serial_world.meta(key).content_version,
+              pool_world.meta(key).content_version);
+    EXPECT_EQ(serial_world.dirty_mask(key), pool_world.dirty_mask(key));
   }
 }
 
@@ -268,7 +272,7 @@ TEST(TessAutoExec, SerialAndPoolRunsAreIdentical) {
 // single post-loop merge would drop the first phase's).
 TEST(TessAutoExec, PerPhaseMergeKeepsEveryPhasesDirty) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   StampTask task{world, ops, StampKernel{}};
   tess::Schedule schedule;
   (void)schedule.add_task(
@@ -278,17 +282,17 @@ TEST(TessAutoExec, PerPhaseMergeKeepsEveryPhasesDirty) {
   // Op 0 is a maskless mutator on chunk 0 and op 1 a same-chunk reader:
   // phase planning splits them. Op 2 (a masked writer on chunk 1) shares
   // phase 1 with op 0 -- if only the LAST phase's dirty were merged, chunk
-  // 1's dirty flags and version bump would be silently dropped.
+  // 1's dirty masks and version bump would be silently dropped.
   (void)ops.update_field(tess::DomainDesc::explicit_chunks(
                              std::vector<tess::ChunkKey>{tess::ChunkKey{0}}),
                          tess::WritePolicy::UniquePerChunk);
   (void)ops.update_field(tess::DomainDesc::explicit_chunks(
                              std::vector<tess::ChunkKey>{tess::ChunkKey{0}}),
-                         tess::FieldAccessDesc{DirtyTerrain, 0, 0},
+                         tess::FieldAccessDesc{DirtyTerrain.value, 0, {}},
                          tess::WritePolicy::UniquePerChunk);
   (void)ops.update_field(tess::DomainDesc::explicit_chunks(
                              std::vector<tess::ChunkKey>{tess::ChunkKey{1}}),
-                         tess::FieldAccessDesc{0, DirtyCost, DirtyCost},
+                         tess::FieldAccessDesc{0, DirtyCost.value, DirtyCost},
                          tess::WritePolicy::UniquePerChunk);
 
   tess::SimClock clock;
@@ -298,24 +302,26 @@ TEST(TessAutoExec, PerPhaseMergeKeepsEveryPhasesDirty) {
   EXPECT_EQ(task.last_run().merged_dirty_chunks, 1u);
   // Phase 1 (ops 0 and 2) merged its dirty before phase 2 re-prepared the
   // scratch: chunk 1's masked write survives.
-  EXPECT_NE(world.dirty_flags(tess::ChunkKey{1}) & DirtyCost, 0u);
-  EXPECT_GT(world.meta(tess::ChunkKey{1}).version, 0u);
+  EXPECT_NE(world.dirty_mask(tess::ChunkKey{1}) & DirtyCost, tess::DirtyMask{});
+  EXPECT_NE(world.meta(tess::ChunkKey{1}).content_version,
+            tess::ContentVersion{});
 }
 
 #if TESS_ENABLE_ASSERTS
 TEST(TessAutoExecDeathTest, MixedPolicyQueueAsserts) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   StampTask task{world, ops, StampKernel{}};
   tess::Schedule schedule;
   (void)schedule.add_task(
       {"ops", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()}, task);
   schedule.seal();
 
-  (void)ops.update_field(tess::DomainDesc::explicit_chunks(
-                             std::vector<tess::ChunkKey>{tess::ChunkKey{0}}),
-                         tess::FieldAccessDesc{0, DirtyTerrain, DirtyTerrain},
-                         tess::WritePolicy::UniquePerTile);
+  (void)ops.update_field(
+      tess::DomainDesc::explicit_chunks(
+          std::vector<tess::ChunkKey>{tess::ChunkKey{0}}),
+      tess::FieldAccessDesc{0, DirtyTerrain.value, DirtyTerrain},
+      tess::WritePolicy::UniquePerTile);
   tess::SimClock clock;
   EXPECT_DEATH((void)schedule.run_tick(clock), "mismatched write policy");
 }
@@ -325,7 +331,7 @@ TEST(TessAutoExecDeathTest, MixedPolicyQueueAsserts) {
 // queue; the end-of-run clear must not discard it (the queue clears before
 // the drain, so follow-ups land in the fresh queue for the next tick).
 struct FollowUpHook {
-  tess::FrameOps* ops = nullptr;
+  tess::OperationBatch* ops = nullptr;
   std::size_t drained = 0;
   bool enqueue_follow_up = false;
   bool enqueue_failed = false;
@@ -340,7 +346,7 @@ struct FollowUpHook {
         (void)self.ops->update_field(
             tess::DomainDesc::explicit_chunks(
                 std::vector<tess::ChunkKey>{tess::ChunkKey{2}}),
-            tess::FieldAccessDesc{0, DirtyTerrain, DirtyTerrain},
+            tess::FieldAccessDesc{0, DirtyTerrain.value, DirtyTerrain},
             tess::WritePolicy::UniquePerChunk);
       } catch (...) {
         self.enqueue_failed = true;
@@ -351,7 +357,7 @@ struct FollowUpHook {
 
 TEST(TessAutoExec, HookEnqueuedFollowUpsSurviveIntoTheNextRun) {
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   StampTask task{world, ops, StampKernel{}};
   FollowUpHook follow_up{&ops, 0, true, false};
   task.set_result_hook(&follow_up, FollowUpHook::hook);
@@ -447,7 +453,7 @@ TEST(TessAutoExec, ThrowingKernelCannotLeakOldCompletionsIntoNextRun) {
   using ThrowTask = tess::AutoExecTask<World, tess::WritePolicy::UniquePerChunk,
                                        Ack, ThrowOnThirdKernel>;
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   ThrowTask task{world, ops, ThrowOnThirdKernel{}};
   DrainLog drained;
   task.set_result_hook(&drained, DrainLog::hook);
@@ -463,17 +469,19 @@ TEST(TessAutoExec, ThrowingKernelCannotLeakOldCompletionsIntoNextRun) {
                          tess::WritePolicy::UniquePerChunk);
   (void)ops.update_field(tess::DomainDesc::explicit_chunks(
                              std::vector<tess::ChunkKey>{tess::ChunkKey{0}}),
-                         tess::FieldAccessDesc{DirtyTerrain, 0, 0},
+                         tess::FieldAccessDesc{DirtyTerrain.value, 0, {}},
                          tess::WritePolicy::UniquePerChunk);
-  (void)ops.update_field(tess::DomainDesc::explicit_chunks(
-                             std::vector<tess::ChunkKey>{tess::ChunkKey{1}}),
-                         tess::FieldAccessDesc{0, DirtyTerrain, DirtyTerrain},
-                         tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(
+      tess::DomainDesc::explicit_chunks(
+          std::vector<tess::ChunkKey>{tess::ChunkKey{1}}),
+      tess::FieldAccessDesc{0, DirtyTerrain.value, DirtyTerrain},
+      tess::WritePolicy::UniquePerChunk);
   tess::SimClock clock;
   EXPECT_THROW((void)schedule.run_tick(clock), std::runtime_error);
   EXPECT_TRUE(drained.handles.empty());
-  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{1}), DirtyTerrain);
-  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 1u);
+  EXPECT_EQ(world.dirty_mask(tess::ChunkKey{1}), DirtyTerrain);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).content_version,
+            tess::ContentVersion{1});
   EXPECT_EQ(world.chunk(tess::ChunkKey{1}).template field_span<TerrainTag>()[0],
             12u);
   EXPECT_EQ(world.dirty_bounds(tess::ChunkKey{1}),
@@ -494,7 +502,7 @@ TEST(TessAutoExec, PooledKernelExceptionIsRethrownAndClearsCompletions) {
   using ThrowTask = tess::AutoExecTask<World, tess::WritePolicy::UniquePerChunk,
                                        Ack, ThrowOnChunkKernel>;
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   PooledThrowState throw_state;
   ThrowTask task{world, ops, ThrowOnChunkKernel{&throw_state}};
   DrainLog drained;
@@ -512,16 +520,18 @@ TEST(TessAutoExec, PooledKernelExceptionIsRethrownAndClearsCompletions) {
   EXPECT_TRUE(drained.handles.empty());
   EXPECT_FALSE(ops.empty());
   EXPECT_NE(throw_state.completed_mask.load(std::memory_order_relaxed), 0u);
-  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{2}), DirtyTerrain);
-  EXPECT_EQ(world.meta(tess::ChunkKey{2}).version, 1u);
+  EXPECT_EQ(world.dirty_mask(tess::ChunkKey{2}), DirtyTerrain);
+  EXPECT_EQ(world.meta(tess::ChunkKey{2}).content_version,
+            tess::ContentVersion{1});
   EXPECT_EQ(world.dirty_bounds(tess::ChunkKey{2}),
             (tess::Box3{tess::Coord3{0, 16, 0}, tess::Extent3{32, 16, 1}}));
   for (std::uint64_t key = 0; key < 4; ++key) {
     const auto mask = std::uint32_t{1} << static_cast<std::uint32_t>(key);
     if ((throw_state.completed_mask.load(std::memory_order_relaxed) & mask) !=
         0) {
-      EXPECT_EQ(world.dirty_flags(tess::ChunkKey{key}), DirtyTerrain);
-      EXPECT_EQ(world.meta(tess::ChunkKey{key}).version, 1u);
+      EXPECT_EQ(world.dirty_mask(tess::ChunkKey{key}), DirtyTerrain);
+      EXPECT_EQ(world.meta(tess::ChunkKey{key}).content_version,
+                tess::ContentVersion{1});
     }
   }
 
@@ -538,7 +548,7 @@ TEST(TessAutoExec, ExceptionMergeCoalescesOverlappingReadOnlyDirtyRecords) {
   using ThrowTask = tess::AutoExecTask<World, tess::WritePolicy::ReadOnly, Ack,
                                        ThrowingOverlappingReadOnlyKernel>;
   World world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   ThrowingReadOnlyState throw_state;
   ThrowTask task{world, ops, ThrowingOverlappingReadOnlyKernel{&throw_state}};
   tess::WorkerPoolPhaseExecutor pool{2};
@@ -559,8 +569,8 @@ TEST(TessAutoExec, ExceptionMergeCoalescesOverlappingReadOnlyDirtyRecords) {
 
   EXPECT_THROW((void)schedule.run_tick(clock), std::runtime_error);
   EXPECT_EQ(throw_state.entered.load(std::memory_order_relaxed), 2u);
-  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
-  EXPECT_EQ(world.meta(key).version, 1u);
+  EXPECT_EQ(world.dirty_mask(key), DirtyTerrain);
+  EXPECT_EQ(world.meta(key).content_version, tess::ContentVersion{1});
   EXPECT_EQ(world.dirty_bounds(key),
             (tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{32, 16, 1}}));
 }

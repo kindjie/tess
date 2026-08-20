@@ -14,8 +14,8 @@ namespace tess::detail {
 // reports the node-array capacity a search must allocate. For the dense
 // AlwaysResident world the map is the identity and the capacity is the whole
 // tile count, so A* node storage and indexing are byte-identical to indexing
-// the arrays by the raw tile index. The sparse specialization (added in a
-// later slice) remaps through the resident chunk directory so node arrays are
+// the arrays by the raw tile index. The sparse specialization remaps through
+// the resident chunk directory so node arrays are
 // bounded by the residency budget rather than the global tile count, letting
 // A* run over worlds far too large to index densely.
 template <typename World, typename Residency = typename World::residency_type>
@@ -71,7 +71,7 @@ struct NodeIndexSpace<World, AlwaysResident> {
 // the node arrays a search allocates are sized to `capacity * local_tile_count`
 // no matter how enormous the shape is. offset must only be called for a
 // resident tile (guard with is_resident_index first); the slot mapping is
-// stable for the duration of a single search because the world is const.
+// unchanged for one search because the world is const.
 template <typename World>
 struct NodeIndexSpace<World, SparseResident> {
   using shape_type = typename World::shape_type;
@@ -94,8 +94,7 @@ struct NodeIndexSpace<World, SparseResident> {
 
   // Residency test and offset in ONE directory probe (npos_offset when the
   // chunk is not resident) -- the split is_resident_index-then-offset pair
-  // paid two probes per neighbor in the hottest search loops
-  // (audit 2026-07-11, sparse neighbor probing low).
+  // paid two probes per neighbor in the hottest search loops.
   [[nodiscard]] std::size_t resident_offset(
       std::uint64_t index) const noexcept {
     const auto slot = world_->resident_slot(chunk_key_of(index));

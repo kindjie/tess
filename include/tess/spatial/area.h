@@ -11,7 +11,7 @@
 
 namespace tess {
 
-/// Stable identifier within one built `AreaIndex`; zero means no area.
+/// Identifier scoped to one built `AreaIndex`; zero means no area.
 struct AreaId {
   std::uint32_t value = 0;
 

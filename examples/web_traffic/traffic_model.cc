@@ -21,6 +21,8 @@ namespace {
 struct PassableTag {};
 struct ConstructionTag {};
 struct CostTag {};
+using WeightedMovement =
+    tess::movement::PositiveCostFieldMovement<PassableTag, CostTag>;
 struct OccupancyTag {};
 struct ReservationTag {};
 
@@ -95,7 +97,7 @@ auto guided_route(const World& world, TrafficScenario scenario,
   if (request.goal.y != gate_y) {
     waypoints[waypoint_count++] = {far_x, request.goal.y, 0};
   }
-  return tess::build_weighted_portal_route_product<World, PassableTag, CostTag>(
+  return tess::build_weighted_portal_route_product<World, WeightedMovement>(
       world, request,
       std::span<const tess::Coord3>{waypoints.data(), waypoint_count}, scratch,
       product);

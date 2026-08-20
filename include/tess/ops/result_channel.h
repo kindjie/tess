@@ -11,13 +11,13 @@
 #include <type_traits>
 #include <vector>
 
-// Queued-operation result channels (M4). A ResultChannel<T> is caller-owned
+// A ResultChannel<T> is caller-owned queued-operation result scratch
 // scratch delivering one typed payload plus an OpCompletion per queued
 // operation, keyed by OpHandle. Publication is synchronous and
 // executor-agnostic: each op's executing thread writes only its own dense
 // slot (the same per-operation-slot discipline the partitioned dirty scratch
-// uses), and every read -- state, completion, drain -- happens on the frame
-// owner's thread after the execute call returns, so the S1 executor join
+// uses), and every read -- state, completion, drain -- happens on the batch
+// owner's thread after the execute call returns, so the executor join
 // barrier supplies visibility and the channel holds no atomics.
 //
 // This synchronous channel is deliberately drain-only: results use
@@ -75,13 +75,13 @@ enum class OpResultState : std::uint8_t {
 };
 
 // Caller-owned, fixed-capacity result channel keyed by OpHandle. Slots are
-// dense -- slot index == handle.value, because FrameOps hands out handles
-// 0..N-1 per frame -- so lookup is O(1) with no map. Externally
-// synchronized like every tess scratch: the frame owner calls everything
+// dense -- slot index == handle.value, because OperationBatch hands out handles
+// 0..N-1 per operation batch -- so lookup is O(1) with no map. Externally
+// synchronized like every tess scratch: the batch owner calls everything
 // except the producer hooks, which the result-bearing execute wrappers
 // invoke from worker threads on disjoint per-op slots. clear() must be
-// called alongside FrameOps::clear(): handle assignment restarts at zero
-// there, and a channel kept across it would alias new-frame handles onto
+// called alongside OperationBatch::clear(): handle assignment restarts at zero
+// there, and a channel kept across it would alias new-batch handles onto
 // stale slots.
 //
 // T must be default-constructible; the warm allocation-free contract
@@ -100,12 +100,12 @@ class ResultChannel {
   ResultChannel(ResultChannel&&) = delete;
   auto operator=(ResultChannel&&) -> ResultChannel& = delete;
 
-  // Cold-path capacity; warm frames stay allocation-free while the frame's
+  // Cold-path capacity; warm batches stay allocation-free while the batch's
   // operation count fits within it.
   void reserve_operations(std::size_t count) { slots_.reserve(count); }
 
-  // Frame reset: drops all slots (keeping capacity). Pair with
-  // FrameOps::clear() -- see the class comment.
+  // Batch reset: drops all slots (keeping capacity). Pair with
+  // OperationBatch::clear() -- see the class comment.
   void clear() noexcept {
     slots_.clear();
     ++generation_;
@@ -200,7 +200,7 @@ class ResultChannel {
   };
 
   // Producer hooks, called only by the friended wrappers below. `ensure`
-  // and `prepare_operation` run on the frame owner's thread before any
+  // and `prepare_operation` run on the batch owner's thread before any
   // dispatch; `value_for` and `complete` run on whichever thread executes
   // the op, touching only that op's slot.
   void ensure_slot(OpHandle handle) {
@@ -344,7 +344,7 @@ template <WritePolicy Policy, typename Executor, typename World, typename T,
   for (std::size_t offset = 0; offset < phase.operation_count(); ++offset) {
     const auto index = phase.first_operation() + offset;
     scratch.dirty_for_operation(offset).reserve(
-        operations[index].field_access.dirty_mask == 0
+        !operations[index].field_access.dirty_mask
             ? 0
             : operations[index].chunks().size());
   }

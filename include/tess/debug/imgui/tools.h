@@ -55,12 +55,12 @@ namespace detail {
   return static_cast<long long>(value);
 }
 
-[[nodiscard]] inline auto tool_chunk_state_name(ChunkState state) noexcept
-    -> const char* {
-  switch (state) {
-    case ChunkState::ResidentSleeping:
+[[nodiscard]] inline auto tool_chunk_activity_name(
+    ChunkActivity activity) noexcept -> const char* {
+  switch (activity) {
+    case ChunkActivity::Sleeping:
       return "sleeping";
-    case ChunkState::ResidentActive:
+    case ChunkActivity::Active:
       return "active";
   }
   return "?";
@@ -136,14 +136,17 @@ template <typename World>
               detail::tool_to_ull(resolved->local_tile_id.value),
               detail::tool_to_ull(local.x), detail::tool_to_ull(local.y),
               detail::tool_to_ull(local.z));
-  ImGui::Text("state: %s; version: %u; topology: %u",
-              detail::tool_chunk_state_name(meta.state), meta.version,
-              meta.topology_version);
-  ImGui::Text("active / entities: %u / %u", meta.active_count,
+  ImGui::Text("activity: %s; content version: %llu; topology: %llu",
+              detail::tool_chunk_activity_name(
+                  world.chunk_activity(resolved->chunk_key)),
+              detail::tool_to_ull(meta.content_version.value),
+              detail::tool_to_ull(meta.topology_version.value));
+  ImGui::Text("active categories / entities: %u / %u",
+              world.active_category_count(resolved->chunk_key),
               meta.entity_count);
-  ImGui::Text("dirty / active flags: 0x%08x / 0x%08x",
-              world.dirty_flags(resolved->chunk_key),
-              world.active_flags(resolved->chunk_key));
+  ImGui::Text("dirty / active masks: 0x%08x / 0x%08x",
+              world.dirty_mask(resolved->chunk_key).value,
+              world.active_mask(resolved->chunk_key).value);
   return ToolStatus::Shown;
 }
 
@@ -151,7 +154,8 @@ template <typename World>
  * Draws a boolean field widget and returns a caller-applied edit intent.
  *
  * The world is const and is never changed. `Tag` must identify a boolean field
- * in the world's schema. Missing sparse chunks are reported but not loaded.
+ * in the world's schema. Non-resident sparse chunks are reported but not
+ * materialized.
  */
 template <typename Tag, typename World>
 [[nodiscard]] auto draw_bool_field_editor(const World& world, Coord3 selected,

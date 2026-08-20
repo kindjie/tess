@@ -40,7 +40,8 @@ struct PassableTag {};
 struct CostTag {};
 struct TerrainTag {};
 
-constexpr std::uint32_t kDirtyTerrain = 1u << 0u;
+constexpr std::uint32_t kTerrainField = 1u << 0u;
+constexpr auto kDirtyTerrain = tess::DirtyMask{kTerrainField};
 
 using PathSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                      tess::Field<CostTag, std::uint32_t>>;
@@ -199,9 +200,8 @@ auto run_weighted_serpentine() -> tess::diagnostics::PathCounters {
   tess::diagnostics::PathCounters counters;
   {
     tess::diagnostics::ScopedPathCounters scope{counters};
-    const auto result =
-        tess::weighted_astar_path<PathWorld, PassableTag, CostTag>(
-            world, tess::PathRequest{endpoints.start, endpoints.goal}, scratch);
+    const auto result = tess::weighted_astar_path<PathWorld, Walker>(
+        world, tess::PathRequest{endpoints.start, endpoints.goal}, scratch);
     check(result.status == tess::PathStatus::Found, "weighted_serpentine",
           "path not found");
     check_eq(result.cost, kSerpentineCost, "weighted_serpentine",
@@ -275,11 +275,11 @@ auto run_weighted_product_nearest() -> tess::diagnostics::PathCounters {
 
 auto run_queued_serial_update() -> tess::diagnostics::QueuedPhaseCounters {
   QueueWorld world;
-  tess::FrameOps ops;
+  tess::OperationBatch ops;
   tess::PlannedPhaseExecutionScratch scratch;
   constexpr auto writes_terrain = tess::FieldAccessDesc{
       0,
-      kDirtyTerrain,
+      kTerrainField,
       kDirtyTerrain,
   };
   const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{0}};
@@ -315,16 +315,16 @@ auto run_queued_serial_update() -> tess::diagnostics::QueuedPhaseCounters {
   }
   check_eq(world.field<TerrainTag>(tess::Coord3{0, 0, 0}), 3,
            "queued_serial_update", "first chunk write");
-  check_eq(world.dirty_flags(tess::ChunkKey{0}), kDirtyTerrain,
-           "queued_serial_update", "first chunk dirty flags");
-  check_eq(world.meta(tess::ChunkKey{0}).version, 1, "queued_serial_update",
-           "first chunk version");
+  check_eq(world.dirty_mask(tess::ChunkKey{0}).value, kDirtyTerrain.value,
+           "queued_serial_update", "first chunk dirty masks");
+  check_eq(world.meta(tess::ChunkKey{0}).content_version.value, 1,
+           "queued_serial_update", "first chunk content version");
   check_eq(world.field<TerrainTag>(tess::Coord3{4, 0, 0}), 4,
            "queued_serial_update", "second chunk write");
-  check_eq(world.dirty_flags(tess::ChunkKey{1}), kDirtyTerrain,
-           "queued_serial_update", "second chunk dirty flags");
-  check_eq(world.meta(tess::ChunkKey{1}).version, 1, "queued_serial_update",
-           "second chunk version");
+  check_eq(world.dirty_mask(tess::ChunkKey{1}).value, kDirtyTerrain.value,
+           "queued_serial_update", "second chunk dirty masks");
+  check_eq(world.meta(tess::ChunkKey{1}).content_version.value, 1,
+           "queued_serial_update", "second chunk content version");
   return counters;
 }
 

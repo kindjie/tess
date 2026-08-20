@@ -11,7 +11,7 @@
 // timing panel requires the Dear ImGui tables API available since 1.80.
 //
 // tess.h does NOT include this header, so a diagnostics build that does not use
-// ImGui never sees it. The panels use stable ImGui text and table APIs, and
+// ImGui never sees it. The panels use supported ImGui text and table APIs, and
 // uint64 values are printed through unsigned long long casts for portable
 // printf-style formatting.
 //
@@ -61,7 +61,7 @@ inline void draw_right_aligned(std::uint64_t value) {
 }
 }  // namespace detail
 
-/** Returns the stable display label used for a trace category in panels. */
+/** Returns the canonical display label used for a trace category in panels. */
 [[nodiscard]] inline auto category_name(
     diagnostics::TraceCategory category) noexcept -> const char* {
   switch (category) {
@@ -85,7 +85,7 @@ inline void draw_right_aligned(std::uint64_t value) {
   return "?";
 }
 
-/** Draws per-category timing statistics in stable, independently clipped cells.
+/** Draws timing statistics in independently clipped per-category table cells.
  */
 inline void draw_timing_panel(const diagnostics::TimingSnapshot& timing) {
   ImGui::TextUnformatted("Timing (ns)");
@@ -140,7 +140,7 @@ inline void draw_timing_panel(const diagnostics::TimingSnapshot& timing) {
   ImGui::EndTable();
 }
 
-/** Draws headline path-search work counters from a stable snapshot. */
+/** Draws headline path-search work counters from a read-only snapshot. */
 inline void draw_path_counters_panel(const diagnostics::PathCounters& path) {
   ImGui::TextUnformatted("Path counters");
   ImGui::Separator();

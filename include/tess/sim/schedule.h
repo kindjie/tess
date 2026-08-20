@@ -13,7 +13,7 @@
 #include <type_traits>
 #include <vector>
 
-// The M5 schedule: ordered phases of type-erased tasks driven by cadences
+// Ordered phases of type-erased tasks driven by cadences
 // that are pure functions of the fixed-tick counter and per-task pending
 // dirty/event masks. The schedule itself never touches a world -- trigger
 // bits are fed to it explicitly -- so "no hidden full-world scans" holds by
@@ -27,7 +27,7 @@
 // workers); worker-produced triggers flow through task-result masks.
 //
 // Reentrancy: task bodies may call notify_dirty, notify_events, request_run,
-// and set_enabled (field writes on stable storage, with the documented
+// and set_enabled (field writes on address-stable storage, with the documented
 // immediate-merge semantics). They must NOT call add_task, reserve_tasks, or
 // run_tick -- registration/capacity changes after seal() could invalidate the
 // task array mid-iteration, and a nested tick would double-advance every
@@ -60,7 +60,7 @@ struct BackgroundBudget {
 struct Cadence {
   CadenceKind kind = CadenceKind::EveryTick;
   std::uint32_t every_n = 1;
-  std::uint32_t dirty_mask = 0;
+  DirtyMask dirty_mask = {};
   BackgroundBudget budget{};
   std::uint32_t event_mask = 0;
 
@@ -70,28 +70,31 @@ struct Cadence {
 
   [[nodiscard]] static constexpr auto every_ticks(std::uint32_t n) noexcept
       -> Cadence {
-    return Cadence{CadenceKind::EveryN, n == 0 ? 1u : n, 0, {}, 0};
+    return Cadence{CadenceKind::EveryN, n == 0 ? 1u : n, {}, {}, 0};
   }
 
-  [[nodiscard]] static constexpr auto on_dirty(std::uint32_t mask) noexcept
+  [[nodiscard]] static constexpr auto on_dirty(DirtyMask mask) noexcept
       -> Cadence {
     return Cadence{CadenceKind::OnDirty, 1, mask, {}, 0};
   }
 
   [[nodiscard]] static constexpr auto on_event(std::uint32_t mask) noexcept
       -> Cadence {
-    return Cadence{CadenceKind::OnEvent, 1, 0, {}, mask};
+    return Cadence{CadenceKind::OnEvent, 1, {}, {}, mask};
   }
 
   [[nodiscard]] static constexpr auto background(
       BackgroundBudget budget) noexcept -> Cadence {
     return Cadence{
-        CadenceKind::Background, 1, 0,
-        BackgroundBudget{budget.max_items == 0 ? 1u : budget.max_items}, 0};
+        CadenceKind::Background,
+        1,
+        {},
+        BackgroundBudget{budget.max_items == 0 ? 1u : budget.max_items},
+        0};
   }
 
   [[nodiscard]] static constexpr auto manual() noexcept -> Cadence {
-    return Cadence{CadenceKind::Manual, 1, 0, {}, 0};
+    return Cadence{CadenceKind::Manual, 1, {}, {}, 0};
   }
 };
 
@@ -121,7 +124,7 @@ struct ScheduleTaskContext {
   // OnDirty: the bits (within the task's own mask) that made it due; they
   // are consumed before the task runs, so bits raised DURING the run re-arm
   // it for the next tick.
-  std::uint32_t pending_dirty = 0;
+  DirtyMask pending_dirty{};
   // Background: the item budget for this run.
   std::uint32_t budget_items = 0;
   // OnEvent: the subscribed bits that made the task due. Multiple
@@ -134,7 +137,7 @@ struct ScheduleTaskResult {
   // Dirty bits this run produced; the schedule merges them into every
   // OnDirty task's pending mask immediately, so later-phase tasks can fire
   // in the same tick and earlier-phase tasks fire next tick.
-  std::uint32_t dirty_mask = 0;
+  DirtyMask dirty_mask = {};
   // Background: work units consumed (at most the offered budget).
   std::uint32_t items_done = 0;
   // Background: true keeps the task due next tick without a new trigger.
@@ -177,7 +180,7 @@ struct ScheduleTickStats {
   std::uint32_t tasks_skipped = 0;
   std::uint32_t background_items = 0;
   // Union of every task result's dirty mask this tick.
-  std::uint32_t dirty_mask_produced = 0;
+  DirtyMask dirty_mask_produced{};
   // Union of every task result's event mask this tick.
   std::uint32_t event_mask_produced = 0;
 };
@@ -246,7 +249,7 @@ class Schedule {
   // now one pass instead of SimPhase::Count passes over every task) and
   // dirty/event subscription indexes. Trigger merges stop writing tasks that
   // never read the corresponding value. Storage is never reordered, so
-  // TaskIds stay stable. A contract-
+  // TaskIds remain valid for the schedule's lifetime. A contract-
   // violating add_task after seal() asserts in debug builds; under NDEBUG
   // the late task registers but never dispatches (it is absent from the
   // frozen indexes).
@@ -309,7 +312,7 @@ class Schedule {
   // them (only OnDirty cadences read pending_mask; foreign bits within an
   // OnDirty task's mask sit inert). Frame-owner thread only; never call
   // from an op callback.
-  void notify_dirty(std::uint32_t mask) noexcept {
+  void notify_dirty(DirtyMask mask) noexcept {
     if (sealed_) {
       for (const auto id : dirty_task_ids_) {
         tasks_[id].pending_mask |= mask;
@@ -361,7 +364,7 @@ class Schedule {
     }
     // Scope guard rather than a trailing store: a throwing task callback
     // must not leave the schedule latched "in run", or every subsequent
-    // tick would fail the reentrancy assert (audit 2026-07-11 C2).
+    // tick would fail the reentrancy contract.
     struct InRunGuard {
       bool& flag;
       ~InRunGuard() { flag = false; }
@@ -413,7 +416,7 @@ class Schedule {
     void* ctx = nullptr;
     ScheduleTaskFn fn = nullptr;
     ScheduleNoThrowTaskFn no_throw_fn = nullptr;
-    std::uint32_t pending_mask = 0;
+    DirtyMask pending_mask{};
     std::uint32_t pending_events = 0;
     std::uint32_t ticks_until_due = 0;
     bool run_requested = false;
@@ -484,7 +487,7 @@ class Schedule {
     // OnDirty/Manual/Background triggers PERSIST across disablement and
     // fire on the first enabled tick.
     auto due = false;
-    auto fired_dirty = std::uint32_t{0};
+    auto fired_dirty = DirtyMask{};
     auto fired_events = std::uint32_t{0};
     auto budget = std::uint32_t{0};
     switch (task.desc.cadence.kind) {
@@ -504,7 +507,7 @@ class Schedule {
       }
       case CadenceKind::OnDirty:
         fired_dirty = task.pending_mask & task.desc.cadence.dirty_mask;
-        due = fired_dirty != 0 || task.run_requested;
+        due = static_cast<bool>(fired_dirty) || task.run_requested;
         break;
       case CadenceKind::OnEvent:
         fired_events = task.pending_events & task.desc.cadence.event_mask;
@@ -585,7 +588,7 @@ class Schedule {
 
     task.in_progress =
         task.desc.cadence.kind == CadenceKind::Background && result.more_work;
-    if (result.dirty_mask != 0) {
+    if (result.dirty_mask) {
       // Immediate merge: later-phase OnDirty tasks see it this tick,
       // earlier-phase (and this) tasks next tick. Only OnDirty tasks
       // consume pending_mask, so only they receive it.

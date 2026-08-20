@@ -16,7 +16,7 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
 - `chunk_domain(span)` adapts a prebuilt key span without allocation.
 - `explicit_chunk_domain(span)` copies and sorts explicit keys in ascending
   `ChunkKey` order.
-- `dirty_chunk_domain(world, flags)` and `active_chunk_domain(world, flags)`
+- `dirty_chunk_domain(world, mask)` and `active_chunk_domain(world, mask)`
   return owning domains using the current always-resident metadata queries.
 - `BlockScratch` owns caller-reusable temporary storage backed by a heap
   `std::byte[]` buffer aligned for `std::max_align_t`. `reserve_bytes(bytes)`
@@ -148,9 +148,9 @@ materialize ranges or decode global `TileKey` values.
 
 Boundary and local-candidate helpers only describe the current chunk. They do
 not define movement legality, neighbor ordering, direction enums, halo loading,
-transition providers, or cross-chunk field access. Future topology and path
-systems can use signed local candidates plus `contains_local` to decide whether
-a candidate remains inside the chunk or needs an explicit transition.
+transition providers, or cross-chunk field access. Topology and path systems
+use signed local candidates plus `contains_local` to decide whether a candidate
+remains inside the chunk or needs an explicit transition.
 
 ## Remaining TDD Differences
 
@@ -161,9 +161,9 @@ layer built above it:
 - `BlockCtx` is a serial resolved-chunk context. Planning, phase grouping, and
   worker-pool dispatch live in queued operations and simulation rather than in
   the raw view.
-- Scratch and diagnostic pointers are caller-owned and optional; planner-owned
-  arenas and cross-thread diagnostic reduction remain future work.
-- Only `ReadOnly` is enforced today, and only through policy-typed block
+- Scratch and diagnostic pointers are caller-owned and optional. The raw layer
+  does not provide planner-owned arenas or cross-thread diagnostic reduction.
+- Only `ReadOnly` is enforced, and only through policy-typed block
   contexts and `for_each_chunk<Policy>`. `UniquePerTile`, `UniquePerChunk`,
   and `Unsafe` still record intended write discipline without ownership checks
   in raw block iteration. Queued-operation phase planning adds the first
@@ -175,7 +175,7 @@ layer built above it:
 - Field access stays on `ChunkPage` spans instead of introducing kernel
   parameter binding or generated accessors.
 
-Sparse block domains and tile subranges remain planned extensions. The shipped
+Sparse block domains and tile subranges are not part of this layer. The shipped
 pipeline is deliberately an inlined serial composition layer over resolved
 block sources; worker ownership and phase scheduling remain in queued
 operations.

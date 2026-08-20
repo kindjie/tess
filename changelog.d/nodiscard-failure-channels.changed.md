@@ -19,8 +19,6 @@
   `MissingChunk` not existing under `AlwaysResident`, the sparse branch on
   the residency-generation check having already diverted every eviction to
   a full rebuild.
-- Follow-up recorded, not fixed here: `LocalTopologyResult` is shared
-  between `build_region_graph`, which cannot fail, and
-  `update_region_graph`, which can. That is the same dead-status-channel
-  defect as `save_world_archive`, and splitting the type is its own
-  change.
+- `build_region_graph`, which cannot fail, returns `RegionGraphBuildResult`;
+  `update_region_graph`, which can reject an invalid dirty chunk, returns the
+  status-bearing `TopologyBuildResult`.

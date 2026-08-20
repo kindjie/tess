@@ -163,9 +163,11 @@ class ChunkDirectory {
  * validity must be checked across residency mutations.
  *
  * Construction allocates the fixed-capacity page and bookkeeping storage.
- * Residency changes and hot accessors allocate nothing afterward. Instances
+ * Residency changes and hot accessors allocate no Tess-owned storage
+ * afterward; a field value's non-throwing default initializer may allocate.
+ * Instances
  * are not internally synchronized: external synchronization is required when
- * residency or content can mutate; concurrent reads require a stable world.
+ * residency or content can mutate; concurrent reads require an unchanged world.
  */
 template <typename Shape, typename Schema>
 class World<Shape, Schema, SparseResident> {
@@ -179,10 +181,13 @@ class World<Shape, Schema, SparseResident> {
   static constexpr std::uint64_t local_tile_count =
       ShapeTraits<Shape>::local_tile_count;
   static constexpr std::size_t field_count = Schema::field_count;
+  // Tess-owned inline page storage; field-managed dynamic or referenced
+  // storage is outside this byte count.
   static constexpr std::size_t page_byte_size = page_type::byte_size;
 
   /**
-   * Allocates fixed-capacity storage from `config` without loading chunks.
+   * Allocates fixed-capacity storage from `config` without materializing
+   * chunks.
    *
    * Capacity is clamped to at least one page, even when the byte budget is
    * smaller than `page_byte_size`.
@@ -195,11 +200,11 @@ class World<Shape, Schema, SparseResident> {
       pages_.emplace_back(ChunkKey{0}, ChunkCoord3{});
     }
     metadata_.assign(capacity_, ChunkMeta{});
-    dirty_flags_.assign(capacity_, 0u);
-    active_flags_.assign(capacity_, 0u);
+    dirty_masks_.assign(capacity_, DirtyMask{});
+    active_masks_.assign(capacity_, ActiveMask{});
     dirty_bounds_.assign(capacity_, Box3{});
     slot_key_.assign(capacity_, ChunkKey{});
-    slot_generation_.assign(capacity_, 0);
+    slot_generation_.assign(capacity_, ResidencyGeneration{});
     lru_prev_.assign(capacity_, npos_slot);
     lru_next_.assign(capacity_, npos_slot);
     slot_position_.assign(capacity_, 0);
@@ -216,7 +221,7 @@ class World<Shape, Schema, SparseResident> {
   /** Returns the maximum number of simultaneously resident chunks. */
   [[nodiscard]] std::size_t capacity() const noexcept { return capacity_; }
 
-  /** Returns the requested page-storage budget in bytes. */
+  /** Returns the requested Tess-owned inline page-storage budget in bytes. */
   [[nodiscard]] std::size_t byte_budget() const noexcept {
     return byte_budget_;
   }
@@ -224,7 +229,8 @@ class World<Shape, Schema, SparseResident> {
   [[nodiscard]] std::size_t resident_count() const noexcept {
     return resident_keys_.size();
   }
-  /** Returns bytes occupied by current resident pages, excluding metadata. */
+  /** Returns resident inline page bytes, excluding metadata and value-owned
+   * dynamic or referenced storage. */
   [[nodiscard]] std::size_t resident_byte_size() const noexcept {
     return resident_keys_.size() * page_byte_size;
   }
@@ -245,9 +251,9 @@ class World<Shape, Schema, SparseResident> {
   /**
    * Returns the fixed slot backing a resident chunk, or `npos_slot`.
    *
-   * The slot is stable only while the chunk stays resident. A traversal may
-   * index by slot while holding the world logically const, but must discard
-   * that indexing before any residency mutation.
+   * The slot identity remains valid only while the chunk stays resident. A
+   * traversal may index by slot while holding the world logically const, but
+   * must discard that indexing before any residency mutation.
    */
   [[nodiscard]] std::size_t resident_slot(ChunkKey key) const noexcept {
     return directory_.find(key);
@@ -256,7 +262,7 @@ class World<Shape, Schema, SparseResident> {
   /** Snapshot of residency facts returned by `resident_ref()`. */
   struct ResidentChunkRef {
     std::size_t slot = npos_slot;
-    std::uint64_t generation = 0;
+    ResidencyGeneration generation{};
     const ChunkMeta* meta = nullptr;
   };
 
@@ -279,18 +285,18 @@ class World<Shape, Schema, SparseResident> {
   /**
    * Returns a resident chunk's world-monotonic generation, or zero if absent.
    */
-  [[nodiscard]] std::uint64_t residency_generation(
+  [[nodiscard]] ResidencyGeneration residency_generation(
       ChunkKey key) const noexcept {
     const auto slot = directory_.find(key);
     if (slot == detail::ChunkDirectory::npos) {
-      return 0;
+      return ResidencyGeneration{};
     }
     return slot_generation_[slot];
   }
 
   /** Returns whether a handle still names its original residency interval. */
   [[nodiscard]] bool valid(ResidencyHandle handle) const noexcept {
-    return handle.generation != 0 &&
+    return handle.generation.valid() &&
            residency_generation(handle.key) == handle.generation;
   }
 
@@ -307,7 +313,8 @@ class World<Shape, Schema, SparseResident> {
   /**
    * Returns an order-independent fingerprint of resident content and slots.
    *
-   * It incorporates eviction/reload generations, content versions, keys, and
+   * It incorporates eviction/rematerialization generations, content versions,
+   * keys, and
    * slot bindings, so consumers can probabilistically invalidate artifacts
    * indexed by resident slot. Computing it is `O(resident_count)`,
    * allocation-free, and never visits non-resident chunks. It is not a
@@ -321,14 +328,13 @@ class World<Shape, Schema, SparseResident> {
     };
     // Slot-direct iteration: resident_slots_ pairs with resident_keys_, so
     // every term is a direct array read -- the by-key accessors would pay
-    // three directory probes per chunk for the same data (audit
-    // 2026-07-11 M2).
+    // three directory probes per chunk for the same data.
     auto acc = std::uint64_t{0};
     for (const auto slot : resident_slots_) {
       auto h = mix(slot_key_[slot].value);
       h ^= mix(h + static_cast<std::uint64_t>(slot));
-      h ^= mix(h + slot_generation_[slot]);
-      h ^= mix(h + static_cast<std::uint64_t>(metadata_[slot].version));
+      h ^= mix(h + slot_generation_[slot].value);
+      h ^= mix(h + metadata_[slot].content_version.value);
       acc += h;
     }
     return mix(acc + static_cast<std::uint64_t>(resident_count()) +
@@ -339,10 +345,12 @@ class World<Shape, Schema, SparseResident> {
    * Makes an in-bounds key resident and marks it most-recently used.
    *
    * When full, the least-recently-used chunk is evicted, invalidating its
-   * handles and borrowed storage. A newly loaded page is zero-initialized and
-   * receives a new generation. Calling this for an already resident key is
-   * idempotent for data and generation. This operation does not allocate after
-   * construction.
+   * handles and borrowed storage. A newly materialized page is
+   * value-initialized and receives a new generation. Calling this for an
+   * already resident key is
+   * idempotent for data and generation. Tess performs no dynamic allocation
+   * after construction; a field value's nothrow default initialization may
+   * manage its own allocation while resetting a reused page.
    *
    * Returns an invalid handle for a key outside the bounded shape, matching
    * `try_chunk()`, `try_meta()` and `residency_generation()`. This is the
@@ -363,8 +371,8 @@ class World<Shape, Schema, SparseResident> {
     slot = acquire_slot();
     pages_[slot].reset(key, chunk_coord<Shape>(key));
     metadata_[slot] = ChunkMeta{};
-    dirty_flags_[slot] = 0u;
-    active_flags_[slot] = 0u;
+    dirty_masks_[slot] = DirtyMask{};
+    active_masks_[slot] = ActiveMask{};
     dirty_bounds_[slot] = Box3{};
     slot_key_[slot] = key;
     slot_generation_[slot] = ++generation_clock_;
@@ -471,34 +479,36 @@ class World<Shape, Schema, SparseResident> {
     return &metadata_[slot];
   }
 
-  [[nodiscard]] auto chunk_state(ChunkKey key) const noexcept -> ChunkState {
-    return meta(key).state;
+  [[nodiscard]] auto chunk_activity(ChunkKey key) const noexcept
+      -> ChunkActivity {
+    return active_mask(key).empty() ? ChunkActivity::Sleeping
+                                    : ChunkActivity::Active;
   }
 
-  void set_chunk_state(ChunkKey key, ChunkState state) noexcept {
-    meta(key).state = state;
-  }
-
-  // Hot-scan SoA columns split out of ChunkMeta (audit 2026-07-11 M5);
-  // read-only -- mutate through mark_/clear_/observe_ as before. The chunk
-  // must be resident (same contract as meta()).
-  [[nodiscard]] auto dirty_flags(ChunkKey key) const noexcept -> std::uint32_t {
-    return dirty_flags_[resident_slot_checked(key)];
-  }
-
-  [[nodiscard]] auto active_flags(ChunkKey key) const noexcept
+  [[nodiscard]] auto active_category_count(ChunkKey key) const noexcept
       -> std::uint32_t {
-    return active_flags_[resident_slot_checked(key)];
+    return detail::popcount(active_mask(key));
+  }
+
+  // Hot-scan SoA columns split out of ChunkMeta; read-only -- mutate through
+  // mark_/clear_/observe_. The chunk
+  // must be resident (same contract as meta()).
+  [[nodiscard]] auto dirty_mask(ChunkKey key) const noexcept -> DirtyMask {
+    return dirty_masks_[resident_slot_checked(key)];
+  }
+
+  [[nodiscard]] auto active_mask(ChunkKey key) const noexcept -> ActiveMask {
+    return active_masks_[resident_slot_checked(key)];
   }
 
   [[nodiscard]] auto dirty_bounds(ChunkKey key) const noexcept -> Box3 {
     return dirty_bounds_[resident_slot_checked(key)];
   }
 
-  void mark_dirty(ChunkKey key, std::uint32_t flags, Box3 bounds) noexcept {
+  void mark_dirty(ChunkKey key, DirtyMask mask, Box3 bounds) noexcept {
     const auto slot = resident_slot_checked(key);
-    detail::meta_mark_dirty(dirty_flags_[slot], dirty_bounds_[slot],
-                            metadata_[slot], flags, bounds);
+    detail::meta_mark_dirty(dirty_masks_[slot], dirty_bounds_[slot],
+                            metadata_[slot], mask, bounds);
   }
 
   /**
@@ -519,14 +529,13 @@ class World<Shape, Schema, SparseResident> {
     detail::meta_mark_content_changed(metadata_[slot]);
   }
 
-  void mark_topology_dirty(ChunkKey key, std::uint32_t flags,
-                           Box3 bounds) noexcept {
-    if (flags == 0) {
+  void mark_topology_dirty(ChunkKey key, DirtyMask mask, Box3 bounds) noexcept {
+    if (mask.empty()) {
       return;
     }
     const auto slot = resident_slot_checked(key);
-    detail::meta_mark_dirty(dirty_flags_[slot], dirty_bounds_[slot],
-                            metadata_[slot], flags, bounds);
+    detail::meta_mark_dirty(dirty_masks_[slot], dirty_bounds_[slot],
+                            metadata_[slot], mask, bounds);
     ++metadata_[slot].topology_version;
   }
 
@@ -534,42 +543,41 @@ class World<Shape, Schema, SparseResident> {
     ++meta(key).topology_version;
   }
 
-  void clear_dirty(ChunkKey key, std::uint32_t flags) noexcept {
+  void clear_dirty(ChunkKey key, DirtyMask mask) noexcept {
     const auto slot = resident_slot_checked(key);
-    detail::meta_clear_dirty(dirty_flags_[slot], dirty_bounds_[slot], flags);
+    detail::meta_clear_dirty(dirty_masks_[slot], dirty_bounds_[slot], mask);
   }
 
-  [[nodiscard]] auto observe_dirty(ChunkKey key,
-                                   std::uint32_t flags) const noexcept
+  [[nodiscard]] auto observe_dirty(ChunkKey key, DirtyMask mask) const noexcept
       -> DirtyObservation {
     const auto slot = resident_slot_checked(key);
-    return detail::meta_observe_dirty(dirty_flags_[slot], dirty_bounds_[slot],
-                                      metadata_[slot], flags,
+    return detail::meta_observe_dirty(dirty_masks_[slot], dirty_bounds_[slot],
+                                      metadata_[slot], mask,
                                       slot_generation_[slot]);
   }
 
   /**
-   * Clears the observed flags when the observation is still current.
+   * Clears the observed mask when the observation is still current.
    *
-   * Refuses an observation from an earlier residency interval: reloading a
-   * chunk restarts its `version`, so the version alone cannot distinguish a
-   * mark this observation saw from one made after an eviction.
+   * Refuses an observation from an earlier residency interval: rematerializing
+   * a chunk restarts its content version, so that value alone cannot
+   * distinguish a mark this observation saw from one made after an eviction.
    */
   bool clear_dirty_observed(ChunkKey key, DirtyObservation observed) noexcept {
     const auto slot = resident_slot_checked(key);
     return detail::meta_clear_dirty_observed(
-        dirty_flags_[slot], dirty_bounds_[slot], metadata_[slot], observed,
+        dirty_masks_[slot], dirty_bounds_[slot], metadata_[slot], observed,
         slot_generation_[slot]);
   }
 
-  void mark_active(ChunkKey key, std::uint32_t flags) noexcept {
+  void mark_active(ChunkKey key, ActiveMask mask) noexcept {
     const auto slot = resident_slot_checked(key);
-    detail::meta_mark_active(active_flags_[slot], metadata_[slot], flags);
+    detail::meta_mark_active(active_masks_[slot], mask);
   }
 
-  void clear_active(ChunkKey key, std::uint32_t flags) noexcept {
+  void clear_active(ChunkKey key, ActiveMask mask) noexcept {
     const auto slot = resident_slot_checked(key);
-    detail::meta_clear_active(active_flags_[slot], metadata_[slot], flags);
+    detail::meta_clear_active(active_masks_[slot], mask);
   }
 
   /**
@@ -577,9 +585,8 @@ class World<Shape, Schema, SparseResident> {
    *
    * The scan is `O(resident_count)` and allocates only if `out` grows.
    */
-  void collect_dirty_chunks(std::uint32_t flags,
-                            std::vector<ChunkKey>& out) const {
-    collect_matching_chunks(flags, dirty_flags_, out);
+  void collect_dirty_chunks(DirtyMask mask, std::vector<ChunkKey>& out) const {
+    collect_matching_chunks(mask, dirty_masks_, out);
   }
 
   /**
@@ -587,24 +594,24 @@ class World<Shape, Schema, SparseResident> {
    *
    * The scan and allocation contract matches `collect_dirty_chunks()`.
    */
-  void collect_active_chunks(std::uint32_t flags,
+  void collect_active_chunks(ActiveMask mask,
                              std::vector<ChunkKey>& out) const {
-    collect_matching_chunks(flags, active_flags_, out);
+    collect_matching_chunks(mask, active_masks_, out);
   }
 
   /** Returns matching resident dirty keys in a newly allocated vector. */
-  [[nodiscard]] auto dirty_chunks(std::uint32_t flags) const
+  [[nodiscard]] auto dirty_chunks(DirtyMask mask) const
       -> std::vector<ChunkKey> {
     std::vector<ChunkKey> chunks;
-    collect_dirty_chunks(flags, chunks);
+    collect_dirty_chunks(mask, chunks);
     return chunks;
   }
 
   /** Returns matching resident active keys in a newly allocated vector. */
-  [[nodiscard]] auto active_chunks(std::uint32_t flags) const
+  [[nodiscard]] auto active_chunks(ActiveMask mask) const
       -> std::vector<ChunkKey> {
     std::vector<ChunkKey> chunks;
-    collect_active_chunks(flags, chunks);
+    collect_active_chunks(mask, chunks);
     return chunks;
   }
 
@@ -713,10 +720,9 @@ class World<Shape, Schema, SparseResident> {
     return evict_least_recently_used();
   }
 
-  // Pops the head of the intrusive LRU list -- O(1) per eviction (audit
-  // 2026-07-11 M11b; was an O(resident_count) timestamp scan). The victim
-  // is handed straight back for reuse, so it is deliberately not returned
-  // to the free list.
+  // Pops the head of the intrusive LRU list in O(1). The victim is handed
+  // straight back for reuse, so it is deliberately not returned to the free
+  // list.
   std::size_t evict_least_recently_used() {
     TESS_ASSERT(!resident_slots_.empty());
     TESS_ASSERT(lru_head_ != npos_slot);
@@ -788,13 +794,13 @@ class World<Shape, Schema, SparseResident> {
     return count < 1 ? 1 : count;
   }
 
-  // Reads a dense 4-byte flag column by resident slot instead of streaming
-  // ChunkMeta structs (audit 2026-07-11 M5).
-  void collect_matching_chunks(std::uint32_t flags,
-                               const std::vector<std::uint32_t>& column,
+  // Reads a dense 4-byte mask column by resident slot instead of streaming
+  // ChunkMeta structs.
+  template <typename Mask>
+  void collect_matching_chunks(Mask mask, const std::vector<Mask>& column,
                                std::vector<ChunkKey>& out) const {
     for (const auto slot : resident_slots_) {
-      if ((column[slot] & flags) != 0) {
+      if (static_cast<bool>(column[slot] & mask)) {
         out.push_back(slot_key_[slot]);
       }
     }
@@ -811,15 +817,15 @@ class World<Shape, Schema, SparseResident> {
   std::size_t byte_budget_;
   std::size_t capacity_;
 
-  std::uint64_t generation_clock_ = 0;
+  ResidencyGeneration generation_clock_{};
 
   std::vector<page_type> pages_;
   std::vector<ChunkMeta> metadata_;
-  std::vector<std::uint32_t> dirty_flags_;
-  std::vector<std::uint32_t> active_flags_;
+  std::vector<DirtyMask> dirty_masks_;
+  std::vector<ActiveMask> active_masks_;
   std::vector<Box3> dirty_bounds_;
   std::vector<ChunkKey> slot_key_;
-  std::vector<std::uint64_t> slot_generation_;
+  std::vector<ResidencyGeneration> slot_generation_;
   std::vector<std::size_t> lru_prev_;
   std::vector<std::size_t> lru_next_;
   std::size_t lru_head_ = npos_slot;

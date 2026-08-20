@@ -1,6 +1,6 @@
 # tess_queued_planning_index_test
 
-- `tess_queued_planning_index_test`: holds the audit-2026-08-07 P1 chunk
+- `tess_queued_planning_index_test`: holds the chunk
   index indistinguishable from the linear scans it replaced. Differential:
   randomized plans run through both `find_hazard` and `find_hazard_indexed`
   and must blame the identical operation, and through both phase-grouping

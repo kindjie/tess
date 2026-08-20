@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <utility>
 
@@ -154,6 +155,24 @@ TEST(TessFailFastDeathTest, RuntimeResultRejectsStaleTicketGeneration) {
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}});
   runtime.clear_requests();
   EXPECT_DEATH(static_cast<void>(runtime.result(stale)), "stale PathTicket");
+}
+
+TEST(TessFailFastDeathTest, ContentVersionRejectsOverflow) {
+  auto version =
+      tess::ContentVersion{std::numeric_limits<std::uint64_t>::max()};
+  EXPECT_DEATH(++version, "ContentVersion exhausted");
+}
+
+TEST(TessFailFastDeathTest, TopologyVersionRejectsOverflow) {
+  auto version =
+      tess::TopologyVersion{std::numeric_limits<std::uint64_t>::max()};
+  EXPECT_DEATH(++version, "TopologyVersion exhausted");
+}
+
+TEST(TessFailFastDeathTest, ResidencyGenerationRejectsOverflow) {
+  auto generation =
+      tess::ResidencyGeneration{std::numeric_limits<std::uint64_t>::max()};
+  EXPECT_DEATH(++generation, "ResidencyGeneration exhausted");
 }
 
 [[nodiscard]] auto idle_task(void*, const tess::ScheduleTaskContext&)

@@ -27,7 +27,7 @@ using Shape = tess::Shape<tess::Extent3{16, 16, 1}, tess::Extent3{8, 8, 1}>;
 using Schema = tess::FieldSchema<tess::Field<TerrainTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
-constexpr std::uint32_t kTerrainBit = 1U << 0U;
+constexpr auto kTerrainBit = tess::DirtyMask{1U << 0U};
 
 auto make_collector() -> tess::DeltaCollector {
   tess::DeltaCollector collector;

@@ -2131,7 +2131,7 @@ def test_every_discovered_target_declares_its_impact():
 def test_every_subsystem_has_at_least_one_labeled_test():
   # A subsystem whose changes would select zero tests is a silent
   # under-selection bug — no acknowledged gaps: every subsystem
-  # (including gpu and debug) has direct tests today.
+  # (including gpu and debug) has direct tests.
   covered = set()
   for labels in _declared_labels().values():
     covered |= {

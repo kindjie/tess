@@ -251,9 +251,9 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_web_diagnostics_model)
 
-add_executable(tess_mvp_path mvp_path.cc)
-target_link_libraries(tess_mvp_path PRIVATE tess::tess)
-tess_apply_project_options(tess_mvp_path)
+add_executable(tess_queued_path queued_path.cc)
+target_link_libraries(tess_queued_path PRIVATE tess::tess)
+tess_apply_project_options(tess_queued_path)
 
 add_executable(tess_path_agents path_agents.cc)
 target_link_libraries(tess_path_agents PRIVATE tess::tess)

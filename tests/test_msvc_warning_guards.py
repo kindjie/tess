@@ -19,7 +19,7 @@ def test_template_constant_conditions_use_compile_time_branches():
   assert "if constexpr (page_byte_size == 0)" in sparse_world
   assert re.search(
     r"bool arm_early_termination =\s*"
-    r"policy == MissingChunkPolicy::TreatAsBlocked;\s*"
+    r"policy == MissingChunkPolicy::AssumeImpassable;\s*"
     r"if constexpr \(Space::is_dense\) {\s*"
     r"arm_early_termination = true;",
     weighted_batch,

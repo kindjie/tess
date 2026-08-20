@@ -15,10 +15,14 @@ namespace {
 
 struct PassableTag {};
 struct CostTag {};
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 struct OtherCostTag {};
-using PortalClass = tess::movement::LegacyWeighted<PassableTag, CostTag>;
+using PortalClass = WeightedMovement;
 using OtherPortalClass =
-    tess::movement::LegacyWeighted<PassableTag, OtherCostTag>;
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<OtherCostTag>>;
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
@@ -101,11 +105,11 @@ TEST(TessPathCache, PortalSegmentCacheStaysWithinBudgetAcrossWorldEdits) {
   auto version = std::uint32_t{0};
   for (int i = 0; i < 50; ++i) {
     const auto built =
-        tess::build_weighted_portal_route_product<decltype(world), PassableTag,
-                                                  CostTag>(
+        tess::build_weighted_portal_route_product<decltype(world),
+                                                  WeightedMovement>(
             world, request, waypoints, scratch, cache, product);
     ASSERT_EQ(built.status, tess::PathStatus::Found);
-    world.mark_dirty(tess::ChunkKey{0}, ++version,
+    world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{++version},
                      tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
   }
 
@@ -137,18 +141,18 @@ TEST(TessPathCache, PortalSegmentCacheSweepRemovesStaleDuplicate) {
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
 
   const auto first =
-      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+      tess::weighted_astar_path<decltype(world), WeightedMovement>(
           world, request, scratch);
   ASSERT_EQ(first.status, tess::PathStatus::Found);
   class_cache.store(world, request, first);
   ASSERT_EQ(cache.size(), 1u);
 
   world.template field<CostTag>(tess::Coord3{3, 0, 0}) = 9;
-  world.mark_dirty(tess::ChunkKey{0}, 1u,
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{3, 0, 0}, tess::Extent3{1, 1, 1}});
 
   const auto second =
-      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+      tess::weighted_astar_path<decltype(world), WeightedMovement>(
           world, request, scratch);
   ASSERT_EQ(second.status, tess::PathStatus::Found);
   class_cache.store(world, request, second);
@@ -185,7 +189,7 @@ TEST(TessPathCache, PortalSegmentCacheEvictsOldestLiveEntryAtBudget) {
   };
   for (const auto request : requests) {
     const auto result =
-        tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+        tess::weighted_astar_path<decltype(world), WeightedMovement>(
             world, request, scratch);
     ASSERT_EQ(result.status, tess::PathStatus::Found);
     class_cache.store(world, request, result);
@@ -220,7 +224,7 @@ TEST(TessPathCache, PortalSegmentCacheAppliesLowerBudgetImmediately) {
   };
   for (const auto request : requests) {
     const auto result =
-        tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+        tess::weighted_astar_path<decltype(world), WeightedMovement>(
             world, request, scratch);
     ASSERT_EQ(result.status, tess::PathStatus::Found);
     class_cache.store(world, request, result);
@@ -254,7 +258,7 @@ TEST(TessPathCache, PortalSegmentCacheRebindDropsOtherMovementClass) {
   const auto request =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}};
   const auto result =
-      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+      tess::weighted_astar_path<decltype(world), WeightedMovement>(
           world, request, scratch);
   ASSERT_EQ(result.status, tess::PathStatus::Found);
   class_cache.store(world, request, result);
@@ -510,7 +514,7 @@ TEST(TessPathCache, PortalSegmentCacheCheckedStorePreservesStateAtBudget) {
 }
 
 // A store that cannot fit must report CapacityExceeded without allocating on
-// the way there. Capturing the entry's chunk-version dependencies allocates,
+// the way there. Capturing the entry's content-version dependencies allocates,
 // so the constant-time capacity rejection has to run first.
 TEST(TessPathCache, PortalSegmentCacheCheckedStoreRejectsBeforeAllocating) {
   constexpr auto original_nodes = std::array{
@@ -571,7 +575,7 @@ TEST(TessPathCache, PortalSegmentCacheFailedStoreDefersStaleStats) {
   tess::WeightedPortalSegmentCache cache;
   auto class_cache = cache.for_class<PortalClass>();
   class_cache.store(world, request, found_path_result(original_path));
-  world.mark_dirty(tess::ChunkKey{0}, 1u,
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
   const auto before = cache.stats();
 
@@ -628,7 +632,7 @@ TEST(TessPathCache, PortalSegmentCacheSweepHasStrongAllocationGuarantee) {
     auto class_cache = cache.for_class<PortalClass>();
     class_cache.store(world, stale_request, found_path_result(stale_path));
     class_cache.store(world, live_request, found_path_result(live_path));
-    world.mark_dirty(tess::ChunkKey{0}, 1u,
+    world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
                      tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
     const auto before = cache.stats();
 
@@ -669,7 +673,7 @@ TEST(TessPathCache, PortalSegmentCacheSweepHasStrongAllocationGuarantee) {
   EXPECT_TRUE(reached_success);
 }
 
-// A lookup that matches (start, goal) but fails chunk-version validation
+// A lookup that matches (start, goal) but fails content-version validation
 // counts a stale rejection.
 TEST(TessPathCache, PortalSegmentCacheCountsStaleRejections) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
@@ -684,13 +688,13 @@ TEST(TessPathCache, PortalSegmentCacheCountsStaleRejections) {
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}};
 
   const auto result =
-      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+      tess::weighted_astar_path<decltype(world), WeightedMovement>(
           world, request, scratch);
   ASSERT_EQ(result.status, tess::PathStatus::Found);
   class_cache.store(world, request, result);
   ASSERT_EQ(cache.stats().stale_rejections, 0u);
 
-  world.mark_dirty(tess::ChunkKey{0}, 1u,
+  world.mark_dirty(tess::ChunkKey{0}, tess::DirtyMask{1u},
                    tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
 
   std::vector<tess::Coord3> out;
@@ -718,7 +722,7 @@ TEST(TessPathCache, CachedAStarSuffixFirstStoredEntryWins) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.reserve_routes(4);
   cache.reserve_path_nodes(64);
 
@@ -768,7 +772,7 @@ TEST(TessPathCache, CachedAStarFindsAllEntriesUnderAliasedCoordinates) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(2048);
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.reserve_routes(64);
   cache.reserve_path_nodes(4096);
 
@@ -813,9 +817,9 @@ TEST(TessPathCache, RouteCacheEntryCapInvalidatesWholeCache) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
-  tess::RouteCacheScratch cache;
-  cache.set_caps(tess::RouteCacheLimits{
-      4, tess::RouteCacheScratch::default_max_path_nodes});
+  tess::UnitRouteCache cache;
+  cache.set_caps(tess::UnitRouteCacheLimits{
+      4, tess::UnitRouteCache::default_max_path_nodes});
 
   // Distinct goals so every request is a fresh miss.
   std::vector<tess::PathRequest> requests;
@@ -854,9 +858,9 @@ TEST(TessPathCache, RouteCachePathNodeCapInvalidatesWholeCache) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
-  tess::RouteCacheScratch cache;
-  cache.set_caps(
-      tess::RouteCacheLimits{tess::RouteCacheScratch::default_max_entries, 20});
+  tess::UnitRouteCache cache;
+  cache.set_caps(tess::UnitRouteCacheLimits{
+      tess::UnitRouteCache::default_max_entries, 20});
 
   // Straight 8-node routes: the third insert would reach 24 stored nodes.
   for (std::int64_t y = 0; y < 3; ++y) {
@@ -879,7 +883,7 @@ TEST(TessPathCache, RouteCacheAppliesLowerCapsImmediately) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   const auto first =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
   const auto second =
@@ -894,8 +898,8 @@ TEST(TessPathCache, RouteCacheAppliesLowerCapsImmediately) {
             tess::PathStatus::Found);
   ASSERT_EQ(cache.stats().entries, 2u);
 
-  cache.set_caps(tess::RouteCacheLimits{
-      1, tess::RouteCacheScratch::default_max_path_nodes});
+  cache.set_caps(tess::UnitRouteCacheLimits{
+      1, tess::UnitRouteCache::default_max_path_nodes});
   EXPECT_EQ(cache.stats().entries, 0u);
   EXPECT_EQ(cache.stats().path_nodes, 0u);
   EXPECT_EQ(cache.stats().cap_invalidations, 1u);
@@ -905,7 +909,7 @@ TEST(TessPathCache, RouteCacheAppliesLowerCapsImmediately) {
   EXPECT_EQ(recomputed.status, tess::PathStatus::Found);
   EXPECT_GT(recomputed.expanded_nodes, 0u);
 
-  cache.set_caps(tess::RouteCacheLimits{0, 0});
+  cache.set_caps(tess::UnitRouteCacheLimits{0, 0});
   EXPECT_EQ(cache.stats().entries, 0u);
   EXPECT_EQ(cache.stats().cap_invalidations, 2u);
   const auto disabled = tess::cached_astar_path<decltype(world), PassableTag>(
@@ -923,9 +927,9 @@ TEST(TessPathCache, RouteCacheSkipsRouteLargerThanPathNodeCap) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   cache.set_caps(
-      tess::RouteCacheLimits{tess::RouteCacheScratch::default_max_entries, 4});
+      tess::UnitRouteCacheLimits{tess::UnitRouteCache::default_max_entries, 4});
 
   const auto small =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}};
@@ -962,8 +966,8 @@ TEST(TessPathCache, RouteCacheZeroCapsDisableStorage) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
-  tess::RouteCacheScratch cache;
-  cache.set_caps(tess::RouteCacheLimits{0, 0});
+  tess::UnitRouteCache cache;
+  cache.set_caps(tess::UnitRouteCacheLimits{0, 0});
 
   const auto request =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};

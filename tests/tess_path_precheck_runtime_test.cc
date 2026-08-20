@@ -17,6 +17,8 @@ using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
 // 32x32 in 8x8 chunks (chunk columns at x in [0,8), [8,16), [16,24), [24,32)).
 using Grid = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
 using World = tess::AlwaysResidentWorld<Grid, Schema>;
+using WeightedClass =
+    tess::movement::PositiveCostFieldMovement<PassableTag, CostTag>;
 constexpr auto TileCount = Grid::size.x * Grid::size.y * Grid::size.z;
 
 template <typename FieldTag, typename Value>
@@ -52,18 +54,20 @@ void enclose(World& world, tess::Coord3 center) {
   };
   for (const auto n : neighbours) {
     world.field<PassableTag>(n) = false;
-    world.mark_dirty(tess::chunk_key<Grid>(tess::tile_key<Grid>(n)), 1u,
+    world.mark_dirty(tess::chunk_key<Grid>(tess::tile_key<Grid>(n)),
+                     tess::DirtyMask{1u},
                      tess::Box3{n, tess::Extent3{1, 1, 1}});
   }
 }
 
 // Builds a world with kUnreachableGoal sealed off, plus a region graph over
 // PassableTag that reports it as a disconnected singleton region.
+template <typename ClassOrTag = PassableTag>
 void build_split(World& world, tess::RegionGraph& graph) {
   fill_world(world);
   enclose(world, kUnreachableGoal);
   tess::LocalTopologyScratch scratch;
-  tess::build_region_graph<World, PassableTag>(world, scratch, graph);
+  tess::build_region_graph<World, ClassOrTag>(world, scratch, graph);
 }
 
 void reserve_runtime(tess::PathRequestRuntime& runtime, std::size_t requests) {
@@ -122,7 +126,7 @@ TEST(TessPrecheckRuntime, UnitNoGraphRunsAStarUnchanged) {
   reserve_runtime(runtime, 1);
   (void)runtime.submit(tess::PathRequest{kStart, kUnreachableGoal});
 
-  // No graph supplied: legacy behavior, A* explores the reachable component.
+  // No graph supplied: A* explores the reachable component directly.
   const auto results =
       runtime.process_unit_cached<World, PassableTag>(world, {});
   ASSERT_EQ(results.size(), 1u);
@@ -154,7 +158,7 @@ TEST(TessPrecheckRuntime, UnitStaleGraphFallsBackToAStar) {
 TEST(TessPrecheckRuntime, WeightedRulesOutUnreachablePreservingSurvivorSlots) {
   World world;
   tess::RegionGraph graph;
-  build_split(world, graph);
+  build_split<WeightedClass>(world, graph);
 
   tess::PathRequestRuntime runtime;
   reserve_runtime(runtime, 3);
@@ -165,9 +169,8 @@ TEST(TessPrecheckRuntime, WeightedRulesOutUnreachablePreservingSurvivorSlots) {
   (void)runtime.submit(
       tess::PathRequest{tess::Coord3{0, 1, 0}, tess::Coord3{14, 14, 0}});
 
-  const auto results =
-      runtime.process_weighted_batch<World, PassableTag, CostTag, 64>(world, {},
-                                                                      &graph);
+  const auto results = runtime.process_weighted_batch<World, WeightedClass, 64>(
+      world, {}, &graph);
   ASSERT_EQ(results.size(), 3u);
 
   EXPECT_EQ(results[0].status, tess::PathStatus::Found);
@@ -201,8 +204,7 @@ TEST(TessPrecheckRuntime, WeightedNoGraphRunsBatchUnchanged) {
       tess::PathRequest{tess::Coord3{0, 1, 0}, tess::Coord3{14, 14, 0}});
 
   const auto results =
-      runtime.process_weighted_batch<World, PassableTag, CostTag, 64>(world,
-                                                                      {});
+      runtime.process_weighted_batch<World, WeightedClass, 64>(world, {});
   ASSERT_EQ(results.size(), 3u);
   EXPECT_EQ(results[0].status, tess::PathStatus::Found);
   EXPECT_EQ(results[1].status, tess::PathStatus::NoPath);
@@ -237,7 +239,7 @@ TEST(TessPrecheckRuntime, WarmUnitPrecheckRuleOutIsAllocationFree) {
 TEST(TessPrecheckRuntime, TickWeightedAgentPrecheckRulesOutGoal) {
   World world;
   tess::RegionGraph graph;
-  build_split(world, graph);
+  build_split<WeightedClass>(world, graph);
 
   tess::PathRequestRuntime runtime;
   reserve_runtime(runtime, 1);
@@ -246,9 +248,8 @@ TEST(TessPrecheckRuntime, TickWeightedAgentPrecheckRulesOutGoal) {
   agents[0].position = kStart;
   tess::set_path_agent_goal(state, agents[0], kUnreachableGoal);
 
-  const auto stats =
-      tess::tick_weighted_path_agents<World, PassableTag, CostTag, 64>(
-          state, world, agents, runtime, {}, &graph);
+  const auto stats = tess::tick_weighted_path_agents<World, WeightedClass, 64>(
+      state, world, agents, runtime, {}, &graph);
 
   EXPECT_TRUE(stats.processed_paths);
   EXPECT_EQ(stats.pathing.precheck_ruled_out, 1u);

@@ -169,7 +169,7 @@ TEST(TessTransitionModel, DependencyChunksRejectOutOfWorldOrigins) {
 }
 
 TEST(TessTransitionModel, AssessesCompactCostRangeConservatively) {
-  using Unit = mv::WalkableField<PassableTag>;
+  using Unit = mv::UnitCostFieldMovement<PassableTag>;
   using UnitDiagonal = mv::MovementClass<mv::Field<PassableTag>, mv::UnitCost,
                                          mv::DiagonalSteps<>>;
   using FixedTwo =

@@ -93,9 +93,9 @@ inline auto valid_extents(std::size_t width, std::size_t height) -> bool {
 }
 
 // Recursive division over an inclusive region [x0,x1]x[y0,y1] with
-// even (cell-aligned) bounds: walls land on odd coordinates, gaps on
-// even (cell) coordinates. Every wall fully separates its chamber and
-// carries exactly one gap, so the passable cells stay one connected
+// even (tile-aligned) bounds: walls land on odd coordinates, gaps on
+// even tile coordinates. Every wall fully separates its chamber and
+// carries exactly one gap, so the passable tiles stay one connected
 // component by construction.
 inline void divide(GridBuilder& grid, SplitMix64& rng, std::size_t x0,
                    std::size_t y0, std::size_t x1, std::size_t y1) {
@@ -107,7 +107,7 @@ inline void divide(GridBuilder& grid, SplitMix64& rng, std::size_t x0,
   const bool horizontal =
       inner_h > inner_w || (inner_h == inner_w && rng.below(2) == 0);
   if (horizontal) {
-    // Wall on an odd y strictly inside; gap on an even (cell) x.
+    // Wall on an odd y strictly inside; gap on an even tile x.
     const std::size_t choices = (inner_h - 1) / 2;
     const std::size_t wall_y = y0 + 1 + 2 * rng.below(choices);
     const std::size_t gaps = (inner_w + 1) / 2;
@@ -147,7 +147,7 @@ inline auto recursive_division_maze(std::size_t width, std::size_t height,
   const std::size_t lattice_h = (height % 2 == 0) ? height - 1 : height;
   for (std::size_t y = 0; y < lattice_h; ++y) {
     for (std::size_t x = 0; x < lattice_w; ++x) {
-      // Wall posts sit at odd-odd; cells and corridors start open and
+      // Wall posts sit at odd-odd; tiles and corridors start open and
       // the division walls below carve the rest.
       grid.at(x, y) = (x % 2 == 1 && y % 2 == 1) ? '@' : '.';
     }
@@ -211,7 +211,7 @@ inline auto room_and_corridor(std::size_t width, std::size_t height,
       y = 1 + rng.below(height - h - 1);
       bool overlaps = false;
       for (const Room& other : rooms) {
-        // One-cell separation so rooms stay distinct areas.
+        // One-tile separation so rooms stay distinct areas.
         if (x < other.x + other.w + 1 && other.x < x + w + 1 &&
             y < other.y + other.h + 1 && other.y < y + h + 1) {
           overlaps = true;
@@ -258,12 +258,12 @@ inline auto room_and_corridor(std::size_t width, std::size_t height,
 struct FloodResult {
   std::size_t passable = 0;
   std::size_t reached = 0;
-  // Row-major index of a farthest reached cell (BFS distance).
+  // Row-major index of a farthest reached tile (BFS distance).
   std::size_t farthest_index = 0;
   std::size_t first_passable_index = 0;
 };
 
-// Single orthogonal BFS flood from the first passable cell (row-major
+// Single orthogonal BFS flood from the first passable tile (row-major
 // order). Full connectivity <=> reached == passable.
 inline auto flood_fill(const BenchmarkMap& map) -> FloodResult {
   FloodResult result;
@@ -315,10 +315,10 @@ inline auto flood_fill(const BenchmarkMap& map) -> FloodResult {
 }
 
 // Deterministic endpoint pairs for the oracle leg: seeded selection
-// over the passable cells in row-major order, clamped to what the map
+// over the passable tiles in row-major order, clamped to what the map
 // offers, always including the flood fill's deliberate long pair
-// (first passable -> farthest cell). Distinct endpoints whenever more
-// than one passable cell exists.
+// (first passable -> farthest tile). Distinct endpoints whenever more
+// than one passable tile exists.
 inline auto deterministic_endpoints(const BenchmarkMap& map, std::uint64_t seed,
                                     std::size_t count)
     -> std::vector<std::pair<tess::Coord3, tess::Coord3>> {
@@ -346,7 +346,7 @@ inline auto deterministic_endpoints(const BenchmarkMap& map, std::uint64_t seed,
     std::size_t b = passable[rng.below(passable.size())];
     // Distinct endpoints where the map allows it. The redraw is
     // bounded so the loop provably terminates whatever the stream
-    // does; a single-cell map keeps its degenerate pair.
+    // does; a single-tile map keeps its degenerate pair.
     for (int retry = 0; a == b && passable.size() > 1 && retry < 8; ++retry) {
       b = passable[rng.below(passable.size())];
     }

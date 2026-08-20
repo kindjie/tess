@@ -23,7 +23,7 @@ cmake \
   -DTESS_ENABLE_FLECS=OFF
 
 exported_functions='["_main","_tess_demo_width","_tess_demo_height"'
-exported_functions+=',"_tess_demo_reset","_tess_demo_set_blocked"'
+exported_functions+=',"_tess_demo_reset","_tess_demo_set_impassable"'
 exported_functions+=',"_tess_demo_find_path","_tess_demo_path_x"'
 exported_functions+=',"_tess_demo_path_y"]'
 
@@ -55,7 +55,7 @@ cp "$root/examples/web_pathfinder/site/favicon.svg" "$strategies/"
 strategies_exports='["_main","_tess_strategies_readiness"'
 strategies_exports+=',"_tess_strategies_width","_tess_strategies_height"'
 strategies_exports+=',"_tess_strategies_count"'
-strategies_exports+=',"_tess_strategies_cell_passable"'
+strategies_exports+=',"_tess_strategies_tile_passable"'
 strategies_exports+=',"_tess_strategies_request_count"'
 strategies_exports+=',"_tess_strategies_path_status"'
 strategies_exports+=',"_tess_strategies_path_cost"'

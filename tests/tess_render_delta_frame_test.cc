@@ -22,13 +22,13 @@ using Schema = tess::FieldSchema<tess::Field<TerrainTag, std::uint8_t>,
                                  tess::Field<DecorTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
-constexpr std::uint32_t kTerrainBit = 1U << 0U;
-constexpr std::uint32_t kDecorBit = 1U << 1U;
+constexpr auto kTerrainBit = tess::DirtyMask{1U << 0U};
+constexpr auto kDecorBit = tess::DirtyMask{1U << 1U};
 
 void mark_box(World& world, tess::Coord3 origin, tess::Extent3 extent,
-              std::uint32_t flags) {
-  world.mark_dirty(tess::chunk_key<Shape>(tess::tile_key<Shape>(origin)), flags,
-                   tess::Box3{origin, extent});
+              tess::DirtyMask dirty_mask) {
+  world.mark_dirty(tess::chunk_key<Shape>(tess::tile_key<Shape>(origin)),
+                   dirty_mask, tess::Box3{origin, extent});
 }
 
 auto make_collector(std::uint32_t threshold = 64, bool coalesce = true)
@@ -141,7 +141,7 @@ TEST(TessDeltaFrame, SmallDirtyBoxesEmitPerTileRecordsMatchingLegacy) {
   EXPECT_EQ(frame.chunks().size(), 2u);
   for (const auto& chunk : frame.chunks()) {
     EXPECT_NE(chunk.tile_count, 0u);
-    EXPECT_EQ(chunk.dirty_flags, kTerrainBit);
+    EXPECT_EQ(chunk.dirty_mask, kTerrainBit);
   }
   EXPECT_EQ(frame_tile_set(frame), legacy_tiles);
 }
@@ -189,8 +189,8 @@ TEST(TessDeltaFrame, CollectionClearsOnlyTheCollectedMask) {
   (void)collector.publish();
 
   // The terrain bit is consumed; the decor bit (another owner) remains.
-  EXPECT_EQ(world.observe_dirty(key, kTerrainBit).flags, 0u);
-  EXPECT_EQ(world.observe_dirty(key, kDecorBit).flags, kDecorBit);
+  EXPECT_EQ(world.observe_dirty(key, kTerrainBit).mask, tess::DirtyMask{});
+  EXPECT_EQ(world.observe_dirty(key, kDecorBit).mask, kDecorBit);
 
   // Re-collecting under the mask emits nothing new.
   tess::collect_tile_deltas(collector, world, kTerrainBit);
@@ -209,7 +209,7 @@ TEST(TessDeltaFrame, RacingMarkBetweenObserveAndClearIsNeverLost) {
   // clear refuses, leaving the union for the next collection.
   mark_box(world, tess::Coord3{3, 3, 0}, tess::Extent3{1, 1, 1}, kTerrainBit);
   EXPECT_FALSE(world.clear_dirty_observed(key, observed));
-  EXPECT_EQ(world.observe_dirty(key, kTerrainBit).flags, kTerrainBit);
+  EXPECT_EQ(world.observe_dirty(key, kTerrainBit).mask, kTerrainBit);
 }
 
 TEST(TessDeltaFrame, MovesCoalesceLastWriterWinsWithinAFrame) {
@@ -434,7 +434,7 @@ TEST(TessDeltaFrame, FullBaselineCoversEveryChunkAndHealsTheStream) {
   ASSERT_EQ(frame.chunks().size(), World::chunk_count);
   for (const auto& chunk : frame.chunks()) {
     EXPECT_EQ(chunk.tile_count, 0u);
-    EXPECT_EQ(chunk.dirty_flags, kTerrainBit);
+    EXPECT_EQ(chunk.dirty_mask, kTerrainBit);
     EXPECT_EQ(chunk.bounds.extent.x, 8u);
     EXPECT_EQ(chunk.bounds.extent.y, 8u);
   }
@@ -526,7 +526,7 @@ TEST(TessDeltaFrame, RetainedOverlaysSurviveNeedsOnlyTicketInvalidation) {
   tess::PathRequestRuntime runtime;
   for (std::size_t i = 0; i < agents.size(); ++i) {
     agents[i].has_goal = true;
-    agents[i].status = tess::PathStatus::Found;
+    agents[i].last_result = tess::PathStatus::Found;
     agents[i].phase = tess::PathAgentPhase::Following;
     agents[i].ticket = runtime.submit(
         tess::PathRequest{routes.routes[i].front(), routes.routes[i].back()});
@@ -564,10 +564,10 @@ TEST(TessDeltaFrame, RetainedOverlaySelectionSupportsQueueProducedRoutes) {
 
   std::array<tess::PathAgentState, 3> agents{};
   tess::set_path_agent_goal(agents[0], tess::Coord3{1, 0, 0});
-  agents[0].status = tess::PathStatus::Found;
+  agents[0].last_result = tess::PathStatus::Found;
   tess::set_path_agent_goal(agents[1], tess::Coord3{3, 1, 0});
   tess::set_path_agent_goal(agents[2], tess::Coord3{3, 2, 0});
-  agents[2].status = tess::PathStatus::NoPath;
+  agents[2].last_result = tess::PathStatus::NoPath;
   agents[2].phase = tess::PathAgentPhase::Blocked;
 
   tess::PathAgentRoutes routes;
@@ -603,7 +603,7 @@ TEST(TessDeltaFrame, RetainedOverlayOverflowRemainsBestEffort) {
   std::array<tess::PathAgentState, 2> agents{};
   for (auto& agent : agents) {
     agent.has_goal = true;
-    agent.status = tess::PathStatus::Found;
+    agent.last_result = tess::PathStatus::Found;
     agent.phase = tess::PathAgentPhase::Following;
   }
   tess::PathAgentRoutes routes;

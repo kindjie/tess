@@ -96,6 +96,11 @@ tess_expect_compile_diagnostic(
   bounded_weighted_zero_cost.cc
   "bounded weighted pathfinding requires MaxCost greater than zero"
 )
+tess_expect_compile_diagnostic(
+  invalid_tile_field_value
+  invalid_tile_field_value.cc
+  "tess::Field value must be an unqualified, nothrow-default-constructible object that is trivially copyable, assignable, and destructible"
+)
 
 add_executable(
   tess_allocation_counter_test

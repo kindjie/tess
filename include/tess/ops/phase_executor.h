@@ -300,7 +300,7 @@ using NoThrowScopedThreadPhaseExecutor = ScopedThreadPhaseExecutorImpl<false>;
 // build before dispatch state can be changed. Distinct executors are
 // independent and may dispatch in parallel.
 // The analyzer's padding complaint is the point: the alignas(128) members
-// below buy false-sharing isolation with those bytes (audit 2026-07-11 M8).
+// below buy false-sharing isolation with those bytes.
 #if defined(_MSC_VER)
 #pragma warning(push)
 // C4324 reports padding introduced by alignment. The padding in this class is
@@ -482,8 +482,8 @@ class WorkerPoolPhaseExecutorImpl
       job_first_ = first;
       job_count_ = count;
       // Claim short runs instead of single operations: one contended RMW
-      // per run instead of per op, while ~4 runs per worker keep the
-      // tail balanced (audit 2026-07-11 M8).
+      // per run instead of per op, while ~4 runs per worker keep the tail
+      // balanced.
       job_stride_ = std::max<std::size_t>(
           1, count / (std::max<std::size_t>(1, workers_.size()) * 4));
       next_offset_.store(0, std::memory_order_relaxed);
@@ -497,13 +497,13 @@ class WorkerPoolPhaseExecutorImpl
       ++job_epoch_;
       job_active_ = true;
       // Derived under the lock so the notify count below never reads
-      // job_stride_ across the unlock (safe today with one dispatcher,
-      // but locally obvious beats derivable).
+      // job_stride_ across the unlock. There is one dispatcher, but keeping
+      // the dependency local makes that constraint explicit.
       runs = (count + job_stride_ - 1) / job_stride_;
     }
     // Wake only as many workers as there are runs to claim; a small phase
-    // on a wide pool otherwise storms every thread awake to find nothing
-    // (audit 2026-07-11 M8). A worker that reaches wait() on its own sees
+    // on a wide pool otherwise storms every thread awake to find nothing. A
+    // worker that reaches wait() on its own sees
     // the live job through the predicate, so under-notification cannot
     // strand work.
     if (runs >= workers_.size()) {
@@ -672,8 +672,8 @@ class WorkerPoolPhaseExecutorImpl
   mutable std::condition_variable work_cv_;
   mutable std::condition_variable done_cv_;
   mutable std::vector<PlannedExecutionResult> results_;
-  // Own cache lines: every worker RMWs both counters per claimed run;
-  // adjacent they ping-pong one line between cores (audit 2026-07-11 M8).
+  // Own cache lines: every worker RMWs both counters per claimed run; adjacent
+  // counters ping-pong one line between cores.
   // 128, not 64: Apple Silicon (where the A/B numbers were measured) has
   // 128-byte lines and x86 prefetches the adjacent line, while alignas
   // only fixes spacing relative to the object base -- at 64 the pair

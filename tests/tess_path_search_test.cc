@@ -24,6 +24,8 @@ using tess_test::SerpPassableTag;
 using tess_test::SerpSchema;
 using tess_test::SerpTopDown2D;
 using tess_test::SerpVertical2D;
+using SerpMovement =
+    tess::movement::PositiveCostFieldMovement<SerpPassableTag, SerpCostTag>;
 
 constexpr std::uint32_t kBatchMaxCost = 64;
 
@@ -111,9 +113,8 @@ TEST(TessPathSearch, WeightedSerpentineMatchesDijkstraOracle) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
-  const auto result =
-      tess::weighted_astar_path<decltype(world), SerpPassableTag, SerpCostTag>(
-          world, tess::PathRequest{endpoints.start, endpoints.goal}, scratch);
+  const auto result = tess::weighted_astar_path<decltype(world), SerpMovement>(
+      world, tess::PathRequest{endpoints.start, endpoints.goal}, scratch);
 
   ASSERT_EQ(result.status, tess::PathStatus::Found);
   EXPECT_EQ(result.cost, optimal);
@@ -146,7 +147,7 @@ TEST(TessPathSearch, StartEqualsGoalUnitAndWeightedAStar) {
   EXPECT_EQ(unit.path.front(), tile);
 
   const auto weighted =
-      tess::weighted_astar_path<decltype(world), SerpPassableTag, SerpCostTag>(
+      tess::weighted_astar_path<decltype(world), SerpMovement>(
           world, tess::PathRequest{tile, tile}, scratch);
   ASSERT_EQ(weighted.status, tess::PathStatus::Found);
   EXPECT_EQ(weighted.cost, 0u);
@@ -166,7 +167,7 @@ TEST(TessPathSearch, StartEqualsGoalCachedAStarMissAndHit) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
-  tess::RouteCacheScratch cache;
+  tess::UnitRouteCache cache;
   const auto miss = tess::cached_astar_path<decltype(world), SerpPassableTag>(
       world, tess::PathRequest{tile, tile}, scratch, cache);
   const auto hit = tess::cached_astar_path<decltype(world), SerpPassableTag>(
@@ -204,14 +205,12 @@ TEST(TessPathSearch, StartEqualsGoalDistanceFieldPaths) {
   tess::DistanceFieldScratch weighted_scratch;
   weighted_scratch.reserve_nodes(64);
   const auto weighted_field =
-      tess::build_weighted_distance_field<decltype(world), SerpPassableTag,
-                                          SerpCostTag>(world, tile,
-                                                       weighted_scratch);
+      tess::build_weighted_distance_field<decltype(world), SerpMovement>(
+          world, tile, weighted_scratch);
   ASSERT_EQ(weighted_field.status, tess::PathStatus::Found);
   const auto weighted_path =
-      tess::weighted_distance_field_path<decltype(world), SerpPassableTag,
-                                         SerpCostTag>(world, {tile, tile},
-                                                      weighted_scratch);
+      tess::weighted_distance_field_path<decltype(world), SerpMovement>(
+          world, {tile, tile}, weighted_scratch);
   ASSERT_EQ(weighted_path.status, tess::PathStatus::Found);
   EXPECT_EQ(weighted_path.cost, 0u);
   ASSERT_EQ(weighted_path.path.size(), 1u);
@@ -219,14 +218,14 @@ TEST(TessPathSearch, StartEqualsGoalDistanceFieldPaths) {
 
   tess::DistanceFieldScratch bounded_scratch;
   bounded_scratch.reserve_nodes(64);
-  const auto bounded_field = tess::build_bounded_weighted_distance_field<
-      decltype(world), SerpPassableTag, SerpCostTag, kBatchMaxCost>(
-      world, tile, bounded_scratch);
+  const auto bounded_field =
+      tess::build_bounded_weighted_distance_field<decltype(world), SerpMovement,
+                                                  kBatchMaxCost>(
+          world, tile, bounded_scratch);
   ASSERT_EQ(bounded_field.status, tess::PathStatus::Found);
   const auto bounded_path =
-      tess::weighted_distance_field_path<decltype(world), SerpPassableTag,
-                                         SerpCostTag>(world, {tile, tile},
-                                                      bounded_scratch);
+      tess::weighted_distance_field_path<decltype(world), SerpMovement>(
+          world, {tile, tile}, bounded_scratch);
   ASSERT_EQ(bounded_path.status, tess::PathStatus::Found);
   EXPECT_EQ(bounded_path.cost, 0u);
   ASSERT_EQ(bounded_path.path.size(), 1u);
@@ -235,14 +234,12 @@ TEST(TessPathSearch, StartEqualsGoalDistanceFieldPaths) {
   boxed_scratch.reserve_nodes(64);
   const auto domain = tess::Box3{tess::Coord3{4, 4, 0}, tess::Extent3{4, 4, 1}};
   const auto boxed_field =
-      tess::build_weighted_distance_field_in_box<decltype(world),
-                                                 SerpPassableTag, SerpCostTag>(
+      tess::build_weighted_distance_field_in_box<decltype(world), SerpMovement>(
           world, tile, domain, boxed_scratch);
   ASSERT_EQ(boxed_field.status, tess::PathStatus::Found);
   const auto boxed_path =
-      tess::weighted_distance_field_path<decltype(world), SerpPassableTag,
-                                         SerpCostTag>(world, {tile, tile},
-                                                      boxed_scratch);
+      tess::weighted_distance_field_path<decltype(world), SerpMovement>(
+          world, {tile, tile}, boxed_scratch);
   ASSERT_EQ(boxed_path.status, tess::PathStatus::Found);
   EXPECT_EQ(boxed_path.cost, 0u);
   ASSERT_EQ(boxed_path.path.size(), 1u);
@@ -290,9 +287,8 @@ TEST(TessPathSearch, StartEqualsGoalRouteAndPortalProducts) {
 
   tess::WeightedRouteProduct route;
   const auto built =
-      tess::build_weighted_route_product<decltype(world), SerpPassableTag,
-                                         SerpCostTag>(world, request, scratch,
-                                                      route);
+      tess::build_weighted_route_product<decltype(world), SerpMovement>(
+          world, request, scratch, route);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   EXPECT_EQ(built.cost, 0u);
   ASSERT_EQ(built.path.size(), 1u);
@@ -304,8 +300,7 @@ TEST(TessPathSearch, StartEqualsGoalRouteAndPortalProducts) {
 
   tess::WeightedPortalRouteProduct portal;
   const auto portal_built =
-      tess::build_weighted_portal_route_product<decltype(world),
-                                                SerpPassableTag, SerpCostTag>(
+      tess::build_weighted_portal_route_product<decltype(world), SerpMovement>(
           world, request, {}, scratch, portal);
   ASSERT_EQ(portal_built.status, tess::PathStatus::Found);
   EXPECT_EQ(portal_built.cost, 0u);
@@ -317,9 +312,10 @@ TEST(TessPathSearch, StartEqualsGoalRouteAndPortalProducts) {
   EXPECT_EQ(portal_replay.cost, 0u);
 
   tess::WeightedPortalRouteProduct chunk_portal;
-  const auto chunk_built = tess::build_weighted_chunk_portal_route_product<
-      decltype(world), SerpPassableTag, SerpCostTag>(world, request, scratch,
-                                                     chunk_portal);
+  const auto chunk_built =
+      tess::build_weighted_chunk_portal_route_product<decltype(world),
+                                                      SerpMovement>(
+          world, request, scratch, chunk_portal);
   ASSERT_EQ(chunk_built.status, tess::PathStatus::Found);
   EXPECT_EQ(chunk_built.cost, 0u);
   ASSERT_EQ(chunk_built.path.size(), 1u);
@@ -335,8 +331,8 @@ TEST(TessPathSearch, StartEqualsGoalWeightedBatchSingleAndSharedGoal) {
   tess::WeightedPathBatchScratch scratch;
   const auto single_requests = std::array{tess::PathRequest{tile, tile}};
   const auto single =
-      tess::weighted_path_batch<decltype(world), SerpPassableTag, SerpCostTag,
-                                kBatchMaxCost>(world, single_requests, scratch);
+      tess::weighted_path_batch<decltype(world), SerpMovement, kBatchMaxCost>(
+          world, single_requests, scratch);
   ASSERT_EQ(single.size(), 1u);
   ASSERT_EQ(single[0].status, tess::PathStatus::Found);
   EXPECT_EQ(single[0].cost, 0u);
@@ -349,8 +345,8 @@ TEST(TessPathSearch, StartEqualsGoalWeightedBatchSingleAndSharedGoal) {
       tess::PathRequest{tile, tile},
   };
   const auto shared =
-      tess::weighted_path_batch<decltype(world), SerpPassableTag, SerpCostTag,
-                                kBatchMaxCost>(world, shared_requests, scratch);
+      tess::weighted_path_batch<decltype(world), SerpMovement, kBatchMaxCost>(
+          world, shared_requests, scratch);
   ASSERT_EQ(shared.size(), 2u);
   ASSERT_EQ(shared[1].status, tess::PathStatus::Found);
   EXPECT_EQ(shared[1].cost, 0u);
@@ -378,8 +374,9 @@ TEST(TessPathSearch, StartEqualsGoalPathRequestRuntime) {
   runtime.clear_requests();
   const auto weighted_ticket = runtime.submit(tess::PathRequest{tile, tile});
   const auto weighted_results =
-      runtime.process_weighted_batch<decltype(world), SerpPassableTag,
-                                     SerpCostTag, kBatchMaxCost>(world);
+      runtime
+          .process_weighted_batch<decltype(world), SerpMovement, kBatchMaxCost>(
+              world);
   ASSERT_EQ(weighted_results.size(), 1u);
   const auto weighted_result = runtime.result(weighted_ticket);
   ASSERT_EQ(weighted_result.status, tess::PathStatus::Found);
@@ -411,9 +408,9 @@ TEST(TessPathSearch, StartEqualsGoalAgentTickArrivesImmediately) {
 
   tess::set_path_agent_goal(state, agents[0], tile);
   const auto weighted_stats =
-      tess::tick_weighted_path_agents<decltype(world), SerpPassableTag,
-                                      SerpCostTag, kBatchMaxCost>(
-          state, world, agents, runtime);
+      tess::tick_weighted_path_agents<decltype(world), SerpMovement,
+                                      kBatchMaxCost>(state, world, agents,
+                                                     runtime);
   EXPECT_EQ(weighted_stats.pathing.arrived, 1u);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Idle);
   EXPECT_FALSE(agents[0].has_goal);

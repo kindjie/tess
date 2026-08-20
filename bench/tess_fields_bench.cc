@@ -196,7 +196,7 @@ void BM_fields_nearest_target(benchmark::State& state) {
               .status == tess::PathStatus::Found,
       "product build failed");
 
-  auto status = tess::PathStatus::NoPath;
+  auto status = tess::PathStatus::NotComputed;
   for (auto _ : state) {
     const auto result = tess::nearest_target<FieldWorld, PassableTag>(
         *world, tess::Coord3{33, 47, 0}, product, scratch);

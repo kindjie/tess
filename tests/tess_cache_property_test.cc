@@ -25,6 +25,9 @@ struct PassableTag {};
 // A second movement class, so a rebind is expressible at all.
 struct OtherTag {};
 struct CostTag {};
+using WeightedMovement =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 struct OtherCostTag {};
 
 using CacheShape =
@@ -78,7 +81,7 @@ class FieldProductCacheModel {
         lookup(key);
         break;
       case 6:
-        // Editing the world bumps a chunk version, so every product
+        // Editing the world bumps a chunk content version, so every product
         // built before it becomes stale. This is the only way the stale
         // path is reachable at all.
         touch_world();
@@ -341,7 +344,7 @@ class FieldProductCacheModel {
   // interleaving worth randomizing.
   void touch_world() {
     world_.mark_dirty(
-        tess::ChunkKey{0}, 1U,
+        tess::ChunkKey{0}, tess::DirtyMask{1U},
         tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
     ++world_version_;
   }
@@ -406,7 +409,7 @@ class RouteCacheModel {
     scratch_.reserve_nodes(256);
     cache_.reserve_routes(kMaxEntries);
     cache_.reserve_path_nodes(kMaxPathNodes);
-    cache_.set_caps(tess::RouteCacheLimits{kMaxEntries, kMaxPathNodes});
+    cache_.set_caps(tess::UnitRouteCacheLimits{kMaxEntries, kMaxPathNodes});
   }
 
   void apply(std::uint32_t op) {
@@ -598,7 +601,7 @@ class RouteCacheModel {
 
   CacheWorld world_{};
   tess::PathScratch scratch_{};
-  tess::RouteCacheScratch cache_{};
+  tess::UnitRouteCache cache_{};
   std::size_t queries_ = 0;
   std::size_t skips_with_residents_ = 0;
   std::vector<tess::Coord3> last_path_;
@@ -610,9 +613,10 @@ class RouteCacheModel {
   bool alternate_class_ = false;
 };
 
-using PortalClass = tess::movement::LegacyWeighted<PassableTag, CostTag>;
+using PortalClass = WeightedMovement;
 using OtherPortalClass =
-    tess::movement::LegacyWeighted<PassableTag, OtherCostTag>;
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<OtherCostTag>>;
 
 // The portal segment cache is the third policy in three headers: an
 // ENTRY budget (not bytes), sweep-then-evict-oldest rather than LRU, and
@@ -720,9 +724,8 @@ class PortalSegmentCacheModel {
 
   void store(std::uint32_t segment) {
     const auto request = request_for(segment);
-    const auto result =
-        tess::weighted_astar_path<CacheWorld, PassableTag, CostTag>(
-            world_, request, scratch_);
+    const auto result = tess::weighted_astar_path<CacheWorld, WeightedMovement>(
+        world_, request, scratch_);
     if (result.status != tess::PathStatus::Found) {
       return;
     }
@@ -769,7 +772,7 @@ class PortalSegmentCacheModel {
 
   void touch_world() {
     world_.mark_dirty(
-        tess::ChunkKey{0}, ++world_version_,
+        tess::ChunkKey{0}, tess::DirtyMask{++world_version_},
         tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
   }
 

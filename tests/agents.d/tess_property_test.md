@@ -10,7 +10,7 @@
   stability across a redundant ensure) and schedule ticks
   (`tasks_run + tasks_skipped == tasks_due`, monotone tick) — both
   areas that previously had NO seeded coverage, only fixed
-  hand-written sequences. It also asserts that a newly loaded page
+  hand-written sequences. It also asserts that a newly materialized page
   never reuses a generation, which is what makes an evicted chunk's
   stale handle detectable.
 

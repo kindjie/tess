@@ -329,7 +329,7 @@ struct SummaryBlock {
 // One demand class's artifact record (design section 12 classes[]).
 // Per-class flow attribution beyond these counts arrives with the
 // mixed-colony stage; the block carries what the tracker derives
-// today so multi-class results are representable, not discarded.
+// so multi-class results are representable rather than discarded.
 struct ClassArtifact {
   std::string class_id;
   std::uint64_t deadline_allowance_ticks = 0;

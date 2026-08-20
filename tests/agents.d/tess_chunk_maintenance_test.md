@@ -2,7 +2,8 @@
 
 - `tess_chunk_maintenance_test`: pins the experimental external chunk
   adapter's dense and sparse slot bindings, dirty-mask ownership,
-  shared-version drift repair, generation-safe product tokens, explicit
+  shared content-version drift repair, strongly typed generation-safe product
+  tokens, explicit
   quiescent residency transitions, retained retry debt under bounded FIFO and
   coalescing capacity, structural-backend synchronous scheduling outside
   budgeted debt reconciliation, nested synchronous debt handoff,

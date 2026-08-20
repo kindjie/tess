@@ -4,13 +4,13 @@
   and stating the concrete change to expect when they absorb sparse: the
   `MissingChunkPolicy` parameter the sparse-aware path entry points
   already carry. All four `static_assert` on `AlwaysResident` with
-  messages saying sparse support "lands later", while sitting in the
-  ordinary public namespace, so a consumer had no single place to learn
+  messages that incorrectly described sparse support as future work, while
+  sitting in the ordinary public namespace, so a consumer had no single place to learn
   which parts of the surface do not compile against a
   `SparseResidentWorld`.
-- The section also records that `weighted_path_batch` *is*
-  residency-generic but hardcodes `TreatAsBlocked`, so it answers `NoPath`
-  across a missing chunk where `Indeterminate` would be truthful.
+- The audit also found that `weighted_path_batch` *is* residency-generic but
+  did not expose its missing-chunk behavior. It now accepts the same explicit
+  `MissingChunkPolicy` as the other sparse-aware search entry points.
 - The audit offered relocating these families to
   `include/tess/experimental/` as the alternative. That is the wrong half
   of its own either/or: they are production-promoted and tested on dense

@@ -25,10 +25,10 @@ let api = null;
 let module = null;
 let width = 0;
 let height = 0;
-let cell = 0;
+let tileSize = 0;
 let emaUs = 0;
 let activePointer = null;
-let lastCell = null;
+let lastTile = null;
 let strokeBuilt = true;
 let lastTimestamp = 0;
 let leg = 1;
@@ -99,7 +99,7 @@ function reset() {
   lastTimestamp = 0;
 }
 
-function cellAt(event) {
+function tileAt(event) {
   const rect = canvas.getBoundingClientRect();
   const clamp = (value, max) => Math.max(0, Math.min(max, value));
   const x = Math.floor(((event.clientX - rect.left) / rect.width) * width);
@@ -126,15 +126,15 @@ function draw() {
   ctx.fillStyle = '#10141c';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = 'rgb(96 223 190 / 4%)';
-  ctx.fillRect(0, 0, bandWidth * cell, canvas.height);
-  ctx.fillRect((width - bandWidth) * cell, 0, bandWidth * cell,
+  ctx.fillRect(0, 0, bandWidth * tileSize, canvas.height);
+  ctx.fillRect((width - bandWidth) * tileSize, 0, bandWidth * tileSize,
       canvas.height);
   ctx.fillStyle = '#54627e';
   for (let y = 0; y < height; y += 1) {
     const row = y * width;
     for (let x = 0; x < width; x += 1) {
       if (tiles[row + x] !== 0) {
-        ctx.fillRect(x * cell, y * cell, cell, cell);
+        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
       }
     }
   }
@@ -144,14 +144,14 @@ function draw() {
   // integer tiles and supplies the accumulator remainder as alpha.
   const interpolate = (previous, current) =>
     previous + (current - previous) * alpha;
-  const agentSize = cell * 0.72;
-  const agentInset = (cell - agentSize) / 2;
+  const agentSize = tileSize * 0.72;
+  const agentInset = (tileSize - agentSize) / 2;
   for (let i = 0; i < count; i += 1) {
     const x = interpolate(previousAgents[i * 2], currentAgents[i * 2]);
     const y = interpolate(previousAgents[i * 2 + 1],
         currentAgents[i * 2 + 1]);
     // A centered inset glyph keeps crossing and permitted-swap motion legible.
-    ctx.fillRect(x * cell + agentInset, y * cell + agentInset,
+    ctx.fillRect(x * tileSize + agentInset, y * tileSize + agentInset,
         agentSize, agentSize);
   }
 }
@@ -280,7 +280,7 @@ createTessColony()
       };
       width = api.width();
       height = api.height();
-      cell = canvas.width / width;
+      tileSize = canvas.width / width;
       reset();
 
       slider.addEventListener('input', () => {
@@ -306,10 +306,10 @@ createTessColony()
           return;
         }
         activePointer = event.pointerId;
-        const at = cellAt(event);
+        const at = tileAt(event);
         strokeBuilt = !walls.has(at.y * width + at.x);
         setWall(at.x, at.y, strokeBuilt);
-        lastCell = at;
+        lastTile = at;
         if (!browserTestMode) {
           canvas.setPointerCapture(event.pointerId);
         }
@@ -318,16 +318,16 @@ createTessColony()
         if (event.pointerId !== activePointer) {
           return;
         }
-        const at = cellAt(event);
-        paintLine(lastCell, at, strokeBuilt);
-        lastCell = at;
+        const at = tileAt(event);
+        paintLine(lastTile, at, strokeBuilt);
+        lastTile = at;
       });
       const stopPainting = (event) => {
         if (event.pointerId !== activePointer) {
           return;
         }
         activePointer = null;
-        lastCell = null;
+        lastTile = null;
       };
       canvas.addEventListener('pointerup', stopPainting);
       canvas.addEventListener('pointercancel', stopPainting);

@@ -27,11 +27,17 @@
 
 namespace tess {
 
-/// Classifies a path query result or a conservative incomplete search.
+/// Classifies a path operation result or why no authoritative path is present.
 enum class PathStatus : std::uint8_t {
+  // No operation has produced a current result. Used by default, cleared,
+  // stale, or model-mismatched products; never a reachability conclusion.
+  NotComputed,
   Found,
   InvalidStart,
   InvalidGoal,
+  // No route exists in the graph considered under the selected missing-chunk
+  // policy. It is a whole-world conclusion only when no unknown boundary was
+  // assumed impassable.
   NoPath,
   // Sparse worlds only: the search reached the edge of the resident set and
   // could not rule out a path through a non-resident chunk. Distinguished from
@@ -41,6 +47,9 @@ enum class PathStatus : std::uint8_t {
   // A legal route step or accumulated exact cost reached the reserved
   // uint32_t infinity sentinel and therefore cannot be represented.
   CostOverflow,
+  // A bounded or heuristic strategy found no candidate. Callers requiring a
+  // reachability conclusion must run an authoritative search.
+  NoCandidate,
 };
 static_assert(sizeof(PathStatus) == sizeof(std::uint8_t));
 
@@ -51,11 +60,11 @@ enum class MissingChunkPolicy : std::uint8_t {
   // Treat a non-resident chunk as impassable. The search stays within the
   // resident set and may report NoPath even when a route exists through
   // chunks that are not currently materialized.
-  TreatAsBlocked,
-  // Never report a wrong NoPath across a non-resident boundary: if the search
+  AssumeImpassable,
+  // Do not report NoPath across a non-resident boundary: if the search
   // exhausts the resident set having skipped at least one non-resident
   // neighbor, it returns Indeterminate instead of NoPath.
-  Indeterminate,
+  ReportIndeterminate,
 };
 
 /// Reports a query outcome and a non-owning view of the resulting path.
@@ -63,7 +72,7 @@ enum class MissingChunkPolicy : std::uint8_t {
 /// The path normally borrows caller-owned scratch or product storage and is
 /// invalidated by that owner's next mutation.
 struct PathResult {
-  PathStatus status = PathStatus::NoPath;
+  PathStatus status = PathStatus::NotComputed;
   std::uint32_t cost = 0;
   std::size_t expanded_nodes = 0;
   std::size_t reached_nodes = 0;
@@ -73,7 +82,7 @@ struct PathResult {
 
 /// Reports distance-field construction status and search work.
 struct DistanceFieldResult {
-  PathStatus status = PathStatus::NoPath;
+  PathStatus status = PathStatus::NotComputed;
   std::size_t expanded_nodes = 0;
   std::size_t reached_nodes = 0;
 };
@@ -97,11 +106,29 @@ class GoalSet;
 /// Owns a reusable multi-goal distance field and dependency snapshot.
 class DistanceFieldProduct;
 /// Owns reusable route-cache entries and their query scratch.
-class RouteCacheScratch;
+class UnitRouteCache;
 /// Owns reusable grouping, search, and output storage for weighted batches.
 class WeightedPathBatchScratch;
 /// Reports the closest goal and a borrowed path to it.
 struct NearestTargetResult;
+
+/// Solves a bounded weighted batch without special transitions.
+template <typename World, typename Class, std::uint32_t MaxCost>
+[[nodiscard]] auto weighted_path_batch(
+    const World& world, std::span<const PathRequest> requests,
+    WeightedPathBatchScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::ReportIndeterminate)
+    -> std::span<const PathResult>;
+
+/// Solves a provider-aware bounded weighted batch.
+template <typename World, typename Class, std::uint32_t MaxCost,
+          typename Provider>
+[[nodiscard]] auto weighted_path_batch(const World& world,
+                                       std::span<const PathRequest> requests,
+                                       WeightedPathBatchScratch& scratch,
+                                       MissingChunkPolicy policy,
+                                       const Provider& provider)
+    -> std::span<const PathResult>;
 
 namespace detail {
 // Core behind weighted_distance_field_path; verify_residency lets
@@ -120,8 +147,8 @@ template <typename World, typename Class, typename Provider>
 // Core behind build_bounded_weighted_distance_field. settle_targets are
 // validated tile indices whose distances the caller will read; once every
 // target is settled the flood stops instead of exhausting the reachable
-// component (audit 2026-07-11 M3). Empty span = flood to exhaustion (the
-// public wrapper's behavior, byte-identical to the pre-M3 build).
+// component. Empty span means flood to exhaustion, matching the public
+// wrapper.
 template <typename World, typename Class, std::uint32_t MaxCost>
 [[nodiscard]] auto build_bounded_weighted_distance_field_core(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
@@ -138,7 +165,7 @@ template <typename World, typename Class, std::uint32_t MaxCost>
 template <typename World, typename Tag>
 [[nodiscard]] auto astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    MissingChunkPolicy policy = MissingChunkPolicy::ReportIndeterminate)
     -> PathResult;
 
 /// Finds a minimum-step path composed with a special-transition provider.
@@ -147,17 +174,13 @@ template <typename World, typename Tag, typename Provider>
                               PathScratch& scratch, MissingChunkPolicy policy,
                               const Provider& provider) -> PathResult;
 
-// The weighted searches come in two forms: the core takes one MovementClass
-// fusing passability and entry cost; the legacy <PassableTag, CostTag> pair
-// forwards through movement::LegacyWeighted (identical semantics, including
-// the cost-agnostic passability asymmetry).
 /// Finds a minimum-cost path for a compile-time movement class.
 ///
 /// The returned path borrows `scratch` until its next mutation.
 template <typename World, typename Class>
 [[nodiscard]] auto weighted_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    MissingChunkPolicy policy = MissingChunkPolicy::ReportIndeterminate)
     -> PathResult;
 
 /// Finds an optimal weighted path with seeded equal-cost tie-breaking.
@@ -165,7 +188,7 @@ template <typename World, typename Class>
 [[nodiscard]] auto weighted_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
     PathTieBreak tie_break,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    MissingChunkPolicy policy = MissingChunkPolicy::ReportIndeterminate)
     -> PathResult;
 
 /// Finds a weighted path composed with a special-transition provider.
@@ -182,21 +205,6 @@ template <typename World, typename Class, typename Provider>
                                        MissingChunkPolicy policy,
                                        const Provider& provider,
                                        PathTieBreak tie_break) -> PathResult;
-
-template <typename World, typename PassableTag, typename CostTag>
-/// Finds a weighted path using separate legacy passability and cost tags.
-[[nodiscard]] auto weighted_astar_path(
-    const World& world, PathRequest request, PathScratch& scratch,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
-    -> PathResult;
-
-template <typename World, typename PassableTag, typename CostTag>
-/// Finds a legacy weighted path with seeded equal-cost tie-breaking.
-[[nodiscard]] auto weighted_astar_path(
-    const World& world, PathRequest request, PathScratch& scratch,
-    PathTieBreak tie_break,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
-    -> PathResult;
 
 /// Builds a dense multi-goal field into caller-owned reusable storage.
 template <typename World, typename Tag>
@@ -241,7 +249,7 @@ template <typename World, typename Tag>
 template <typename WorldType, typename Tag>
 [[nodiscard]] auto build_distance_field(
     const WorldType& world, Coord3 goal, DistanceFieldScratch& scratch,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    MissingChunkPolicy policy = MissingChunkPolicy::ReportIndeterminate)
     -> DistanceFieldResult;
 
 /// Builds an unweighted reverse field composed with a special provider.
@@ -259,7 +267,7 @@ template <typename WorldType, typename Tag, typename Provider>
 template <typename WorldType, typename Class>
 [[nodiscard]] auto build_weighted_distance_field(
     const WorldType& world, Coord3 goal, DistanceFieldScratch& scratch,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    MissingChunkPolicy policy = MissingChunkPolicy::ReportIndeterminate)
     -> DistanceFieldResult;
 
 /// Builds a weighted reverse field composed with a special provider.
@@ -271,18 +279,11 @@ template <typename WorldType, typename Class, typename Provider>
                                                  const Provider& provider)
     -> DistanceFieldResult;
 
-template <typename World, typename PassableTag, typename CostTag>
-/// Builds a weighted field using legacy passability and cost tags.
-[[nodiscard]] auto build_weighted_distance_field(
-    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
-    -> DistanceFieldResult;
-
 /// Builds a weighted field restricted to the intersection with `domain`.
 template <typename World, typename Class>
 [[nodiscard]] auto build_weighted_distance_field_in_box(
     const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    MissingChunkPolicy policy = MissingChunkPolicy::ReportIndeterminate)
     -> DistanceFieldResult;
 
 /// Builds a boxed weighted field composed with a special provider.
@@ -291,18 +292,11 @@ template <typename World, typename Class, typename Provider>
     const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy, const Provider& provider) -> DistanceFieldResult;
 
-template <typename World, typename PassableTag, typename CostTag>
-/// Builds a boxed weighted field using legacy passability and cost tags.
-[[nodiscard]] auto build_weighted_distance_field_in_box(
-    const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
-    -> DistanceFieldResult;
-
 /// Builds a weighted field using bounded-cost buckets when costs permit.
 template <typename World, typename Class, std::uint32_t MaxCost>
 [[nodiscard]] auto build_bounded_weighted_distance_field(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    MissingChunkPolicy policy = MissingChunkPolicy::ReportIndeterminate)
     -> DistanceFieldResult;
 
 /// Builds a bounded-cost field composed with a special provider.
@@ -312,22 +306,14 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy, const Provider& provider) -> DistanceFieldResult;
 
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost>
-/// Builds a bounded weighted field with legacy passability/cost semantics.
-[[nodiscard]] auto build_bounded_weighted_distance_field(
-    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
-    -> DistanceFieldResult;
-
-/// Captures chunk versions used to reject stale cached path products.
+/// Captures content versions used to reject stale cached path products.
 ///
 /// The object owns its dependency list and may allocate unless reserved.
-class ChunkVersionDependencies {
+class ContentVersionDependencies {
  public:
-  struct ChunkVersionDependency {
+  struct ContentVersionDependency {
     ChunkKey key{};
-    std::uint32_t version = 0;
+    ContentVersion content_version{};
   };
 
   void reserve(std::size_t count) { chunks_.reserve(count); }
@@ -341,8 +327,8 @@ class ChunkVersionDependencies {
     // Keys are unique by construction: append directly instead of paying
     // add_chunk's duplicate scan per key (which would be quadratic here).
     for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
-      chunks_.push_back(
-          ChunkVersionDependency{ChunkKey{i}, world.meta(ChunkKey{i}).version});
+      chunks_.push_back(ContentVersionDependency{
+          ChunkKey{i}, world.meta(ChunkKey{i}).content_version});
     }
   }
 
@@ -350,31 +336,32 @@ class ChunkVersionDependencies {
   // `key` is not already present (e.g. tracked via an external seen set).
   template <typename World>
   void add_chunk_unique(const World& world, ChunkKey key) {
-    chunks_.push_back(ChunkVersionDependency{key, world.meta(key).version});
+    chunks_.push_back(
+        ContentVersionDependency{key, world.meta(key).content_version});
   }
 
   template <typename World>
   void add_chunk(const World& world, ChunkKey key) {
-    const auto version = world.meta(key).version;
+    const auto content_version = world.meta(key).content_version;
     // Path nodes are chunk-coherent: consecutive additions usually repeat
     // the previous chunk, so check the last entry before scanning.
     if (!chunks_.empty() && chunks_.back().key == key) {
-      chunks_.back().version = version;
+      chunks_.back().content_version = content_version;
       return;
     }
     for (auto& chunk : chunks_) {
       if (chunk.key == key) {
-        chunk.version = version;
+        chunk.content_version = content_version;
         return;
       }
     }
-    chunks_.push_back(ChunkVersionDependency{key, version});
+    chunks_.push_back(ContentVersionDependency{key, content_version});
   }
 
   template <typename World>
   [[nodiscard]] auto is_valid(const World& world) const noexcept -> bool {
     for (const auto chunk : chunks_) {
-      if (world.meta(chunk.key).version != chunk.version) {
+      if (world.meta(chunk.key).content_version != chunk.content_version) {
         return false;
       }
     }
@@ -388,31 +375,33 @@ class ChunkVersionDependencies {
   [[nodiscard]] auto empty() const noexcept -> bool { return chunks_.empty(); }
 
   [[nodiscard]] auto chunks() const noexcept
-      -> std::span<const ChunkVersionDependency> {
+      -> std::span<const ContentVersionDependency> {
     return chunks_;
   }
 
  private:
-  std::vector<ChunkVersionDependency> chunks_;
+  std::vector<ContentVersionDependency> chunks_;
 };
 
 namespace detail {
 
 // Failure-dependency capture shared by the route/portal product builders.
-// NoPath depends on world content the search may never have touched (an
-// opening edit lands on a blocked tile; fast-path early-outs sample barriers
-// far from any expanded node), so precise capture is impractical: depend on
-// every chunk, making any edit invalidate the replay instead of it repeating
-// a stale failure forever. InvalidStart/InvalidGoal depend only on the
-// offending tiles; an out-of-bounds tile contributes nothing (bounds are
+// NoPath and CostOverflow depend on world content the search may never have
+// touched (an
+// opening edit lands on an impassable tile; fast-path early-outs sample
+// barriers far from any expanded node), so precise capture is impractical:
+// depend on every chunk, making any edit invalidate the replay instead of it
+// repeating a stale failure forever. InvalidStart/InvalidGoal depend only on
+// the offending tiles; an out-of-bounds tile contributes nothing (bounds are
 // compile-time), which can leave the set empty -- the product is then
 // permanently invalid and callers rebuild, paying only the cheap bounds
 // rejection.
 template <typename Shape, typename World>
 void capture_failure_dependencies(const World& world, PathRequest request,
                                   PathStatus status,
-                                  ChunkVersionDependencies& dependencies) {
-  if (status == PathStatus::NoPath) {
+                                  ContentVersionDependencies& dependencies) {
+  if (status == PathStatus::NoPath || status == PathStatus::NoCandidate ||
+      status == PathStatus::CostOverflow) {
     dependencies.capture_all(world);
     return;
   }
@@ -428,7 +417,7 @@ void capture_failure_dependencies(const World& world, PathRequest request,
 
 }  // namespace detail
 
-/// Owns a weighted route and the chunk versions required to replay it.
+/// Owns a weighted route and the content versions required to replay it.
 ///
 /// Returned path views borrow this product and remain valid until mutation.
 class WeightedRouteProduct {
@@ -442,7 +431,7 @@ class WeightedRouteProduct {
 
   void clear() noexcept {
     request_ = {};
-    status_ = PathStatus::NoPath;
+    status_ = PathStatus::NotComputed;
     cost_ = 0;
     expanded_nodes_ = 0;
     reached_nodes_ = 0;
@@ -464,12 +453,12 @@ class WeightedRouteProduct {
   }
 
   [[nodiscard]] auto dependencies() const noexcept
-      -> std::span<const ChunkVersionDependencies::ChunkVersionDependency> {
+      -> std::span<const ContentVersionDependencies::ContentVersionDependency> {
     return dependencies_.chunks();
   }
 
  private:
-  template <typename World, typename PassableTag, typename CostTag>
+  template <typename World, typename Class>
   friend auto build_weighted_route_product(const World& world,
                                            PathRequest request,
                                            PathScratch& scratch,
@@ -482,12 +471,12 @@ class WeightedRouteProduct {
       -> PathResult;
 
   PathRequest request_{};
-  PathStatus status_ = PathStatus::NoPath;
+  PathStatus status_ = PathStatus::NotComputed;
   std::uint32_t cost_ = 0;
   std::size_t expanded_nodes_ = 0;
   std::size_t reached_nodes_ = 0;
   std::vector<Coord3> path_;
-  ChunkVersionDependencies dependencies_;
+  ContentVersionDependencies dependencies_;
 };
 
 /// Caches weighted A* segments used to assemble portal-route products.
@@ -528,7 +517,7 @@ class WeightedPortalRouteProduct {
 
   void clear() noexcept {
     request_ = {};
-    status_ = PathStatus::NoPath;
+    status_ = PathStatus::NotComputed;
     cost_ = 0;
     expanded_nodes_ = 0;
     reached_nodes_ = 0;
@@ -558,7 +547,7 @@ class WeightedPortalRouteProduct {
   }
 
   [[nodiscard]] auto dependencies() const noexcept
-      -> std::span<const ChunkVersionDependencies::ChunkVersionDependency> {
+      -> std::span<const ContentVersionDependencies::ContentVersionDependency> {
     return dependencies_.chunks();
   }
 
@@ -571,25 +560,25 @@ class WeightedPortalRouteProduct {
   }
 
  private:
-  template <typename World, typename PassableTag, typename CostTag>
+  template <typename World, typename Class>
   friend auto build_weighted_portal_route_product(
       const World& world, PathRequest request,
       std::span<const Coord3> waypoints, PathScratch& scratch,
       WeightedPortalRouteProduct& product) -> PathResult;
 
-  template <typename World, typename PassableTag, typename CostTag>
+  template <typename World, typename Class>
   friend auto build_weighted_portal_route_product(
       const World& world, PathRequest request,
       std::span<const Coord3> waypoints, PathScratch& scratch,
       WeightedPortalSegmentCache& cache, WeightedPortalRouteProduct& product)
       -> PathResult;
 
-  template <typename World, typename PassableTag, typename CostTag>
+  template <typename World, typename Class>
   friend auto build_weighted_chunk_portal_route_product(
       const World& world, PathRequest request, PathScratch& scratch,
       WeightedPortalRouteProduct& product) -> PathResult;
 
-  template <typename World, typename PassableTag, typename CostTag>
+  template <typename World, typename Class>
   friend auto build_weighted_chunk_portal_route_product_cached(
       const World& world, PathRequest request, PathScratch& scratch,
       WeightedPortalSegmentCache& cache, WeightedPortalRouteProduct& product)
@@ -628,7 +617,7 @@ class WeightedPortalRouteProduct {
   }
 
   PathRequest request_{};
-  PathStatus status_ = PathStatus::NoPath;
+  PathStatus status_ = PathStatus::NotComputed;
   std::uint32_t cost_ = 0;
   std::size_t expanded_nodes_ = 0;
   std::size_t reached_nodes_ = 0;
@@ -639,7 +628,7 @@ class WeightedPortalRouteProduct {
   std::vector<Coord3> best_waypoints_;
   std::vector<Coord3> path_;
   std::vector<Coord3> segment_;
-  ChunkVersionDependencies dependencies_;
+  ContentVersionDependencies dependencies_;
 };
 
 // Declared here, ahead of the PathScratch friend declarations below, so the
@@ -649,15 +638,15 @@ class WeightedPortalRouteProduct {
 template <typename World, typename Tag>
 [[nodiscard]] auto cached_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
-    RouteCacheScratch& cache,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    UnitRouteCache& cache,
+    MissingChunkPolicy policy = MissingChunkPolicy::ReportIndeterminate)
     -> PathResult;
 
 template <typename World, typename Tag, typename Provider>
 [[nodiscard]] auto cached_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
-    RouteCacheScratch& cache, const Provider& provider,
-    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    UnitRouteCache& cache, const Provider& provider,
+    MissingChunkPolicy policy = MissingChunkPolicy::ReportIndeterminate)
     -> PathResult;
 
 namespace detail {
@@ -803,24 +792,14 @@ class PathScratch {
                                   PathScratch& scratch, PathTieBreak tie_break,
                                   MissingChunkPolicy policy) -> PathResult;
 
-  template <typename World, typename PassableTag, typename CostTag>
-  friend auto weighted_astar_path(const World& world, PathRequest request,
-                                  PathScratch& scratch,
-                                  MissingChunkPolicy policy) -> PathResult;
-
-  template <typename World, typename PassableTag, typename CostTag>
-  friend auto weighted_astar_path(const World& world, PathRequest request,
-                                  PathScratch& scratch, PathTieBreak tie_break,
-                                  MissingChunkPolicy policy) -> PathResult;
-
   template <typename World, typename Tag>
   friend auto cached_astar_path(const World& world, PathRequest request,
-                                PathScratch& scratch, RouteCacheScratch& cache,
+                                PathScratch& scratch, UnitRouteCache& cache,
                                 MissingChunkPolicy policy) -> PathResult;
 
   template <typename World, typename Tag, typename Provider>
   friend auto cached_astar_path(const World& world, PathRequest request,
-                                PathScratch& scratch, RouteCacheScratch& cache,
+                                PathScratch& scratch, UnitRouteCache& cache,
                                 const Provider& provider,
                                 MissingChunkPolicy policy) -> PathResult;
 
@@ -849,8 +828,7 @@ class PathScratch {
   }
 
   // offset is the node-array slot under the search's NodeIndexSpace; only
-  // the touched count survives for the expansion metric (audit 2026-07-11
-  // M10).
+  // the touched count survives for the expansion metric.
   void touch_node(std::size_t offset) {
     generation_[offset] = epoch_;
     ++touched_count_;
@@ -859,7 +837,7 @@ class PathScratch {
   std::vector<detail::PackedOpenNode> open_;
   std::vector<detail::PackedOpenNode> open_next_;
   // Parallel arrays deliberately: an interleaved {generation, g, state}
-  // record was tried (audit 2026-07-11 M9) and measured 3-9% SLOWER --
+  // record measured 3-9% slower --
   // partial-field visits (closed checks read generation+state only) waste
   // bandwidth on a 12-byte record, while the packed arrays keep 16
   // generations per cache line. See the optimization log, 2026-07-12.
@@ -870,8 +848,7 @@ class PathScratch {
   std::vector<std::uint64_t> parent_;
   // Reached-node count only: unlike DistanceFieldScratch (whose touched
   // list feeds dependency capture), no A* consumer reads the indices, so
-  // recording them cost an 8-byte store per reached node for nothing
-  // (audit 2026-07-11 M10).
+  // recording them cost an 8-byte store per reached node for nothing.
   std::size_t touched_count_ = 0;
   std::vector<Coord3> path_;
 };
@@ -919,8 +896,7 @@ class DistanceFieldScratch {
   friend auto distance_field_path(const World& world, PathRequest request,
                                   DistanceFieldScratch& scratch) -> PathResult;
 
-  // The weighted friends name the single-Class cores; the legacy tag-pair
-  // overloads are thin forwarders and never touch scratch internals.
+  // The weighted friends name the movement-class cores.
   template <typename WorldType, typename Class>
   friend auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
                                             DistanceFieldScratch& scratch,
@@ -963,7 +939,8 @@ class DistanceFieldScratch {
   template <typename World, typename Class, std::uint32_t MaxCost>
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
-                                  WeightedPathBatchScratch& scratch)
+                                  WeightedPathBatchScratch& scratch,
+                                  MissingChunkPolicy policy)
       -> std::span<const PathResult>;
 
   template <typename World, typename Class, std::uint32_t MaxCost,
@@ -971,6 +948,7 @@ class DistanceFieldScratch {
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
                                   WeightedPathBatchScratch& scratch,
+                                  MissingChunkPolicy policy,
                                   const Provider& provider)
       -> std::span<const PathResult>;
 
@@ -1038,6 +1016,7 @@ class DistanceFieldScratch {
     // distances and predecessors intentionally retain old bytes: the epoch
     // stamps invalidate them without an O(world-size) clearing pass.
     has_goal_ = false;
+    build_status_ = PathStatus::NotComputed;
     model_class_identity_ = 0;
     model_provider_identity_ = 0;
     model_provider_instance_identity_ = nullptr;
@@ -1050,6 +1029,7 @@ class DistanceFieldScratch {
   // reconstruct a plausible path through only the finite prefix.
   void discard_build_result() noexcept {
     has_goal_ = false;
+    build_status_ = PathStatus::NotComputed;
     model_class_identity_ = 0;
     model_provider_identity_ = 0;
     model_provider_instance_identity_ = nullptr;
@@ -1057,6 +1037,18 @@ class DistanceFieldScratch {
   }
 
   void clear_path() noexcept { path_.clear(); }
+
+  void publish_build_status(PathStatus status) noexcept {
+    build_status_ = status;
+  }
+
+  [[nodiscard]] auto unresolved_path_status() const noexcept -> PathStatus {
+    if (build_status_ == PathStatus::Indeterminate) {
+      return PathStatus::Indeterminate;
+    }
+    return build_status_ == PathStatus::Found ? PathStatus::NoPath
+                                              : PathStatus::NotComputed;
+  }
 
   void advance_epoch() noexcept {
     ++epoch_;
@@ -1082,9 +1074,8 @@ class DistanceFieldScratch {
     touched_.push_back(index);
   }
 
-  // Dense-only convenience (offset == index) for the distance-field functions
-  // not yet ported to NodeIndexSpace; all of those static_assert
-  // AlwaysResident.
+  // Dense-only convenience (offset == index) for distance-field functions
+  // whose contracts require AlwaysResident worlds.
   void touch_node(std::uint64_t index) {
     touch_node(static_cast<std::size_t>(index), index);
   }
@@ -1116,19 +1107,20 @@ class DistanceFieldScratch {
   std::vector<std::uint8_t> chunk_seen_;
   Coord3 goal_{};
   bool has_goal_ = false;
+  PathStatus build_status_ = PathStatus::NotComputed;
   std::uint64_t residency_fingerprint_ = 0;
 
   // Sparse residency staleness guard for the two-call build/read API. A built
   // distance field is indexed by resident-slot offset; if the resident set
   // changes between build_*distance_field and *distance_field_path (an
-  // eviction/reload can rebind a slot to a different chunk), the reader would
-  // descend a stale field and return a wrong path. build_* stamps the world's
-  // residency fingerprint (a content hash of the resident set, not a per-world
-  // counter -- so it also catches a scratch read against a different/copied/
-  // swapped world, which a bare epoch could alias) and the readers reject a
-  // mismatch (forcing a rebuild) instead of returning a wrong Found. Dense
-  // worlds never evict, so both methods compile to a no-op / constant true and
-  // keep dense byte-identical.
+  // eviction/rematerialization can rebind a slot to a different chunk), the
+  // reader would descend a stale field and return a wrong path. build_* stamps
+  // the world's residency fingerprint (a content hash of the resident set, not
+  // a per-world counter -- so it also catches a scratch read against a
+  // different/copied/ swapped world, which a bare epoch could alias) and the
+  // readers reject a mismatch (forcing a rebuild) instead of returning a wrong
+  // Found. Dense worlds never evict, so both methods compile to a no-op /
+  // constant true and keep dense byte-identical.
   template <typename World>
   void stamp_residency(const World& world) noexcept {
     if constexpr (!std::is_same_v<typename World::residency_type,
@@ -1233,7 +1225,8 @@ class WeightedPathBatchScratch {
   template <typename World, typename Class, std::uint32_t MaxCost>
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
-                                  WeightedPathBatchScratch& scratch)
+                                  WeightedPathBatchScratch& scratch,
+                                  MissingChunkPolicy policy)
       -> std::span<const PathResult>;
 
   template <typename World, typename Class, std::uint32_t MaxCost,
@@ -1241,6 +1234,7 @@ class WeightedPathBatchScratch {
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
                                   WeightedPathBatchScratch& scratch,
+                                  MissingChunkPolicy policy,
                                   const Provider& provider)
       -> std::span<const PathResult>;
 
@@ -1260,12 +1254,12 @@ class WeightedPathBatchScratch {
   // Counting-sort member buckets (group_offsets_[g]..group_offsets_[g+1]
   // indexes group_members_), mirroring PathRequestRuntime's grouping, so
   // scattering a group's results touches only its own members instead of
-  // rescanning every request per group (audit 2026-07-11 M1).
+  // rescanning every request per group.
   std::vector<std::uint32_t> group_offsets_;
   std::vector<std::uint32_t> group_cursors_;
   std::vector<std::uint32_t> group_members_;
   // Per-group validated start tile indices handed to the field build as
-  // settle targets (audit 2026-07-11 M3).
+  // settle targets.
   std::vector<std::uint64_t> settle_targets_;
   WeightedPathBatchStats stats_;
 };
@@ -1319,7 +1313,7 @@ template <typename Shape>
 [[nodiscard]] constexpr auto tile_index(Coord3 coord) noexcept
     -> std::uint64_t {
   static_assert(ShapeTraits<Shape>::tile_key_bits <= 64,
-                "MVP pathfinding supports shapes with u64 tile keys.");
+                "pathfinding requires shapes with at most 64-bit tile keys");
   return static_cast<std::uint64_t>(tile_key<Shape>(coord).value);
 }
 
@@ -1375,17 +1369,15 @@ template <typename World, typename ClassOrTag>
   }
 }
 
-// Unlike the passability leaves this REQUIRES a movement class: a raw tag
-// would normalize to the unit-cost identity class and silently discard the
-// cost field a legacy CostTag caller meant. Legacy <PassableTag, CostTag>
-// entry points forward through movement::LegacyWeighted instead.
+// Unlike the passability leaves this requires a movement class: a raw tag
+// would normalize to unit-cost movement and silently discard weighted cost.
 template <typename World, typename Class>
 [[nodiscard]] auto tile_entry_cost_index(const World& world,
                                          std::uint64_t index) noexcept
     -> std::uint32_t {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
-                "tile_entry_cost_index requires a MovementClass; wrap legacy "
-                "tags in movement::LegacyWeighted<PassableTag, CostTag>.");
+                "tile_entry_cost_index requires a MovementClass; pass an "
+                "explicit MovementClass.");
   using Shape = typename World::shape_type;
   using Storage = typename ShapeTraits<Shape>::TileKeyStorage;
   const auto key = TileKey<Shape>{static_cast<Storage>(index)};
@@ -1877,26 +1869,25 @@ for_each_indexed_axis_neighbor(Coord3 coord, std::uint64_t index, Fn&& fn) {
 /// Builds a dense-world weighted route and records replay dependencies.
 ///
 /// The returned path borrows `product` and remains valid until its mutation.
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 [[nodiscard]] auto build_weighted_route_product(const World& world,
                                                 PathRequest request,
                                                 PathScratch& scratch,
                                                 WeightedRouteProduct& product)
     -> PathResult {
   using Shape = typename World::shape_type;
-  // Route products track chunk-version dependencies for cached replay
+  // Route products track content-version dependencies for cached replay
   // (weighted_route_product_path -> is_valid), which reads meta() for chunks a
-  // sparse world may have since evicted. Dense-only until the sparse
-  // route-cache slice defines dependency validity under eviction; weighted A*
-  // itself runs natively on sparse worlds via weighted_astar_path.
+  // sparse world may have since evicted. Route products therefore require a
+  // dense world; weighted A* itself runs natively on sparse worlds.
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
       "build_weighted_route_product is dense-only; call weighted_astar_path "
-      "directly for sparse worlds, or await the sparse route-cache slice.");
+      "directly for sparse worlds.");
 
   product.clear();
   const auto result =
-      weighted_astar_path<World, PassableTag, CostTag>(world, request, scratch);
+      weighted_astar_path<World, Class>(world, request, scratch);
   product.request_ = request;
   product.status_ = result.status;
   product.cost_ = result.cost;
@@ -1919,12 +1910,12 @@ template <typename World, typename PassableTag, typename CostTag>
                     product.reached_nodes_, product.path_};
 }
 
-/// Replays a route product when all captured chunk versions still match.
+/// Replays a route product when all captured content versions still match.
 template <typename World>
 [[nodiscard]] auto weighted_route_product_path(
     const World& world, const WeightedRouteProduct& product) -> PathResult {
   if (!product.is_valid(world)) {
-    return PathResult{PathStatus::NoPath, 0, 0, 0, {}};
+    return PathResult{PathStatus::NotComputed, 0, 0, 0, {}};
   }
   return PathResult{product.status_, product.cost_, 0, 0, product.path_};
 }
@@ -1933,19 +1924,17 @@ template <typename World>
 ///
 /// The returned path borrows `product`; the function tolerates waypoint spans
 /// that already refer to the product's own storage.
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 [[nodiscard]] auto build_weighted_portal_route_product(
     const World& world, PathRequest request, std::span<const Coord3> waypoints,
     PathScratch& scratch, WeightedPortalRouteProduct& product) -> PathResult {
   using Shape = typename World::shape_type;
-  // Same chunk-version dependency tracking as build_weighted_route_product, so
-  // dense-only until the sparse route-cache slice. The per-segment weighted A*
-  // it chains already supports sparse worlds via weighted_astar_path.
-  static_assert(
-      std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "build_weighted_portal_route_product is dense-only; chain "
-      "weighted_astar_path directly for sparse worlds, or await the sparse "
-      "route-cache slice.");
+  // Same content-version dependency tracking as build_weighted_route_product,
+  // so the product requires a dense world. The per-segment weighted A* it
+  // chains already supports sparse worlds.
+  static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
+                "build_weighted_portal_route_product is dense-only; chain "
+                "weighted_astar_path directly for sparse worlds.");
 
   std::vector<Coord3> stash;
   const auto source = product.stash_if_owned(waypoints, stash);
@@ -1955,12 +1944,12 @@ template <typename World, typename PassableTag, typename CostTag>
   product.waypoints_.assign(source.begin(), source.end());
 
   auto from = request.start;
-  auto total_cost = std::uint32_t{0};
+  auto total_cost = std::uint64_t{0};
   auto total_expanded = std::size_t{0};
   auto total_reached = std::size_t{0};
   auto append_segment = [&](PathRequest segment_request) {
-    const auto result = weighted_astar_path<World, PassableTag, CostTag>(
-        world, segment_request, scratch);
+    const auto result =
+        weighted_astar_path<World, Class>(world, segment_request, scratch);
     total_expanded += result.expanded_nodes;
     total_reached += result.reached_nodes;
     if (result.status != PathStatus::Found) {
@@ -1974,7 +1963,16 @@ template <typename World, typename PassableTag, typename CostTag>
           world, segment_request, result.status, product.dependencies_);
       return false;
     }
-    total_cost = detail::saturating_add(total_cost, result.cost);
+    total_cost += result.cost;
+    if (total_cost >= std::numeric_limits<std::uint32_t>::max()) {
+      product.path_.clear();
+      product.status_ = PathStatus::CostOverflow;
+      product.expanded_nodes_ = total_expanded;
+      product.reached_nodes_ = total_reached;
+      detail::capture_failure_dependencies<Shape>(
+          world, request, product.status_, product.dependencies_);
+      return false;
+    }
     product.segment_.assign(result.path.begin(), result.path.end());
     for (std::size_t i = product.path_.empty() ? 0u : 1u;
          i < product.segment_.size(); ++i) {
@@ -1996,7 +1994,7 @@ template <typename World, typename PassableTag, typename CostTag>
   }
 
   product.status_ = PathStatus::Found;
-  product.cost_ = total_cost;
+  product.cost_ = static_cast<std::uint32_t>(total_cost);
   product.expanded_nodes_ = total_expanded;
   product.reached_nodes_ = total_reached;
   for (const auto coord : product.path_) {
@@ -2013,7 +2011,7 @@ template <typename World>
     const World& world, const WeightedPortalRouteProduct& product)
     -> PathResult {
   if (!product.is_valid(world)) {
-    return PathResult{PathStatus::NoPath, 0, 0, 0, {}};
+    return PathResult{PathStatus::NotComputed, 0, 0, 0, {}};
   }
   return PathResult{product.status_, product.cost_, 0, 0, product.path_};
 }
@@ -2045,10 +2043,11 @@ template <typename WorldType, typename Tag>
     // would be out of bounds. Under Indeterminate the field is simply unknown.
     const Space residency{world};
     if (!residency.is_resident_index(detail::tile_index<Shape>(goal))) {
-      return DistanceFieldResult{policy == MissingChunkPolicy::Indeterminate
-                                     ? PathStatus::Indeterminate
-                                     : PathStatus::InvalidGoal,
-                                 0, 0};
+      return DistanceFieldResult{
+          policy == MissingChunkPolicy::ReportIndeterminate
+              ? PathStatus::Indeterminate
+              : PathStatus::InvalidGoal,
+          0, 0};
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
@@ -2145,19 +2144,21 @@ template <typename WorldType, typename Tag>
   }
 
   if constexpr (!Space::is_dense) {
-    if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
+    if (crossed_missing && policy == MissingChunkPolicy::ReportIndeterminate) {
+      scratch.publish_build_status(PathStatus::Indeterminate);
       return DistanceFieldResult{PathStatus::Indeterminate, expanded_nodes,
                                  scratch.touched_.size()};
     }
   }
+  scratch.publish_build_status(PathStatus::Found);
   return DistanceFieldResult{PathStatus::Found, expanded_nodes,
                              scratch.touched_.size()};
 }
 
 /// Reconstructs a path by descending the last matching distance-field build.
 ///
-/// The returned path borrows `scratch`; stale sparse residency returns
-/// `NoPath` so callers rebuild instead of reading mismatched node slots.
+/// The returned path borrows `scratch`; stale or mismatched scratch returns
+/// `NotComputed`. An unreached start preserves an indeterminate sparse build.
 template <typename World, typename Tag>
 [[nodiscard]] auto distance_field_path(const World& world, PathRequest request,
                                        DistanceFieldScratch& scratch)
@@ -2178,27 +2179,27 @@ template <typename World, typename Tag>
   if (!contains<Shape>(request.start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
-  if constexpr (!Space::is_dense) {
-    // A non-resident start is not in the field; its node-array slot would be
-    // out of bounds. Report InvalidStart -- the caller learns whether the
-    // field itself was truncated from build_distance_field's status.
-    const Space residency{world};
-    if (!residency.is_resident_index(
-            detail::tile_index<Shape>(request.start))) {
-      return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
-    }
-  }
-  TESS_DIAG_EVENT(path_start_passability_check);
-  if (!detail::is_passable<World, Tag>(world, request.start)) {
-    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
-  }
   if (!contains<Shape>(request.goal)) {
     return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
   }
   if (!scratch.has_goal_ || scratch.goal_ != request.goal ||
       !scratch.template model_matches<Model>() ||
       !scratch.residency_matches(world)) {
-    return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
+    return PathResult{PathStatus::NotComputed, 0, 0, 0, scratch.path_};
+  }
+  if constexpr (!Space::is_dense) {
+    const Space residency{world};
+    if (!residency.is_resident_index(
+            detail::tile_index<Shape>(request.start))) {
+      const auto status = scratch.build_status_ == PathStatus::Indeterminate
+                              ? PathStatus::Indeterminate
+                              : PathStatus::InvalidStart;
+      return PathResult{status, 0, 0, 0, scratch.path_};
+    }
+  }
+  TESS_DIAG_EVENT(path_start_passability_check);
+  if (!detail::is_passable<World, Tag>(world, request.start)) {
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
 
   const Space space{world};
@@ -2208,8 +2209,8 @@ template <typename World, typename Tag>
   auto current_distance =
       scratch.distance_at(current_offset, infinite_distance);
   if (current_distance == infinite_distance) {
-    return PathResult{PathStatus::NoPath, 0, 0, scratch.touched_.size(),
-                      scratch.path_};
+    return PathResult{scratch.unresolved_path_status(), 0, 0,
+                      scratch.touched_.size(), scratch.path_};
   }
 
   scratch.path_.push_back(request.start);
@@ -2227,6 +2228,9 @@ template <typename World, typename Tag>
         if (!space.is_resident_index(neighbor_index)) {
           return;
         }
+      }
+      if (!detail::is_passable_index<World, Tag>(world, neighbor_index)) {
+        return;
       }
       const auto neighbor_offset = space.offset(neighbor_index);
       const auto neighbor_distance =
@@ -2253,7 +2257,7 @@ template <typename World, typename Tag>
 
     if (next == current || next_distance + 1 != current_distance) {
       scratch.path_.clear();
-      return PathResult{PathStatus::NoPath, 0, 0, scratch.touched_.size(),
+      return PathResult{PathStatus::NotComputed, 0, 0, scratch.touched_.size(),
                         scratch.path_};
     }
 
@@ -2301,8 +2305,8 @@ template <typename WorldType, typename Class, typename Provider>
     -> DistanceFieldResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "build_weighted_distance_field<World, Class> requires a "
-                "MovementClass; legacy tag pairs go through the "
-                "<World, PassableTag, CostTag> overload.");
+                "MovementClass; pass a movement class such as "
+                "PositiveCostFieldMovement.");
   using Shape = typename WorldType::shape_type;
   using Space = detail::NodeIndexSpace<WorldType>;
   using Model = ResolvedTransitionModel<WorldType, Class, Provider>;
@@ -2319,10 +2323,11 @@ template <typename WorldType, typename Class, typename Provider>
     // goal chunk.
     const Space residency{world};
     if (!residency.is_resident_index(detail::tile_index<Shape>(goal))) {
-      return DistanceFieldResult{policy == MissingChunkPolicy::Indeterminate
-                                     ? PathStatus::Indeterminate
-                                     : PathStatus::InvalidGoal,
-                                 0, 0};
+      return DistanceFieldResult{
+          policy == MissingChunkPolicy::ReportIndeterminate
+              ? PathStatus::Indeterminate
+              : PathStatus::InvalidGoal,
+          0, 0};
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
@@ -2428,7 +2433,8 @@ template <typename WorldType, typename Class, typename Provider>
   }
 
   if constexpr (!Space::is_dense) {
-    if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
+    if (crossed_missing && policy == MissingChunkPolicy::ReportIndeterminate) {
+      scratch.publish_build_status(PathStatus::Indeterminate);
       return DistanceFieldResult{PathStatus::Indeterminate, expanded_nodes,
                                  scratch.touched_.size()};
     }
@@ -2438,6 +2444,7 @@ template <typename WorldType, typename Class, typename Provider>
     return DistanceFieldResult{PathStatus::CostOverflow, expanded_nodes,
                                scratch.touched_.size()};
   }
+  scratch.publish_build_status(PathStatus::Found);
   return DistanceFieldResult{PathStatus::Found, expanded_nodes,
                              scratch.touched_.size()};
 }
@@ -2450,17 +2457,6 @@ template <typename WorldType, typename Class>
     -> DistanceFieldResult {
   return build_weighted_distance_field<WorldType, Class, AdjacentTransitions>(
       world, goal, scratch, policy, AdjacentTransitions{});
-}
-
-template <typename World, typename PassableTag, typename CostTag>
-[[nodiscard]] auto build_weighted_distance_field(const World& world,
-                                                 Coord3 goal,
-                                                 DistanceFieldScratch& scratch,
-                                                 MissingChunkPolicy policy)
-    -> DistanceFieldResult {
-  return build_weighted_distance_field<
-      World, movement::LegacyWeighted<PassableTag, CostTag>>(world, goal,
-                                                             scratch, policy);
 }
 
 #include <tess/path/detail/weighted_batch.h>

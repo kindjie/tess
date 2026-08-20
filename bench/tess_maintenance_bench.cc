@@ -39,24 +39,24 @@ using MaintenanceSchema =
 using MaintenanceWorld =
     tess::AlwaysResidentWorld<MaintenanceShape, MaintenanceSchema>;
 
-constexpr auto kDerivedDirty = std::uint32_t{1u << 4u};
+constexpr auto kDerivedDirty = tess::DirtyMask{1u << 4u};
 
 struct ChunkRebuildTask final : maintenance::MaintenanceTask {
   MaintenanceWorld* world = nullptr;
   tess::ChunkKey key{};
-  std::uint32_t derived_version = 0;
+  tess::ContentVersion derived_content_version{};
 
   void run(maintenance::MaintenanceBudget& budget) override {
     if (!budget.consume()) {
       return;
     }
     const auto observed = world->observe_dirty(key, kDerivedDirty);
-    if (observed.flags == 0) {
+    if (observed.mask.empty()) {
       return;
     }
-    derived_version = observed.version;
+    derived_content_version = observed.content_version;
     static_cast<void>(world->clear_dirty_observed(key, observed));
-    benchmark::DoNotOptimize(derived_version);
+    benchmark::DoNotOptimize(derived_content_version);
   }
 };
 
@@ -184,10 +184,11 @@ void BM_maintenance_chunk_dirty(benchmark::State& state) {
   }
 
   for (const auto& task : tasks) {
-    maintenance_bench_check((world.dirty_flags(task.key) & kDerivedDirty) == 0,
-                            "chunk maintenance left dirty state pending");
     maintenance_bench_check(
-        task.derived_version == world.meta(task.key).version,
+        (world.dirty_mask(task.key) & kDerivedDirty).empty(),
+        "chunk maintenance left dirty state pending");
+    maintenance_bench_check(
+        task.derived_content_version == world.meta(task.key).content_version,
         "chunk derived version is stale");
   }
   state.counters["schedule_calls"] =
