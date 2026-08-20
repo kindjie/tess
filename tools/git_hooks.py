@@ -12,7 +12,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Sequence
 
 
 REPO_ROOT = Path(
@@ -171,7 +171,7 @@ def main() -> int:
   if parsed.command == "commit-msg":
     return commit_msg(parsed.args)
   if parsed.command == "pre-push":
-    return pre_push()
+    return pre_push(parsed.args)
   return 2
 
 
@@ -941,25 +941,97 @@ def selection_regex(labels: frozenset[str]) -> str:
 CONDITIONAL_TARGETS = frozenset({"tess_grid_benchmark_data_test"})
 
 
-def push_range_paths(updates: list[PushRef]) -> list[str] | None:
+def push_destination_remote(
+  hook_args: Sequence[str],
+  repo_root: Path = REPO_ROOT,
+) -> str | None:
+  """Return a verified named push remote, or None on ambiguity."""
+  if len(hook_args) != 2 or any(not value for value in hook_args):
+    return None
+  remote, location = hook_args
+  try:
+    push_urls = {
+      os.fsdecode(value)
+      for value in git_bytes(
+        ["remote", "get-url", "--push", "--all", "--", remote],
+        repo_root,
+      ).splitlines()
+      if value
+    }
+  except RepositoryReadError:
+    return None
+  return remote if location in push_urls else None
+
+
+def new_branch_merge_base(
+  ref: PushRef,
+  remote: str,
+  repo_root: Path = REPO_ROOT,
+) -> str | None:
+  """Resolve one safe local default-branch base for a new branch."""
+  if not ref.remote_ref.startswith("refs/heads/"):
+    return None
+  remote_prefix = f"refs/remotes/{remote}/"
+  try:
+    git_bytes(["check-ref-format", ref.remote_ref], repo_root)
+    targets = git_bytes(
+      ["symbolic-ref", "--quiet", f"{remote_prefix}HEAD"], repo_root
+    ).splitlines()
+    if len(targets) != 1:
+      return None
+    target = os.fsdecode(targets[0])
+    if (
+      not target.startswith(remote_prefix)
+      or target == f"{remote_prefix}HEAD"
+    ):
+      return None
+    bases = git_bytes(
+      ["merge-base", "--all", target, ref.local_sha], repo_root
+    ).splitlines()
+  except RepositoryReadError:
+    return None
+  if len(bases) != 1:
+    return None
+  base = os.fsdecode(bases[0])
+  if ZERO_SHA_RE.fullmatch(base) or not PUSH_SHA_RE.fullmatch(base):
+    return None
+  return base
+
+
+def push_range_paths(
+  updates: list[PushRef],
+  hook_args: Sequence[str] = (),
+  repo_root: Path = REPO_ROOT,
+) -> list[str] | None:
   """Union of changed paths across refs; None means fail open."""
   if not updates:
     # Manual invocation or fully malformed ref input: never downgrade
     # to build-only on absent evidence.
     return None
   names: list[str] = []
+  remote: str | None = None
+  if any(ref.is_new() for ref in updates):
+    remote = push_destination_remote(hook_args, repo_root)
+    if remote is None:
+      return None
   for ref in updates:
     if ref.is_new():
-      return None
+      if remote is None:
+        return None
+      base = new_branch_merge_base(ref, remote, repo_root)
+      if base is None:
+        return None
+    else:
+      base = ref.remote_sha
     try:
       names.extend(
         nul_paths(
           git_bytes(
             [
               "diff", "--name-only", "--no-renames", "-z",
-              f"{ref.remote_sha}..{ref.local_sha}",
+              f"{base}..{ref.local_sha}",
             ],
-            REPO_ROOT,
+            repo_root,
           )
         )
       )
@@ -968,7 +1040,7 @@ def push_range_paths(updates: list[PushRef]) -> list[str] | None:
   return names
 
 
-def pre_push() -> int:
+def pre_push(hook_args: Sequence[str] = ()) -> int:
   refs = read_push_refs()
   status("running pre-push checks")
   updates = [ref for ref in refs if not ref.is_delete()]
@@ -1000,7 +1072,7 @@ def pre_push() -> int:
       ["tools/fetchcontent_smoke.sh"],
     ])
   else:
-    names = push_range_paths(updates)
+    names = push_range_paths(updates, hook_args)
     if names is None:
       verdict, labels = ("full", frozenset())
       status("push range unresolvable; running the full suite")
