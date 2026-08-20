@@ -1,9 +1,9 @@
-// External chunk maintenance: coalesce repeated dirty marks into one derived
-// product rebuild without embedding scheduler state in the world.
+// External chunk maintenance: rebuild a versioned derived product without
+// embedding scheduler state in the world.
 // Self-checking: returns nonzero on any failed contract.
 
 #include <tess/core/config.h>
-#include <tess/experimental/chunk_maintenance.h>
+#include <tess/maintenance/chunk_adapter.h>
 
 #include <cstdint>
 #include <exception>
@@ -11,7 +11,7 @@
 
 namespace {
 
-namespace maintenance = tess::experimental::maintenance;
+namespace maintenance = tess::maintenance;
 
 struct HeightTag {};
 using Schema = tess::FieldSchema<tess::Field<HeightTag, std::uint16_t>>;
@@ -53,11 +53,9 @@ auto run_example() -> bool {
     }
   }
 
-  // Scheduling is coalescing: 32 offers produce one rebuild here. The task
-  // inspects dirty-mask/content-version state; it does not count schedule
-  // calls as jobs.
-  if (adapter.flush() != maintenance::DrainResult::Drained ||
-      adapter.flush() != maintenance::DrainResult::Idle) {
+  // The stable default executes each offer synchronously. The explicit flush
+  // confirms the adapter is idle before a consumer depends on the product.
+  if (adapter.flush() != maintenance::DrainResult::Idle) {
     return false;
   }
   const auto product = adapter.product(key);
@@ -66,7 +64,7 @@ auto run_example() -> bool {
       product.value == nullptr || product.value->sum == 0 ||
       product.token.content_version != world.meta(key).content_version ||
       !world.dirty_mask(key).empty() || metrics.schedule_calls != 32 ||
-      metrics.executions != 1) {
+      metrics.executions != 32) {
     return false;
   }
 

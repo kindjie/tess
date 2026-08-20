@@ -127,8 +127,11 @@ is needed at runtime comes from `tag_identity<T>()`, which returns the
 address of a per-type static — that facility exists precisely so the
 library does not depend on RTTI.
 
-Virtual functions appear only in the experimental maintenance layer.
-Virtuals need vtables, not RTTI.
+Virtual declarations appear only in the experimental maintenance layer.
+The stable `ImmediateScheduler` spelling shares that measured concrete
+implementation, but neither documents nor stabilizes the experimental
+`MaintenanceScheduler` base or polymorphic use. Virtuals need vtables, not
+RTTI.
 
 Stable surfaces are compiled and exercised without RTTI on every supported
 compiler family. `tag_identity` is unique only within one linked image. Its
@@ -270,12 +273,18 @@ The conditions are the contract:
 `include/tess/experimental/` holds work whose shape is still being
 validated. Names there may change or be removed in any release, including
 a patch release, and they are excluded from whatever compatibility promise
-a future 1.0 makes. Today that is the maintenance-scheduler layer.
+a future 1.0 makes. The stable maintenance contract — tasks, budgets,
+metrics, opaque handles, explicit results, the structural backend boundary,
+the registered scheduler, synchronous immediate execution, and the external
+chunk adapter — lives under `tess::maintenance` and is covered by
+[support](support.md). What remains experimental is the deferred
+maintenance machinery: the virtual `MaintenanceScheduler` interface and the
+`DirtyBitScheduler`, `FifoScheduler`, and `CoalescingScheduler` backends.
+Supplying one of those types to the stable facade explicitly does not make
+it stable.
 
-The documented public classes are `ImmediateScheduler` and
-`DirtyBitScheduler`; the documented queued spellings are the
-`FifoScheduler` and `CoalescingScheduler` aliases. The template behind those
-aliases, `detail::QueuedScheduler<Coalescing>`, is not a supported name: it
+The template behind the queued experimental aliases,
+`detail::QueuedScheduler<Coalescing>`, is not a supported name: it
 lives in `detail`, which `docs/style.md` excludes from source compatibility,
 and it is spelled that way deliberately so an alias can be repointed without
 breaking callers who used the documented name.

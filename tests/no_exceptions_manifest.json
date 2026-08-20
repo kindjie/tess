@@ -12,6 +12,9 @@
     "experimental": [
       "TessNoExceptions.MaintenanceSchedulersRunOrdinaryTasks"
     ],
+    "maintenance": [
+      "TessNoExceptions.MaintenanceSchedulersRunOrdinaryTasks"
+    ],
     "ops": [
       "TessNoExceptions.OrdinaryCallbacksRunThroughThreadedExecutors",
       "TessNoExceptions.AutoExecRunsOrdinaryKernelThroughPool"
@@ -51,6 +54,10 @@
     ],
     "experimental": [
       "TessMaintenance.ImmediateSelfScheduleUsesConstantStackDepth"
+    ],
+    "maintenance": [
+      "TessMaintenanceContract.StructuralBackendNeedsNoVirtualBase",
+      "TessChunkMaintenance.DenseSlotsCoalesceAndOwnOnlyTheirMask"
     ],
     "ops": [
       "TessPhaseExecutor.ExplicitNoThrowPoolsRunNoThrowCallbacks"

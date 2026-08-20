@@ -26,6 +26,14 @@ Within the 1.x release line, tess preserves source compatibility for:
 - archive format v2, including loading fixtures produced by earlier 1.x
   releases.
 
+The stable maintenance contract covers documented names and semantics in
+`tess/maintenance.h` and `tess/maintenance/`, including the immediate backend,
+registered handles and results, the structural backend boundary, and the
+external chunk adapter. It does not cover the experimental FIFO,
+queued-coalescing, dirty-bit, or virtual scheduler spellings, even when an
+application explicitly supplies one of those backend types to the stable
+facade.
+
 Direct aggregate membership remains unconditional. Existing aggregate types
 remain aggregates, and public data-member sets on existing stable types remain
 fixed, so constructors, hidden state, or fields cannot break aggregate or

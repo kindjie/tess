@@ -1,10 +1,10 @@
-#include <tess/experimental/chunk_maintenance.h>
+#include <tess/maintenance/chunk_adapter.h>
 
 #include <cstdint>
 
 namespace {
 
-namespace maintenance = tess::experimental::maintenance;
+namespace maintenance = tess::maintenance;
 
 struct ValueTag {};
 using Schema = tess::FieldSchema<tess::Field<ValueTag, std::uint16_t>>;
@@ -39,7 +39,7 @@ int main() {
           key, value_dirty,
           tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}}) !=
           maintenance::ChunkMarkResult::Accepted ||
-      adapter.flush() != maintenance::DrainResult::Drained) {
+      adapter.flush() != maintenance::DrainResult::Idle) {
     return 1;
   }
   const auto product = adapter.product(key);

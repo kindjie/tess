@@ -36,12 +36,14 @@ CONCURRENCY_SENSITIVE_DIRECTORIES = (
   "include/tess/diagnostics/",
   "include/tess/experimental/",
   "include/tess/gpu/",
+  "include/tess/maintenance/",
   "include/tess/ops/",
   "tests/webgpu_stub/",
 )
 CONCURRENCY_SENSITIVE_FILES = (
   "CMakeLists.txt",
   "CMakePresets.json",
+  "include/tess/maintenance.h",
   "include/tess/sim/async_work_task.h",
   "include/tess/sim/auto_exec.h",
   "include/tess/sim/delta_frame.h",
@@ -85,6 +87,7 @@ PERF_INSENSITIVE_OVERRIDES = (
   "include/tess/diagnostics/",
   "include/tess/experimental/",
   "include/tess/gpu/",
+  "include/tess/maintenance/",
 )
 PERF_SENSITIVE_FILES = (
   "CMakeLists.txt",

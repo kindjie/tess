@@ -1,18 +1,25 @@
-# Experimental Maintenance Scheduling
+# Maintenance Scheduling
 
-`include/tess/experimental/maintenance.h` contains an opt-in experiment for
-derived-state maintenance. It does not alter world construction, authoritative
-storage, exact event handling, or simulation command execution. Consumers opt
-in with `#include <tess/experimental/maintenance.h>`; the stable compatibility
-umbrella `tess/tess.h` deliberately does not include experimental headers. No
-world or scheduler adopts the experiment implicitly.
+`include/tess/maintenance.h` and the narrow headers under
+`include/tess/maintenance/` define the stable source contract for derived-state
+maintenance. They do not alter world construction, authoritative storage,
+exact event handling, or simulation command execution. The compatibility
+umbrella `tess/tess.h` includes the stable facade, but no world or scheduler
+adopts maintenance implicitly. Because the facade is an alias-only source move,
+its headers transitively make the implementation's experimental maintenance
+spellings reachable; reachability does not make the virtual scheduler or
+deferred backends stable.
 
-## Experimental Surface
+The stable spellings share the exact pre-graduation implementation types. This
+mechanical source move keeps the controlled M3 and Steam Deck campaign
+representative; stability attaches to the documented `tess::maintenance`
+names and semantics, not to undocumented implementation namespaces, object
+layout, or a virtual ABI.
+
+## Stable Surface
 
 - `MaintenanceTask` is a long-lived operation over derived state.
 - `MaintenanceBudget` is a shared unit budget for a drain.
-- `MaintenanceScheduler` is the backend-neutral schedule, run, and explicit
-  flush interface.
 - `ImmediateScheduler` executes each request synchronously. Self-schedules and
   A-to-B-to-A requests use an allocation-free iterative trampoline, preserving
   one execution per request without recursive task entry. A self-schedule that
@@ -22,27 +29,16 @@ world or scheduler adopts the experiment implicitly.
   each external `schedule()` returns only after its own request executes. If a
   callback throws, its active trampoline frame is discarded, including
   reentrant follow-ups accepted into that call-local frame.
-- `FifoScheduler` is a bounded, non-deduplicating amplification baseline.
-- `CoalescingScheduler` retains at most one pending entry per task. Its
-  preallocated membership index makes admission independent of queue depth.
-- `DirtyBitScheduler` is the selected chunk-maintenance candidate. An external
-  owner registers long-lived tasks during setup, calls `seal()`, and then may
-  schedule registered tasks concurrently without a producer lock. After a
-  thread's first successful post-seal schedule or first task execution,
-  scheduling is allocation-free on that thread; either first use may initialize
-  platform thread-local runtime state. Atomic task bits coalesce repeated
-  schedules; drains are serialized and visit tasks in registration order.
 - `MaintenanceMetrics` reports schedules, collapsed schedules, executions, and
   capacity failures.
 
-`include/tess/experimental/registered_maintenance.h` adds the fixed-registration
-contract candidate used by the next adapter experiment. It deliberately wraps,
-rather than promotes, the existing backends:
+`include/tess/maintenance/scheduler.h` supplies the fixed-registration
+contract. It deliberately uses a structural customization boundary:
 
 - `RegisteredScheduler<Backend>` preallocates opaque task slots. Tasks register
   during setup and the registry becomes immutable at `seal()`; post-seal
   release retires a slot permanently rather than reusing its identity.
-- `MaintenanceBackend` is a compile-time structural boundary, not a stable
+- `MaintenanceBackend` is a compile-time structural boundary, not a
   virtual ABI. A custom backend supplies construction from capacity, an
   explicit `ScheduleResult`, a `BackendDrainResult` for run/flush, metrics, and
   a no-throw pending query. The facade serializes drain calls, but schedules
@@ -115,15 +111,15 @@ useful authoritative-state evidence but cannot validate dirty masks, content
 or topology versions, residency generations, or derived products, which
 archives intentionally omit.
 
-## External Chunk Adapter
+## Stable External Chunk Adapter
 
-`include/tess/experimental/chunk_maintenance.h` is the first world-backed
-consumer of the registered contract. `ChunkMaintenanceAdapter` remains
-experimental and external to storage: it borrows an immovable `World`, owns
-its scheduler, tasks, handles, and derived product slots, and never changes
-world construction or `ChunkMeta` layout. The caller gives one nonzero dirty
-mask to one clearing owner and a typed rebuild callback. Zero or foreign marks
-are rejected before mutation.
+`include/tess/maintenance/chunk_adapter.h` is the stable world-backed consumer
+of the registered contract. `ChunkMaintenanceAdapter` remains external to
+storage: it borrows an immovable `World`, owns its scheduler, tasks, handles,
+and derived product slots, and never changes world construction or `ChunkMeta`
+layout. Its default backend is stable synchronous `ImmediateScheduler`. The
+caller gives one nonzero dirty mask to one clearing owner and a typed rebuild
+callback. Zero or foreign marks are rejected before mutation.
 
 The operation results are deliberately explicit. `ChunkMarkResult` reports
 accepted and rejected marks; `ChunkProductView` combines a product pointer,
@@ -174,9 +170,12 @@ a structural backend may execute an accepted offer synchronously outside the
 supplied budget. Explicit `retry()` or unbounded `flush()` performs
 re-admission. Warmed adapter scheduling and draining allocate only if the user
 rebuild callback does. The self-checking
-`examples/chunk_maintenance.cc` shows 32 offers collapsing into one rebuild
-while inspecting the dirty mask, content version, product token, and backend
-metrics. An installed-package consumer compiles and runs the same workflow.
+`examples/chunk_maintenance.cc` shows the stable immediate default while
+inspecting the dirty mask, content version, product token, and backend metrics.
+An installed-package consumer compiles and runs the same workflow, and a
+second installed-package consumer proves registration, opaque handles, sparse
+residency, budgeted draining through a consumer-defined structural backend,
+explicit flush, and checked shutdown against only stable spellings.
 
 Queued backends allocate their pointer ring only during construction. A task
 must outlive its scheduler or a completed `flush()`. Destroying a scheduler
@@ -217,26 +216,31 @@ Coalescing is not exact-event delivery. Authoritative gameplay events remain
 on exact queues and simulation phases. Explicit flush points define when a
 consumer may depend on completed derived state.
 
-## Promotion Decision
+## Experimental Backends and Promotion Decision
 
-The registered dirty-bit backend passed the experimental promotion criteria
-and is the default backend behind the experimental external chunk-maintenance
-adapter. It passes deterministic 1,000-run flush, canonical archive
-equivalence, concurrency, generation-safe dirty clear, budget, exception,
-shutdown, and steady-state allocation contracts; the maintenance suite is
-also clean under ASan/UBSan and TSan. It collapses 512 dense schedules to one
-execution.
+`include/tess/experimental/maintenance.h` retains the virtual
+`MaintenanceScheduler` interface plus the `FifoScheduler`,
+`CoalescingScheduler`, and registered `DirtyBitScheduler` backends. The
+stable facade does not re-export them. An application
+may explicitly supply one of those types as a backend, but doing so does not
+make that backend or the virtual interface stable.
 
-In the local evaluation, dirty-bit scheduling was faster than immediate
-execution for the sparse synthetic case, reduced p95 latency against FIFO by
-more than 75% in sparse, dense, and mixed dirty-chunk workloads, and had the
-lowest deferred sparse flush time. It also beat queued coalescing by more than
-20% in all three chunk workloads, selecting the dirty-bit fallback under the
-TDD's conditional rule. The new scenario thresholds remain informational
-until representative Linux main-tier calibration exists.
+The registered dirty-bit implementation passed correctness, determinism,
+generation-safe clear, exception, shutdown, allocation, ASan/UBSan, and TSan
+gates. In the controlled portable campaign, its M3 result was flat with no
+material regression. The Steam Deck result was a material regression against
+the immediate guardrail in budgeted, flush, and the 256- and 1,024-task scaling
+workloads; the 4,096-task scaling result was inconclusive. The cross-hardware
+rule therefore keeps dirty-bit experimental. FIFO and queued coalescing remain
+experimental comparison machinery for the same reason.
 
-The API and external adapter remain experimental and opt-in. No scheduler is
-embedded in world storage, world construction is unchanged, and exact event
-and authoritative simulation paths remain outside maintenance. Portable
-promotion evidence over the adapter is the next gate. See the optimization log
-and design-decision history for the measurements and boundary.
+The stable adapter defaults to the measured immediate implementation. No
+measured implementation body, adapter body, MNT-3 campaign configuration,
+compiler or benchmark flag, benchmark, or fixture changed during graduation,
+so the campaign remains representative. The generic paired-sentinel source map
+now identifies the stable alias directory as requiring the dedicated campaign;
+that CI metadata was not an MNT-3 measurement input. No scheduler is embedded
+in world storage, world construction is unchanged, and exact events and
+authoritative simulation paths remain outside maintenance. See the
+optimization log and design-decision history for the retained measurements and
+authority decision.

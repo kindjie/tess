@@ -13,6 +13,7 @@ from header_manifest import load_header_manifest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = REPO_ROOT / "cmake" / "tess-headers.json"
 STABLE_AGGREGATES = (
+    "include/tess/maintenance.h",
     "include/tess/pathfinding.h",
     "include/tess/simulation.h",
     "include/tess/tess.h",

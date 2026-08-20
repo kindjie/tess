@@ -126,7 +126,11 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_smoke)
 
-tess_discover_tests(tess_smoke LABELS block core diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
+tess_discover_tests(
+  tess_smoke
+  LABELS block core diagnostics ecs experimental gpu maintenance ops path
+    persistence query sim spatial storage topology
+)
 
 # The Python artifact test links and runs this fixture directly against the
 # extracted archive. Keep it in the dev compilation database so changed-source
@@ -149,7 +153,7 @@ tess_apply_project_options(tess_upgrade_1_0_test)
 
 tess_discover_tests(
   tess_upgrade_1_0_test
-  LABELS block core diagnostics gpu ops path sim storage topology
+  LABELS block core diagnostics gpu maintenance ops path sim storage topology
 )
 
 if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
@@ -200,7 +204,7 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
     tess_no_exceptions_test
     ARGUMENT MaintenanceSchedulersRunOrdinaryTasks
     CONFIGS noexceptions
-    LABELS experimental
+    LABELS experimental maintenance
   )
   tess_add_test(
     TessNoExceptions.PathfindingAndTopologyRunThroughAggregateHeaders
@@ -362,7 +366,11 @@ target_link_libraries(
   tess_consumer_contract_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_consumer_contract_test)
 
-tess_discover_tests(tess_consumer_contract_test LABELS block core debug diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
+tess_discover_tests(
+  tess_consumer_contract_test
+  LABELS block core debug diagnostics ecs experimental gpu maintenance ops path
+    persistence query sim spatial storage topology
+)
 
 if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
    (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU" OR MSVC))
@@ -385,7 +393,7 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
     TessNoExceptions.ConsumerContract
     tess_no_exceptions_consumer_contract_test
     CONFIGS noexceptions
-    LABELS block core debug diagnostics ecs experimental gpu ops
+    LABELS block core debug diagnostics ecs experimental gpu maintenance ops
       path persistence query sim spatial storage topology
   )
 endif()
@@ -679,7 +687,9 @@ target_link_libraries(
   tess_maintenance_contract_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_maintenance_contract_test)
 tess_discover_tests(
-  tess_maintenance_contract_test LABELS core diagnostics experimental)
+  tess_maintenance_contract_test
+  LABELS core diagnostics experimental maintenance
+)
 
 # The contract's lifecycle failures are unconditional. Run the same death
 # tests with assertions compiled out so a TESS_ASSERT regression cannot pass.
@@ -695,7 +705,8 @@ tess_apply_project_options(tess_maintenance_contract_ndebug_test)
 tess_discover_tests(
   tess_maintenance_contract_ndebug_test
   PREFIX ndebug.
-  LABELS core diagnostics experimental)
+  LABELS core diagnostics experimental maintenance
+)
 
 add_executable(
   tess_chunk_maintenance_test
@@ -706,7 +717,7 @@ target_link_libraries(
   tess_chunk_maintenance_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_chunk_maintenance_test)
 tess_discover_tests(
-  tess_chunk_maintenance_test LABELS core experimental storage)
+  tess_chunk_maintenance_test LABELS core experimental maintenance storage)
 
 add_executable(
   tess_queued_planning_test

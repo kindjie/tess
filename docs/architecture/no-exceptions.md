@@ -122,7 +122,7 @@ resource failures remain outside the contract.
 | Queued dirty collection | vector `reserve`, insertion, and `sort` | aggregate record count before source consumption | allocation during reserve |
 | Scoped and pooled executors | vector growth, `thread` construction, mutexes, and condition variables | operation ranges and status results | allocation, thread, or synchronization resource failure |
 | Schedule and auto-exec | task/result vector growth and erased callback invocation | existing cadence, plan, and status validation | allocation or application callback failure |
-| Maintenance and topology | container growth, provider calls, moves, and swaps | existing bounds, identity, shape, and capacity checks before practical mutation points | allocation or throwing provider/value operation |
+| Stable maintenance and topology | container growth, maintenance callbacks, provider calls, moves, and swaps | existing bounds, handle identity, shape, and capacity checks before practical mutation points | allocation or throwing callback/provider/value operation |
 | Storage and path algorithms | vector growth and caller-supplied policy operations | existing coordinate, shape, arithmetic, and explicit status checks | allocation or throwing caller operation |
 
 The build does not disable unwind tables, frame pointers, debug information,
@@ -134,8 +134,10 @@ handling.
 CI compiles and runs the mode with Clang plus ASan/UBSan, GCC under
 warnings-as-errors, and native MSVC. It builds standalone headers, macro
 configurations, representative runtime behavior, an installed consumer, and
-a FetchContent consumer in each supported compiler family. Complete examples
-are additionally built and run with Clang or GCC.
+a FetchContent consumer in each supported compiler family. Those consumers
+exercise the stable maintenance facade and immediate backend without RTTI as
+well as in the configured exception mode. Complete examples are additionally
+built and run with Clang or GCC.
 
 AppleClang uses the Clang-family `-fno-exceptions` recipe, but CI does not
 duplicate the exception-free contract suite on macOS. Linux Clang supplies

@@ -41,6 +41,23 @@ target_link_libraries(tess_install_consumer PRIVATE tess::tess)
 
 add_executable(tess_install_chunk_maintenance chunk_maintenance.cc)
 target_link_libraries(tess_install_chunk_maintenance PRIVATE tess::tess)
+
+add_executable(tess_install_maintenance_workflow maintenance_workflow.cc)
+target_link_libraries(tess_install_maintenance_workflow PRIVATE tess::tess)
+
+foreach(maintenance_consumer tess_install_chunk_maintenance
+        tess_install_maintenance_workflow)
+  if(MSVC)
+    target_compile_options(${maintenance_consumer} PRIVATE /GR-)
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(${maintenance_consumer} PRIVATE -fno-rtti)
+  else()
+    message(
+      FATAL_ERROR
+        "maintenance no-RTTI consumer uses an unsupported compiler"
+    )
+  endif()
+endforeach()
 target_compile_definitions(
   tess_install_consumer
   PRIVATE
@@ -62,12 +79,19 @@ if(TESS_NO_EXCEPTIONS)
   endif()
   target_compile_definitions(
     tess_install_consumer PRIVATE TESS_EXPECT_NO_EXCEPTIONS=1)
-  if(MSVC)
-    target_compile_options(tess_install_chunk_maintenance PRIVATE /EHs-c-)
-    target_compile_definitions(
-      tess_install_chunk_maintenance PRIVATE _HAS_EXCEPTIONS=0)
-  else()
-    target_compile_options(tess_install_chunk_maintenance PRIVATE
-                           -fno-exceptions)
-  endif()
+  foreach(maintenance_consumer tess_install_chunk_maintenance
+          tess_install_maintenance_workflow)
+    if(MSVC)
+      target_compile_options(${maintenance_consumer} PRIVATE /EHs-c-)
+      target_compile_definitions(
+        ${maintenance_consumer} PRIVATE _HAS_EXCEPTIONS=0)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+      target_compile_options(${maintenance_consumer} PRIVATE -fno-exceptions)
+    else()
+      message(
+        FATAL_ERROR
+          "maintenance no-exceptions consumer uses an unsupported compiler"
+      )
+    endif()
+  endforeach()
 endif()

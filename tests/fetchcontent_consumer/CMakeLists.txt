@@ -21,6 +21,16 @@ endif()
 
 add_executable(tess_fetchcontent_consumer main.cc)
 target_link_libraries(tess_fetchcontent_consumer PRIVATE tess::tess)
+if(MSVC)
+  target_compile_options(tess_fetchcontent_consumer PRIVATE /GR-)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(tess_fetchcontent_consumer PRIVATE -fno-rtti)
+else()
+  message(
+    FATAL_ERROR
+      "maintenance no-RTTI consumer uses an unsupported compiler"
+  )
+endif()
 if(TESS_NO_EXCEPTIONS)
   if(MSVC)
     target_compile_options(tess_fetchcontent_consumer PRIVATE /EHs-c-)

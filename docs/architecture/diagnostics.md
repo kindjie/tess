@@ -246,7 +246,8 @@ are plain ungated data — unlike the macro-gated counter sinks above,
 they exist in every build, because flows update them deterministically
 at their own transition points rather than through instrumentation
 macros. A caller attaches a `FlowAccounting` to one flow (the resumable
-work queue, an event stream, an experimental maintenance scheduler, or
+work queue, an event stream, a stable or experimental maintenance
+scheduler, or
 the path-agent goal lifecycle through its tick state) while the flow is
 empty, keeps it alive for the attachment, and calls the flow's
 `observe_flow_tick` once per simulation tick with a monotonic tick.

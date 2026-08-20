@@ -77,6 +77,9 @@
     "include/tess/gpu/": {
       "unrepresented": "no benchmarks exist; the CPU stays authoritative and consumers own GPU pipelines"
     },
+    "include/tess/maintenance/": {
+      "unrepresented": "stable aliases over maintenance implementations require the dedicated controlled-hardware campaign; generic paired sentinels cannot observe them"
+    },
     "include/tess/ops/": [
       "parallel/chunk_compute_pool_w4",
       "queued/plan_frame_dense_64"

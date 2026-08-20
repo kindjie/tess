@@ -21,6 +21,7 @@ def write_manifest(root: Path, classes: dict[str, list[str]]) -> Path:
 def complete_classes() -> dict[str, list[str]]:
   return {
       "stable": [
+          "include/tess/maintenance.h",
           "include/tess/pathfinding.h",
           "include/tess/simulation.h",
           "include/tess/tess.h",
