@@ -537,6 +537,7 @@ jobs:
           tests/test_no_exceptions_manifest.py
           tests/test_paired_bench.py
           tests/test_maintenance_campaign.py
+          tests/test_maintenance_evidence_archive.py
           tests/test_check_counter_goldens.py
           tests/test_benchmark_changepoint.py
           tests/test_coverage_gaps.py

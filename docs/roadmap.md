@@ -67,8 +67,9 @@ without maintaining a second exhaustive list.
 - A registered `DirtyBitScheduler` passed its experimental backend-selection
   gates, and an external fixed-slot chunk-maintenance adapter now exercises
   dense and sparse residency without integrating handles into world storage.
-  Both remain opt-in under `tess::experimental` pending portable promotion
-  evidence.
+  Portable M3 and Steam Deck promotion evidence keeps `DirtyBitScheduler`
+  experimental; the separately validated task, handle, result, adapter, and
+  immediate-execution contract is eligible for stable graduation in v0.13.
 - Budgeted-progress benchmark infrastructure, controlled-hardware campaign
   tooling, and further diagnostics and correctness fixes have landed. The
   [budgeted-progress record][budgeted-progress] preserves its staged design

@@ -162,16 +162,23 @@ phase-output existence checks prevent a rerun from overwriting evidence;
 retrieved phase checksums are verified locally. Use a new run ID and results
 directory for every rerun. Do not edit the bundle between device legs.
 
-The retained evidence bundle contains sanitized raw calibration and candidate
-JSON, threshold manifests, per-device reports, the cross-device decision,
-build manifests, the exact binary/config/tool/benchmark-source bundle,
-sanitized compile and link commands, every invocation's stderr and context,
-governor/environment/phase logs, collection commands, and `SHA256SUMS`. It also
-retains command, exit-status, and exact-tree identity evidence for the full
-normal suite, the deterministic 1,000-run flush gate, ASan/UBSan, TSan,
-warnings-as-errors, archive/rescan/token/dirty-owner/generation checks, and the
-warmed zero-allocation checks. Hostnames, local paths, account data, and
-private infrastructure are excluded. Any rerun records the invalidation reason
-and preserves the superseded raw artifact. The optimization-log fragment
-records the bundle location and digest, the result, limits, and
-reconsideration condition.
+The retained evidence bundle contains provenance bindings, measured
+binaries, and manifests — not full source, compiler, or build trees, which
+it identifies by digest and recorded identity only: sanitized raw
+calibration and candidate JSON, threshold manifests, per-device reports,
+the cross-device decision, build manifests, the exact
+binary/config/tool/benchmark-source stage files, sanitized compile and
+link commands, every invocation's stderr and context,
+governor/environment/phase logs, collection commands, and `SHA256SUMS`. It
+also retains command, exit-status, and exact-tree identity evidence for
+the full normal suite, the deterministic 1,000-run flush gate, ASan/UBSan,
+TSan, warnings-as-errors,
+archive/rescan/token/dirty-owner/generation checks, and the warmed
+zero-allocation checks. The tracked bundle is a public sanitized
+derivative with its own inner manifest: hostnames, local paths, account
+data, private infrastructure, and raw privilege bodies are excluded, and
+the evidence directory's redaction map pins each sanitized or omitted
+member to its raw digest while the exact operational artifacts stay
+external. Any rerun records the invalidation reason and preserves the
+superseded raw artifact. The optimization-log fragment records the bundle
+location and digests, the result, limits, and reconsideration condition.

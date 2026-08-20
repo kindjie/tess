@@ -23,6 +23,8 @@
 
 ## Point-in-time evidence
 
+- [v0.13 maintenance promotion evidence](evidence/v0.13/maintenance/README.md) —
+  2026-08-20
 - [Pathfinding prototype survey,
   2026-08-18](pathfinding-prototype-survey-2026-08-18.md)
 - [Second full audit, 2026-07-09](audit-2026-07-09.md) and its
