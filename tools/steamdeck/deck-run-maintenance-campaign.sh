@@ -31,7 +31,10 @@ verify_result_set() {
     sha256sum -c "$manifest"
     diff -u \
       <(sed -E 's/^[0-9a-f]{64}  //' "$manifest" | LC_ALL=C sort) \
-      <(find . -type f ! -name '*-SHA256SUMS' -print | LC_ALL=C sort)
+      <(
+        find . -mindepth 1 ! -name '*-SHA256SUMS' -print \
+          | LC_ALL=C sort
+      )
     [ "$(find . -type f -name '*-SHA256SUMS' -print)" \
       = './calibration-SHA256SUMS' ]
   )

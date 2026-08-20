@@ -117,40 +117,26 @@ python3 tools/maintenance_campaign.py build-manifest \
   --output "$mnt3_m3_results/build-manifest.json"
 ```
 
-Run `calibrate`, then `thresholds`, using the M3 repetition, minimum-time, and
-seed values in `bench/maintenance-campaign.json`. `collect` and `analyze` both
-require the retained `calibration.json`; they recompute the threshold manifest
-and require exact equality before accepting it. `collect` then embeds both the
-threshold digest and calibration digest. Pass only the device-specific values
-frozen in the config; deviations fail closed. After both reports exist, run
-`decide` with exactly those two reports and the frozen config.
+The native whole-phase runner reads the M3 repetition, minimum-time, and seed
+values from `bench/maintenance-campaign.json`. It writes a complete phase
+checksum even on failure and refuses calibration unless the build manifest is
+the directory's only entry. Every phase also requires repository `HEAD` to be
+the build manifest's source commit with no tracked changes. Candidate
+collection requires the exact retained calibration inventory and refuses every
+partial prior candidate attempt. Use a new empty results directory and build
+manifest for every rerun.
 
 ```sh
-python3 tools/maintenance_campaign.py calibrate \
-  --binary build/bench-only/bench/tess_bench_maintenance_campaign \
-  --config bench/maintenance-campaign.json --device m3 \
-  --build-manifest "$mnt3_m3_results/build-manifest.json" \
-  --repetitions 30 --minimum-time 0.05 --seed 130013 \
-  --output "$mnt3_m3_results/calibration.json"
-python3 tools/maintenance_campaign.py thresholds \
-  --input "$mnt3_m3_results/calibration.json" \
-  --config bench/maintenance-campaign.json \
-  --output "$mnt3_m3_results/thresholds.json"
-python3 tools/maintenance_campaign.py collect \
-  --binary build/bench-only/bench/tess_bench_maintenance_campaign \
-  --config bench/maintenance-campaign.json --device m3 \
-  --build-manifest "$mnt3_m3_results/build-manifest.json" \
-  --calibration "$mnt3_m3_results/calibration.json" \
-  --thresholds "$mnt3_m3_results/thresholds.json" \
-  --repetitions 30 --minimum-time 0.05 --seed 130031 \
-  --output "$mnt3_m3_results/candidate.json"
-python3 tools/maintenance_campaign.py analyze \
-  --input "$mnt3_m3_results/candidate.json" \
-  --config bench/maintenance-campaign.json \
-  --calibration "$mnt3_m3_results/calibration.json" \
-  --thresholds "$mnt3_m3_results/thresholds.json" \
-  --output "$mnt3_m3_results/report.json"
+tools/maintenance-campaign-native.sh calibration "$mnt3_m3_results"
+tools/maintenance-campaign-native.sh candidate "$mnt3_m3_results"
 ```
+
+The runner invokes `calibrate` then `thresholds` in its calibration phase.
+`collect` and `analyze` both require the retained `calibration.json`; they
+recompute the threshold manifest and require exact equality before accepting
+it. `collect` also embeds the threshold and calibration digests. After both
+device reports exist, run `decide` with exactly those reports and the frozen
+config.
 
 The Deck route is deliberately separate from the generic one-binary benchmark
 helper. Stage and hash the complete cross-built bundle without contacting the

@@ -2,12 +2,17 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 
 import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+NATIVE_RUNNER = ROOT / "tools" / "maintenance-campaign-native.sh"
 SPEC = importlib.util.spec_from_file_location(
   "maintenance_campaign", ROOT / "tools" / "maintenance_campaign.py"
 )
@@ -585,6 +590,188 @@ def test_collection_rejects_unplanned_parameters(tmp_path: Path):
       minimum_time_seconds=0.01,
       seed=999,
     )
+
+
+def test_native_phase_runner_preserves_failed_candidate_artifacts(
+  tmp_path: Path,
+):
+  repo = tmp_path / "repo"
+  tools = repo / "tools"
+  bench = repo / "bench"
+  binary = (
+    repo
+    / "build"
+    / "bench-only"
+    / "bench"
+    / "tess_bench_maintenance_campaign"
+  )
+  results = tmp_path / "results"
+  fake_bin = tmp_path / "fake-bin"
+  tools.mkdir(parents=True)
+  bench.mkdir()
+  binary.parent.mkdir(parents=True)
+  results.mkdir()
+  fake_bin.mkdir()
+  shutil.copy2(NATIVE_RUNNER, tools / NATIVE_RUNNER.name)
+  (tools / "maintenance_campaign.py").write_text("# fake\n", encoding="utf-8")
+  binary.write_text("fake binary\n", encoding="utf-8")
+  binary.chmod(0o755)
+  (bench / "maintenance-campaign.json").write_text(
+    json.dumps(
+      {
+        "collection": {
+          "repetitions": 4,
+          "minimum_time_seconds": 0.01,
+          "devices": {
+            "m3": {"calibration_seed": 11, "candidate_seed": 12}
+          },
+        }
+      }
+    ),
+    encoding="utf-8",
+  )
+  subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+  subprocess.run(["git", "add", "."], cwd=repo, check=True)
+  subprocess.run(
+    [
+      "git",
+      "-c",
+      "user.name=Campaign Test",
+      "-c",
+      "user.email=campaign.invalid",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-q",
+      "-m",
+      "fixture",
+    ],
+    cwd=repo,
+    check=True,
+  )
+  source_sha = subprocess.run(
+    ["git", "rev-parse", "HEAD"],
+    cwd=repo,
+    check=True,
+    capture_output=True,
+    text=True,
+  ).stdout.strip()
+  (results / "build-manifest.json").write_text(
+    json.dumps({"source_sha": source_sha}) + "\n", encoding="utf-8"
+  )
+  fake_python = fake_bin / "python3"
+  fake_python.write_text(
+    """#!/usr/bin/env bash
+set -eu
+if [ "${1:-}" = "--version" ]; then
+  echo "Python test"
+  exit 0
+fi
+if [ "${1:-}" = "-" ]; then
+  exec "$REAL_PYTHON" "$@"
+fi
+command="${2:-}"
+if [ -n "${FAKE_FAIL_COMMAND:-}" ] \
+  && [ "$FAKE_FAIL_COMMAND" = "$command" ]; then
+  echo "injected $command failure" >&2
+  exit 7
+fi
+output=
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output="$2"
+    break
+  fi
+  shift
+done
+[ -n "$output" ]
+printf '{}\\n' > "$output"
+""",
+    encoding="utf-8",
+  )
+  fake_python.chmod(0o755)
+  environment = {
+    **os.environ,
+    "PATH": f"{fake_bin}:{os.environ['PATH']}",
+    "REAL_PYTHON": sys.executable,
+  }
+  runner = tools / NATIVE_RUNNER.name
+
+  calibration = subprocess.run(
+    [str(runner), "calibration", str(results)],
+    cwd=repo,
+    env=environment,
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert calibration.returncode == 0, calibration.stderr
+  assert (results / "calibration-SHA256SUMS").is_file()
+
+  repeated_calibration = subprocess.run(
+    [str(runner), "calibration", str(results)],
+    cwd=repo,
+    env=environment,
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert repeated_calibration.returncode != 0
+
+  failed_candidate = subprocess.run(
+    [str(runner), "candidate", str(results)],
+    cwd=repo,
+    env={**environment, "FAKE_FAIL_COMMAND": "collect"},
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert failed_candidate.returncode == 7
+  assert (results / "candidate-SHA256SUMS").is_file()
+  assert (results / "candidate-exit-status.txt").read_text(
+    encoding="utf-8"
+  ) == "7\n"
+  assert "injected collect failure" in (
+    results / "candidate.stderr.log"
+  ).read_text(encoding="utf-8")
+  verified = subprocess.run(
+    ["shasum", "-a", "256", "-c", "candidate-SHA256SUMS"],
+    cwd=results,
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert verified.returncode == 0, verified.stderr
+
+  repeated_candidate = subprocess.run(
+    [str(runner), "candidate", str(results)],
+    cwd=repo,
+    env=environment,
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert repeated_candidate.returncode != 0
+  assert "result set" in repeated_candidate.stderr
+
+  fresh_results = tmp_path / "fresh-results"
+  fresh_results.mkdir()
+  (fresh_results / "build-manifest.json").write_text(
+    json.dumps({"source_sha": source_sha}) + "\n", encoding="utf-8"
+  )
+  (tools / "maintenance_campaign.py").write_text(
+    "# dirty fake\n", encoding="utf-8"
+  )
+  dirty_source = subprocess.run(
+    [str(runner), "calibration", str(fresh_results)],
+    cwd=repo,
+    env=environment,
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert dirty_source.returncode != 0
+  assert "clean source commit" in dirty_source.stderr
 
 
 def test_toolchain_manifest_rejects_incomplete_identity(tmp_path: Path):
