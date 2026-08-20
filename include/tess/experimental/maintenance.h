@@ -2,6 +2,7 @@
 
 #include <tess/core/assert.h>
 #include <tess/core/config.h>
+#include <tess/core/fail_fast.h>
 #include <tess/diagnostics/diagnostics.h>
 
 #include <atomic>
@@ -42,8 +43,26 @@ class MaintenanceBudget {
 /// Long-lived derived-state maintenance operation.
 class MaintenanceTask {
  public:
-  virtual ~MaintenanceTask() = default;
+  MaintenanceTask() = default;
+  MaintenanceTask(const MaintenanceTask&) = delete;
+  auto operator=(const MaintenanceTask&) -> MaintenanceTask& = delete;
+  MaintenanceTask(MaintenanceTask&&) = delete;
+  auto operator=(MaintenanceTask&&) -> MaintenanceTask& = delete;
+
+  virtual ~MaintenanceTask() {
+    if (registration_epoch_.load(std::memory_order_relaxed) != 0) {
+      ::tess::detail::fail_fast(
+          "MaintenanceTask destroyed while registered; release it or "
+          "destroy its registered scheduler first");
+    }
+  }
   virtual void run(MaintenanceBudget& budget) = 0;
+
+ private:
+  template <typename Backend>
+  friend class RegisteredScheduler;
+
+  std::atomic<std::uint64_t> registration_epoch_ = 0;
 };
 
 /// Scheduler observations used by experiments and diagnostics.
@@ -82,6 +101,9 @@ class MaintenanceScheduler {
   [[nodiscard]] virtual auto flush() -> bool = 0;
 
   [[nodiscard]] virtual auto metrics() const noexcept -> MaintenanceMetrics = 0;
+
+  /** Returns whether this backend currently retains reachable work. */
+  [[nodiscard]] virtual auto has_pending() const noexcept -> bool = 0;
 };
 
 namespace detail {
@@ -347,6 +369,11 @@ class QueuedScheduler : public MaintenanceScheduler {
     return metrics_.snapshot();
   }
 
+  [[nodiscard]] auto has_pending() const noexcept -> bool override {
+    const auto lock = std::scoped_lock{queue_mutex_};
+    return !queue_.empty() || running_active_;
+  }
+
   /**
    * Attaches caller-owned flow accounting; null detaches.
    *
@@ -578,6 +605,11 @@ class ImmediateScheduler final : public MaintenanceScheduler {
     return metrics_.snapshot();
   }
 
+  [[nodiscard]] auto has_pending() const noexcept -> bool override {
+    const auto run_lock = std::scoped_lock{run_mutex_};
+    return active_run_ != nullptr;
+  }
+
   /**
    * Attaches caller-owned flow accounting; null detaches.
    *
@@ -637,7 +669,7 @@ class ImmediateScheduler final : public MaintenanceScheduler {
   }
 
   detail::MetricsStore metrics_;
-  std::recursive_mutex run_mutex_;
+  mutable std::recursive_mutex run_mutex_;
   ActiveRun* active_run_ = nullptr;
   diagnostics::FlowAccounting* accounting_ = nullptr;
 };
@@ -735,6 +767,15 @@ class DirtyBitScheduler final : public MaintenanceScheduler {
 
   [[nodiscard]] auto metrics() const noexcept -> MaintenanceMetrics override {
     return metrics_.snapshot();
+  }
+
+  [[nodiscard]] auto has_pending() const noexcept -> bool override {
+    for (const auto& word : pending_) {
+      if (word.load(std::memory_order_acquire) != 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
  private:

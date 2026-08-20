@@ -19,7 +19,9 @@ world or scheduler adopts the experiment implicitly.
   consumes no budget returns `false` to report that the synchronous backend
   cannot make progress. A recursive scheduler lock serializes concurrent
   callers while permitting a running task to schedule itself or another task;
-  each external `schedule()` returns only after its own request executes.
+  each external `schedule()` returns only after its own request executes. If a
+  callback throws, its active trampoline frame is discarded, including
+  reentrant follow-ups accepted into that call-local frame.
 - `FifoScheduler` is a bounded, non-deduplicating amplification baseline.
 - `CoalescingScheduler` retains at most one pending entry per task. Its
   preallocated membership index makes admission independent of queue depth.
@@ -32,6 +34,85 @@ world or scheduler adopts the experiment implicitly.
   schedules; drains are serialized and visit tasks in registration order.
 - `MaintenanceMetrics` reports schedules, collapsed schedules, executions, and
   capacity failures.
+
+`include/tess/experimental/registered_maintenance.h` adds the fixed-registration
+contract candidate used by the next adapter experiment. It deliberately wraps,
+rather than promotes, the existing backends:
+
+- `RegisteredScheduler<Backend>` preallocates opaque task slots. Tasks register
+  during setup and the registry becomes immutable at `seal()`; post-seal
+  release retires a slot permanently rather than reusing its identity.
+- `MaintenanceBackend` is a compile-time structural boundary, not a stable
+  virtual ABI. A custom backend supplies construction from capacity, an
+  explicit `ScheduleResult`, a `BackendDrainResult` for run/flush, metrics, and
+  a no-throw pending query. The facade serializes drain calls, but schedules
+  may arrive concurrently with each other and with a drain. A custom backend
+  must linearize scheduling against pending observations and drains, avoid
+  concurrent invocation of one task, and allow a callback to schedule through
+  the same facade. On normal return, `Accepted` linearizes when the offer
+  executes synchronously or is retained/coalesced without loss.
+  `CapacityExhausted` retains and executes none of that offer, so the caller
+  may retry. `has_pending()`
+  linearizes against those operations and reports work still retained at its
+  observation; a concurrent drain may consume accepted work before its
+  `schedule()` call returns. Metrics are thread-safe and monotonic but their
+  no-throw diagnostic snapshot need not be transactional across fields while
+  operations are in flight.
+  If a callback throws, that invocation is consumed rather than restored and
+  its execution is counted. Offers coalesced into the same synchronous
+  call-local invocation are consumed with it; every independently retained
+  accepted offer remains reachable. This is observable with the immediate
+  backend, whose reentrant follow-ups belong to its active call frame. The
+  exception itself propagates verbatim; authoritative dirty/version state
+  remains responsible for deciding whether to retry.
+  `FixedRegistrationBackend` optionally adds `register_task()` and `seal()` as
+  a required pair for implementations such as dirty-bit. At facade sealing,
+  each live slot is registered once in slot order before one backend seal. Both
+  hooks are no-throw; a rejected registration is an unrecoverable capacity
+  mismatch, so partially published setup cannot escape through an exception.
+  The facade owns fixed registration when those hooks are absent.
+- `MaintenanceHandle` contains private owner-epoch, slot, and generation state.
+  Handles are copyable value tokens, but registered tasks and schedulers are
+  non-copyable and non-movable. A task must outlive its registration. Destroying
+  the scheduler releases every task; destroying a still-registered task fails
+  fast in every build.
+- `try_schedule()` returns no value for expected stale or foreign-handle
+  uncertainty without scheduling work or changing scheduler metrics.
+  `schedule()` fails fast for the same misuse. Registration after sealing,
+  cross-scheduler task ownership, repeated unchecked release, and lifecycle
+  mutation from a callback also fail fast independently of assertions. A
+  callback may schedule another task through the same registered scheduler;
+  nested identity, scheduling, drain, or lifecycle operations on a different
+  registered scheduler fail fast across all backend types, avoiding an
+  implicit cross-owner lock order. Calling a drain reentrantly from a callback
+  also fails fast. The no-throw, read-only `metrics()` snapshot is deliberately
+  callable from any callback owner.
+- `ScheduleResult` distinguishes accepted work, retryable queue-capacity
+  exhaustion, and an immediate zero-progress stall. `DrainResult`
+  distinguishes a positive idle observation, work drained to quiescence,
+  budget exhaustion with reachable work, and a zero-progress stall.
+  Callback exceptions continue to propagate verbatim; the contract does not
+  replace their type and message with a status. The throwing invocation and
+  synchronous call-local follow-ups are consumed, independently retained
+  accepted work remains reachable, and authoritative dirty/version state
+  remains responsible for the caller's retry decision.
+- `try_release()` returns a `ReleaseResult` that distinguishes release, invalid
+  identity, and missing idle evidence. Release never cancels work. After
+  sealing, a separate drain must return `Idle` after the last accepted schedule
+  before release is allowed; a `Drained` result requires one more observation.
+  An in-flight schedule prevents that drain from returning `Idle`. Operations
+  use a lifecycle barrier so release cannot race scheduling or draining through
+  the wrapper.
+
+`Idle` means only that the scheduler observed no reachable execution at entry
+or exit without an intervening accepted schedule. It does not prove external
+dirty state is clean, exclude a producer that has not scheduled its dirty
+signal, or make world/residency mutation safe. An adapter must separately own
+the producer and residency transition around its quiescent boundary: close and
+join producers before the drain that establishes `Idle`, then keep them closed
+through the residency transition. Likewise, canonical archive equality is
+useful authoritative-state evidence but cannot validate dirty flags, versions,
+residency generations, or derived products, which archives intentionally omit.
 
 Queued backends allocate their pointer ring only during construction. A task
 must outlive its scheduler or a completed `flush()`. Destroying a scheduler

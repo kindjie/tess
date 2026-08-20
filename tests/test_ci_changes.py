@@ -201,6 +201,7 @@ def test_cli_writes_github_output_and_reason(monkeypatch, capsys):
     "include/tess/ops/result_channel.h",
     "include/tess/ops/queued.h",
     "include/tess/experimental/maintenance.h",
+    "include/tess/experimental/registered_maintenance.h",
     "include/tess/gpu/webgpu_backend.h",
     "include/tess/diagnostics/trace.h",
     "include/tess/sim/schedule.h",
@@ -425,6 +426,7 @@ def test_perf_sensitive_paths_select_the_paired_run(path):
     "include/tess/debug/imgui/panels.h",
     "include/tess/diagnostics/trace.h",
     "include/tess/experimental/maintenance.h",
+    "include/tess/experimental/registered_maintenance.h",
   ),
 )
 def test_perf_insensitive_paths_skip_the_paired_run(path):

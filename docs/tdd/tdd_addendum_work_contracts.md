@@ -2,7 +2,13 @@
 
 ## Status
 
-Proposed addendum. Do not integrate into the core library until the success criteria below are met.
+Historical design intent. The experiments landed without changing world
+construction, and the maintained contract is documented in
+`docs/architecture/maintenance.md`. The fixed registered candidate deliberately
+diverges from the raw-pointer/boolean sketches below: it uses opaque
+owner-and-generation handles, explicit operational results, checked stale
+operations, and unconditional lifecycle failures. Backend promotion and the
+external chunk adapter remain separately gated.
 
 ## Context
 

@@ -1,5 +1,6 @@
 #include <tess/core/config.h>
 #include <tess/experimental/maintenance.h>
+#include <tess/experimental/registered_maintenance.h>
 #include <tess/tess.h>
 
 #if !defined(_WIN32)
@@ -240,6 +241,21 @@ auto maintenance_schedulers_run_ordinary_tasks() -> bool {
   TESS_CHECK(queued.run_some(maintenance::MaintenanceBudget{1}));
   TESS_CHECK(queued_task.runs == 1u);
   TESS_CHECK(queued.metrics().executions == 1u);
+
+  MaintenanceProbe registered_task;
+  using Registered =
+      maintenance::RegisteredScheduler<maintenance::DirtyBitScheduler>;
+  Registered registered{1};
+  const auto handle = registered.register_task(registered_task);
+  TESS_CHECK(handle.has_value());
+  registered.seal();
+  TESS_CHECK(registered.schedule(*handle) ==
+             maintenance::ScheduleResult::Accepted);
+  TESS_CHECK(registered.flush() == maintenance::DrainResult::Drained);
+  TESS_CHECK(registered.flush() == maintenance::DrainResult::Idle);
+  TESS_CHECK(registered.try_release(*handle) ==
+             maintenance::ReleaseResult::Released);
+  TESS_CHECK(registered_task.runs == 1u);
   return true;
 }
 

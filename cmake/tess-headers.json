@@ -72,7 +72,8 @@
     "include/tess/gpu/webgpu_backend.h"
   ],
   "experimental": [
-    "include/tess/experimental/maintenance.h"
+    "include/tess/experimental/maintenance.h",
+    "include/tess/experimental/registered_maintenance.h"
   ],
   "implementation-only": [
     "include/tess/core/fail_fast.h",
