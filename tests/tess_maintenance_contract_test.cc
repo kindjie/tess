@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -19,6 +20,16 @@ namespace maintenance = tess::experimental::maintenance;
 
 template <typename Backend>
 using Registered = maintenance::RegisteredScheduler<Backend>;
+
+[[nodiscard]] auto require_handle(
+    const std::optional<maintenance::MaintenanceHandle>& handle)
+    -> maintenance::MaintenanceHandle {
+  if (!handle.has_value()) {
+    ADD_FAILURE() << "expected maintenance registration to succeed";
+    return {};
+  }
+  return *handle;
+}
 
 struct CountingTask final : maintenance::MaintenanceTask {
   std::uint64_t remaining = 1;
@@ -330,25 +341,22 @@ TEST(TessMaintenanceContract, StructuralBackendNeedsNoVirtualBase) {
   CountingTask second;
   CountingTask retry;
   Structural scheduler(3, 2);
-  const auto first_handle = scheduler.register_task(first);
-  const auto second_handle = scheduler.register_task(second);
-  const auto retry_handle = scheduler.register_task(retry);
-  ASSERT_TRUE(first_handle.has_value());
-  ASSERT_TRUE(second_handle.has_value());
-  ASSERT_TRUE(retry_handle.has_value());
+  const auto first_handle = require_handle(scheduler.register_task(first));
+  const auto second_handle = require_handle(scheduler.register_task(second));
+  const auto retry_handle = require_handle(scheduler.register_task(retry));
   scheduler.seal();
 
-  EXPECT_EQ(scheduler.schedule(*first_handle),
+  EXPECT_EQ(scheduler.schedule(first_handle),
             maintenance::ScheduleResult::Accepted);
-  EXPECT_EQ(scheduler.schedule(*second_handle),
+  EXPECT_EQ(scheduler.schedule(second_handle),
             maintenance::ScheduleResult::Accepted);
-  EXPECT_EQ(scheduler.schedule(*retry_handle),
+  EXPECT_EQ(scheduler.schedule(retry_handle),
             maintenance::ScheduleResult::CapacityExhausted);
   EXPECT_EQ(scheduler.metrics().schedule_calls, 3u);
   EXPECT_EQ(scheduler.metrics().capacity_failures, 1u);
   EXPECT_EQ(scheduler.run_some(maintenance::MaintenanceBudget{1}),
             maintenance::DrainResult::BudgetExhausted);
-  EXPECT_EQ(scheduler.schedule(*retry_handle),
+  EXPECT_EQ(scheduler.schedule(retry_handle),
             maintenance::ScheduleResult::Accepted);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Drained);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Idle);
@@ -363,18 +371,16 @@ TEST(TessMaintenanceContract, FixedBackendHooksPublishBeforeScheduling) {
   CountingTask first;
   CountingTask second;
   FixedHook scheduler(2);
-  const auto first_handle = scheduler.register_task(first);
-  const auto second_handle = scheduler.register_task(second);
-  ASSERT_TRUE(first_handle.has_value());
-  ASSERT_TRUE(second_handle.has_value());
+  const auto first_handle = require_handle(scheduler.register_task(first));
+  const auto second_handle = require_handle(scheduler.register_task(second));
   scheduler.seal();
 
   EXPECT_EQ(FixedHookBackend::registration_calls(), 2u);
   EXPECT_EQ(FixedHookBackend::seal_calls(), 1u);
   EXPECT_TRUE(FixedHookBackend::seal_saw_all_registrations());
-  EXPECT_EQ(scheduler.schedule(*second_handle),
+  EXPECT_EQ(scheduler.schedule(second_handle),
             maintenance::ScheduleResult::Accepted);
-  EXPECT_EQ(scheduler.schedule(*first_handle),
+  EXPECT_EQ(scheduler.schedule(first_handle),
             maintenance::ScheduleResult::Accepted);
   EXPECT_EQ(scheduler.run_some(maintenance::MaintenanceBudget{1}),
             maintenance::DrainResult::BudgetExhausted);
@@ -388,14 +394,13 @@ TEST(TessMaintenanceContract, HandleIsOpaqueAndCheckedLookupRejectsForeign) {
   CountingTask task;
   Fifo first(1);
   Fifo second(1);
-  const auto handle = first.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(first.register_task(task));
   first.seal();
   second.seal();
 
-  EXPECT_TRUE(first.valid(*handle));
-  EXPECT_FALSE(second.valid(*handle));
-  EXPECT_FALSE(second.try_schedule(*handle).has_value());
+  EXPECT_TRUE(first.valid(handle));
+  EXPECT_FALSE(second.valid(handle));
+  EXPECT_FALSE(second.try_schedule(handle).has_value());
   EXPECT_EQ(second.metrics().schedule_calls, 0u);
   EXPECT_EQ(second.flush(), maintenance::DrainResult::Idle);
 }
@@ -403,14 +408,13 @@ TEST(TessMaintenanceContract, HandleIsOpaqueAndCheckedLookupRejectsForeign) {
 TEST(TessMaintenanceContract, CheckedStaleHandleDoesNotMutateWorkOrMetrics) {
   CountingTask task;
   Fifo scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
-  EXPECT_EQ(scheduler.try_release(*handle),
+  const auto handle = require_handle(scheduler.register_task(task));
+  EXPECT_EQ(scheduler.try_release(handle),
             maintenance::ReleaseResult::Released);
   scheduler.seal();
 
-  EXPECT_FALSE(scheduler.valid(*handle));
-  EXPECT_FALSE(scheduler.try_schedule(*handle).has_value());
+  EXPECT_FALSE(scheduler.valid(handle));
+  EXPECT_FALSE(scheduler.try_schedule(handle).has_value());
   EXPECT_EQ(scheduler.metrics().schedule_calls, 0u);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Idle);
   EXPECT_EQ(task.executions, 0u);
@@ -421,26 +425,23 @@ TEST(TessMaintenanceContract, OwnerEpochRejectsAHandleAfterAddressReuse) {
   CountingTask second_task;
   std::optional<Fifo> storage;
   storage.emplace(1);
-  const auto stale = storage->register_task(first_task);
-  ASSERT_TRUE(stale.has_value());
+  const auto stale = require_handle(storage->register_task(first_task));
   storage->seal();
   storage.reset();
 
   storage.emplace(1);
-  const auto current = storage->register_task(second_task);
-  ASSERT_TRUE(current.has_value());
+  const auto current = require_handle(storage->register_task(second_task));
   storage->seal();
-  EXPECT_FALSE(storage->valid(*stale));
-  EXPECT_FALSE(storage->try_schedule(*stale).has_value());
-  EXPECT_TRUE(storage->valid(*current));
+  EXPECT_FALSE(storage->valid(stale));
+  EXPECT_FALSE(storage->try_schedule(stale).has_value());
+  EXPECT_TRUE(storage->valid(current));
 }
 
 TEST(TessMaintenanceContract, CapacityAndRegistrationLifecycleAreExplicit) {
   CountingTask first;
   CountingTask second;
   Fifo scheduler(1);
-  const auto first_handle = scheduler.register_task(first);
-  ASSERT_TRUE(first_handle.has_value());
+  const auto first_handle = require_handle(scheduler.register_task(first));
   EXPECT_EQ(scheduler.register_task(first), first_handle);
   EXPECT_FALSE(scheduler.register_task(second).has_value());
   scheduler.seal();
@@ -450,16 +451,14 @@ TEST(TessMaintenanceContract, ScheduleAndDrainResultsRemainDistinct) {
   CountingTask first;
   CountingTask second;
   Fifo scheduler(2);
-  const auto first_handle = scheduler.register_task(first);
-  const auto second_handle = scheduler.register_task(second);
-  ASSERT_TRUE(first_handle.has_value());
-  ASSERT_TRUE(second_handle.has_value());
+  const auto first_handle = require_handle(scheduler.register_task(first));
+  const auto second_handle = require_handle(scheduler.register_task(second));
   scheduler.seal();
 
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Idle);
-  EXPECT_EQ(scheduler.schedule(*first_handle),
+  EXPECT_EQ(scheduler.schedule(first_handle),
             maintenance::ScheduleResult::Accepted);
-  EXPECT_EQ(scheduler.schedule(*second_handle),
+  EXPECT_EQ(scheduler.schedule(second_handle),
             maintenance::ScheduleResult::Accepted);
   EXPECT_EQ(scheduler.run_some(maintenance::MaintenanceBudget{1}),
             maintenance::DrainResult::BudgetExhausted);
@@ -471,18 +470,16 @@ TEST(TessMaintenanceContract, CapacityRejectionIsRetryable) {
   CountingTask first;
   CountingTask second;
   Fifo scheduler(2, 1);
-  const auto first_handle = scheduler.register_task(first);
-  const auto second_handle = scheduler.register_task(second);
-  ASSERT_TRUE(first_handle.has_value());
-  ASSERT_TRUE(second_handle.has_value());
+  const auto first_handle = require_handle(scheduler.register_task(first));
+  const auto second_handle = require_handle(scheduler.register_task(second));
   scheduler.seal();
 
-  EXPECT_EQ(scheduler.schedule(*first_handle),
+  EXPECT_EQ(scheduler.schedule(first_handle),
             maintenance::ScheduleResult::Accepted);
-  EXPECT_EQ(scheduler.schedule(*second_handle),
+  EXPECT_EQ(scheduler.schedule(second_handle),
             maintenance::ScheduleResult::CapacityExhausted);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Drained);
-  EXPECT_EQ(scheduler.schedule(*second_handle),
+  EXPECT_EQ(scheduler.schedule(second_handle),
             maintenance::ScheduleResult::Accepted);
 }
 
@@ -492,15 +489,13 @@ TEST(TessMaintenanceContract, SameOwnerTaskChainMayReturnToActiveTask) {
   Immediate scheduler(2);
   first.scheduler = &scheduler;
   second.scheduler = &scheduler;
-  const auto first_handle = scheduler.register_task(first);
-  const auto second_handle = scheduler.register_task(second);
-  ASSERT_TRUE(first_handle.has_value());
-  ASSERT_TRUE(second_handle.has_value());
-  first.next = *second_handle;
-  second.next = *first_handle;
+  const auto first_handle = require_handle(scheduler.register_task(first));
+  const auto second_handle = require_handle(scheduler.register_task(second));
+  first.next = second_handle;
+  second.next = first_handle;
   scheduler.seal();
 
-  EXPECT_EQ(scheduler.schedule(*first_handle),
+  EXPECT_EQ(scheduler.schedule(first_handle),
             maintenance::ScheduleResult::Accepted);
   EXPECT_EQ(first.executions, 2u);
   EXPECT_EQ(second.executions, 1u);
@@ -510,12 +505,11 @@ TEST(TessMaintenanceContract, StructuralBackendSupportsCallbackReschedule) {
   SelfSchedulingTask<Structural> task;
   Structural scheduler(1);
   task.scheduler = &scheduler;
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
-  task.handle = *handle;
+  const auto handle = require_handle(scheduler.register_task(task));
+  task.handle = handle;
   scheduler.seal();
 
-  EXPECT_EQ(scheduler.schedule(*handle), maintenance::ScheduleResult::Accepted);
+  EXPECT_EQ(scheduler.schedule(handle), maintenance::ScheduleResult::Accepted);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Drained);
   EXPECT_EQ(task.executions, 2u);
 }
@@ -525,12 +519,11 @@ TEST(TessMaintenanceContract, StalledWorkRemainsReachableForCallerRetry) {
   Coalescing scheduler(1);
   task.scheduler = &scheduler;
   task.consume = false;
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
-  task.handle = *handle;
+  const auto handle = require_handle(scheduler.register_task(task));
+  task.handle = handle;
   scheduler.seal();
 
-  ASSERT_EQ(scheduler.schedule(*handle), maintenance::ScheduleResult::Accepted);
+  ASSERT_EQ(scheduler.schedule(handle), maintenance::ScheduleResult::Accepted);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Stalled);
   EXPECT_EQ(task.executions, 1u);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Drained);
@@ -544,14 +537,13 @@ TEST(TessMaintenanceContract,
   ThrowingTask throwing;
   CountingTask later;
   DirtyBit scheduler(2);
-  const auto throwing_handle = scheduler.register_task(throwing);
-  const auto later_handle = scheduler.register_task(later);
-  ASSERT_TRUE(throwing_handle.has_value());
-  ASSERT_TRUE(later_handle.has_value());
+  const auto throwing_handle =
+      require_handle(scheduler.register_task(throwing));
+  const auto later_handle = require_handle(scheduler.register_task(later));
   scheduler.seal();
-  ASSERT_EQ(scheduler.schedule(*throwing_handle),
+  ASSERT_EQ(scheduler.schedule(throwing_handle),
             maintenance::ScheduleResult::Accepted);
-  ASSERT_EQ(scheduler.schedule(*later_handle),
+  ASSERT_EQ(scheduler.schedule(later_handle),
             maintenance::ScheduleResult::Accepted);
 
   try {
@@ -564,12 +556,12 @@ TEST(TessMaintenanceContract,
   EXPECT_EQ(later.executions, 0u);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Drained);
   EXPECT_EQ(later.executions, 1u);
-  EXPECT_EQ(scheduler.try_release(*later_handle),
+  EXPECT_EQ(scheduler.try_release(later_handle),
             maintenance::ReleaseResult::NotIdle);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Idle);
-  EXPECT_EQ(scheduler.try_release(*throwing_handle),
+  EXPECT_EQ(scheduler.try_release(throwing_handle),
             maintenance::ReleaseResult::Released);
-  EXPECT_EQ(scheduler.try_release(*later_handle),
+  EXPECT_EQ(scheduler.try_release(later_handle),
             maintenance::ReleaseResult::Released);
 }
 
@@ -578,14 +570,13 @@ TEST(TessMaintenanceContract,
   ThrowingTask throwing;
   CountingTask later;
   Structural scheduler(2);
-  const auto throwing_handle = scheduler.register_task(throwing);
-  const auto later_handle = scheduler.register_task(later);
-  ASSERT_TRUE(throwing_handle.has_value());
-  ASSERT_TRUE(later_handle.has_value());
+  const auto throwing_handle =
+      require_handle(scheduler.register_task(throwing));
+  const auto later_handle = require_handle(scheduler.register_task(later));
   scheduler.seal();
-  ASSERT_EQ(scheduler.schedule(*throwing_handle),
+  ASSERT_EQ(scheduler.schedule(throwing_handle),
             maintenance::ScheduleResult::Accepted);
-  ASSERT_EQ(scheduler.schedule(*later_handle),
+  ASSERT_EQ(scheduler.schedule(later_handle),
             maintenance::ScheduleResult::Accepted);
 
   EXPECT_THROW(static_cast<void>(scheduler.flush()), std::runtime_error);
@@ -598,11 +589,10 @@ TEST(TessMaintenanceContract,
 TEST(TessMaintenanceContract, ImmediateTaskExceptionPropagatesVerbatim) {
   ThrowingTask task;
   Immediate scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
 
-  EXPECT_THROW(static_cast<void>(scheduler.schedule(*handle)),
+  EXPECT_THROW(static_cast<void>(scheduler.schedule(handle)),
                std::runtime_error);
 }
 
@@ -611,13 +601,12 @@ TEST(TessMaintenanceContract,
   SelfSchedulingThrowingTask<Immediate> task;
   Immediate scheduler(1);
   task.scheduler = &scheduler;
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
-  task.handle = *handle;
+  const auto handle = require_handle(scheduler.register_task(task));
+  task.handle = handle;
   scheduler.seal();
 
   try {
-    static_cast<void>(scheduler.schedule(*handle));
+    static_cast<void>(scheduler.schedule(handle));
     FAIL() << "expected the original callback exception";
   } catch (const std::runtime_error& error) {
     EXPECT_STREQ(error.what(), "maintenance failure after follow-up");
@@ -627,7 +616,7 @@ TEST(TessMaintenanceContract,
   EXPECT_EQ(scheduler.metrics().schedule_calls, 2u);
   EXPECT_EQ(scheduler.metrics().executions, 1u);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Idle);
-  EXPECT_EQ(scheduler.schedule(*handle), maintenance::ScheduleResult::Accepted);
+  EXPECT_EQ(scheduler.schedule(handle), maintenance::ScheduleResult::Accepted);
   EXPECT_FALSE(task.dirty);
   EXPECT_EQ(task.executions, 2u);
   EXPECT_EQ(scheduler.metrics().schedule_calls, 3u);
@@ -639,52 +628,46 @@ TEST(TessMaintenanceContract,
 TEST(TessMaintenanceContract, ReleaseRequiresASeparatePositiveIdleObservation) {
   CountingTask task;
   DirtyBit scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
 
-  EXPECT_EQ(scheduler.try_release(*handle),
-            maintenance::ReleaseResult::NotIdle);
-  ASSERT_EQ(scheduler.schedule(*handle), maintenance::ScheduleResult::Accepted);
+  EXPECT_EQ(scheduler.try_release(handle), maintenance::ReleaseResult::NotIdle);
+  ASSERT_EQ(scheduler.schedule(handle), maintenance::ScheduleResult::Accepted);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Drained);
-  EXPECT_EQ(scheduler.try_release(*handle),
-            maintenance::ReleaseResult::NotIdle);
+  EXPECT_EQ(scheduler.try_release(handle), maintenance::ReleaseResult::NotIdle);
   EXPECT_EQ(scheduler.flush(), maintenance::DrainResult::Idle);
-  EXPECT_EQ(scheduler.try_release(*handle),
+  EXPECT_EQ(scheduler.try_release(handle),
             maintenance::ReleaseResult::Released);
-  EXPECT_EQ(scheduler.try_release(*handle),
+  EXPECT_EQ(scheduler.try_release(handle),
             maintenance::ReleaseResult::InvalidHandle);
 }
 
 TEST(TessMaintenanceContract, SuccessfulScheduleInvalidatesIdleObservation) {
   CountingTask task;
   Coalescing scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
   ASSERT_EQ(scheduler.flush(), maintenance::DrainResult::Idle);
-  ASSERT_EQ(scheduler.schedule(*handle), maintenance::ScheduleResult::Accepted);
+  ASSERT_EQ(scheduler.schedule(handle), maintenance::ScheduleResult::Accepted);
 
-  EXPECT_EQ(scheduler.try_release(*handle),
-            maintenance::ReleaseResult::NotIdle);
+  EXPECT_EQ(scheduler.try_release(handle), maintenance::ReleaseResult::NotIdle);
 }
 
 TEST(TessMaintenanceContract, ConcurrentFacadeOperationsSerializeRelease) {
   BlockingTask task;
   Immediate scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
   ASSERT_EQ(scheduler.flush(), maintenance::DrainResult::Idle);
 
   std::atomic<bool> release_returned = false;
   auto release_result = maintenance::ReleaseResult::InvalidHandle;
-  std::thread producer([&] { static_cast<void>(scheduler.schedule(*handle)); });
+  std::thread producer([&] { static_cast<void>(scheduler.schedule(handle)); });
   while (!task.entered.load(std::memory_order_acquire)) {
     std::this_thread::yield();
   }
   std::thread releaser([&] {
-    release_result = scheduler.try_release(*handle);
+    release_result = scheduler.try_release(handle);
     release_returned.store(true, std::memory_order_release);
   });
   for (int attempt = 0; attempt < 10'000; ++attempt) {
@@ -704,12 +687,11 @@ TEST(TessMaintenanceContract, ConcurrentFacadeOperationsSerializeRelease) {
 TEST(TessMaintenanceContract, ConcurrentImmediateScheduleCannotProduceIdle) {
   BlockingTask task;
   Immediate scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
 
   auto schedule_result = maintenance::ScheduleResult::Stalled;
-  std::thread producer([&] { schedule_result = scheduler.schedule(*handle); });
+  std::thread producer([&] { schedule_result = scheduler.schedule(handle); });
   while (!task.entered.load(std::memory_order_acquire)) {
     std::this_thread::yield();
   }
@@ -744,8 +726,7 @@ TEST(TessMaintenanceContract, ConcurrentImmediateScheduleCannotProduceIdle) {
 TEST(TessMaintenanceContract, ConcurrentProducersUseTheHandleFacade) {
   CountingTask task;
   Coalescing scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
 
   std::atomic<bool> start = false;
@@ -756,7 +737,7 @@ TEST(TessMaintenanceContract, ConcurrentProducersUseTheHandleFacade) {
         std::this_thread::yield();
       }
       for (int call = 0; call < 10'000; ++call) {
-        EXPECT_EQ(scheduler.schedule(*handle),
+        EXPECT_EQ(scheduler.schedule(handle),
                   maintenance::ScheduleResult::Accepted);
       }
     });
@@ -776,8 +757,7 @@ TEST(TessMaintenanceContract,
   constexpr auto offers = std::uint64_t{2'000};
   ConcurrentTask task;
   Structural scheduler(1, 32);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
 
   std::atomic<bool> producer_done = false;
@@ -785,7 +765,7 @@ TEST(TessMaintenanceContract,
   std::thread producer([&] {
     for (std::uint64_t offer = 0; offer < offers; ++offer) {
       for (;;) {
-        const auto result = scheduler.schedule(*handle);
+        const auto result = scheduler.schedule(handle);
         if (result == maintenance::ScheduleResult::Accepted) {
           break;
         }
@@ -818,11 +798,10 @@ TEST(TessMaintenanceContract,
 TEST(TessMaintenanceContract, FacadeSerializesCustomBackendDrains) {
   ConcurrentTask task;
   Structural scheduler(1, 32);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
   for (int offer = 0; offer < 32; ++offer) {
-    ASSERT_EQ(scheduler.schedule(*handle),
+    ASSERT_EQ(scheduler.schedule(handle),
               maintenance::ScheduleResult::Accepted);
   }
 
@@ -873,12 +852,11 @@ TEST(TessMaintenanceContractDeathTest, LifecycleMutationFromTaskFailsFast) {
   ReleaseFromRunTask<Immediate> task;
   Immediate scheduler(1);
   task.scheduler = &scheduler;
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
-  task.handle = *handle;
+  const auto handle = require_handle(scheduler.register_task(task));
+  task.handle = handle;
   scheduler.seal();
 
-  EXPECT_DEATH(static_cast<void>(scheduler.schedule(*handle)),
+  EXPECT_DEATH(static_cast<void>(scheduler.schedule(handle)),
                "lifecycle mutation called from a running task");
 }
 
@@ -888,16 +866,14 @@ TEST(TessMaintenanceContractDeathTest,
   CountingTask target;
   Immediate first(1);
   Immediate second(1);
-  const auto target_handle = second.register_task(target);
-  ASSERT_TRUE(target_handle.has_value());
+  const auto target_handle = require_handle(second.register_task(target));
   task.scheduler = &second;
-  task.handle = *target_handle;
-  const auto trigger_handle = first.register_task(task);
-  ASSERT_TRUE(trigger_handle.has_value());
+  task.handle = target_handle;
+  const auto trigger_handle = require_handle(first.register_task(task));
   first.seal();
   second.seal();
 
-  EXPECT_DEATH(static_cast<void>(first.schedule(*trigger_handle)),
+  EXPECT_DEATH(static_cast<void>(first.schedule(trigger_handle)),
                "nested cross-scheduler operation");
 }
 
@@ -906,17 +882,15 @@ TEST(TessMaintenanceContract, NestedCrossOwnerMetricsObservationIsAllowed) {
   ObserveOtherOwnerMetricsTask<Immediate> observer;
   Immediate first(1);
   Immediate second(1);
-  const auto counted_handle = second.register_task(counted);
-  const auto observer_handle = first.register_task(observer);
-  ASSERT_TRUE(counted_handle.has_value());
-  ASSERT_TRUE(observer_handle.has_value());
+  const auto counted_handle = require_handle(second.register_task(counted));
+  const auto observer_handle = require_handle(first.register_task(observer));
   observer.scheduler = &second;
   first.seal();
   second.seal();
 
-  ASSERT_EQ(second.schedule(*counted_handle),
+  ASSERT_EQ(second.schedule(counted_handle),
             maintenance::ScheduleResult::Accepted);
-  ASSERT_EQ(first.schedule(*observer_handle),
+  ASSERT_EQ(first.schedule(observer_handle),
             maintenance::ScheduleResult::Accepted);
   EXPECT_EQ(observer.observed_schedule_calls, 1u);
 }
@@ -927,16 +901,14 @@ TEST(TessMaintenanceContractDeathTest,
   CountingTask target;
   Immediate first(1);
   Fifo second(1);
-  const auto target_handle = second.register_task(target);
-  ASSERT_TRUE(target_handle.has_value());
+  const auto target_handle = require_handle(second.register_task(target));
   task.scheduler = &second;
-  task.handle = *target_handle;
-  const auto trigger_handle = first.register_task(task);
-  ASSERT_TRUE(trigger_handle.has_value());
+  task.handle = target_handle;
+  const auto trigger_handle = require_handle(first.register_task(task));
   first.seal();
   second.seal();
 
-  EXPECT_DEATH(static_cast<void>(first.schedule(*trigger_handle)),
+  EXPECT_DEATH(static_cast<void>(first.schedule(trigger_handle)),
                "nested cross-scheduler operation");
 }
 
@@ -944,11 +916,10 @@ TEST(TessMaintenanceContractDeathTest, ReentrantDrainFailsFast) {
   DrainFromRunTask<Immediate> task;
   Immediate scheduler(1);
   task.scheduler = &scheduler;
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
 
-  EXPECT_DEATH(static_cast<void>(scheduler.schedule(*handle)),
+  EXPECT_DEATH(static_cast<void>(scheduler.schedule(handle)),
                "drain called from a running task");
 }
 
@@ -982,10 +953,9 @@ TEST(TessMaintenanceContractDeathTest, FixedBackendCapacityMismatchFailsFast) {
 TEST(TessMaintenanceContractDeathTest, SchedulingBeforeSealFailsFast) {
   CountingTask task;
   Fifo scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
 
-  EXPECT_DEATH(static_cast<void>(scheduler.schedule(*handle)),
+  EXPECT_DEATH(static_cast<void>(scheduler.schedule(handle)),
                "operation called before seal");
 }
 
@@ -1003,16 +973,15 @@ TEST(TessMaintenanceContract, SchedulerDestructionReleasesTaskOwnership) {
 TEST(TessMaintenanceContract, DirtyBitWarmSchedulingDoesNotAllocate) {
   CountingTask task;
   DirtyBit scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
-  ASSERT_EQ(scheduler.schedule(*handle), maintenance::ScheduleResult::Accepted);
+  ASSERT_EQ(scheduler.schedule(handle), maintenance::ScheduleResult::Accepted);
   ASSERT_EQ(scheduler.flush(), maintenance::DrainResult::Drained);
 
   {
     tess_test::ScopedAllocationCounter counter;
     for (int call = 0; call < 1'000; ++call) {
-      EXPECT_EQ(scheduler.schedule(*handle),
+      EXPECT_EQ(scheduler.schedule(handle),
                 maintenance::ScheduleResult::Accepted);
     }
     EXPECT_EQ(counter.count(), 0u);
@@ -1025,23 +994,21 @@ TEST(TessMaintenanceContractDeathTest, UncheckedForeignHandleFailsFast) {
   CountingTask task;
   Fifo first(1);
   Fifo second(1);
-  const auto handle = first.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(first.register_task(task));
   first.seal();
   second.seal();
 
-  EXPECT_DEATH(static_cast<void>(second.schedule(*handle)),
+  EXPECT_DEATH(static_cast<void>(second.schedule(handle)),
                "schedule.*wrong scheduler or registration epoch");
 }
 
 TEST(TessMaintenanceContractDeathTest, UncheckedRepeatedReleaseFailsFast) {
   CountingTask task;
   Fifo scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
-  scheduler.release(*handle);
+  const auto handle = require_handle(scheduler.register_task(task));
+  scheduler.release(handle);
 
-  EXPECT_DEATH(scheduler.release(*handle), "release.*stale maintenance handle");
+  EXPECT_DEATH(scheduler.release(handle), "release.*stale maintenance handle");
 }
 
 TEST(TessMaintenanceContractDeathTest, RegistrationAfterSealFailsFast) {
@@ -1056,20 +1023,22 @@ TEST(TessMaintenanceContractDeathTest, RegistrationAfterSealFailsFast) {
 TEST(TessMaintenanceContractDeathTest,
      TaskDestructionWhileRegisteredFailsFast) {
   Fifo scheduler(1);
-  auto* task = new CountingTask;
-  ASSERT_TRUE(scheduler.register_task(*task).has_value());
+  auto task = std::make_unique<CountingTask>();
+  const auto handle = require_handle(scheduler.register_task(*task));
 
-  EXPECT_DEATH(delete task, "MaintenanceTask destroyed while registered");
+  EXPECT_DEATH(task.reset(), "MaintenanceTask destroyed while registered");
+
+  scheduler.release(handle);
+  task.reset();
 }
 
 TEST(TessMaintenanceContractDeathTest, NonIdleUncheckedReleaseFailsFast) {
   CountingTask task;
   Fifo scheduler(1);
-  const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  const auto handle = require_handle(scheduler.register_task(task));
   scheduler.seal();
 
-  EXPECT_DEATH(scheduler.release(*handle), "release.*positive Idle");
+  EXPECT_DEATH(scheduler.release(handle), "release.*positive Idle");
 }
 
 }  // namespace
