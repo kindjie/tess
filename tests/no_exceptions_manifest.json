@@ -63,7 +63,7 @@
       "TessSchedule.ExplicitNoThrowTaskRunsThroughNoThrowErasedThunk"
     ],
     "storage": [
-      "TessStorage.WorldDirtyFlagsUnionClearAndIncrementVersion"
+      "TessStorage.WorldDirtyMasksUnionClearAndIncrementContentVersion"
     ],
     "topology": [
       "TessTopology.BuildsTopDown2DLocalRegions"
