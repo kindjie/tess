@@ -886,6 +886,7 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   # late for CMake's first compiler probe when the workflow-level environment
   # already names the absent launcher, so each job must shadow it explicitly.
   ccache_free_jobs = (
+    "release-linux-floors",
     "release-macos-floor",
     "release-windows-floor",
     "release-cmake-floor",
@@ -1104,19 +1105,18 @@ def test_required_clang_tidy_uses_an_explicit_major_version():
     "  macos:\n", 1
   )[0]
 
-  assert "sudo apt-get install -y clang-tidy-18" in quality
   assert "clang-tidy-18 --version" in quality
+  assert "LLVM version 18" in quality
   assert "-DTESS_CLANG_TIDY_EXE=clang-tidy-18" in quality
-  assert "sudo apt-get install -y ccache clang-tidy-18" in tidy_diff
   assert "clang-tidy-18 --version" in tidy_diff
+  assert "LLVM version 18" in tidy_diff
   assert "--clang-tidy clang-tidy-18" in tidy_diff
 
-  # The advisory profile is schedule-only, so an unpinned install there
-  # changes meaning with the runner image and no pull request would flag
-  # it. It ran `apt-get install -y ccache clang-tidy` until 2026-08-07.
+  # The runner image supplies this exact major. Keep explicit checks in every
+  # consumer so image drift fails rather than silently changing the analysis.
   advisory = (root / ".github" / "workflows" / "advisory.yml").read_text()
-  assert "sudo apt-get install -y ccache clang-tidy-18" in advisory
   assert "clang-tidy-18 --version" in advisory
+  assert "LLVM version 18" in advisory
   assert "-DTESS_CLANG_TIDY_EXE=clang-tidy-18" in advisory
 
 

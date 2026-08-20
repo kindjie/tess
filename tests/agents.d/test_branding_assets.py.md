@@ -12,10 +12,10 @@
   browser measurement through frame scheduling, exact Wasm linear-memory
   reporting, scenario-first startup, scenario-sharded native self-check
   registration, and the exact TSan exemption boundary for serial-only guided
-  checks. The exhaustive funnel oracle retains a 600-second bound normally and
-  a scoped 1,200-second ASan bound; multi-gate remains at 300 seconds. The full
-  correctness evidence remains blocking in the other compiler and sanitizer
-  gates. It also pins the generic replan decision boundary and native
+  checks. Cheap barrier smokes run everywhere, crowd checkpoints retain
+  sanitizer and platform ownership, and only the exact 2,048-route oracle is
+  delegated to required optimized gates. It also pins the generic replan
+  decision boundary and native
   percentile campaign seam without making wall-clock timing authoritative. It
   covers the comparison article's scoped algorithm/strategy status contract,
   documentation navigation,

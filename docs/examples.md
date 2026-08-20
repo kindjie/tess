@@ -106,6 +106,17 @@ direct weighted A*, then verifies deterministic 512- and 1,600-tick crowd
 checkpoints. Debug builds take materially longer because the oracle
 intentionally reproduces the former full-map searches.
 
+The default Debug, ASan/UBSan, GCC, Windows, and coverage test presets run the
+cheap scenario checks and crowd checkpoints but skip the exact route oracle.
+Run that oracle locally in the same optimized configuration that owns it in
+pull requests:
+
+```sh
+cmake --preset bench
+cmake --build --preset bench --target tess_web_traffic_model
+ctest --preset bench -L '^config:optimized-exhaustive$'
+```
+
 Browser capture is also opt-in: append `?measure=1` to the Traffic Lab URL,
 then use **Snapshot latency** or call
 `window.tessTrafficMetrics.snapshot()` in the developer console.

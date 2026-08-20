@@ -143,7 +143,7 @@ jobs:
           persist-credentials: false
 
       - name: Install ccache
-        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+        run: tools/install_ci_ccache.sh
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -164,12 +164,9 @@ jobs:
       - name: Build
         run: cmake --build --preset dev
 
-      # CI14: caching is configured in nine steps; before this it was
-      # measured in one, which is how the restore-key collision above
-      # went unnoticed. A cold build now says so in its own log.
       - name: Report compiler cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: tools/report_ccache_stats.sh
 
       - name: Test
         run: ctest --preset dev
@@ -227,7 +224,13 @@ jobs:
           for example in build/dev/examples/tess_*; do
             [ -x "$example" ] || continue
             echo "::group::$(basename "$example")"
-            "$example"
+            args=()
+            case "$(basename "$example")" in
+              tess_web_traffic_model|tess_web_traffic_diagnostics_model)
+                args=(--self-check-smoke)
+                ;;
+            esac
+            "$example" "${args[@]}"
             echo "::endgroup::"
             ran=$((ran + 1))
           done
@@ -277,11 +280,8 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Install ccache and compiler
-        run: >-
-          (sudo apt-get update || true) &&
-          sudo apt-get install -y ccache
-          ${{ matrix.cc }} ${{ matrix.cxx }}
+      - name: Install ccache
+        run: tools/install_ci_ccache.sh
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -294,6 +294,8 @@ jobs:
         run: |
           cmake --version
           "$CXX" --version
+          test "$("$CXX" -dumpversion | cut -d. -f1)" = \
+            "${{ matrix.version }}"
 
       - name: Configure
         run: cmake --preset dev-werror
@@ -304,12 +306,9 @@ jobs:
       - name: Test
         run: ctest --preset dev-werror
 
-      # CI14: caching is configured in nine steps; before this it was
-      # measured in one, which is how the restore-key collision above
-      # went unnoticed. A cold build now says so in its own log.
       - name: Report compiler cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: tools/report_ccache_stats.sh
 
   # CI10: on a pull request the library was never COMPILED against libc++.
   # macOS covers it, but macOS is main-only, so a libc++-specific failure
@@ -333,9 +332,9 @@ jobs:
           persist-credentials: false
 
       - name: Install libc++ and ccache
-        run: >-
-          (sudo apt-get update || true) &&
-          sudo apt-get install -y ccache libc++-dev libc++abi-dev
+        run: |
+          tools/install_ci_ccache.sh
+          tools/ci_apt_install.sh libc++-dev libc++abi-dev
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -357,7 +356,7 @@ jobs:
 
       - name: Report compiler cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: tools/report_ccache_stats.sh
 
   no-exceptions:
     needs: changes
@@ -398,7 +397,7 @@ jobs:
           persist-credentials: false
 
       - name: Install ccache
-        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+        run: tools/install_ci_ccache.sh
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -459,22 +458,27 @@ jobs:
           cmake --preset examples-no-exceptions
           cmake --build --preset examples-no-exceptions --parallel
 
-      # CI14: caching is configured in nine steps; before this it was
-      # measured in one, which is how the restore-key collision above
-      # went unnoticed. A cold build now says so in its own log.
       - name: Report compiler cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: tools/report_ccache_stats.sh
 
       - name: Run exception-free examples
         run: |
           ran=0
           for example in build/examples-no-exceptions/examples/tess_*; do
             [ -x "$example" ] || continue
-            "$example" > /dev/null
+            args=()
+            case "$(basename "$example")" in
+              tess_web_traffic_model|tess_web_traffic_diagnostics_model)
+                args=(--self-check-smoke)
+                ;;
+            esac
+            "$example" "${args[@]}" > /dev/null
             ran=$((ran + 1))
           done
-          test "$ran" -ge 12
+          # This preset disables the two optional ECS integrations, so its
+          # controlled inventory is the other 16 example executables.
+          test "$ran" -eq 16
 
       - name: Exception-free installed consumer
         env:
@@ -526,6 +530,7 @@ jobs:
         run: >-
           pytest
           tests/test_git_hooks.py
+          tests/test_ci_reliability.py
           tests/test_ci_changes.py
           tests/test_clang_tidy_changed.py
           tests/test_no_exceptions_manifest.py
@@ -627,7 +632,7 @@ jobs:
           persist-credentials: false
 
       - name: Install ccache
-        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+        run: tools/install_ci_ccache.sh
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -635,12 +640,6 @@ jobs:
           path: .ccache
           key: ccache-${{ matrix.preset }}--${{ github.sha }}
           restore-keys: ccache-${{ matrix.preset }}--
-
-      - name: Install clang-tidy
-        if: matrix.preset == 'dev-clang-tidy'
-        run: |
-          sudo apt-get update || true
-          sudo apt-get install -y clang-tidy-18
 
       - name: Install cppcheck 2.21.0
         if: matrix.preset == 'dev-cppcheck'
@@ -668,8 +667,9 @@ jobs:
         run: |
           cmake --version
           clang++ --version
-          if command -v clang-tidy-18 >/dev/null; then
+          if [[ "${{ matrix.preset }}" == dev-clang-tidy ]]; then
             clang-tidy-18 --version
+            clang-tidy-18 --version | grep -Eq 'LLVM version 18\.'
           fi
           if command -v cppcheck >/dev/null; then cppcheck --version; fi
 
@@ -690,12 +690,9 @@ jobs:
         if: matrix.preset == 'dev-clang-tidy'
         run: cmake --build --preset "${{ matrix.preset }}" --parallel 4
 
-      # CI14: caching is configured in nine steps; before this it was
-      # measured in one, which is how the restore-key collision above
-      # went unnoticed. A cold build now says so in its own log.
       - name: Report compiler cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: tools/report_ccache_stats.sh
 
       - name: Test
         if: >-
@@ -738,16 +735,15 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Install ccache and clang-tidy
-        run: |
-          sudo apt-get update || true
-          sudo apt-get install -y ccache clang-tidy-18
+      - name: Install ccache
+        run: tools/install_ci_ccache.sh
 
       - name: Show tool versions
         run: |
           cmake --version
           clang++ --version
           clang-tidy-18 --version
+          clang-tidy-18 --version | grep -Eq 'LLVM version 18\.'
 
       - name: Configure
         run: cmake --preset dev
@@ -813,12 +809,9 @@ jobs:
       - name: Build
         run: cmake --build --preset "${{ matrix.preset }}"
 
-      # CI14: caching is configured in nine steps; before this it was
-      # measured in one, which is how the restore-key collision above
-      # went unnoticed. A cold build now says so in its own log.
       - name: Report compiler cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: tools/report_ccache_stats.sh
 
       - name: Test
         run: ctest --preset "${{ matrix.preset }}"
@@ -987,7 +980,7 @@ jobs:
           persist-credentials: false
 
       - name: Install ccache
-        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+        run: tools/install_ci_ccache.sh
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1007,12 +1000,9 @@ jobs:
       - name: Build
         run: cmake --build --preset bench
 
-      # CI14: caching is configured in nine steps; before this it was
-      # measured in one, which is how the restore-key collision above
-      # went unnoticed. A cold build now says so in its own log.
       - name: Report compiler cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: tools/report_ccache_stats.sh
 
       - name: Test
         run: ctest --preset bench
@@ -1105,7 +1095,7 @@ jobs:
           persist-credentials: false
 
       - name: Install ccache
-        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+        run: tools/install_ci_ccache.sh
 
       # Its own key family so this job and the gates job never race one
       # save slot; the gates family is the warm fallback because both
@@ -1129,7 +1119,7 @@ jobs:
 
       - name: Report compiler cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: tools/report_ccache_stats.sh
 
       # Observed ~27 minutes on the last completed collection.
       - name: Collect non-gating benchmark baselines
@@ -1182,7 +1172,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install ccache
-        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+        run: tools/install_ci_ccache.sh
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1324,6 +1314,7 @@ jobs:
             cc: clang-16
             cxx: clang++-16
     env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ""
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
@@ -1333,14 +1324,9 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Install floor toolchain
-        run: |
-          sudo apt-get update || true
-          sudo apt-get install -y ccache ninja-build \
-            ${{ matrix.cc }} ${{ matrix.cxx }}
-
       - name: Verify compiler floor
         run: |
+          ninja --version | grep -Eq '^1\.'
           "$CXX" --version
           if [ "$CXX" = g++-12 ]; then
             test "$("$CXX" -dumpversion | cut -d. -f1)" = 12
@@ -1512,13 +1498,9 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Install Clang 16
-        run: |
-          sudo apt-get update || true
-          sudo apt-get install -y clang-16
-
       - name: Build ASan UBSan libFuzzer target
         run: |
+          clang++-16 --version | grep -Eq 'clang version 16\.'
           cmake -S . -B build/fuzz -GNinja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DTESS_BUILD_TESTING=OFF \
@@ -2143,7 +2125,7 @@ jobs:
       # installs ccache; Windows is unaffected because the Visual Studio
       # generator ignores the launcher variable.
       - name: Install ccache
-        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+        run: tools/install_ci_ccache.sh
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -2161,12 +2143,9 @@ jobs:
           --target tess_property_test tess_queued_property_test
           tess_cache_property_test tess_dirty_property_test
 
-      # CI14: caching is configured in nine steps; before this it was
-      # measured in one, which is how the restore-key collision above
-      # went unnoticed. A cold build now says so in its own log.
       - name: Report compiler cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: tools/report_ccache_stats.sh
 
       - name: Confirm the raised budget is in effect
         run: |
@@ -2219,15 +2198,17 @@ jobs:
 
       - name: Install toolchain
         run: |
-          (sudo apt-get update || true)
-          sudo apt-get install -y ccache clang-18 llvm-18
+          tools/install_ci_ccache.sh
+          tools/ci_apt_install.sh llvm-18
 
       - name: Show tool versions
         run: |
           cmake --version
           clang++-18 --version
+          clang++-18 --version | grep -Eq 'clang version 18\.'
           llvm-profdata-18 show --version
           llvm-cov-18 --version
+          llvm-cov-18 --version | grep -Eq 'LLVM version 18\.'
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -2292,12 +2273,9 @@ jobs:
       - name: Build benchmarks
         run: cmake --build --preset bench-coverage
 
-      # CI14: caching is configured in nine steps; before this it was
-      # measured in one, which is how the restore-key collision above
-      # went unnoticed. A cold build now says so in its own log.
       - name: Report compiler cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: tools/report_ccache_stats.sh
 
       - name: Benchmark gap-finder
         # Smoke mode runs every registration in both binaries; timing
@@ -2347,26 +2325,15 @@ jobs:
             build/bench-coverage/coverage-gaps.json
           retention-days: 90
 
-  # Keeps every non-PR job failure owned: a failed main, scheduled, or
-  # dispatched run files or extends one rolling ci-failure issue. A newer
-  # push can cancel an older run after ci-gate has started; that derivative
-  # gate-only failure is suppressed only after the Actions API confirms a
-  # newer equivalent push run. Dispatch inputs are not available in the run
-  # list, so dispatch and scheduled failures stay reportable. Never runs on
-  # pull_request events and never executes repository code. The
-  # repository-wide concurrency group serializes concurrent reporters so
-  # the find-then-create dedupe cannot race itself into duplicates;
-  # Actions keeps only one reporter pending per group, so when three or
-  # more failed runs overlap an intermediate comment can be replaced by
-  # the newest — acceptable for a rolling issue that names the latest
-  # failing run.
+  # Reports non-PR failures serially without running repository code.
   report-failure:
     name: Report CI Failure
     concurrency:
       group: ci-failure-report
     if: >-
       ${{ always() && github.event_name != 'pull_request' &&
-          contains(needs.*.result, 'failure') }}
+          (contains(needs.*.result, 'failure') ||
+           github.run_attempt > 1) }}
     needs:
       - changes
       - dev
@@ -2408,6 +2375,68 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           JOB_RESULTS: ${{ toJSON(needs) }}
         run: |
+          has_unresolved=$(printf '%s' "$JOB_RESULTS" | jq -r \
+            'any(.[]; .result == "failure" or .result == "cancelled")')
+          if [ "$has_unresolved" = false ]; then
+            if [ "$GITHUB_RUN_ATTEMPT" -le 1 ]; then
+              exit 0
+            fi
+            cat > "$RUNNER_TEMP/ci-recovery-classifier.py" <<'PY'
+          # CI_RECOVERY_CLASSIFIER_BEGIN
+          import json, os, re, sys
+          data = json.load(sys.stdin)
+          issue = data.get("issue", {})
+          timeline = data.get("timeline", [])
+          current_attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
+          latest = timeline[-1] if isinstance(timeline, list) and timeline else {}
+          markers = re.findall(
+            r"^<!-- tess-ci-report run_id=(\d+) attempt=(\d+) -->$",
+            latest.get("body", ""), flags=re.M,
+          )
+          run_id, attempt = map(int, markers[0]) if len(markers) == 1 else (0, 0)
+          created, updated = latest.get("created_at"), latest.get("updated_at")
+          owned = (
+            current_attempt > 1 and issue.get("state") == "OPEN"
+            and latest.get("event") == "commented"
+            and latest.get("user", {}).get("login") == "github-actions[bot]"
+            and created is not None and created == updated
+            and issue.get("updatedAt") == updated
+            and run_id == int(os.environ["GITHUB_RUN_ID"])
+            and 0 < attempt < current_attempt
+          )
+          print(issue.get("number", "") if owned else "")
+          # CI_RECOVERY_CLASSIFIER_END
+          PY
+            read_owned_issue() {
+              issues=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+                --label ci-failure --state open --limit 101 \
+                --json number,state,updatedAt) || return 1
+              issue_count=$(printf '%s' "$issues" | jq 'length') || return 1
+              [ "$issue_count" -eq 1 ] || return 0
+              number=$(printf '%s' "$issues" | jq -r '.[0].number') || \
+                return 1
+              issue=$(printf '%s' "$issues" | jq '.[0]') || return 1
+              pages=$(gh api --paginate --slurp \
+                "/repos/$GITHUB_REPOSITORY/issues/$number/timeline?per_page=100") \
+                || return 1
+              payload=$(printf '%s\n%s\n' "$issue" "$pages" | jq -s \
+                '{issue: .[0], timeline: (.[1] | add)}') || return 1
+              printf '%s' "$payload" | \
+                python3 "$RUNNER_TEMP/ci-recovery-classifier.py"
+            }
+            owned_issue=$(read_owned_issue) || exit 0
+            [ -n "$owned_issue" ] || exit 0
+            # Final ownership read narrows the unavoidable API race before
+            # close; a human can still reopen if activity lands afterward.
+            final_issue=$(read_owned_issue) || exit 0
+            [ "$final_issue" = "$owned_issue" ] || exit 0
+            gh issue close "$owned_issue" --repo "$GITHUB_REPOSITORY" \
+              --reason completed \
+              --comment "Recovered in attempt $GITHUB_RUN_ATTEMPT: \
+          $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            exit 0
+          fi
+
           gh label create ci-failure \
             --repo "$GITHUB_REPOSITORY" \
             --description "Automated report of a non-PR CI failure" \
@@ -2483,15 +2512,31 @@ jobs:
             failed=ci-gate
           fi
           title="CI failing on ${GITHUB_REF_NAME}"
-          body="CI ${GITHUB_EVENT_NAME} run failed: ${run_url}
-          Failed jobs: ${failed}"
-          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" \
-            --label ci-failure --state open \
-            --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" \
-              --repo "$GITHUB_REPOSITORY" --body "$body"
+          cancelled=$(printf '%s' "$JOB_RESULTS" | jq -r '
+            . as $needs |
+            ["changes", "dev", "gcc", "libcxx", "no-exceptions",
+             "hooks-backstop", "quality", "tidy-diff", "macos", "windows",
+             "windows-noexceptions", "bench"] |
+            map(select($needs[.].result == "cancelled")) | join(", ")')
+          marker="<!-- tess-ci-report run_id=${GITHUB_RUN_ID} \
+          attempt=${GITHUB_RUN_ATTEMPT} -->"
+          body="$marker
+          CI ${GITHUB_EVENT_NAME} run attempt ${GITHUB_RUN_ATTEMPT} failed: \
+          ${run_url}
+          Failed jobs: ${failed}
+          Cancelled required jobs: ${cancelled:-none}
+          ci-gate is a derivative aggregate; inspect the jobs above."
+          issues=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --label ci-failure --state open --limit 101 --json number)
+          issue_count=$(printf '%s' "$issues" | jq 'length')
+          [ "$issue_count" -le 1 ] || exit 1
+          if [ "$issue_count" -eq 0 ]; then
+            issue_url=$(gh issue create --repo "$GITHUB_REPOSITORY" \
+              --label ci-failure --title "$title" \
+              --body "Automated CI reports are posted as comments.")
+            existing=${issue_url##*/}
           else
-            gh issue create --repo "$GITHUB_REPOSITORY" \
-              --label ci-failure --title "$title" --body "$body"
+            existing=$(printf '%s' "$issues" | jq -r '.[0].number')
           fi
+          gh issue comment "$existing" \
+            --repo "$GITHUB_REPOSITORY" --body "$body"

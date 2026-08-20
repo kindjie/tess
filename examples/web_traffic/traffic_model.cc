@@ -291,7 +291,7 @@ struct TrafficModel::Impl {
     update_counts();
   }
 
-  auto validate_planner() const -> bool {
+  auto validate_passability() const -> bool {
     for (auto y = 0; y < traffic_height; ++y) {
       for (auto x = 0; x < traffic_width; ++x) {
         const auto coord = tess::Coord3{x, y, 0};
@@ -304,6 +304,13 @@ struct TrafficModel::Impl {
           return false;
         }
       }
+    }
+    return true;
+  }
+
+  auto validate_planner() const -> bool {
+    if (!validate_passability()) {
+      return false;
     }
     if (!uses_guided_routes(selected_scenario)) {
       return true;
@@ -559,6 +566,10 @@ auto TrafficModel::max_planning_queries() const noexcept -> int {
 
 auto TrafficModel::agent_state_hash() const noexcept -> std::uint64_t {
   return impl_->agent_state_hash();
+}
+
+auto TrafficModel::validate_passability() const -> bool {
+  return impl_->validate_passability();
 }
 
 auto TrafficModel::validate_planner() const -> bool {

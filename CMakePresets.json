@@ -318,6 +318,11 @@
       "name": "dev",
       "inherits": "test-base",
       "configurePreset": "dev",
+      "filter": {
+        "exclude": {
+          "label": "^config:optimized-exhaustive$"
+        }
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -326,6 +331,11 @@
       "name": "dev-coverage",
       "inherits": "test-base",
       "configurePreset": "dev-coverage",
+      "filter": {
+        "exclude": {
+          "label": "^config:optimized-exhaustive$"
+        }
+      },
       "execution": {
         "timeout": 180
       },
@@ -337,6 +347,11 @@
       "name": "dev-werror",
       "inherits": "test-base",
       "configurePreset": "dev-werror",
+      "filter": {
+        "exclude": {
+          "label": "^config:optimized-exhaustive$"
+        }
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -345,6 +360,11 @@
       "name": "dev-asan",
       "inherits": "test-base",
       "configurePreset": "dev-asan",
+      "filter": {
+        "exclude": {
+          "label": "^config:optimized-exhaustive$"
+        }
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -417,12 +437,22 @@
       "name": "linux-dev",
       "inherits": "test-base",
       "configurePreset": "linux-dev",
+      "filter": {
+        "exclude": {
+          "label": "^config:optimized-exhaustive$"
+        }
+      },
       "output": { "outputOnFailure": true }
     },
     {
       "name": "linux-asan",
       "inherits": "test-base",
       "configurePreset": "linux-asan",
+      "filter": {
+        "exclude": {
+          "label": "^config:optimized-exhaustive$"
+        }
+      },
       "output": { "outputOnFailure": true }
     },
     {
@@ -436,6 +466,11 @@
       "inherits": "test-base",
       "configurePreset": "windows-msvc",
       "configuration": "Debug",
+      "filter": {
+        "exclude": {
+          "label": "^config:optimized-exhaustive$"
+        }
+      },
       "output": { "outputOnFailure": true }
     }
   ]

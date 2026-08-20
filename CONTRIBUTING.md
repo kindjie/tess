@@ -115,7 +115,9 @@ when concurrency-sensitive paths change (`tools/ci_changes.py`). Pushes
 to main, the weekly scheduled run, and manual dispatches additionally
 run werror, release, TSan, macOS, the full-tree clang-tidy sweep, and
 the benchmark threshold gates; a failed non-PR run files or extends a
-rolling `ci-failure` issue.
+rolling `ci-failure` issue. A successful retry closes that issue only when the
+bot's unedited report for an earlier attempt of the same run remains the latest
+issue activity; ambiguous or human-owned activity is left open.
 
 Pull requests touching perf-sensitive paths also run a **shadow-mode
 paired sentinel benchmark job** (`tools/paired_bench.py` over
@@ -269,8 +271,10 @@ otherwise easy to read as "my pull request was checked by all of this":
   concurrency-sensitive; on main it always runs. The preset excludes tests
   labeled `config:tsan-exempt`: these are single-threaded, CPU-heavy checks
   with no race surface. All targets still compile under TSan. The Dev,
-  GCC 12/14, ASan, and Windows gates retain their full correctness evidence.
-  Remove the exemption if concurrency enters an exempt model or harness.
+  GCC 12/14, ASan, Windows, and coverage gates retain the Traffic Lab's
+  512/1,600-tick crowd checkpoints. The required optimized benchmark gate and
+  main Release floors own its 2,048 exact route comparisons. Remove the TSan
+  exemption if concurrency enters an exempt model or harness.
 - **[main]** Release build and tests: preset `release`
 - **[main]** macOS build, tests, and install smoke on `macos-15`: presets `dev` and
   `dev-asan` (no benchmark gates there; thresholds are Linux-calibrated)

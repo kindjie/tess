@@ -716,8 +716,14 @@ def test_traffic_lab_self_checks_are_sliced_by_scenario():
     "tess_web_traffic_catalog",
     "tess_web_traffic_aligned",
     "tess_web_traffic_shuffled_crossing",
+    "tess_web_traffic_funnel_smoke",
+    "tess_web_traffic_multi_gate_smoke",
+    "tess_web_traffic_funnel_crowd",
+    "tess_web_traffic_multi_gate_crowd",
     "tess_web_traffic_funnel",
     "tess_web_traffic_multi_gate",
+    "tess_web_traffic_crowd_rejects_unguided",
+    "tess_web_traffic_exhaustive_rejects_unguided",
   ):
     assert f"NAME {name}" in cmake
   assert "tess_web_traffic_catalog PROPERTIES" in cmake
@@ -729,8 +735,14 @@ def test_traffic_lab_self_checks_are_sliced_by_scenario():
     "tess_web_traffic_catalog",
     "tess_web_traffic_aligned",
     "tess_web_traffic_shuffled_crossing",
+    "tess_web_traffic_funnel_smoke",
+    "tess_web_traffic_multi_gate_smoke",
+    "tess_web_traffic_funnel_crowd",
+    "tess_web_traffic_multi_gate_crowd",
     "tess_web_traffic_funnel",
     "tess_web_traffic_multi_gate",
+    "tess_web_traffic_crowd_rejects_unguided",
+    "tess_web_traffic_exhaustive_rejects_unguided",
   }
   property_blocks = {
     name: cmake.split(
@@ -738,54 +750,115 @@ def test_traffic_lab_self_checks_are_sliced_by_scenario():
     )[1].split("\n  )", 1)[0]
     for name in traffic_tests
   }
-  assert (
-    'set(traffic_funnel_timeout 600)\n'
-    '  if(TESS_ENABLE_SANITIZERS)\n'
-    '    string(REPLACE "," ";" traffic_sanitizer_list '
-    '"${TESS_SANITIZERS}")\n'
-    '    if("address" IN_LIST traffic_sanitizer_list)\n'
-    '      set(traffic_funnel_timeout 1200)\n'
-    "    endif()\n"
-    "  endif()"
-  ) in traffic_cmake
-  assert (
-    property_blocks["tess_web_traffic_funnel"].count(
-      "TIMEOUT ${traffic_funnel_timeout}"
-    ) == 1
-  )
+  assert "traffic_funnel_timeout" not in traffic_cmake
+  assert property_blocks["tess_web_traffic_funnel"].count("TIMEOUT 600") == 1
   assert "TIMEOUT 300" not in property_blocks["tess_web_traffic_funnel"]
   assert (
     property_blocks["tess_web_traffic_multi_gate"].count("TIMEOUT 300") == 1
-  )
-  assert (
-    "TIMEOUT ${traffic_funnel_timeout}"
-    not in property_blocks["tess_web_traffic_multi_gate"]
   )
   assert (
     'set(traffic_model_labels\n'
     '    "target:tess_web_traffic_model;subsystem:path;subsystem:sim"\n'
     "  )"
   ) in traffic_cmake
-  assert cmake.count('LABELS "${traffic_model_labels}"') == 4
-  assert cmake.count(
-    'LABELS "${traffic_model_labels};config:tsan-exempt"'
-  ) == 2
+  assert cmake.count('LABELS "${traffic_model_labels}"') == 8
+
+  for name in (
+    "tess_web_traffic_crowd_rejects_unguided",
+    "tess_web_traffic_exhaustive_rejects_unguided",
+  ):
+    assert "WILL_FAIL TRUE" in property_blocks[name]
+  assert "COMMAND tess_web_traffic_model --self-check-crowd aligned" in cmake
+  assert (
+    "COMMAND tess_web_traffic_model --self-check-exhaustive shuffled-crossing"
+    in cmake
+  )
 
   tsan_exempt = set()
   for name, block in property_blocks.items():
     if "config:tsan-exempt" in block:
       tsan_exempt.add(name)
   assert tsan_exempt == {
+    "tess_web_traffic_funnel_crowd",
+    "tess_web_traffic_multi_gate_crowd",
     "tess_web_traffic_funnel",
     "tess_web_traffic_multi_gate",
   }
-  assert cmake.count("config:tsan-exempt") == 2
+  assert cmake.count("config:tsan-exempt") == 4
 
   dev_tsan = next(
     preset for preset in presets["testPresets"]
     if preset["name"] == "dev-tsan"
   )
   assert dev_tsan["filter"] == {
+    "exclude": {"label": "^config:tsan-exempt$"}
+  }
+
+
+def test_traffic_lab_expensive_oracle_has_optimized_ownership():
+  native = read("examples/web_traffic/traffic_native.cc")
+  cmake = read("examples/CMakeLists.txt")
+  presets = json.loads(read("CMakePresets.json"))
+
+  assert '"--self-check-smoke"' in native
+  assert '"--self-check-crowd"' in native
+  assert '"--self-check-exhaustive"' in native
+  assert "parse_guided_scenario" in native
+  assert "validate_passability" in native
+  assert "check_crowd_outcome" in native
+  assert "validate_planner" in native
+
+  traffic_tests = {
+    "tess_web_traffic_funnel_smoke",
+    "tess_web_traffic_multi_gate_smoke",
+    "tess_web_traffic_funnel_crowd",
+    "tess_web_traffic_multi_gate_crowd",
+    "tess_web_traffic_funnel",
+    "tess_web_traffic_multi_gate",
+  }
+  blocks = {
+    name: cmake.split(
+      f"set_tests_properties({name} PROPERTIES", 1
+    )[1].split("\n  )", 1)[0]
+    for name in traffic_tests
+  }
+  for name in (
+    "tess_web_traffic_funnel_smoke",
+    "tess_web_traffic_multi_gate_smoke",
+  ):
+    assert "config:tsan-exempt" not in blocks[name]
+    assert "config:optimized-exhaustive" not in blocks[name]
+  for name in (
+    "tess_web_traffic_funnel_crowd",
+    "tess_web_traffic_multi_gate_crowd",
+  ):
+    assert "config:tsan-exempt" in blocks[name]
+    assert "config:optimized-exhaustive" not in blocks[name]
+  for name in (
+    "tess_web_traffic_funnel",
+    "tess_web_traffic_multi_gate",
+  ):
+    assert "config:tsan-exempt" in blocks[name]
+    assert "config:optimized-exhaustive" in blocks[name]
+
+  preset_by_name = {
+    preset["name"]: preset for preset in presets["testPresets"]
+  }
+  for name in (
+    "dev",
+    "dev-coverage",
+    "dev-werror",
+    "dev-asan",
+    "linux-dev",
+    "linux-asan",
+    "windows-msvc",
+  ):
+    assert preset_by_name[name]["filter"] == {
+      "exclude": {"label": "^config:optimized-exhaustive$"}
+    }
+  assert "filter" not in preset_by_name["bench"]
+  assert "filter" not in preset_by_name["release"]
+  assert preset_by_name["dev-tsan"]["filter"] == {
     "exclude": {"label": "^config:tsan-exempt$"}
   }
 

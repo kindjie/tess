@@ -32,10 +32,10 @@ jobs:
           TESTED_SHA: ${{ inputs.tested_sha }}
         run: test "$(git rev-parse HEAD)" = "$TESTED_SHA"
 
-      - name: Install direct-consumer compiler floors
+      - name: Verify direct-consumer compiler floors
         run: |
-          sudo apt-get update || true
-          sudo apt-get install -y clang-16 g++-12
+          clang++-16 --version | grep -Eq 'clang version 16\.'
+          test "$(g++-12 -dumpversion | cut -d. -f1)" = 12
 
       - name: Build and consume assets
         env:
