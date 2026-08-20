@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <tess/maintenance.h>
 #include <tess/tess.h>
 
 #include <array>
@@ -66,7 +67,10 @@ TEST(TessUpgrade1_0, MaintenanceMovesToStableNamespace) {
 
   MaintenanceUpgradeTask task;
   const auto handle = scheduler.register_task(task);
-  ASSERT_TRUE(handle.has_value());
+  if (!handle.has_value()) {
+    FAIL() << "expected maintenance task registration";
+    return;
+  }
   scheduler.seal();
   EXPECT_EQ(scheduler.schedule(*handle),
             tess::maintenance::ScheduleResult::Accepted);

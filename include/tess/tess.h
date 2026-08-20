@@ -11,7 +11,6 @@
 #include <tess/ecs/entity_handle.h>
 #include <tess/gpu/backend.h>
 #include <tess/gpu/descriptors.h>
-#include <tess/maintenance.h>
 #include <tess/ops/async_work.h>
 #include <tess/ops/phase_executor.h>
 #include <tess/ops/queued.h>

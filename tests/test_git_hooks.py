@@ -976,6 +976,8 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   assert "name: Clang ASan UBSan" in no_exceptions
   assert "name: GCC Werror" in no_exceptions
   assert "tess_no_exceptions_test" in no_exceptions
+  assert "tess_maintenance_contract_test" in no_exceptions
+  assert "tess_chunk_maintenance_test" in no_exceptions
   assert "tess_no_exceptions_headers_verify_interface_header_sets" in (
     no_exceptions
   )
@@ -995,6 +997,8 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   )[1].split("  bench:\n", 1)[0]
   assert "Build targeted exception-free contracts" in windows_noexceptions
   assert "tess_no_exceptions_test" in windows_noexceptions
+  assert "tess_maintenance_contract_test" in windows_noexceptions
+  assert "tess_chunk_maintenance_test" in windows_noexceptions
   assert "tess_no_exceptions_headers_verify_interface_header_sets" in (
     windows_noexceptions
   )

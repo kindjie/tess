@@ -3,12 +3,13 @@
 `include/tess/maintenance.h` and the narrow headers under
 `include/tess/maintenance/` define the stable source contract for derived-state
 maintenance. They do not alter world construction, authoritative storage,
-exact event handling, or simulation command execution. The compatibility
-umbrella `tess/tess.h` includes the stable facade, but no world or scheduler
-adopts maintenance implicitly. Because the facade is an alias-only source move,
-its headers transitively make the implementation's experimental maintenance
-spellings reachable; reachability does not make the virtual scheduler or
-deferred backends stable.
+exact event handling, or simulation command execution. Include the maintenance
+aggregate explicitly: the compatibility umbrella `tess/tess.h` deliberately
+does not import it. This keeps experimental implementation spellings and their
+platform-specific scheduler machinery out of the dependency-free core
+umbrella. Because the facade is an alias-only source move, its headers
+transitively make those experimental spellings reachable; reachability does not
+make the virtual scheduler or deferred backends stable.
 
 The stable spellings share the exact pre-graduation implementation types. This
 mechanical source move keeps the controlled M3 and Steam Deck campaign
