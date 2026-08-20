@@ -666,6 +666,33 @@ tess_apply_project_options(tess_maintenance_test)
 tess_discover_tests(tess_maintenance_test LABELS core diagnostics experimental)
 
 add_executable(
+  tess_maintenance_contract_test
+  allocation_counter.cc
+  tess_maintenance_contract_test.cc
+)
+target_link_libraries(
+  tess_maintenance_contract_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_maintenance_contract_test)
+tess_discover_tests(
+  tess_maintenance_contract_test LABELS core diagnostics experimental)
+
+# The contract's lifecycle failures are unconditional. Run the same death
+# tests with assertions compiled out so a TESS_ASSERT regression cannot pass.
+add_executable(
+  tess_maintenance_contract_ndebug_test
+  allocation_counter.cc
+  tess_maintenance_contract_test.cc
+)
+target_link_libraries(
+  tess_maintenance_contract_ndebug_test PRIVATE tess::tess GTest::gtest_main)
+target_compile_definitions(tess_maintenance_contract_ndebug_test PRIVATE NDEBUG)
+tess_apply_project_options(tess_maintenance_contract_ndebug_test)
+tess_discover_tests(
+  tess_maintenance_contract_ndebug_test
+  PREFIX ndebug.
+  LABELS core diagnostics experimental)
+
+add_executable(
   tess_queued_planning_test
   allocation_counter.cc
   tess_queued_planning_test.cc

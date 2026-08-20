@@ -196,10 +196,18 @@
     "DirtyBitScheduler",
     "FifoScheduler",
     "ImmediateScheduler",
+    "BackendDrainResult",
+    "DrainResult",
+    "FixedRegistrationBackend",
+    "MaintenanceBackend",
     "MaintenanceBudget",
+    "MaintenanceHandle",
     "MaintenanceMetrics",
     "MaintenanceScheduler",
-    "MaintenanceTask"
+    "MaintenanceTask",
+    "RegisteredScheduler",
+    "ReleaseResult",
+    "ScheduleResult"
   ],
   "docs/architecture/path.md": [
     "ChunkVersionDependencies",

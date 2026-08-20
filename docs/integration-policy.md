@@ -52,6 +52,11 @@ What is guaranteed when something throws:
   nothing executes rather than a partially applied plan.
 - Schedule tasks either side of a throwing task keep their triggers
   coherent.
+- A maintenance callback exception consumes the invocation that entered the
+  callback. Reentrant follow-ups coalesced into that same synchronous
+  call-local invocation are consumed with it; independently retained accepted
+  maintenance offers remain reachable. The callback owner must keep its
+  authoritative dirty/version state suitable for an explicit retry decision.
 
 Those propagation and rollback guarantees apply to exception-enabled builds.
 The exception-free path performs successful work and status-based rollback
