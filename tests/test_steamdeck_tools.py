@@ -11,6 +11,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DECK = REPO_ROOT / "tools" / "steamdeck" / "deck"
 DECK_BENCH = REPO_ROOT / "tools" / "steamdeck" / "deck-bench.sh"
+MAINTENANCE_CAMPAIGN = (
+    REPO_ROOT / "tools" / "steamdeck" / "deck-maintenance-campaign.sh"
+)
+MAINTENANCE_RUNNER = (
+    REPO_ROOT / "tools" / "steamdeck" / "deck-run-maintenance-campaign.sh"
+)
 
 
 def write_fake_docker(bin_dir: Path) -> None:
@@ -564,3 +570,32 @@ def test_readme_routes_setup_and_transferred_image_safely():
       "USE_CONTAINER=1 TESS_STEAMRT_IMAGE=tess-steamrt4:local \\\n"
       "     tools/steamdeck/deck-bench.sh"
   ) in readme
+
+
+def test_maintenance_campaign_has_local_stage_and_pinned_whole_phase():
+  host = MAINTENANCE_CAMPAIGN.read_text(encoding="utf-8")
+  runner = MAINTENANCE_RUNNER.read_text(encoding="utf-8")
+
+  assert "stage)" in host
+  assert "tools/steamdeck/deck doctor" in host
+  assert host.index("tools/steamdeck/deck doctor") < host.index("rsync -az")
+  assert "sha256sum -c SHA256SUMS" in runner
+  assert "trap restore_governors EXIT" in runner
+  assert runner.index("set_governors performance") < runner.index(
+      'python3 "$TOOL" calibrate'
+  )
+  assert runner.count("set_governors performance") == 1
+  assert "--thresholds \"${RESULT_DIR}/thresholds.json\"" in runner
+
+
+def test_deck_help_routes_maintenance_campaign_without_generic_bench():
+  result = subprocess.run(
+      [str(DECK), "help"],
+      check=False,
+      capture_output=True,
+      text=True,
+  )
+
+  assert result.returncode == 0, result.stderr
+  assert "campaign stage" in result.stdout
+  assert "campaign run" in result.stdout

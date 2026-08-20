@@ -14,9 +14,31 @@
 #include <sys/resource.h>
 #endif
 
+#if !defined(TESS_MAINTENANCE_CAMPAIGN_SOURCE_SHA) ||      \
+    !defined(TESS_MAINTENANCE_CAMPAIGN_CONFIG_FILE_SHA) || \
+    !defined(TESS_MAINTENANCE_CAMPAIGN_TOOL_SHA) ||        \
+    !defined(TESS_MAINTENANCE_CAMPAIGN_SOURCE_FILE_SHA)
+#error "maintenance campaign provenance definitions are required"
+#endif
+
 namespace {
 
 namespace maintenance = tess::experimental::maintenance;
+
+struct CampaignIdentityContext {
+  CampaignIdentityContext() {
+    benchmark::AddCustomContext("tess_source_sha",
+                                TESS_MAINTENANCE_CAMPAIGN_SOURCE_SHA);
+    benchmark::AddCustomContext("tess_config_file_sha256",
+                                TESS_MAINTENANCE_CAMPAIGN_CONFIG_FILE_SHA);
+    benchmark::AddCustomContext("tess_tool_sha256",
+                                TESS_MAINTENANCE_CAMPAIGN_TOOL_SHA);
+    benchmark::AddCustomContext("tess_benchmark_source_sha256",
+                                TESS_MAINTENANCE_CAMPAIGN_SOURCE_FILE_SHA);
+  }
+};
+
+const auto kCampaignIdentityContext = CampaignIdentityContext{};
 
 void campaign_check(bool condition, const char* message) {
   if (!condition) {
@@ -46,14 +68,29 @@ using CampaignSchema =
     tess::FieldSchema<tess::Field<CampaignValueTag, std::uint16_t>>;
 using CampaignShape =
     tess::Shape<tess::Extent3{64, 64, 1}, tess::Extent3{4, 4, 1}>;
-using ScalingShape =
+using Scaling16Shape =
+    tess::Shape<tess::Extent3{16, 16, 1}, tess::Extent3{4, 4, 1}>;
+using Scaling64Shape =
+    tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{4, 4, 1}>;
+using Scaling256Shape = CampaignShape;
+using Scaling1024Shape =
+    tess::Shape<tess::Extent3{128, 128, 1}, tess::Extent3{4, 4, 1}>;
+using Scaling4096Shape =
     tess::Shape<tess::Extent3{256, 256, 1}, tess::Extent3{4, 4, 1}>;
 using DenseCampaignWorld =
     tess::AlwaysResidentWorld<CampaignShape, CampaignSchema>;
 using SparseCampaignWorld =
     tess::SparseResidentWorld<CampaignShape, CampaignSchema>;
-using ScalingCampaignWorld =
-    tess::AlwaysResidentWorld<ScalingShape, CampaignSchema>;
+using Scaling16World =
+    tess::AlwaysResidentWorld<Scaling16Shape, CampaignSchema>;
+using Scaling64World =
+    tess::AlwaysResidentWorld<Scaling64Shape, CampaignSchema>;
+using Scaling256World =
+    tess::AlwaysResidentWorld<Scaling256Shape, CampaignSchema>;
+using Scaling1024World =
+    tess::AlwaysResidentWorld<Scaling1024Shape, CampaignSchema>;
+using Scaling4096World =
+    tess::AlwaysResidentWorld<Scaling4096Shape, CampaignSchema>;
 
 constexpr auto kCampaignDirty = std::uint32_t{1u << 7u};
 
@@ -254,15 +291,12 @@ TESS_CAMPAIGN_CELL("mixed", DenseCampaignWorld, 64, 4'096, DrainMode::Flush);
 TESS_CAMPAIGN_CELL("flush", DenseCampaignWorld, 256, 256, DrainMode::Flush);
 TESS_CAMPAIGN_CELL("budgeted", DenseCampaignWorld, 256, 256,
                    DrainMode::Budgeted);
-TESS_CAMPAIGN_CELL("scaling_16", ScalingCampaignWorld, 16, 16,
+TESS_CAMPAIGN_CELL("scaling_16", Scaling16World, 16, 16, DrainMode::Flush);
+TESS_CAMPAIGN_CELL("scaling_64", Scaling64World, 64, 64, DrainMode::Flush);
+TESS_CAMPAIGN_CELL("scaling_256", Scaling256World, 256, 256, DrainMode::Flush);
+TESS_CAMPAIGN_CELL("scaling_1024", Scaling1024World, 1'024, 1'024,
                    DrainMode::Flush);
-TESS_CAMPAIGN_CELL("scaling_64", ScalingCampaignWorld, 64, 64,
-                   DrainMode::Flush);
-TESS_CAMPAIGN_CELL("scaling_256", ScalingCampaignWorld, 256, 256,
-                   DrainMode::Flush);
-TESS_CAMPAIGN_CELL("scaling_1024", ScalingCampaignWorld, 1'024, 1'024,
-                   DrainMode::Flush);
-TESS_CAMPAIGN_CELL("scaling_4096", ScalingCampaignWorld, 4'096, 4'096,
+TESS_CAMPAIGN_CELL("scaling_4096", Scaling4096World, 4'096, 4'096,
                    DrainMode::Flush);
 
 #undef TESS_CAMPAIGN_CELL

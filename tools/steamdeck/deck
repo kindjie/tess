@@ -47,6 +47,10 @@ Run on the device:
   bench [--pin] [tess_bench args]   Build, ship, run on real hardware.
                    --pin fixes the CPU governor for accurate numbers.
                    Configures the linux-bench preset automatically.
+  campaign stage <bundle-dir>       Build and hash the controlled maintenance
+                   evidence bundle locally; does not access the Deck.
+  campaign run <bundle-dir> <calibration|candidate> <results-dir>
+                   Run one whole pinned evidence phase and retrieve artifacts.
 
 Env: DECK_HOST (default 'deck'), TESS_STEAMRT_IMAGE,
      TESS_STEAMRT_BUILD_IMAGE (build image, default 'tess-steamrt4:local'),
@@ -466,6 +470,9 @@ cmd_bench() {
   ensure_container "$preset"
   PRESET="$preset" exec "${HERE}/deck-bench.sh" "$@"
 }
+cmd_campaign() {
+  exec "${HERE}/deck-maintenance-campaign.sh" "$@"
+}
 
 cmd="${1:-help}"; shift 2>/dev/null || true
 case "$cmd" in
@@ -477,5 +484,6 @@ case "$cmd" in
   asan)           cmd_asan "$@" ;;
   watch)          cmd_watch "$@" ;;
   bench)          cmd_bench "$@" ;;
+  campaign)       cmd_campaign "$@" ;;
   *)              die "unknown command '$cmd' — try: tools/steamdeck/deck help" ;;
 esac

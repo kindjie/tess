@@ -18,7 +18,8 @@
         "fifo": "maintenance/campaign/dense/fifo",
         "coalescing": "maintenance/campaign/dense/coalescing",
         "dirty_bit": "maintenance/campaign/dense/dirty_bit"
-      }
+      },
+      "expected": {"registered_tasks": 256, "active_tasks": 1, "offers": 512}
     },
     "sparse": {
       "benchmarks": {
@@ -26,7 +27,8 @@
         "fifo": "maintenance/campaign/sparse/fifo",
         "coalescing": "maintenance/campaign/sparse/coalescing",
         "dirty_bit": "maintenance/campaign/sparse/dirty_bit"
-      }
+      },
+      "expected": {"registered_tasks": 16, "active_tasks": 16, "offers": 256}
     },
     "mixed": {
       "benchmarks": {
@@ -34,7 +36,8 @@
         "fifo": "maintenance/campaign/mixed/fifo",
         "coalescing": "maintenance/campaign/mixed/coalescing",
         "dirty_bit": "maintenance/campaign/mixed/dirty_bit"
-      }
+      },
+      "expected": {"registered_tasks": 256, "active_tasks": 64, "offers": 4096}
     },
     "flush": {
       "benchmarks": {
@@ -42,7 +45,8 @@
         "fifo": "maintenance/campaign/flush/fifo",
         "coalescing": "maintenance/campaign/flush/coalescing",
         "dirty_bit": "maintenance/campaign/flush/dirty_bit"
-      }
+      },
+      "expected": {"registered_tasks": 256, "active_tasks": 256, "offers": 256}
     },
     "budgeted": {
       "benchmarks": {
@@ -50,7 +54,8 @@
         "fifo": "maintenance/campaign/budgeted/fifo",
         "coalescing": "maintenance/campaign/budgeted/coalescing",
         "dirty_bit": "maintenance/campaign/budgeted/dirty_bit"
-      }
+      },
+      "expected": {"registered_tasks": 256, "active_tasks": 256, "offers": 256}
     },
     "scaling_16": {
       "benchmarks": {
@@ -58,7 +63,8 @@
         "fifo": "maintenance/campaign/scaling_16/fifo",
         "coalescing": "maintenance/campaign/scaling_16/coalescing",
         "dirty_bit": "maintenance/campaign/scaling_16/dirty_bit"
-      }
+      },
+      "expected": {"registered_tasks": 16, "active_tasks": 16, "offers": 16}
     },
     "scaling_64": {
       "benchmarks": {
@@ -66,7 +72,8 @@
         "fifo": "maintenance/campaign/scaling_64/fifo",
         "coalescing": "maintenance/campaign/scaling_64/coalescing",
         "dirty_bit": "maintenance/campaign/scaling_64/dirty_bit"
-      }
+      },
+      "expected": {"registered_tasks": 64, "active_tasks": 64, "offers": 64}
     },
     "scaling_256": {
       "benchmarks": {
@@ -74,7 +81,8 @@
         "fifo": "maintenance/campaign/scaling_256/fifo",
         "coalescing": "maintenance/campaign/scaling_256/coalescing",
         "dirty_bit": "maintenance/campaign/scaling_256/dirty_bit"
-      }
+      },
+      "expected": {"registered_tasks": 256, "active_tasks": 256, "offers": 256}
     },
     "scaling_1024": {
       "benchmarks": {
@@ -82,6 +90,11 @@
         "fifo": "maintenance/campaign/scaling_1024/fifo",
         "coalescing": "maintenance/campaign/scaling_1024/coalescing",
         "dirty_bit": "maintenance/campaign/scaling_1024/dirty_bit"
+      },
+      "expected": {
+        "registered_tasks": 1024,
+        "active_tasks": 1024,
+        "offers": 1024
       }
     },
     "scaling_4096": {
@@ -90,6 +103,11 @@
         "fifo": "maintenance/campaign/scaling_4096/fifo",
         "coalescing": "maintenance/campaign/scaling_4096/coalescing",
         "dirty_bit": "maintenance/campaign/scaling_4096/dirty_bit"
+      },
+      "expected": {
+        "registered_tasks": 4096,
+        "active_tasks": 4096,
+        "offers": 4096
       }
     }
   },
@@ -99,11 +117,23 @@
     "devices": {
       "m3": {
         "calibration_seed": 130013,
-        "candidate_seed": 130031
+        "candidate_seed": 130031,
+        "build_context": "macos-native-xcode",
+        "environment": {
+          "system": "Darwin",
+          "machine": "arm64",
+          "cpu_model_pattern": "^Apple M3 Max$"
+        }
       },
       "steam-deck": {
         "calibration_seed": 130019,
-        "candidate_seed": 130037
+        "candidate_seed": 130037,
+        "build_context": "steamrt4@sha256:584939ebd7d2f1eec719e771fdde4ae3bd469ee741c783abb7fe812ddaaf3ee4",
+        "environment": {
+          "system": "Linux",
+          "machine": "x86_64",
+          "cpu_model_pattern": "^AMD Custom APU 0932$"
+        }
       }
     }
   },
