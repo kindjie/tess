@@ -17,9 +17,9 @@
   material regression on the other platform passes; correctness, contract,
   determinism, lifetime, or allocation failures may stop a run earlier.
 - Applied the stable failure-diagnostics boundary to maintenance: capacity,
-  idle, budget, stall, and task-failure outcomes remain explicit results;
-  unsafe lifecycle or ownership misuse fails fast, while expected stale-handle
-  uncertainty uses a checked operation.
+  idle, budget, and stall outcomes remain explicit results; callback exceptions
+  propagate verbatim; unsafe lifecycle or ownership misuse fails fast, while
+  expected stale-handle uncertainty uses a checked operation.
 - Kept controlled campaign evidence distinct from permanent CI authority.
   Hosted timing thresholds remain advisory until representative calibration
   establishes useful sensitivity and an acceptable false-positive rate.
