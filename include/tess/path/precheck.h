@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tess/path/request.h>
 #include <tess/topology/topology.h>
 
 #include <cstdint>

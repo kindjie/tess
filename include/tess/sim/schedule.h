@@ -6,6 +6,7 @@
 #include <tess/diagnostics/trace.h>
 #include <tess/sim/event_stream.h>
 #include <tess/sim/time.h>
+#include <tess/storage/metadata_types.h>
 
 #include <cstddef>
 #include <cstdint>

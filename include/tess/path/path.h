@@ -53,20 +53,6 @@ enum class PathStatus : std::uint8_t {
 };
 static_assert(sizeof(PathStatus) == sizeof(std::uint8_t));
 
-// How a search treats a step into a non-resident chunk of a sparse world.
-// Inert for dense worlds, where every chunk is resident.
-/// Selects how sparse searches report boundaries of the resident set.
-enum class MissingChunkPolicy : std::uint8_t {
-  // Treat a non-resident chunk as impassable. The search stays within the
-  // resident set and may report NoPath even when a route exists through
-  // chunks that are not currently materialized.
-  AssumeImpassable,
-  // Do not report NoPath across a non-resident boundary: if the search
-  // exhausts the resident set having skipped at least one non-resident
-  // neighbor, it returns Indeterminate instead of NoPath.
-  ReportIndeterminate,
-};
-
 /// Reports a query outcome and a non-owning view of the resulting path.
 ///
 /// The path normally borrows caller-owned scratch or product storage and is
