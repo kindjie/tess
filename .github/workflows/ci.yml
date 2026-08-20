@@ -46,8 +46,8 @@ env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   # CI3: ccache defaults to a 5 GiB cache. Ten namespaces at that
-  # ceiling overrun the 10 GB repository quota, and every run then
-  # evicts the previous run's caches. Cap each one well inside it.
+  # ceiling overrun the 10 GB repository quota and thrash caches.
+  # Cap each one well inside it.
   CCACHE_MAXSIZE: 250M
 
 jobs:
@@ -530,6 +530,7 @@ jobs:
         run: >-
           pytest
           tests/test_git_hooks.py
+          tests/test_pre_push_ranges.py
           tests/test_ci_reliability.py
           tests/test_ci_changes.py
           tests/test_clang_tidy_changed.py

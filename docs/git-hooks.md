@@ -66,8 +66,12 @@ The installer prefers Git's config hook interface only when its
   push). Anything unrecognized — tools, CMake files, core/storage or
   umbrella headers, test helpers — fails open to the full suite;
   docs-only, examples-only, and bench-only pushes configure and build
-  without tests. `TESS_PREPUSH_FULL=1` overrides every classification
-  and runs the full suite plus the install and FetchContent smokes
+  without tests. A new remote branch uses the merge base with the
+  locally tracked remote default branch when Git's destination name and
+  push URL can be verified; this gives its first push the same path
+  classification as later pushes. `TESS_PREPUSH_FULL=1` overrides every
+  classification and runs the full suite plus the install and FetchContent
+  smokes
   (never benchmarks or the python tool tests — CI's PR tier owns
   both: the bench-smoke job and the hook-backstop pytest). The label
   mapping is itself tested (`tests/test_git_hooks.py`), and the CI
@@ -101,10 +105,19 @@ UV_CACHE_DIR=build/uv-cache \
 Git feeds the pre-push hook one line per ref being pushed
 (`<local-ref> <local-sha> <remote-ref> <remote-sha>`). The hook unions
 the changed paths across every non-delete ref and classifies them for
-test selection. New refs, unresolvable ranges, malformed or absent
-ref input, and any unrecognized path fail open to the full suite;
-delete-only pushes skip the checks entirely. When the pushed commit
-is not the worktree HEAD the hook warns that it validates the
+test selection. For a new branch, it verifies Git's two destination
+arguments against a configured remote and its effective push URLs,
+then compares the pushed tip with the single merge base of that
+remote's locally tracked symbolic default branch. The hook does not
+fetch or know a pull request's base. Ordinary behind-staleness may
+select extra work; rewritten or changed defaults and non-linear
+history may narrow the local evidence. CI remains authoritative, and
+`TESS_PREPUSH_FULL=1` is the local escape hatch. New tags and other new
+refs, missing or cross-remote defaults,
+ambiguous or disconnected merge bases, unresolvable ranges, malformed
+or absent ref input, and any unrecognized path fail open to the full
+suite. Delete-only pushes skip the checks entirely. When the pushed
+commit is not the worktree HEAD the hook warns that it validates the
 worktree, not that commit.
 
 ## CI backstop

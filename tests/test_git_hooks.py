@@ -1652,7 +1652,7 @@ def test_pre_push_selects_affected_labels(monkeypatch):
   monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
   monkeypatch.setattr(
     git_hooks, "push_range_paths",
-    lambda _updates: ["include/tess/path/astar.h"],
+    lambda _updates, _args: ["include/tess/path/astar.h"],
   )
   monkeypatch.setattr(git_hooks, "run", fake_run)
 
@@ -1679,7 +1679,7 @@ def test_pre_push_docs_only_builds_without_tests(monkeypatch):
   monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
   monkeypatch.setattr(
     git_hooks, "push_range_paths",
-    lambda _updates: ["docs/planning/notes.md", "README.md"],
+    lambda _updates, _args: ["docs/planning/notes.md", "README.md"],
   )
   monkeypatch.setattr(git_hooks, "run", fake_run)
 

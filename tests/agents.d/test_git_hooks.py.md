@@ -1,8 +1,10 @@
 # test_git_hooks.py
 
 - `tests/test_git_hooks.py`: broad coverage for the local hooks and CI
-  backstops, including privacy, token limits, indexed content, pre-push test
-  selection, labels, dependency locks, and workflow pinning. The privileged
+  backstops, including privacy, token limits, indexed content, pre-push path
+  classification and labels, dependency locks, and workflow pinning. New
+  branch topology and destination validation live in
+  `tests/test_pre_push_ranges.py`. The privileged
   CI recovery workflow is the sole action-free workflow; all invoked actions
   remain GitHub-owned and SHA-pinned. The
   diff-scoped clang-tidy timeout is pinned to its large-surface budget. The
