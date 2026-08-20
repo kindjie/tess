@@ -1,5 +1,6 @@
 """Tests for the paired maintenance promotion campaign."""
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -630,6 +631,9 @@ def test_native_phase_runner_preserves_failed_candidate_artifacts(
     ),
     encoding="utf-8",
   )
+  (bench / "tess_maintenance_campaign_bench.cc").write_text(
+    "// fake benchmark\n", encoding="utf-8"
+  )
   subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
   subprocess.run(["git", "add", "."], cwd=repo, check=True)
   subprocess.run(
@@ -656,9 +660,43 @@ def test_native_phase_runner_preserves_failed_candidate_artifacts(
     capture_output=True,
     text=True,
   ).stdout.strip()
-  (results / "build-manifest.json").write_text(
-    json.dumps({"source_sha": source_sha}) + "\n", encoding="utf-8"
-  )
+  def stage_test_bundle(destination: Path):
+    (destination / "bin").mkdir()
+    (destination / "bench").mkdir()
+    (destination / "tools").mkdir()
+    shutil.copy2(binary, destination / "bin" / binary.name)
+    shutil.copy2(
+      bench / "maintenance-campaign.json",
+      destination / "bench" / "maintenance-campaign.json",
+    )
+    shutil.copy2(
+      bench / "tess_maintenance_campaign_bench.cc",
+      destination / "bench" / "tess_maintenance_campaign_bench.cc",
+    )
+    shutil.copy2(
+      tools / "maintenance_campaign.py",
+      destination / "tools" / "maintenance_campaign.py",
+    )
+    shutil.copy2(
+      tools / NATIVE_RUNNER.name,
+      destination / "tools" / NATIVE_RUNNER.name,
+    )
+    (destination / "build-manifest.json").write_text(
+      json.dumps({"source_sha": source_sha}) + "\n", encoding="utf-8"
+    )
+    retained = sorted(
+      path for path in destination.rglob("*") if path.is_file()
+    )
+    (destination / "BUNDLE_SHA256SUMS").write_text(
+      "".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  "
+        f"./{path.relative_to(destination)}\n"
+        for path in retained
+      ),
+      encoding="utf-8",
+    )
+
+  stage_test_bundle(results)
   fake_python = fake_bin / "python3"
   fake_python.write_text(
     """#!/usr/bin/env bash
@@ -696,6 +734,50 @@ printf '{}\\n' > "$output"
     "REAL_PYTHON": sys.executable,
   }
   runner = tools / NATIVE_RUNNER.name
+  fake_cmake = fake_bin / "cmake"
+  fake_cmake.write_text(
+    """#!/usr/bin/env bash
+set -eu
+[ -z "${CMAKE_MARKER:-}" ] || : > "$CMAKE_MARKER"
+if [ "${1:-}" = "-S" ]; then
+  build_dir=
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "-B" ]; then
+      build_dir="$2"
+      break
+    fi
+    shift
+  done
+  [ -n "$build_dir" ]
+  mkdir -p "$build_dir/bench/CMakeFiles/"\
+"tess_bench_maintenance_campaign.dir"
+  printf 'fake binary\\n' > \
+    "$build_dir/bench/tess_bench_maintenance_campaign"
+  chmod +x "$build_dir/bench/tess_bench_maintenance_campaign"
+  printf '[]\\n' > "$build_dir/compile_commands.json"
+  printf '/usr/bin/c++ fake.o\\n' > "$build_dir/bench/CMakeFiles/"\
+"tess_bench_maintenance_campaign.dir/link.txt"
+fi
+""",
+    encoding="utf-8",
+  )
+  fake_cmake.chmod(0o755)
+
+  staged_results = tmp_path / "staged-results"
+  staged_results.mkdir()
+  stage_marker = tmp_path / "stage-cmake-ran"
+  staged = subprocess.run(
+    [str(runner), "stage", str(staged_results)],
+    cwd=repo,
+    env={**environment, "CMAKE_MARKER": str(stage_marker)},
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert staged.returncode == 0, staged.stderr
+  assert stage_marker.is_file()
+  assert (staged_results / "BUNDLE_SHA256SUMS").is_file()
+  assert (staged_results / "bin" / binary.name).is_file()
 
   calibration = subprocess.run(
     [str(runner), "calibration", str(results)],
@@ -717,6 +799,20 @@ printf '{}\\n' > "$output"
     text=True,
   )
   assert repeated_calibration.returncode != 0
+
+  calibration_bytes = (results / "calibration.json").read_bytes()
+  (results / "calibration.json").write_bytes(b"corrupted\n")
+  corrupt_calibration = subprocess.run(
+    [str(runner), "candidate", str(results)],
+    cwd=repo,
+    env=environment,
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert corrupt_calibration.returncode != 0
+  assert "calibration result set is invalid" in corrupt_calibration.stderr
+  (results / "calibration.json").write_bytes(calibration_bytes)
 
   failed_candidate = subprocess.run(
     [str(runner), "candidate", str(results)],
@@ -756,9 +852,8 @@ printf '{}\\n' > "$output"
 
   fresh_results = tmp_path / "fresh-results"
   fresh_results.mkdir()
-  (fresh_results / "build-manifest.json").write_text(
-    json.dumps({"source_sha": source_sha}) + "\n", encoding="utf-8"
-  )
+  stage_test_bundle(fresh_results)
+  clean_tool = (tools / "maintenance_campaign.py").read_text(encoding="utf-8")
   (tools / "maintenance_campaign.py").write_text(
     "# dirty fake\n", encoding="utf-8"
   )
@@ -772,6 +867,42 @@ printf '{}\\n' > "$output"
   )
   assert dirty_source.returncode != 0
   assert "clean source commit" in dirty_source.stderr
+
+  cmake_marker = tmp_path / "cmake-ran"
+  dirty_stage_results = tmp_path / "dirty-stage-results"
+  dirty_stage_results.mkdir()
+  dirty_stage = subprocess.run(
+    [str(runner), "stage", str(dirty_stage_results)],
+    cwd=repo,
+    env={**environment, "CMAKE_MARKER": str(cmake_marker)},
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert dirty_stage.returncode != 0
+  assert "clean source commit before building" in dirty_stage.stderr
+  assert not cmake_marker.exists()
+
+  (tools / "maintenance_campaign.py").write_text(
+    clean_tool, encoding="utf-8"
+  )
+  untracked_header = repo / "include" / "benchmark" / "benchmark.h"
+  untracked_header.parent.mkdir(parents=True)
+  untracked_header.write_text("// shadows dependency\n", encoding="utf-8")
+  untracked_marker = tmp_path / "untracked-cmake-ran"
+  untracked_results = tmp_path / "untracked-stage-results"
+  untracked_results.mkdir()
+  untracked_stage = subprocess.run(
+    [str(runner), "stage", str(untracked_results)],
+    cwd=repo,
+    env={**environment, "CMAKE_MARKER": str(untracked_marker)},
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert untracked_stage.returncode != 0
+  assert "clean source commit before building" in untracked_stage.stderr
+  assert not untracked_marker.exists()
 
 
 def test_toolchain_manifest_rejects_incomplete_identity(tmp_path: Path):
@@ -826,11 +957,20 @@ def test_build_manifest_binds_relative_compile_entry_and_binary_context(
     f"{compiler} -O3 {build_root}/campaign.o -o {binary}\n",
     encoding="utf-8",
   )
-  monkeypatch.setattr(
-    CAMPAIGN,
-    "_run_git",
-    lambda _root, *arguments: SOURCE_SHA if arguments[0] == "rev-parse" else "",
-  )
+  source_status = [""]
+
+  def fake_git(_root: Path, *arguments: str) -> str:
+    if arguments[0] == "rev-parse":
+      return SOURCE_SHA
+    assert arguments == (
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      "--ignored=matching",
+    )
+    return source_status[0]
+
+  monkeypatch.setattr(CAMPAIGN, "_run_git", fake_git)
   monkeypatch.setattr(
     CAMPAIGN,
     "_toolchain",
@@ -872,6 +1012,22 @@ def test_build_manifest_binds_relative_compile_entry_and_binary_context(
   assert str(tmp_path) not in manifest["compile_command"]["text"]
   assert "$SOURCE" in manifest["compile_command"]["text"]
   assert manifest["link_driver"]["sha256"] == "4" * 64
+
+  source_status[0] = "?? include/benchmark/benchmark.h"
+  with pytest.raises(CAMPAIGN.ToolError, match="clean source tree"):
+    CAMPAIGN.create_build_manifest(
+      source_root=source_root,
+      source_sha=SOURCE_SHA,
+      binary=binary,
+      config_path=config_path,
+      compiler=compiler,
+      compile_commands=compile_commands,
+      link_command=link_command,
+      device="test-device",
+      build_context="test-build",
+      container_image_id=None,
+    )
+  source_status[0] = ""
 
   identity["tess_source_sha"] = "f" * 40
   with pytest.raises(CAMPAIGN.ToolError, match="embedded identity"):

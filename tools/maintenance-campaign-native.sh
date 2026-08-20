@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# Runs one immutable native-M3 maintenance evidence phase. The build manifest
-# is created separately so its no-work provenance gate precedes all timing.
+# Stages one exact native-M3 campaign bundle, then runs immutable evidence
+# phases. The identity-only provenance gate executes no benchmark cell.
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
-  echo "usage: $0 <calibration|candidate> <results-directory>" >&2
+  echo "usage: $0 <stage|calibration|candidate> <results-directory>" >&2
   exit 2
 fi
 
 PHASE="$1"
 RESULT_DIR="$2"
 case "$PHASE" in
-  calibration|candidate) ;;
+  stage|calibration|candidate) ;;
   *) echo "invalid maintenance campaign phase" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
 RESULT_DIR="$(cd "$RESULT_DIR" && pwd)"
-CONFIG="$REPO_ROOT/bench/maintenance-campaign.json"
-TOOL="$REPO_ROOT/tools/maintenance_campaign.py"
-BINARY="$REPO_ROOT/build/bench-only/bench/tess_bench_maintenance_campaign"
+CONFIG="$RESULT_DIR/bench/maintenance-campaign.json"
+TOOL="$RESULT_DIR/tools/maintenance_campaign.py"
+BINARY="$RESULT_DIR/bin/tess_bench_maintenance_campaign"
 MANIFEST="$RESULT_DIR/build-manifest.json"
 
 die() {
@@ -28,22 +28,132 @@ die() {
   exit 2
 }
 
+source_is_clean_at() {
+  local source_sha="$1"
+  [ "$(git -C "$REPO_ROOT" rev-parse HEAD)" = "$source_sha" ] \
+    && [ -z "$(
+      git -C "$REPO_ROOT" status --porcelain --untracked-files=all \
+        --ignored=matching
+    )" ]
+}
+
+verify_stage_bundle() {
+  [ -f "$RESULT_DIR/BUNDLE_SHA256SUMS" ] || return 1
+  (
+    cd "$RESULT_DIR"
+    [ -z "$(
+      find . -mindepth 1 ! -type f ! -type d -print -quit
+    )" ] || exit 1
+    diff -u \
+      <(
+        sed -E 's/^[0-9a-f]{64}  //' BUNDLE_SHA256SUMS \
+          | LC_ALL=C sort
+      ) \
+      <(
+        find . -type f ! -name BUNDLE_SHA256SUMS -print \
+          | LC_ALL=C sort
+      ) || exit 1
+    shasum -a 256 -c BUNDLE_SHA256SUMS || exit 1
+  )
+}
+
+stage_bundle() {
+  local build_dir build_jobs link_command source_sha temp_root
+  [ -z "$(find "$RESULT_DIR" -mindepth 1 -print -quit)" ] \
+    || die "native stage directory must be empty"
+  source_sha="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  source_is_clean_at "$source_sha" \
+    || die "native stage requires a clean source commit before building"
+  build_jobs="${TESS_MAINTENANCE_BUILD_JOBS:-1}"
+  case "$build_jobs" in
+    ''|0|*[!0-9]*) die "invalid TESS_MAINTENANCE_BUILD_JOBS" ;;
+  esac
+  temp_root="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+  build_dir="$(mktemp -d "$temp_root/tess-mnt3-native-stage.XXXXXX")"
+  case "$build_dir" in
+    "$temp_root"/tess-mnt3-native-stage.*) ;;
+    *) die "cannot create controlled native build directory" ;;
+  esac
+  case "$build_dir/" in
+    "$REPO_ROOT/"*) die "native build directory overlaps the source tree" ;;
+  esac
+  cleanup_stage() {
+    rm -rf "$build_dir"
+  }
+  trap cleanup_stage EXIT
+
+  cmake -S "$REPO_ROOT" -B "$build_dir" -G "Unix Makefiles" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_COMPILER=/usr/bin/c++ \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+    -DTESS_BUILD_TESTING=OFF -DTESS_BUILD_EXAMPLES=OFF \
+    -DTESS_BUILD_BENCHMARKS=ON -DTESS_ENABLE_WARNINGS=ON \
+    -DTESS_ENABLE_ENTT=ON -DTESS_ENABLE_FLECS=ON \
+    -DTESS_WARNINGS_AS_ERRORS=ON
+  cmake --build "$build_dir" --parallel "$build_jobs" \
+    --target tess_bench_maintenance_campaign
+  link_command="$build_dir/bench/CMakeFiles/"
+  link_command+="tess_bench_maintenance_campaign.dir/link.txt"
+  python3 "$REPO_ROOT/tools/maintenance_campaign.py" build-manifest \
+    --source-root "$REPO_ROOT" --source-sha "$source_sha" \
+    --binary "$build_dir/bench/tess_bench_maintenance_campaign" \
+    --config "$REPO_ROOT/bench/maintenance-campaign.json" \
+    --compiler /usr/bin/c++ \
+    --compile-commands "$build_dir/compile_commands.json" \
+    --link-command "$link_command" \
+    --device m3 --build-context macos-native-xcode \
+    --output "$build_dir/build-manifest.json"
+  source_is_clean_at "$source_sha" \
+    || die "source changed during native stage"
+
+  mkdir -p "$RESULT_DIR/bin" "$RESULT_DIR/bench" "$RESULT_DIR/tools"
+  cp "$build_dir/bench/tess_bench_maintenance_campaign" "$RESULT_DIR/bin/"
+  cp "$build_dir/build-manifest.json" "$RESULT_DIR/"
+  cp "$REPO_ROOT/bench/maintenance-campaign.json" "$RESULT_DIR/bench/"
+  cp "$REPO_ROOT/bench/tess_maintenance_campaign_bench.cc" \
+    "$RESULT_DIR/bench/"
+  cp "$REPO_ROOT/tools/maintenance_campaign.py" "$RESULT_DIR/tools/"
+  cp "$REPO_ROOT/tools/maintenance-campaign-native.sh" "$RESULT_DIR/tools/"
+  (
+    cd "$RESULT_DIR"
+    find . -type f -print \
+      | LC_ALL=C sort \
+      | while IFS= read -r artifact; do
+          shasum -a 256 "$artifact"
+        done > "$build_dir/BUNDLE_SHA256SUMS"
+  )
+  cp "$build_dir/BUNDLE_SHA256SUMS" "$RESULT_DIR/"
+  verify_stage_bundle || die "native stage bundle validation failed"
+  trap - EXIT
+  cleanup_stage
+  printf '>> staged exact native bundle at %s\n' "$RESULT_DIR"
+  printf '>> source %s\n' "$source_sha"
+}
+
+if [ "$PHASE" = "stage" ]; then
+  stage_bundle
+  exit 0
+fi
+
 verify_calibration_result_set() {
   [ -f "$RESULT_DIR/calibration-SHA256SUMS" ] || return 1
   (
     cd "$RESULT_DIR"
-    shasum -a 256 -c calibration-SHA256SUMS
+    [ -z "$(
+      find . -mindepth 1 ! -type f ! -type d -print -quit
+    )" ] || exit 1
     diff -u \
       <(
         sed -E 's/^[0-9a-f]{64}  //' calibration-SHA256SUMS \
           | LC_ALL=C sort
       ) \
       <(
-        find . -mindepth 1 ! -name '*-SHA256SUMS' -print \
+        find . -type f ! -name '*-SHA256SUMS' -print \
           | LC_ALL=C sort
-      )
+      ) || exit 1
     [ "$(find . -type f -name '*-SHA256SUMS' -print)" \
-      = './calibration-SHA256SUMS' ]
+      = './calibration-SHA256SUMS' ] || exit 1
+    shasum -a 256 -c calibration-SHA256SUMS || exit 1
   )
 }
 
@@ -66,17 +176,11 @@ if (
 print(source_sha)
 PY
 )"
-if [ "$(git -C "$REPO_ROOT" rev-parse HEAD)" != "$manifest_source_sha" ] \
-  || [ -n "$(
-    git -C "$REPO_ROOT" status --porcelain --untracked-files=no
-  )" ]; then
+if ! source_is_clean_at "$manifest_source_sha"; then
   die "native phase requires the build manifest's clean source commit"
 fi
 if [ "$PHASE" = "calibration" ]; then
-  diff -u \
-    <(printf '%s\n' './build-manifest.json') \
-    <(cd "$RESULT_DIR" && find . -mindepth 1 -print | LC_ALL=C sort) \
-    || die "calibration results directory is not pristine"
+  verify_stage_bundle || die "native stage bundle is invalid or not pristine"
 else
   verify_calibration_result_set \
     || die "retained calibration result set is invalid"

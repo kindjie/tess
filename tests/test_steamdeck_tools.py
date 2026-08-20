@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import pty
 import subprocess
@@ -599,6 +600,69 @@ def test_maintenance_campaign_has_local_stage_and_pinned_whole_phase():
   assert 'verify_result_set "$RESULT_DIR" calibration' in runner
   assert 'wait "$stdout_tee_pid"' in runner
   assert 'wait "$stderr_tee_pid"' in runner
+  assert 'verify_bundle "$bundle"' in host
+  assert 'verify_bundle "$BUNDLE"' in runner
+  assert '"$bundle_sha"' in host
+  assert 'EXPECTED_BUNDLE_SHA="$4"' in runner
+  assert '"$RESULT_DIR/bundle-sha256.txt"' in runner
+  assert 'if [ "$phase" = "calibration" ]; then' in host
+  assert 'runs/${run_id}/bundle' in host
+  assert "The run directory must not exist" in host
+  assert "Candidate consumes the immutable bundle" in host
+  assert 'cmp -s "$RESULT_DIR/${PHASE}-governor-before.txt"' in runner
+  assert "governor restoration was incomplete" in runner
+  assert "sudo tee \"$governor\" >/dev/null || true" not in runner
+  assert "--untracked-files=no" not in host
+  assert "--untracked-files=all" in host
+  assert "--ignored=matching" in host
+  assert '-v "${REPO_ROOT}:/src:ro"' in host
+  assert "-B /stage/build" in host
+
+
+def test_maintenance_bundle_verification_rejects_unlisted_files(tmp_path: Path):
+  bundle = tmp_path / "bundle"
+  bundle.mkdir()
+  artifact = bundle / "artifact"
+  artifact.write_text("retained\n", encoding="utf-8")
+  digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+  (bundle / "SHA256SUMS").write_text(
+    f"{digest}  ./artifact\n", encoding="utf-8"
+  )
+  command = 'bundle=$2; source "$1" help >/dev/null; verify_bundle "$bundle"'
+
+  verified = subprocess.run(
+    [
+      "bash",
+      "-c",
+      command,
+      "campaign-test",
+      str(MAINTENANCE_CAMPAIGN),
+      str(bundle),
+    ],
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert verified.returncode == 0, verified.stderr
+
+  shadow = bundle / "tools" / "json.py"
+  shadow.parent.mkdir()
+  shadow.write_text("raise SystemExit(0)\n", encoding="utf-8")
+  rejected = subprocess.run(
+    [
+      "bash",
+      "-c",
+      command,
+      "campaign-test",
+      str(MAINTENANCE_CAMPAIGN),
+      str(bundle),
+    ],
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  assert rejected.returncode != 0
+  assert "inventory" in rejected.stderr
 
 
 def test_deck_help_routes_maintenance_campaign_without_generic_bench():

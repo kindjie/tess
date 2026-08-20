@@ -495,8 +495,14 @@ def create_build_manifest(
     raise ToolError("source SHA must be 40 lowercase hexadecimal characters")
   if _run_git(source_root, "rev-parse", "HEAD") != source_sha:
     raise ToolError("source SHA does not identify the checked-out commit")
-  if _run_git(source_root, "status", "--porcelain", "--untracked-files=no"):
-    raise ToolError("build manifest requires a clean tracked source tree")
+  if _run_git(
+    source_root,
+    "status",
+    "--porcelain",
+    "--untracked-files=all",
+    "--ignored=matching",
+  ):
+    raise ToolError("build manifest requires a completely clean source tree")
   if (
     not binary.is_file()
     or not compile_commands.is_file()

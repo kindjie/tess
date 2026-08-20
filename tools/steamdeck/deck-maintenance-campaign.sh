@@ -39,19 +39,42 @@ validate_simple_name() {
   esac
 }
 
+verify_bundle() {
+  local bundle="$1"
+  [ -f "$bundle/SHA256SUMS" ] || die "bundle has no SHA256SUMS"
+  (
+    cd "$bundle"
+    [ -z "$(
+      find . -mindepth 1 ! -type f ! -type d -print -quit
+    )" ] || exit 1
+    diff -u \
+      <(
+        sed -E 's/^[0-9a-f]{64}  //' SHA256SUMS \
+          | sed 's#^\./##' | LC_ALL=C sort
+      ) \
+      <(
+        find . -type f ! -name SHA256SUMS -print \
+          | sed 's#^\./##' | LC_ALL=C sort
+      ) || exit 1
+    shasum -a 256 -c SHA256SUMS || exit 1
+  ) || die "bundle checksum or inventory validation failed"
+}
+
 verify_result_set() {
   local directory="$1" phase="$2" manifest
   manifest="${phase}-SHA256SUMS"
   [ -f "$directory/$manifest" ] || die "missing ${manifest}"
   (
     cd "$directory"
-    shasum -a 256 -c "$manifest"
+    [ -z "$(
+      find . -mindepth 1 ! -type f ! -type d -print -quit
+    )" ] || exit 1
     diff -u \
       <(sed -E 's/^[0-9a-f]{64}  //' "$manifest" | LC_ALL=C sort) \
       <(
-        find . -mindepth 1 ! -name '*-SHA256SUMS' -print \
+        find . -type f ! -name '*-SHA256SUMS' -print \
           | LC_ALL=C sort
-      )
+      ) || exit 1
     diff -u \
       <(
         if [ "$phase" = "calibration" ]; then
@@ -61,7 +84,9 @@ verify_result_set() {
             './calibration-SHA256SUMS' './candidate-SHA256SUMS'
         fi
       ) \
-      <(find . -type f -name '*-SHA256SUMS' -print | LC_ALL=C sort)
+      <(find . -type f -name '*-SHA256SUMS' -print | LC_ALL=C sort) \
+      || exit 1
+    shasum -a 256 -c "$manifest" || exit 1
   ) || die "${phase} result set failed checksum or completeness validation"
 }
 
@@ -77,8 +102,10 @@ stage_bundle() {
     git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir
   )"
   [ -d "$git_common_dir" ] || die "cannot resolve the common Git directory"
-  [ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ] \
-    || die "staging requires a clean tracked source tree"
+  [ -z "$(
+    git -C "$REPO_ROOT" status --porcelain --untracked-files=all \
+      --ignored=matching
+  )" ] || die "staging requires a completely clean source tree"
   case "$BUILD_JOBS" in
     ''|0|*[!0-9]*) die "invalid TESS_STEAMRT_BUILD_JOBS" ;;
   esac
@@ -99,27 +126,28 @@ stage_bundle() {
     -e "BUILD_JOBS=${BUILD_JOBS}" \
     -e "CONTAINER_IMAGE_ID=${image_id}" \
     -e GIT_OPTIONAL_LOCKS=0 \
-    -v "${REPO_ROOT}:/src" -v "${bundle}:/stage" -w /src \
+    -v "${REPO_ROOT}:/src:ro" -v "${bundle}:/stage" -w /src \
     -v "${git_common_dir}:${git_common_dir}:ro" \
     "$image_id" bash -ceu '
-      cmake --fresh --preset linux-bench
-      cmake --build --preset linux-bench --parallel "$BUILD_JOBS" \
+      cmake --fresh --preset linux-bench -B /stage/build
+      cmake --build /stage/build --parallel "$BUILD_JOBS" \
         --target tess_bench_maintenance_campaign
       python3 tools/maintenance_campaign.py build-manifest \
         --source-root /src \
         --source-sha "$SOURCE_SHA" \
-        --binary build/linux-bench/bench/tess_bench_maintenance_campaign \
+        --binary /stage/build/bench/tess_bench_maintenance_campaign \
         --config bench/maintenance-campaign.json \
         --compiler /usr/bin/clang++ \
-        --compile-commands build/linux-bench/compile_commands.json \
-        --link-command build/linux-bench/bench/CMakeFiles/\
+        --compile-commands /stage/build/compile_commands.json \
+        --link-command /stage/build/bench/CMakeFiles/\
 tess_bench_maintenance_campaign.dir/link.txt \
         --device steam-deck \
         --build-context "$BUILD_CONTEXT" \
         --container-image-id "$CONTAINER_IMAGE_ID" \
         --output /stage/build-manifest.json
-      cp build/linux-bench/bench/tess_bench_maintenance_campaign \
+      cp /stage/build/bench/tess_bench_maintenance_campaign \
         /stage/bin/
+      rm -rf /stage/build
     '
   cp "$REPO_ROOT/bench/maintenance-campaign.json" "$bundle/bench/"
   cp "$REPO_ROOT/bench/tess_maintenance_campaign_bench.cc" "$bundle/bench/"
@@ -139,6 +167,7 @@ tess_bench_maintenance_campaign.dir/link.txt \
       tools/steamdeck/deck-run-maintenance-campaign.sh \
       > SHA256SUMS
   )
+  verify_bundle "$bundle"
   printf '>> staged exact Deck bundle at %s\n' "$bundle"
   printf '>> source %s\n' "$source_sha"
 }
@@ -147,14 +176,12 @@ run_phase() {
   [ "$#" -eq 4 ] \
     || die "run needs bundle, phase, run ID, and results directory"
   local bundle="$1" phase="$2" run_id="$3" results="$4"
-  local source_sha remote_dir status
+  local bundle_sha source_sha remote_dir status
   local remote_bundle remote_results remote_runner
   bundle="$(cd "$bundle" && pwd)"
-  [ -f "$bundle/SHA256SUMS" ] || die "bundle has no SHA256SUMS"
-  (
-    cd "$bundle"
-    shasum -a 256 -c SHA256SUMS
-  )
+  verify_bundle "$bundle"
+  bundle_sha="$(shasum -a 256 "$bundle/SHA256SUMS" | awk '{print $1}')"
+  validate_simple_name "$bundle_sha" "bundle identity"
   case "$phase" in
     calibration|candidate) ;;
     *) die "phase must be calibration or candidate" ;;
@@ -167,8 +194,8 @@ run_phase() {
     "$bundle/build-manifest.json")"
   validate_simple_name "$source_sha" "bundle source SHA"
   remote_dir="${REMOTE_ROOT}-${source_sha}"
-  remote_bundle="\$HOME/${remote_dir}/bundle"
-  remote_results="\$HOME/${remote_dir}/runs/${run_id}"
+  remote_bundle="\$HOME/${remote_dir}/runs/${run_id}/bundle"
+  remote_results="\$HOME/${remote_dir}/runs/${run_id}/results"
   remote_runner="${remote_bundle}/tools/steamdeck/"
   remote_runner+="deck-run-maintenance-campaign.sh"
   if [ "$phase" = "calibration" ]; then
@@ -190,17 +217,26 @@ run_phase() {
   "${HERE}/deck" doctor
   # remote_dir and phase have already been restricted to simple values.
   # shellcheck disable=SC2029
-  ssh "$DECK_HOST" "mkdir -p \"${remote_bundle}\" \
-    \"\$HOME/${remote_dir}/runs\""
-  rsync -az "$bundle/" "$DECK_HOST:${remote_dir}/bundle/"
+  if [ "$phase" = "calibration" ]; then
+    # The run directory must not exist; rsync creates its bundle exactly once.
+    # shellcheck disable=SC2029
+    ssh "$DECK_HOST" "test ! -e \"\$HOME/${remote_dir}/runs/${run_id}\" \
+      && mkdir -p \"\$HOME/${remote_dir}/runs/${run_id}\""
+    rsync -az "$bundle/" \
+      "$DECK_HOST:${remote_dir}/runs/${run_id}/bundle/"
+  else
+    # Candidate consumes the immutable bundle retained by calibration.
+    # shellcheck disable=SC2029
+    ssh "$DECK_HOST" "test -d \"${remote_bundle}\""
+  fi
   set +e
   # shellcheck disable=SC2029
   ssh -t "$DECK_HOST" \
     "bash \"${remote_runner}\" \"${phase}\" \
-\"${remote_bundle}\" \"${remote_results}\""
+\"${remote_bundle}\" \"${remote_results}\" \"${bundle_sha}\""
   status=$?
   set -e
-  rsync -az "$DECK_HOST:${remote_dir}/runs/${run_id}/" "$results/"
+  rsync -az "$DECK_HOST:${remote_dir}/runs/${run_id}/results/" "$results/"
   verify_result_set "$results" "$phase"
   [ "$status" -eq 0 ] || die "remote ${phase} phase failed with ${status}"
   printf '>> retrieved %s results at %s\n' "$phase" "$results"

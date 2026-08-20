@@ -93,38 +93,29 @@ aggregate primary regression.
 
 ## Reproduction and retention
 
-Configure and build the exact committed M3 harness. The native leg uses the
-same `build-manifest` command as the Deck staging route; it rejects a dirty
-tracked tree, a mismatched source SHA, incomplete compile/link provenance, or a
-binary whose embedded identities differ:
+Stage the exact committed M3 harness into a new empty result directory. The
+native stage rejects every tracked, untracked, or ignored worktree entry before
+and after a fresh isolated campaign-target build outside the source tree,
+creates the build manifest immediately, and retains an exact checksummed
+binary/config/tool/benchmark-source/runner bundle. It rejects a changed tree,
+incomplete compile/link provenance, or a binary whose embedded identities
+differ:
 
 ```sh
-cmake --preset bench-only
-cmake --build build/bench-only --target tess_bench_maintenance_campaign
 mnt3_m3_results=/path/to/new-empty-m3-results
-mnt3_source_sha="$(git rev-parse HEAD)"
 mkdir -p "$mnt3_m3_results"
 [ -z "$(find "$mnt3_m3_results" -mindepth 1 -print -quit)" ]
-python3 tools/maintenance_campaign.py build-manifest \
-  --source-root . --source-sha "$mnt3_source_sha" \
-  --binary build/bench-only/bench/tess_bench_maintenance_campaign \
-  --config bench/maintenance-campaign.json \
-  --compiler /usr/bin/c++ \
-  --compile-commands build/bench-only/compile_commands.json \
-  --link-command \
-    build/bench-only/bench/CMakeFiles/tess_bench_maintenance_campaign.dir/link.txt \
-  --device m3 --build-context macos-native-xcode \
-  --output "$mnt3_m3_results/build-manifest.json"
+tools/maintenance-campaign-native.sh stage "$mnt3_m3_results"
 ```
 
 The native whole-phase runner reads the M3 repetition, minimum-time, and seed
 values from `bench/maintenance-campaign.json`. It writes a complete phase
 checksum even on failure and refuses calibration unless the build manifest is
-the directory's only entry. Every phase also requires repository `HEAD` to be
-the build manifest's source commit with no tracked changes. Candidate
-collection requires the exact retained calibration inventory and refuses every
-partial prior candidate attempt. Use a new empty results directory and build
-manifest for every rerun.
+part of the exact untouched stage bundle. Every phase also requires repository
+`HEAD` to be the build manifest's source commit with no tracked changes.
+Candidate collection requires the exact retained calibration inventory and
+refuses every partial prior candidate attempt. Use a newly staged result
+directory for every rerun.
 
 ```sh
 tools/maintenance-campaign-native.sh calibration "$mnt3_m3_results"
@@ -150,16 +141,19 @@ tools/steamdeck/deck campaign run \
   <bundle-dir> candidate <same-run-id> <same-results-dir>
 ```
 
-Staging first rebuilds the wrapper image from the exact frozen SteamRT4 base
-digest and records the resulting wrapper image ID in the build manifest.
+Staging first rejects every tracked, untracked, or ignored worktree entry, then
+rebuilds the wrapper image from the exact frozen SteamRT4 base digest. The
+source is mounted read-only and the fresh cross-build stays outside it; the
+build manifest records the resulting wrapper image ID.
 `campaign run` executes `deck doctor` immediately before transfer. Its Deck
-helper verifies the bundle, records the governor and environment, pins every
-CPU once around all 600 calibration or 1,200 candidate invocations, restores
-the original per-CPU governors on every exit, and retrieves partial artifacts
-even after failure. Run IDs and phase-output existence checks prevent a rerun
-from overwriting evidence; retrieved phase checksums are verified locally. Use
-a new run ID and results directory for every rerun. Do not edit the bundle
-between device legs.
+helper requires the exact listed bundle inventory in a fresh run-specific
+remote directory, binds its digest into the results, records the governor and
+environment, and pins every CPU once around all 600 calibration or 1,200
+candidate invocations. Restoration errors or any before/after governor mismatch
+fail the phase while retaining diagnostics and partial artifacts. Run IDs and
+phase-output existence checks prevent a rerun from overwriting evidence;
+retrieved phase checksums are verified locally. Use a new run ID and results
+directory for every rerun. Do not edit the bundle between device legs.
 
 The retained evidence bundle contains sanitized raw calibration and candidate
 JSON, threshold manifests, per-device reports, the cross-device decision,

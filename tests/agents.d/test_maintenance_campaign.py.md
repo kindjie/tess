@@ -12,5 +12,7 @@
 - Promotion needs a material primary win on at least one device and no material
   guardrail regression on either; missing repetitions invalidate a device leg.
 - The native phase runner test uses a fake collector to exercise transaction
-  behavior, not timing: successful calibration is immutable, a failed candidate
-  retains a checksummed exit record, and neither phase may overwrite a run.
+  behavior, not timing: clean-before-build staging rejects untracked source
+  inputs and retains an exact bundle, successful calibration is immutable, a
+  failed candidate retains a checksummed exit record, and neither phase may
+  overwrite a run.
