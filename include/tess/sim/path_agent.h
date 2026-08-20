@@ -38,7 +38,7 @@ struct PathAgentState {
   PathTicket ticket{};
   std::size_t path_index = 0;
   /// Most recent search conclusion, absent before search or after invalidation.
-  std::optional<PathStatus> last_result;
+  std::optional<PathStatus> last_result = std::nullopt;
   PathAgentPhase phase = PathAgentPhase::Idle;
   bool has_goal = false;
   std::uint32_t blocked_retries = 0;
