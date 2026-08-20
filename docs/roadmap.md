@@ -79,10 +79,17 @@ release is prepared; source presence alone does not make a change released.
 ## Release-gated next steps
 
 - Publish `v0.13.0` only after the breaking API changes and upgrade guide are
-  complete and the exact release commit passes release-mode CI.
+  complete, the maintenance API and external chunk adapter pass their stable
+  promotion gates, and the exact release commit passes release-mode CI.
+- After `v0.13.0`, complete the bounded pathfinding, movement, execution, and
+  synthesis dispositions in the
+  [v0.13-to-v1.0 execution plan][pre-rc-plan]. Accepted implementations land
+  before downstream evaluation; rejection or explicit deferral completes an
+  optional experiment.
 - Create `v1.0.0-rc.1` only after adding its immutable compatibility snapshot,
-  recording a substantial downstream evaluation, assembling release records,
-  and passing release-mode CI on the exact candidate commit.
+  recording a substantial downstream evaluation of the resulting surface,
+  assembling release records, and passing release-mode CI on the exact
+  candidate commit.
 - Publish `v1.0.0` only after the candidate observation period and the final
   exact-commit release checks described in the release process.
 
@@ -99,8 +106,9 @@ code that assumes they do.
   cadences, dirty/manual/event triggers, exact event streams, and deterministic
   background continuation are released. Experimental immediate, FIFO, and
   queued-coalescing backends are released for evaluation; the registered
-  dirty-bit backend has landed on `main`. Maintenance handles and an external
-  chunk adapter are not yet integrated with storage.
+  dirty-bit backend has landed on `main`. Stable maintenance handles and an
+  external dense-and-sparse chunk adapter are required for `v0.13.0`; wider
+  derived-system adapters and storage-owned handles remain future work.
 - **Further spatial query acceleration**
   ([block TDD][tdd-block], [layout addendum][tdd-layout]) — resolved block-lazy
   pipelines and exact box/radius/chunk spans are released. Predicate bitsets,
@@ -142,6 +150,7 @@ substrate; the application owns meaning, entities, and presentation.
 [release-process]: https://github.com/kindjie/tess/blob/main/docs/releasing.md
 [unreleased-fragments]: https://github.com/kindjie/tess/tree/main/changelog.d
 [budgeted-progress]: https://github.com/kindjie/tess/blob/main/docs/planning/budgeted-progress-benchmarks.md
+[pre-rc-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md
 [tdd-scheduler]: https://github.com/kindjie/tess/blob/main/docs/tdd/simulation-scheduler.md
 [tdd-block]: https://github.com/kindjie/tess/blob/main/docs/tdd/block-kernel-pipeline.md
 [tdd-benchdata]: https://github.com/kindjie/tess/blob/main/docs/tdd/grid-benchmark-data-and-scenario-oracle.md

@@ -41,14 +41,22 @@ repository code a write token.
 
 ## 0.13 and the 1.0 candidate
 
-Publish `v0.13.0` only after all breaking API changes and the
-[upgrade guide](upgrade-1.0.md) have landed. Before `v1.0.0-rc.1`:
+Publish `v0.13.0` only after all breaking API changes, the stable maintenance
+API and external chunk adapter, and the [upgrade guide](upgrade-1.0.md) have
+landed. The [execution plan](planning/v0.13-to-v1.0-execution-plan.md) owns the
+ordered implementation and evidence gates. After 0.13, complete every required
+prototype run or explicit no-run disposition before `v1.0.0-rc.1`. Then:
 
-1. add the immutable `compatibility/1.0.0-rc.1` snapshot;
-2. assemble changelog fragments for the candidate;
-3. solicit and record one substantial downstream evaluation without naming a
-   private consumer; and
+1. solicit and record one substantial downstream evaluation without naming a
+   private consumer;
+2. add the immutable `compatibility/1.0.0-rc.1` snapshot after resolving the
+   evaluation's source-surface findings;
+3. assemble changelog fragments for the candidate; and
 4. run release mode against the exact candidate SHA and version.
+
+If downstream evaluation finds a required breaking correction to a surface
+published by 0.13, publish a new breaking minor release and amend the upgrade
+guide before creating the snapshot. Never hide that break in an RC.
 
 An RC release-mode fuzz job runs the archive target for 60 minutes with
 ASan/UBSan, satisfying the cumulative final-SHA minimum in one reproducible

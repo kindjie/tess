@@ -86,8 +86,10 @@ internal data structure is not a rejection of the broader research idea.
   degraded at dense bottlenecks whose queues exceeded the fixed horizon
   ([screening study][movement-screening]).
 
-JPS, bidirectional A\*, Theta\*, and D\* Lite have no maintained roadmap or
-rejection decision in this repository. Their absence is not a verdict.
+JPS, bidirectional A\*, and D\* Lite have no acceptance or rejection decision
+in this repository. Bounded pre-RC screens are scheduled in the
+[execution plan][execution-plan]; Theta\* remains deferred until its supporting
+contracts exist. Their current absence is not a performance verdict.
 
 </details>
 
@@ -306,3 +308,4 @@ does not justify another invalidation or grouping lifecycle.
 [congestion-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-wide-merge-second-wave.md
 [waypoint-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-balanced-waypoints-rejected.md
 [movement-screening]: https://github.com/kindjie/tess/blob/main/docs/planning/local-movement-resolution.md#evidence
+[execution-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md

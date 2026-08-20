@@ -5,6 +5,7 @@
 - [Public roadmap](../roadmap.md)
 - [Release process](../releasing.md)
 - [Upgrade to 1.0](../upgrade-1.0.md)
+- [v0.13 to v1.0 execution plan](v0.13-to-v1.0-execution-plan.md)
 - [Benchmark plan](benchmark-plan.md)
 - [Benchmark calibration](benchmark-calibration.md)
 - [Cloud bare-metal campaign runbook](cloud-campaign.md)
