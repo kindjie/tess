@@ -75,6 +75,20 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_bench_thread_scaling)
 
+# MNT-3's controlled promotion campaign is isolated from the permanent
+# threshold suite. Its complete cell registry and frozen decision policy live
+# in bench/maintenance-campaign.json; raw M3 and Steam Deck artifacts, rather
+# than hosted-runner timing, decide whether the dirty-bit backend graduates.
+add_executable(
+  tess_bench_maintenance_campaign
+  tess_maintenance_campaign_bench.cc
+)
+target_link_libraries(
+  tess_bench_maintenance_campaign
+  PRIVATE tess::tess benchmark::benchmark_main
+)
+tess_apply_project_options(tess_bench_maintenance_campaign)
+
 # The budgeted-progress runner is likewise its own binary (design
 # docs/planning/budgeted-progress-benchmarks.md section 14.1): a
 # multi-frame queueing experiment with its own clock, controller, and

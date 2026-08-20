@@ -8,6 +8,7 @@
 - [v0.13 to v1.0 execution plan](v0.13-to-v1.0-execution-plan.md)
 - [Benchmark plan](benchmark-plan.md)
 - [Benchmark calibration](benchmark-calibration.md)
+- [Maintenance promotion campaign](maintenance-promotion-campaign.md)
 - [Cloud bare-metal campaign runbook](cloud-campaign.md)
 - [Optimization log](optimization-log.md) — assembled at release from
   per-experiment fragments in [`optimization-log.d/`](optimization-log.d/)

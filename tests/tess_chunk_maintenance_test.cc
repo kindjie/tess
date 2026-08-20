@@ -518,17 +518,23 @@ TEST(TessChunkMaintenance, SynchronousAcceptedCallCannotEraseNestedDebt) {
 }
 
 #if TESS_HAS_EXCEPTIONS
-TEST(TessChunkMaintenance, ExceptionLeavesDirtyAndRequiresExplicitRetry) {
+template <typename Backend>
+void expect_exception_leaves_dirty_and_retryable() {
   DenseWorld world;
   auto throw_once = true;
-  Adapter<maintenance::DirtyBitScheduler, DenseWorld> adapter{
-      world, kOwned, SummaryRebuilder{&throw_once}};
+  Adapter<Backend, DenseWorld> adapter{world, kOwned,
+                                       SummaryRebuilder{&throw_once}};
   const auto key = tess::ChunkKey{0};
   world.field<ValueTag>(tess::Coord3{0, 0}) = 9;
-  ASSERT_EQ(adapter.mark_dirty(key, kTerrain, one_tile_box(0)),
-            maintenance::ChunkMarkResult::Accepted);
-
-  EXPECT_THROW(static_cast<void>(adapter.flush()), std::runtime_error);
+  if constexpr (std::is_same_v<Backend, maintenance::ImmediateScheduler>) {
+    EXPECT_THROW(
+        static_cast<void>(adapter.mark_dirty(key, kTerrain, one_tile_box(0))),
+        std::runtime_error);
+  } else {
+    ASSERT_EQ(adapter.mark_dirty(key, kTerrain, one_tile_box(0)),
+              maintenance::ChunkMarkResult::Accepted);
+    EXPECT_THROW(static_cast<void>(adapter.flush()), std::runtime_error);
+  }
   EXPECT_FALSE((world.dirty_mask(key) & kTerrain).empty());
   EXPECT_EQ(adapter.product(key).state,
             maintenance::ChunkProductState::Unavailable);
@@ -536,6 +542,15 @@ TEST(TessChunkMaintenance, ExceptionLeavesDirtyAndRequiresExplicitRetry) {
   drain_to_idle(adapter);
   EXPECT_EQ(adapter.product(key).state,
             maintenance::ChunkProductState::Current);
+}
+
+TEST(TessChunkMaintenance, ExceptionsLeaveEveryBackendDirtyAndRetryable) {
+  expect_exception_leaves_dirty_and_retryable<
+      maintenance::ImmediateScheduler>();
+  expect_exception_leaves_dirty_and_retryable<maintenance::FifoScheduler>();
+  expect_exception_leaves_dirty_and_retryable<
+      maintenance::CoalescingScheduler>();
+  expect_exception_leaves_dirty_and_retryable<maintenance::DirtyBitScheduler>();
 }
 #endif
 
@@ -597,7 +612,7 @@ TEST(TessChunkMaintenance, SparseCapacityTwoFollowsWorldLruAndExplicitEvict) {
 template <typename Backend>
 auto run_dense_scenario() -> std::array<ChunkSummary, 3> {
   DenseWorld world;
-  Adapter<Backend, DenseWorld> adapter{world, kOwned, SummaryRebuilder{}};
+  Adapter<Backend, DenseWorld> adapter{world, kOwned, SummaryRebuilder{}, 96};
   for (std::uint64_t mutation = 0; mutation < 96; ++mutation) {
     const auto x = static_cast<std::int64_t>(mutation % 12u);
     const auto y = static_cast<std::int64_t>((mutation * 3u) % 4u);
@@ -613,7 +628,16 @@ auto run_dense_scenario() -> std::array<ChunkSummary, 3> {
     const auto key = tess::ChunkKey{index};
     const auto view = adapter.product(key);
     EXPECT_EQ(view.state, maintenance::ChunkProductState::Current);
+    EXPECT_NE(view.value, nullptr);
+    if (view.value == nullptr) {
+      continue;
+    }
     EXPECT_EQ(*view.value, rescan(world, key));
+    EXPECT_EQ(view.token.key, key);
+    EXPECT_EQ(view.token.version, world.meta(key).version);
+    EXPECT_EQ(view.token.residency_generation, 0u);
+    EXPECT_TRUE(adapter.current(view.token));
+    EXPECT_EQ(world.dirty_flags(key) & kOwned, 0u);
     result[index] = *view.value;
   }
   return result;
@@ -635,8 +659,19 @@ auto run_archive_scenario() -> std::vector<std::byte> {
   std::vector<std::byte> bytes;
   EXPECT_GT(tess::save_world_archive<Archive>(world, bytes).bytes_written, 0u);
   for (std::uint64_t key = 0; key < 3; ++key) {
-    EXPECT_EQ(adapter.product(tess::ChunkKey{key}).state,
-              maintenance::ChunkProductState::Current);
+    const auto chunk_key = tess::ChunkKey{key};
+    const auto view = adapter.product(chunk_key);
+    EXPECT_EQ(view.state, maintenance::ChunkProductState::Current);
+    EXPECT_NE(view.value, nullptr);
+    if (view.value == nullptr) {
+      continue;
+    }
+    EXPECT_EQ(*view.value, rescan(world, chunk_key));
+    EXPECT_EQ(view.token.key, chunk_key);
+    EXPECT_EQ(view.token.version, world.meta(chunk_key).version);
+    EXPECT_EQ(view.token.residency_generation, 0u);
+    EXPECT_TRUE(adapter.current(view.token));
+    EXPECT_EQ(world.dirty_flags(chunk_key) & kOwned, 0u);
   }
   return bytes;
 }
@@ -664,24 +699,47 @@ auto run_sparse_archive_scenario() -> std::vector<std::byte> {
   for (const auto key : world.resident_chunk_keys()) {
     const auto view = adapter.product(key);
     EXPECT_EQ(view.state, maintenance::ChunkProductState::Current);
+    EXPECT_NE(view.value, nullptr);
+    if (view.value == nullptr) {
+      continue;
+    }
     EXPECT_EQ(*view.value, rescan(world, key));
+    EXPECT_EQ(view.token.key, key);
+    EXPECT_EQ(view.token.version, world.meta(key).version);
+    EXPECT_GT(view.token.residency_generation, 0u);
+    EXPECT_TRUE(adapter.current(view.token));
+    EXPECT_EQ(world.dirty_flags(key) & kOwned, 0u);
   }
   return bytes;
 }
 
 TEST(TessChunkMaintenance, BackendsMatchIndependentRescanAndArchiveOracle) {
   const auto immediate = run_dense_scenario<maintenance::ImmediateScheduler>();
-  const auto dirty = run_dense_scenario<maintenance::DirtyBitScheduler>();
-  EXPECT_EQ(dirty, immediate);
-  EXPECT_EQ(run_archive_scenario<maintenance::ImmediateScheduler>(),
-            run_archive_scenario<maintenance::DirtyBitScheduler>());
-  EXPECT_EQ(run_sparse_archive_scenario<maintenance::ImmediateScheduler>(),
-            run_sparse_archive_scenario<maintenance::DirtyBitScheduler>());
+  EXPECT_EQ(run_dense_scenario<maintenance::FifoScheduler>(), immediate);
+  EXPECT_EQ(run_dense_scenario<maintenance::CoalescingScheduler>(), immediate);
+  EXPECT_EQ(run_dense_scenario<maintenance::DirtyBitScheduler>(), immediate);
+
+  const auto dense_archive =
+      run_archive_scenario<maintenance::ImmediateScheduler>();
+  EXPECT_EQ(run_archive_scenario<maintenance::FifoScheduler>(), dense_archive);
+  EXPECT_EQ(run_archive_scenario<maintenance::CoalescingScheduler>(),
+            dense_archive);
+  EXPECT_EQ(run_archive_scenario<maintenance::DirtyBitScheduler>(),
+            dense_archive);
+
+  const auto sparse_archive =
+      run_sparse_archive_scenario<maintenance::ImmediateScheduler>();
+  EXPECT_EQ(run_sparse_archive_scenario<maintenance::FifoScheduler>(),
+            sparse_archive);
+  EXPECT_EQ(run_sparse_archive_scenario<maintenance::CoalescingScheduler>(),
+            sparse_archive);
+  EXPECT_EQ(run_sparse_archive_scenario<maintenance::DirtyBitScheduler>(),
+            sparse_archive);
 }
 
 TEST(TessChunkMaintenance, ExplicitFlushIsDeterministicAcrossRuns) {
   const auto expected = run_dense_scenario<maintenance::DirtyBitScheduler>();
-  for (int run = 0; run < 100; ++run) {
+  for (int run = 0; run < 1'000; ++run) {
     EXPECT_EQ(run_dense_scenario<maintenance::DirtyBitScheduler>(), expected);
   }
 }
@@ -716,10 +774,11 @@ TEST(TessChunkMaintenance, SparseArchiveLoadNeedsIdleReconciliation) {
   }
 }
 
-TEST(TessChunkMaintenance, WarmDenseSchedulingAndDrainDoNotAllocate) {
+template <typename Backend>
+void expect_warm_dense_scheduling_and_drain_do_not_allocate() {
   DenseWorld world;
-  Adapter<maintenance::DirtyBitScheduler, DenseWorld> adapter{
-      world, kOwned, SummaryRebuilder{}};
+  Adapter<Backend, DenseWorld> adapter{world, kOwned, SummaryRebuilder{},
+                                       1'000};
   ASSERT_EQ(adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
             maintenance::ChunkMarkResult::Accepted);
   drain_to_idle(adapter);
@@ -731,19 +790,60 @@ TEST(TessChunkMaintenance, WarmDenseSchedulingAndDrainDoNotAllocate) {
           adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
           maintenance::ChunkMarkResult::Accepted);
     }
-    ASSERT_EQ(adapter.flush(), maintenance::DrainResult::Drained);
-    ASSERT_EQ(adapter.flush(), maintenance::DrainResult::Idle);
+    drain_to_idle(adapter);
     EXPECT_EQ(counter.count(), 0u);
   }
 }
 
-TEST(TessChunkMaintenance, ConcurrentOffersAreSafeWithoutWorldMutation) {
+template <typename Backend>
+void expect_warm_sparse_scheduling_and_drain_do_not_allocate() {
+  SparseWorld world{tess::ResidencyConfig{SparseWorld::page_byte_size}};
+  ASSERT_NE(world.ensure_resident(tess::ChunkKey{0}).generation, 0u);
+  Adapter<Backend, SparseWorld> adapter{world, kOwned, SummaryRebuilder{},
+                                        1'000};
+  ASSERT_EQ(adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
+            maintenance::ChunkMarkResult::Accepted);
+  drain_to_idle(adapter);
+
+  {
+    tess_test::ScopedAllocationCounter counter;
+    for (int call = 0; call < 1'000; ++call) {
+      ASSERT_EQ(
+          adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
+          maintenance::ChunkMarkResult::Accepted);
+    }
+    drain_to_idle(adapter);
+    EXPECT_EQ(counter.count(), 0u);
+  }
+}
+
+TEST(TessChunkMaintenance, WarmAdaptersDoNotAllocateAcrossBackendsOrStorage) {
+  expect_warm_dense_scheduling_and_drain_do_not_allocate<
+      maintenance::ImmediateScheduler>();
+  expect_warm_dense_scheduling_and_drain_do_not_allocate<
+      maintenance::FifoScheduler>();
+  expect_warm_dense_scheduling_and_drain_do_not_allocate<
+      maintenance::CoalescingScheduler>();
+  expect_warm_dense_scheduling_and_drain_do_not_allocate<
+      maintenance::DirtyBitScheduler>();
+  expect_warm_sparse_scheduling_and_drain_do_not_allocate<
+      maintenance::ImmediateScheduler>();
+  expect_warm_sparse_scheduling_and_drain_do_not_allocate<
+      maintenance::FifoScheduler>();
+  expect_warm_sparse_scheduling_and_drain_do_not_allocate<
+      maintenance::CoalescingScheduler>();
+  expect_warm_sparse_scheduling_and_drain_do_not_allocate<
+      maintenance::DirtyBitScheduler>();
+}
+
+TEST(TessChunkMaintenance, ConcurrentOffersAndDrainAreSafeWithoutMutation) {
   DenseWorld world;
   Adapter<maintenance::DirtyBitScheduler, DenseWorld> adapter{
       world, kOwned, SummaryRebuilder{}};
   ASSERT_EQ(adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
             maintenance::ChunkMarkResult::Accepted);
   std::atomic<bool> start = false;
+  std::atomic<int> finished = 0;
   std::array<std::thread, 4> producers;
   for (auto& producer : producers) {
     producer = std::thread([&] {
@@ -754,16 +854,24 @@ TEST(TessChunkMaintenance, ConcurrentOffersAreSafeWithoutWorldMutation) {
         EXPECT_EQ(adapter.retry(tess::ChunkKey{0}),
                   maintenance::ScheduleResult::Accepted);
       }
+      finished.fetch_add(1, std::memory_order_release);
     });
   }
   start.store(true, std::memory_order_release);
+  while (finished.load(std::memory_order_acquire) !=
+         static_cast<int>(producers.size())) {
+    const auto result = adapter.run_some(maintenance::MaintenanceBudget{1});
+    EXPECT_NE(result, maintenance::DrainResult::Stalled);
+    std::this_thread::yield();
+  }
   for (auto& producer : producers) {
     producer.join();
   }
   drain_to_idle(adapter);
   EXPECT_EQ(adapter.product(tess::ChunkKey{0}).state,
             maintenance::ChunkProductState::Current);
-  EXPECT_EQ(adapter.metrics().executions, 1u);
+  EXPECT_EQ(adapter.metrics().schedule_calls, 4'001u);
+  EXPECT_EQ(adapter.metrics().capacity_failures, 0u);
 }
 
 TEST(TessChunkMaintenance, ReleaseRequiresFreshIdleAndInvalidatesAdapter) {
