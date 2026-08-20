@@ -93,7 +93,7 @@ using Scaling1024World =
 using Scaling4096World =
     tess::AlwaysResidentWorld<Scaling4096Shape, CampaignSchema>;
 
-constexpr auto kCampaignDirty = std::uint32_t{1u << 7u};
+constexpr auto kCampaignDirty = tess::DirtyMask{1u << 7u};
 
 struct CampaignProduct {
   std::uint64_t sum = 0;
@@ -195,7 +195,7 @@ void BM_maintenance_adapter_campaign(benchmark::State& state) {
                              tess::SparseResident>) {
     for (std::size_t index = 0; index < ActiveTasks; ++index) {
       campaign_check(
-          world.ensure_resident(tess::ChunkKey{index}).generation != 0,
+          world.ensure_resident(tess::ChunkKey{index}).generation.valid(),
           "sparse campaign setup could not make a chunk resident");
     }
   }
@@ -236,7 +236,7 @@ void BM_maintenance_adapter_campaign(benchmark::State& state) {
                    "campaign product differs from independent rescan");
     campaign_check(adapter.current(view.token),
                    "campaign token is not current");
-    campaign_check((world.dirty_flags(key) & kCampaignDirty) == 0,
+    campaign_check((world.dirty_mask(key) & kCampaignDirty).empty(),
                    "campaign left owned dirty bits set");
     authoritative_checksum += expected.sum;
   }

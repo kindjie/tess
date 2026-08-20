@@ -21,6 +21,8 @@ namespace {
 
 namespace maintenance = tess::experimental::maintenance;
 
+static_assert(tess::detail::world_archive_format_version == 2);
+
 struct ValueTag {};
 
 using Schema = tess::FieldSchema<tess::Field<ValueTag, std::uint16_t>>;
@@ -634,10 +636,10 @@ auto run_dense_scenario() -> std::array<ChunkSummary, 3> {
     }
     EXPECT_EQ(*view.value, rescan(world, key));
     EXPECT_EQ(view.token.key, key);
-    EXPECT_EQ(view.token.version, world.meta(key).version);
-    EXPECT_EQ(view.token.residency_generation, 0u);
+    EXPECT_EQ(view.token.content_version, world.meta(key).content_version);
+    EXPECT_EQ(view.token.residency_generation, tess::ResidencyGeneration{});
     EXPECT_TRUE(adapter.current(view.token));
-    EXPECT_EQ(world.dirty_flags(key) & kOwned, 0u);
+    EXPECT_TRUE((world.dirty_mask(key) & kOwned).empty());
     result[index] = *view.value;
   }
   return result;
@@ -668,10 +670,11 @@ auto run_archive_scenario() -> std::vector<std::byte> {
     }
     EXPECT_EQ(*view.value, rescan(world, chunk_key));
     EXPECT_EQ(view.token.key, chunk_key);
-    EXPECT_EQ(view.token.version, world.meta(chunk_key).version);
-    EXPECT_EQ(view.token.residency_generation, 0u);
+    EXPECT_EQ(view.token.content_version,
+              world.meta(chunk_key).content_version);
+    EXPECT_EQ(view.token.residency_generation, tess::ResidencyGeneration{});
     EXPECT_TRUE(adapter.current(view.token));
-    EXPECT_EQ(world.dirty_flags(chunk_key) & kOwned, 0u);
+    EXPECT_TRUE((world.dirty_mask(chunk_key) & kOwned).empty());
   }
   return bytes;
 }
@@ -705,10 +708,10 @@ auto run_sparse_archive_scenario() -> std::vector<std::byte> {
     }
     EXPECT_EQ(*view.value, rescan(world, key));
     EXPECT_EQ(view.token.key, key);
-    EXPECT_EQ(view.token.version, world.meta(key).version);
-    EXPECT_GT(view.token.residency_generation, 0u);
+    EXPECT_EQ(view.token.content_version, world.meta(key).content_version);
+    EXPECT_TRUE(view.token.residency_generation.valid());
     EXPECT_TRUE(adapter.current(view.token));
-    EXPECT_EQ(world.dirty_flags(key) & kOwned, 0u);
+    EXPECT_TRUE((world.dirty_mask(key) & kOwned).empty());
   }
   return bytes;
 }
@@ -798,7 +801,7 @@ void expect_warm_dense_scheduling_and_drain_do_not_allocate() {
 template <typename Backend>
 void expect_warm_sparse_scheduling_and_drain_do_not_allocate() {
   SparseWorld world{tess::ResidencyConfig{SparseWorld::page_byte_size}};
-  ASSERT_NE(world.ensure_resident(tess::ChunkKey{0}).generation, 0u);
+  ASSERT_TRUE(world.ensure_resident(tess::ChunkKey{0}).generation.valid());
   Adapter<Backend, SparseWorld> adapter{world, kOwned, SummaryRebuilder{},
                                         1'000};
   ASSERT_EQ(adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),

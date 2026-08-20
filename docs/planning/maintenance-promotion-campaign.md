@@ -19,6 +19,13 @@ immediate-execution contract after correctness passes. Hosted Linux maintenance
 thresholds remain advisory; this one-off M3 and Steam Deck campaign does not
 calibrate them.
 
+The candidate's canonical path-result and missing-chunk policy changes are
+covered by the exact-commit normal and sanitizer gates. They do not add a cell
+to this adapter-only timing campaign. Canonical archive equivalence here is
+explicitly world archive format v2; the archive remains an authoritative-state
+oracle rather than evidence for dirty masks, strong content versions, residency
+generations, or derived products that it intentionally omits.
+
 The measured implementation is frozen by a build manifest that binds the clean
 source commit, raw config and canonical config, benchmark and campaign-tool
 sources, benchmark binary, compiler, sanitized compile and link commands, and
