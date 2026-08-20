@@ -14,9 +14,17 @@
   observation. Intervening marks, eviction/reload, archive load, and exceptions
   therefore leave products stale or unavailable and authoritative work
   retryable.
+- Kept current-product freshness tied to the shared content version. A retry
+  rebuilds version drift even when this adapter's owned dirty observation is
+  empty, while generation-safe clear still cannot remove a disjoint owner's
+  bits.
 - Required a nonzero, disjoint dirty-mask owner and recorded dirty state before
-  offering work. This keeps queue capacity failure recoverable without making
-  coalesced scheduling an exact-event mechanism.
+  offering work. A fixed per-slot retry-debt bit also retains a follow-up that
+  cannot enter a bounded comparison queue. Unbounded flush reoffers the debt;
+  budgeted drains expose it without risking synchronous work outside their
+  budget, and neither can report `Idle` while it remains. This keeps queue
+  capacity failure recoverable without making coalesced scheduling an
+  exact-event mechanism.
 - Kept the complete surface experimental. Cross-platform promotion evidence,
   rather than this correctness integration alone, decides which backend and
   adapter pieces graduate.

@@ -94,16 +94,23 @@ enum class ChunkAdapterReleaseResult : std::uint8_t {
  * adapter-owned, while `Rebuild` is invoked as
  * `rebuild(const World&, ChunkKey, DirtyObservation, Product&)`. A successful
  * callback publishes a version/residency token, then clears only the observed
- * bits. If the generation or version changed, the product remains explicitly
- * stale and the fixed task schedules another pass. Callback exceptions
- * propagate verbatim, leave authoritative dirty state set, and require the
- * caller to use `retry()` after inspecting partial product effects.
+ * bits. The observation may have no flags when `retry()` repairs shared
+ * content-version drift caused by a disjoint owner. If the generation or
+ * version changed, the product remains explicitly stale and the fixed task
+ * schedules another pass. Callback exceptions propagate verbatim, leave
+ * the owned dirty signal or version drift intact, and require the caller to
+ * use `retry()` after inspecting partial product effects.
  *
  * `owned_dirty_mask` must be nonzero and disjoint from every other clearing
  * owner for the same world. `mark_dirty()` rejects zero and foreign bits. It
  * mutates authoritative metadata before offering maintenance, so a capacity
  * failure loses no dirty signal. Scheduling is coalescing; one call does not
- * imply one execution.
+ * imply one execution. A disjoint owner may advance the shared content
+ * version and stale this product without setting an owned bit; `retry()` then
+ * rebuilds against that version without clearing the other owner's bits.
+ * Failed follow-up admission is retained as adapter-owned retry debt and
+ * reoffered by unbounded `flush()` or explicit `retry()`, so it cannot produce
+ * a false `Idle`.
  *
  * Dense slots equal chunk keys. Sparse slots equal the world's fixed resident
  * slots and are rebound only through this adapter at a quiescent boundary.
@@ -155,6 +162,7 @@ class ChunkMaintenanceAdapter final {
     std::uint64_t residency_generation = 0;
     bool bound = false;
     bool built = false;
+    std::atomic<bool> retry_debt = false;
   };
 
  public:
@@ -225,7 +233,7 @@ class ChunkMaintenanceAdapter final {
   }
 
   /**
-   * Reoffers already-authoritative dirty work without changing world state.
+   * Reoffers dirty or version-stale work without changing world state.
    *
    * Empty means an out-of-bounds or currently non-resident key, or a released
    * adapter. Capacity and zero-progress outcomes remain explicit.
@@ -241,12 +249,19 @@ class ChunkMaintenanceAdapter final {
     return schedule_slot(slot.value());
   }
 
-  /** Runs fixed tasks within `budget`; world access needs external locking. */
+  /**
+   * Runs fixed tasks within `budget`; world access needs external locking.
+   * Adapter retry debt is not reoffered here because a custom backend may
+   * execute an accepted offer synchronously outside this budget. Retained debt
+   * makes an otherwise completed drain report `BudgetExhausted`; use `retry()`
+   * or unbounded `flush()` to reoffer it.
+   */
   [[nodiscard]] auto run_some(MaintenanceBudget budget) -> DrainResult {
     transition_ready_.store(false, std::memory_order_release);
 #if TESS_HAS_EXCEPTIONS
     try {
-      const auto result = scheduler_.run_some(budget);
+      const auto backend_result = scheduler_.run_some(budget);
+      const auto result = finalize_drain(backend_result, {});
       transition_ready_.store(result == DrainResult::Idle,
                               std::memory_order_release);
       return result;
@@ -255,19 +270,26 @@ class ChunkMaintenanceAdapter final {
       throw;
     }
 #else
-    const auto result = scheduler_.run_some(budget);
+    const auto backend_result = scheduler_.run_some(budget);
+    const auto result = finalize_drain(backend_result, {});
     transition_ready_.store(result == DrainResult::Idle,
                             std::memory_order_release);
     return result;
 #endif
   }
 
-  /** Flushes reachable tasks; `Idle` opens the sparse transition boundary. */
+  /**
+   * Flushes reachable tasks; `Idle` opens the sparse transition boundary.
+   * Adapter retry debt is reoffered around the drain and prevents `Idle`.
+   */
   [[nodiscard]] auto flush() -> DrainResult {
     transition_ready_.store(false, std::memory_order_release);
 #if TESS_HAS_EXCEPTIONS
     try {
-      const auto result = scheduler_.flush();
+      static_cast<void>(reoffer_retry_debt());
+      const auto backend_result = scheduler_.flush();
+      const auto follow_up = reoffer_retry_debt();
+      const auto result = finalize_drain(backend_result, follow_up);
       transition_ready_.store(result == DrainResult::Idle,
                               std::memory_order_release);
       return result;
@@ -276,7 +298,10 @@ class ChunkMaintenanceAdapter final {
       throw;
     }
 #else
-    const auto result = scheduler_.flush();
+    static_cast<void>(reoffer_retry_debt());
+    const auto backend_result = scheduler_.flush();
+    const auto follow_up = reoffer_retry_debt();
+    const auto result = finalize_drain(backend_result, follow_up);
     transition_ready_.store(result == DrainResult::Idle,
                             std::memory_order_release);
     return result;
@@ -450,6 +475,7 @@ class ChunkMaintenanceAdapter final {
     if (!slot.bound || slot.key != key ||
         slot.residency_generation != generation) {
       slot.built = false;
+      slot.retry_debt.store(false, std::memory_order_release);
     }
     slot.bound = true;
     slot.key = key;
@@ -461,6 +487,7 @@ class ChunkMaintenanceAdapter final {
     slot.bound = false;
     slot.built = false;
     slot.residency_generation = 0;
+    slot.retry_debt.store(false, std::memory_order_release);
   }
 
   void bind_current_sparse_residency()
@@ -479,7 +506,52 @@ class ChunkMaintenanceAdapter final {
 
   [[nodiscard]] auto schedule_slot(std::size_t slot) -> ScheduleResult {
     transition_ready_.store(false, std::memory_order_release);
-    return scheduler_.schedule(handles_[slot]);
+    const auto claimed_debt =
+        slots_[slot].retry_debt.exchange(false, std::memory_order_acq_rel);
+    const auto result = scheduler_.schedule(handles_[slot]);
+    if (claimed_debt && result != ScheduleResult::Accepted) {
+      slots_[slot].retry_debt.store(true, std::memory_order_release);
+    }
+    return result;
+  }
+
+  struct RetryOfferSummary {
+    bool offered = false;
+    bool stalled = false;
+  };
+
+  [[nodiscard]] auto reoffer_retry_debt() -> RetryOfferSummary {
+    auto summary = RetryOfferSummary{};
+    for (std::size_t slot = 0; slot < slot_count_; ++slot) {
+      if (!slots_[slot].retry_debt.load(std::memory_order_acquire)) {
+        continue;
+      }
+      summary.offered = true;
+      const auto result = schedule_slot(slot);
+      summary.stalled = summary.stalled || result == ScheduleResult::Stalled;
+    }
+    return summary;
+  }
+
+  [[nodiscard]] auto has_retry_debt() const noexcept -> bool {
+    for (std::size_t slot = 0; slot < slot_count_; ++slot) {
+      if (slots_[slot].retry_debt.load(std::memory_order_acquire)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] auto finalize_drain(DrainResult result,
+                                    RetryOfferSummary follow_up) const noexcept
+      -> DrainResult {
+    if (result == DrainResult::Stalled || follow_up.stalled) {
+      return DrainResult::Stalled;
+    }
+    if (follow_up.offered || has_retry_debt()) {
+      return DrainResult::BudgetExhausted;
+    }
+    return result;
   }
 
   [[nodiscard]] static auto map_mark_result(ScheduleResult result) noexcept
@@ -530,7 +602,9 @@ class ChunkMaintenanceAdapter final {
       return;
     }
     const auto observed = world_->observe_dirty(slot.key, owned_dirty_mask_);
-    if (observed.flags == 0) {
+    if (observed.flags == 0 &&
+        (!slot.built || slot.token.version == observed.version)) {
+      slot.retry_debt.store(false, std::memory_order_release);
       return;
     }
     if (!sparse_binding_current(slot, slot_index)) {
@@ -544,8 +618,12 @@ class ChunkMaintenanceAdapter final {
     slot.token = ChunkProductToken{slot.key, observed.version,
                                    slot.residency_generation};
     slot.built = true;
-    if (!world_->clear_dirty_observed(slot.key, observed)) {
-      static_cast<void>(schedule_slot(slot_index));
+    if (world_->clear_dirty_observed(slot.key, observed)) {
+      slot.retry_debt.store(false, std::memory_order_release);
+      return;
+    }
+    if (schedule_slot(slot_index) != ScheduleResult::Accepted) {
+      slot.retry_debt.store(true, std::memory_order_release);
     }
   }
 

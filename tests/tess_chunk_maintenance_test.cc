@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -35,6 +36,138 @@ constexpr auto kLighting = std::uint32_t{0b0010};
 constexpr auto kForeign = std::uint32_t{0b0100};
 constexpr auto kOwned = kTerrain | kLighting;
 
+class SynchronousDebtBackend {
+ public:
+  explicit SynchronousDebtBackend(std::size_t) { active_ = this; }
+
+  ~SynchronousDebtBackend() { active_ = nullptr; }
+
+  [[nodiscard]] auto schedule(maintenance::MaintenanceTask& task)
+      -> maintenance::ScheduleResult {
+    auto synchronous = false;
+    {
+      const auto lock = std::scoped_lock{state_mutex_};
+      ++metrics_.schedule_calls;
+      synchronous = synchronous_;
+      if (!synchronous) {
+        if (pending_ != nullptr) {
+          ++metrics_.capacity_failures;
+          return maintenance::ScheduleResult::CapacityExhausted;
+        }
+        pending_ = &task;
+        return maintenance::ScheduleResult::Accepted;
+      }
+    }
+    return run_synchronously(task);
+  }
+
+  [[nodiscard]] auto run_some(maintenance::MaintenanceBudget budget)
+      -> maintenance::BackendDrainResult {
+    if (budget.remaining() == 0) {
+      return maintenance::BackendDrainResult::Completed;
+    }
+    static_cast<void>(run_pending(budget));
+    return maintenance::BackendDrainResult::Completed;
+  }
+
+  [[nodiscard]] auto flush() -> maintenance::BackendDrainResult {
+    while (true) {
+      auto budget = maintenance::MaintenanceBudget{};
+      if (!run_pending(budget)) {
+        break;
+      }
+    }
+    return maintenance::BackendDrainResult::Completed;
+  }
+
+  [[nodiscard]] auto metrics() const noexcept
+      -> maintenance::MaintenanceMetrics {
+    const auto lock = std::scoped_lock{state_mutex_};
+    return metrics_;
+  }
+
+  [[nodiscard]] auto has_pending() const noexcept -> bool {
+    const auto lock = std::scoped_lock{state_mutex_};
+    return pending_ != nullptr;
+  }
+
+  static void enable_synchronous_for_test() {
+    ASSERT_NE(active_, nullptr);
+    const auto lock = std::scoped_lock{active_->state_mutex_};
+    ASSERT_EQ(active_->pending_, nullptr);
+    active_->synchronous_ = true;
+  }
+
+ private:
+  struct ActiveRun {
+    maintenance::MaintenanceTask* task = nullptr;
+  };
+
+  [[nodiscard]] auto run_synchronously(maintenance::MaintenanceTask& task)
+      -> maintenance::ScheduleResult {
+    const auto run_lock = std::scoped_lock{run_mutex_};
+    if (active_run_ != nullptr) {
+      const auto lock = std::scoped_lock{state_mutex_};
+      if (pending_ != nullptr) {
+        ++metrics_.capacity_failures;
+        return maintenance::ScheduleResult::CapacityExhausted;
+      }
+      pending_ = &task;
+      return maintenance::ScheduleResult::Accepted;
+    }
+
+    auto budget = maintenance::MaintenanceBudget{};
+    invoke(task, budget);
+    return maintenance::ScheduleResult::Accepted;
+  }
+
+  void invoke(maintenance::MaintenanceTask& task,
+              maintenance::MaintenanceBudget& budget) {
+    const auto run_lock = std::scoped_lock{run_mutex_};
+    ASSERT_EQ(active_run_, nullptr);
+    auto active = ActiveRun{&task};
+    struct RestoreActiveRun {
+      ActiveRun*& current;
+      ~RestoreActiveRun() { current = nullptr; }
+    };
+    active_run_ = &active;
+    const auto restore = RestoreActiveRun{active_run_};
+    {
+      const auto lock = std::scoped_lock{state_mutex_};
+      ++metrics_.executions;
+    }
+    task.run(budget);
+  }
+
+  [[nodiscard]] auto run_pending(maintenance::MaintenanceBudget& budget)
+      -> bool {
+    const auto run_lock = std::scoped_lock{run_mutex_};
+    if (active_run_ != nullptr) {
+      ADD_FAILURE() << "recursive backend drain";
+      return false;
+    }
+    auto* task = static_cast<maintenance::MaintenanceTask*>(nullptr);
+    {
+      const auto lock = std::scoped_lock{state_mutex_};
+      task = pending_;
+      pending_ = nullptr;
+    }
+    if (task == nullptr) {
+      return false;
+    }
+    invoke(*task, budget);
+    return true;
+  }
+
+  static inline SynchronousDebtBackend* active_ = nullptr;
+  mutable std::mutex state_mutex_;
+  std::recursive_mutex run_mutex_;
+  maintenance::MaintenanceTask* pending_ = nullptr;
+  ActiveRun* active_run_ = nullptr;
+  bool synchronous_ = false;
+  maintenance::MaintenanceMetrics metrics_{};
+};
+
 struct ChunkSummary {
   std::uint64_t sum = 0;
   std::uint32_t nonzero = 0;
@@ -47,6 +180,7 @@ struct SummaryRebuilder {
   bool* throw_once = nullptr;
   DenseWorld* dense_intervening_world = nullptr;
   tess::ChunkKey intervening_key{};
+  std::function<void()>* after_rebuild = nullptr;
 
   template <typename World>
   void operator()(const World& world, tess::ChunkKey key,
@@ -67,6 +201,9 @@ struct SummaryRebuilder {
           intervening_key, kTerrain,
           tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
       dense_intervening_world = nullptr;
+    }
+    if (after_rebuild != nullptr) {
+      (*after_rebuild)();
     }
   }
 };
@@ -165,6 +302,29 @@ TEST(TessChunkMaintenance, NewContentVersionMakesOldProductExplicitlyStale) {
   EXPECT_GT(second.token.version, first.token.version);
 }
 
+TEST(TessChunkMaintenance, RetryRebuildsAcrossDisjointOwnerVersionAdvance) {
+  DenseWorld world;
+  Adapter<maintenance::DirtyBitScheduler, DenseWorld> adapter{
+      world, kTerrain, SummaryRebuilder{}};
+  const auto key = tess::ChunkKey{0};
+  world.field<ValueTag>(tess::Coord3{0, 0}) = 6;
+  ASSERT_EQ(adapter.mark_dirty(key, kTerrain, one_tile_box(0)),
+            maintenance::ChunkMarkResult::Accepted);
+  drain_to_idle(adapter);
+  const auto first = adapter.product(key);
+  ASSERT_EQ(first.state, maintenance::ChunkProductState::Current);
+
+  world.mark_dirty(key, kLighting, one_tile_box(0));
+  EXPECT_EQ(adapter.product(key).state, maintenance::ChunkProductState::Stale);
+  ASSERT_EQ(adapter.retry(key), maintenance::ScheduleResult::Accepted);
+  drain_to_idle(adapter);
+
+  const auto repaired = adapter.product(key);
+  EXPECT_EQ(repaired.state, maintenance::ChunkProductState::Current);
+  EXPECT_EQ(repaired.token.version, world.meta(key).version);
+  EXPECT_EQ(world.dirty_flags(key), kLighting);
+}
+
 TEST(TessChunkMaintenance, QueueCapacityFailureLeavesDirtyWorkRetryable) {
   DenseWorld world;
   Adapter<maintenance::FifoScheduler, DenseWorld> adapter{
@@ -231,6 +391,129 @@ TEST(TessChunkMaintenance, InterveningMarkCannotBeClearedByOldObservation) {
   EXPECT_EQ(adapter.product(tess::ChunkKey{0}).token.version,
             world.meta(tess::ChunkKey{0}).version);
   EXPECT_EQ(adapter.metrics().executions, 2u);
+}
+
+template <typename Backend>
+void expect_capacity_blocked_follow_up_remains_retryable() {
+  DenseWorld world;
+  auto after_rebuild = std::function<void()>{};
+  auto rebuilder = SummaryRebuilder{};
+  rebuilder.dense_intervening_world = &world;
+  rebuilder.intervening_key = tess::ChunkKey{0};
+  rebuilder.after_rebuild = &after_rebuild;
+  Adapter<Backend, DenseWorld> adapter{world, kTerrain, rebuilder, 1};
+  auto inject_once = true;
+  after_rebuild = [&] {
+    if (!inject_once) {
+      return;
+    }
+    inject_once = false;
+    EXPECT_EQ(adapter.mark_dirty(tess::ChunkKey{1}, kTerrain, one_tile_box(1)),
+              maintenance::ChunkMarkResult::Accepted);
+  };
+
+  ASSERT_EQ(adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
+            maintenance::ChunkMarkResult::Accepted);
+  EXPECT_EQ(adapter.flush(), maintenance::DrainResult::BudgetExhausted);
+  EXPECT_NE(world.dirty_flags(tess::ChunkKey{0}) & kTerrain, 0u);
+  EXPECT_EQ(adapter.product(tess::ChunkKey{0}).state,
+            maintenance::ChunkProductState::Stale);
+  EXPECT_GE(adapter.metrics().capacity_failures, 1u);
+  EXPECT_EQ(adapter.try_release(),
+            maintenance::ChunkAdapterReleaseResult::NotIdle);
+
+  drain_to_idle(adapter);
+  EXPECT_EQ(adapter.product(tess::ChunkKey{0}).state,
+            maintenance::ChunkProductState::Current);
+  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{0}) & kTerrain, 0u);
+  EXPECT_EQ(adapter.product(tess::ChunkKey{1}).state,
+            maintenance::ChunkProductState::Current);
+}
+
+TEST(TessChunkMaintenance, FifoCapacityFailureRetainsFollowUpDebt) {
+  expect_capacity_blocked_follow_up_remains_retryable<
+      maintenance::FifoScheduler>();
+}
+
+TEST(TessChunkMaintenance, CoalescingCapacityFailureRetainsFollowUpDebt) {
+  expect_capacity_blocked_follow_up_remains_retryable<
+      maintenance::CoalescingScheduler>();
+}
+
+TEST(TessChunkMaintenance, BudgetedDrainDoesNotSynchronouslyReofferDebt) {
+  DenseWorld world;
+  auto after_rebuild = std::function<void()>{};
+  auto rebuilder = SummaryRebuilder{};
+  rebuilder.dense_intervening_world = &world;
+  rebuilder.intervening_key = tess::ChunkKey{0};
+  rebuilder.after_rebuild = &after_rebuild;
+  Adapter<SynchronousDebtBackend, DenseWorld> adapter{world, kTerrain,
+                                                      rebuilder, 1};
+  auto inject_once = true;
+  after_rebuild = [&] {
+    if (!inject_once) {
+      return;
+    }
+    inject_once = false;
+    EXPECT_EQ(adapter.mark_dirty(tess::ChunkKey{1}, kTerrain, one_tile_box(1)),
+              maintenance::ChunkMarkResult::Accepted);
+  };
+
+  ASSERT_EQ(adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
+            maintenance::ChunkMarkResult::Accepted);
+  ASSERT_EQ(adapter.run_some(maintenance::MaintenanceBudget{1}),
+            maintenance::DrainResult::BudgetExhausted);
+  ASSERT_EQ(adapter.product(tess::ChunkKey{0}).state,
+            maintenance::ChunkProductState::Stale);
+
+  ASSERT_EQ(adapter.run_some(maintenance::MaintenanceBudget{1}),
+            maintenance::DrainResult::BudgetExhausted);
+  EXPECT_EQ(adapter.product(tess::ChunkKey{1}).state,
+            maintenance::ChunkProductState::Current);
+  SynchronousDebtBackend::enable_synchronous_for_test();
+  EXPECT_EQ(adapter.run_some(maintenance::MaintenanceBudget{0}),
+            maintenance::DrainResult::BudgetExhausted);
+  EXPECT_EQ(adapter.product(tess::ChunkKey{0}).state,
+            maintenance::ChunkProductState::Stale);
+
+  drain_to_idle(adapter);
+  EXPECT_EQ(adapter.product(tess::ChunkKey{0}).state,
+            maintenance::ChunkProductState::Current);
+}
+
+TEST(TessChunkMaintenance, SynchronousAcceptedCallCannotEraseNestedDebt) {
+  DenseWorld world;
+  auto after_rebuild = std::function<void()>{};
+  auto rebuilder = SummaryRebuilder{};
+  rebuilder.dense_intervening_world = &world;
+  rebuilder.intervening_key = tess::ChunkKey{0};
+  rebuilder.after_rebuild = &after_rebuild;
+  Adapter<SynchronousDebtBackend, DenseWorld> adapter{world, kTerrain,
+                                                      rebuilder, 1};
+  auto inject_once = true;
+  after_rebuild = [&] {
+    if (!inject_once) {
+      return;
+    }
+    inject_once = false;
+    EXPECT_EQ(adapter.mark_dirty(tess::ChunkKey{1}, kTerrain, one_tile_box(1)),
+              maintenance::ChunkMarkResult::Accepted);
+  };
+  SynchronousDebtBackend::enable_synchronous_for_test();
+
+  ASSERT_EQ(adapter.mark_dirty(tess::ChunkKey{0}, kTerrain, one_tile_box(0)),
+            maintenance::ChunkMarkResult::Accepted);
+  EXPECT_EQ(adapter.product(tess::ChunkKey{0}).state,
+            maintenance::ChunkProductState::Stale);
+  EXPECT_GE(adapter.metrics().capacity_failures, 1u);
+
+  EXPECT_EQ(adapter.run_some(maintenance::MaintenanceBudget{1}),
+            maintenance::DrainResult::BudgetExhausted);
+  EXPECT_EQ(adapter.product(tess::ChunkKey{1}).state,
+            maintenance::ChunkProductState::Current);
+  drain_to_idle(adapter);
+  EXPECT_EQ(adapter.product(tess::ChunkKey{0}).state,
+            maintenance::ChunkProductState::Current);
 }
 
 #if TESS_HAS_EXCEPTIONS

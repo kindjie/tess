@@ -152,14 +152,26 @@ The callback writes derived state only; authoritative fields and archive bytes
 do not depend on backend selection. After a successful callback the adapter
 publishes the token and uses `clear_dirty_observed()` to clear exactly its
 observed bits. An intervening mark or residency change leaves the token stale
-and work retryable. A callback exception propagates verbatim, may leave a
-partial but stale product, keeps authoritative dirty state set, and requires
-an explicit caller retry.
+and work retryable. Because the product token records the shared chunk content
+version, a disjoint dirty owner can also stale it without setting this
+adapter's bits. An explicit `retry()` rebuilds that version drift even when the
+owned observation is empty and never clears the other owner's flags. A
+callback exception propagates verbatim, may leave a partial but stale product,
+leaves the owned dirty signal or shared-version drift intact, and requires an
+explicit caller retry.
 
 `mark_dirty()` records authoritative dirty/version state before scheduling,
 so queue capacity failure cannot erase the retry signal. Scheduling remains
-coalescing, budgeted drains remain explicit, and warmed adapter scheduling and
-draining allocate only if the user rebuild callback does. The self-checking
+coalescing. If a generation-safe clear fails and its follow-up cannot enter a
+bounded comparison queue, a preallocated per-slot bit retains that logical
+retry. Unbounded `flush()` reoffers this debt before and after backend work; a
+post-drain reoffer or still-retained debt reports `BudgetExhausted`, never
+`Idle`, and therefore cannot open residency or release. Budgeted drains remain
+explicit: `run_some()` only reports retained debt as `BudgetExhausted` because
+a structural backend may execute an accepted offer synchronously outside the
+supplied budget. Explicit `retry()` or unbounded `flush()` performs
+re-admission. Warmed adapter scheduling and draining allocate only if the user
+rebuild callback does. The self-checking
 `examples/chunk_maintenance.cc` shows 32 offers collapsing into one rebuild
 while inspecting the dirty flags, content version, product token, and backend
 metrics. An installed-package consumer compiles and runs the same workflow.
