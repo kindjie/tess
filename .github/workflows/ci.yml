@@ -367,12 +367,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # cache_fallback names a sibling namespace built by the SAME
-        # compiler. ccache keys on compiler identity, so a mismatched
-        # fallback cannot produce a single hit — it would only download a
-        # large irrelevant cache and re-save it. The quality job is Clang
-        # throughout, so only the Clang cell may borrow from it; the GCC
-        # cell borrows from the gcc job, which builds this same preset.
+        # Each cache fallback comes from a sibling job using the same compiler;
+        # compiler identity is part of the ccache key.
         include:
           - name: Clang ASan UBSan
             cc: clang
@@ -433,7 +429,9 @@ jobs:
               tess_no_exceptions_contract_cells \
               tess_block_test \
               tess_consumer_contract_test \
+              tess_maintenance_contract_test \
               tess_maintenance_test \
+              tess_chunk_maintenance_test \
               tess_path_cache_test \
               tess_phase_executor_test \
               tess_sim_auto_exec_test \
@@ -927,7 +925,9 @@ jobs:
           tess_no_exceptions_contract_cells
           tess_block_test
           tess_consumer_contract_test
+          tess_maintenance_contract_test
           tess_maintenance_test
+          tess_chunk_maintenance_test
           tess_path_cache_test
           tess_phase_executor_test
           tess_sim_auto_exec_test

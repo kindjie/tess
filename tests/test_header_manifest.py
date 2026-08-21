@@ -21,6 +21,7 @@ def write_manifest(root: Path, classes: dict[str, list[str]]) -> Path:
 def complete_classes() -> dict[str, list[str]]:
   return {
       "stable": [
+          "include/tess/maintenance.h",
           "include/tess/pathfinding.h",
           "include/tess/simulation.h",
           "include/tess/tess.h",
@@ -175,3 +176,11 @@ def test_include_parser_is_literal_aware(tmp_path):
 
 def test_real_manifest_is_exhaustive_and_aggregate_safe():
   assert chm.check_manifest(chm.REPO_ROOT, chm.DEFAULT_MANIFEST) == []
+
+
+def test_compatibility_umbrella_does_not_reexport_maintenance():
+  umbrella = (chm.REPO_ROOT / "include/tess/tess.h").read_text(
+      encoding="utf-8"
+  )
+
+  assert "#include <tess/maintenance" not in umbrella

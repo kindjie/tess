@@ -120,7 +120,7 @@ Maintained notes for implemented areas:
 - [Block foundation](block.md)
 - [Exception-free builds](no-exceptions.md)
 - [Span queries](query.md)
-- [Experimental maintenance scheduling](maintenance.md)
+- [Maintenance scheduling](maintenance.md)
 - [Queued operations foundation](queued-operations.md)
 - [Topology foundation](topology.md)
 - [Path foundation](path.md)

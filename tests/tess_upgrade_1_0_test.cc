@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <tess/maintenance.h>
 #include <tess/tess.h>
 
 #include <array>
@@ -19,6 +20,12 @@ using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<OccupancyTag, bool>,
                                  tess::Field<ReservationTag, bool>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
+
+struct MaintenanceUpgradeTask final : tess::maintenance::MaintenanceTask {
+  void run(tess::maintenance::MaintenanceBudget& budget) override {
+    static_cast<void>(budget.consume());
+  }
+};
 
 void fill_passable(World& world) {
   for (auto& page : world.chunks()) {
@@ -44,6 +51,33 @@ template <typename Pipeline, typename Output>
 concept HasToFrontier = requires(Pipeline& pipeline, Output& output) {
   pipeline.to_frontier(output);
 };
+
+TEST(TessUpgrade1_0, MaintenanceMovesToStableNamespace) {
+  // [upgrade-maintenance]
+  // Before:
+  // #include <tess/experimental/registered_maintenance.h>
+  // using Scheduler = tess::experimental::maintenance::RegisteredScheduler<
+  //     tess::experimental::maintenance::ImmediateScheduler>;
+
+  // After:
+  using Scheduler = tess::maintenance::RegisteredScheduler<
+      tess::maintenance::ImmediateScheduler>;
+  Scheduler scheduler{1};
+  // [upgrade-maintenance]
+
+  MaintenanceUpgradeTask task;
+  const auto handle = scheduler.register_task(task);
+  if (!handle.has_value()) {
+    FAIL() << "expected maintenance task registration";
+    return;
+  }
+  scheduler.seal();
+  EXPECT_EQ(scheduler.schedule(*handle),
+            tess::maintenance::ScheduleResult::Accepted);
+  EXPECT_EQ(scheduler.flush(), tess::maintenance::DrainResult::Idle);
+  EXPECT_EQ(scheduler.try_release(*handle),
+            tess::maintenance::ReleaseResult::Released);
+}
 
 TEST(TessUpgrade1_0, PathRequestReplacesStartGoalPairs) {
   World world;

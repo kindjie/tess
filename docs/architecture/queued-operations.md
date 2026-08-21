@@ -568,9 +568,11 @@ coalescing scheduler handles or long-lived maintenance tasks.
 
 The persistent worker pool is current production behavior. Alternative
 external pool libraries were evaluated and not adopted. The original queued
-coalescing maintenance candidate was rejected on sparse overhead; the later
-registered `DirtyBitScheduler` passed its experimental gates and is the
-default backend behind the experimental external maintenance adapter. See
+coalescing maintenance candidate was rejected on sparse overhead. The
+registered `DirtyBitScheduler` passed its correctness gates, but
+cross-hardware evidence kept it experimental, and the stable external
+maintenance adapter defaults to synchronous immediate execution; see
+[maintenance scheduling](maintenance.md). See
 `docs/planning/optimization-log.md` for evidence and retry conditions, and
 the historical `docs/tdd/tdd_addendum_concurrent_tile_world.md` for design
 intent.

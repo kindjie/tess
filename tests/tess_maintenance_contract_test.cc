@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
-#include <tess/experimental/registered_maintenance.h>
+#include <tess/experimental/maintenance.h>
+#include <tess/maintenance/scheduler.h>
 
 #include <array>
 #include <atomic>
@@ -16,7 +17,8 @@
 
 namespace {
 
-namespace maintenance = tess::experimental::maintenance;
+namespace maintenance = tess::maintenance;
+namespace experimental = tess::experimental::maintenance;
 
 template <typename Backend>
 using Registered = maintenance::RegisteredScheduler<Backend>;
@@ -319,9 +321,9 @@ struct SelfSchedulingThrowingTask final : maintenance::MaintenanceTask {
 #endif
 
 using Immediate = Registered<maintenance::ImmediateScheduler>;
-using Fifo = Registered<maintenance::FifoScheduler>;
-using Coalescing = Registered<maintenance::CoalescingScheduler>;
-using DirtyBit = Registered<maintenance::DirtyBitScheduler>;
+using Fifo = Registered<experimental::FifoScheduler>;
+using Coalescing = Registered<experimental::CoalescingScheduler>;
+using DirtyBit = Registered<experimental::DirtyBitScheduler>;
 using Structural = Registered<StructuralBackend>;
 using FixedHook = Registered<FixedHookBackend>;
 
@@ -329,9 +331,9 @@ static_assert(maintenance::MaintenanceBackend<StructuralBackend>);
 static_assert(maintenance::FixedRegistrationBackend<FixedHookBackend>);
 static_assert(!maintenance::FixedRegistrationBackend<ThrowingFixedHookBackend>);
 static_assert(
-    !std::is_base_of_v<maintenance::MaintenanceScheduler, StructuralBackend>);
+    !std::is_base_of_v<experimental::MaintenanceScheduler, StructuralBackend>);
 static_assert(
-    !std::is_base_of_v<maintenance::MaintenanceScheduler, FixedHookBackend>);
+    !std::is_base_of_v<experimental::MaintenanceScheduler, FixedHookBackend>);
 static_assert(std::is_copy_constructible_v<maintenance::MaintenanceHandle>);
 static_assert(!std::is_move_constructible_v<maintenance::MaintenanceTask>);
 static_assert(!std::is_move_constructible_v<Immediate>);

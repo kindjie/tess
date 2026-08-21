@@ -137,11 +137,13 @@ The fractional coordinates never return to simulation state.
 
 ## Integration boundaries
 
-- [`chunk_maintenance.cc`][chunk_maintenance] — an experimental external
-  owner that coalesces repeated chunk dirty marks into a versioned derived
-  summary, checks dirty-mask and content-version state, and keeps scheduler
-  handles out of the world. The install smoke builds and runs a self-contained
-  version of this workflow against the installed package.
+- [`chunk_maintenance.cc`][chunk_maintenance] — a stable external owner that
+  rebuilds a versioned derived summary, checks dirty-mask and content-version
+  state, and keeps scheduler handles out of the world. Its default immediate
+  backend is synchronous; deferred FIFO,
+  queued-coalescing, and dirty-bit backends remain explicit experiments. The
+  install smoke builds and runs a self-contained version of this workflow
+  against the installed package.
 - [`custom_ecs_min.cc`][custom_ecs] — the ECS adapter concepts implemented
   by a deliberately non-EnTT-shaped micro ECS.
 - [`entt_pawns.cc`][entt_pawns] — the EnTT adapter driving registry-owned

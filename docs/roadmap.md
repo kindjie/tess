@@ -64,12 +64,13 @@ without maintaining a second exhaustive list.
   without scheduling dirty-mask work, and path-overlay collection can include
   retained and queue-produced routes whose runtime tickets are no longer
   directly usable.
-- A registered `DirtyBitScheduler` passed its experimental backend-selection
-  gates, and an external fixed-slot chunk-maintenance adapter now exercises
-  dense and sparse residency without integrating handles into world storage.
-  Portable M3 and Steam Deck promotion evidence keeps `DirtyBitScheduler`
-  experimental; the separately validated task, handle, result, adapter, and
-  immediate-execution contract is eligible for stable graduation in v0.13.
+- Stable maintenance task, budget, result, handle, immediate-execution,
+  structural-backend, and external fixed-slot chunk-adapter spellings now live
+  under `tess::maintenance`. The adapter exercises dense and sparse residency
+  without integrating handles into world storage. Portable evidence found no
+  M3 regression but a material Steam Deck regression for dirty-bit scheduling,
+  so dirty-bit, FIFO, queued-coalescing, and the virtual scheduler remain
+  explicit `tess::experimental` machinery.
 - Budgeted-progress benchmark infrastructure, controlled-hardware campaign
   tooling, and further diagnostics and correctness fixes have landed. The
   [budgeted-progress record][budgeted-progress] preserves its staged design
@@ -81,8 +82,8 @@ release is prepared; source presence alone does not make a change released.
 ## Release-gated next steps
 
 - Publish `v0.13.0` only after the breaking API changes and upgrade guide are
-  complete, the maintenance API and external chunk adapter pass their stable
-  promotion gates, and the exact release commit passes release-mode CI.
+  complete, the stable maintenance API and external chunk adapter land, and
+  the exact release commit passes release-mode CI.
 - After `v0.13.0`, complete the bounded pathfinding, movement, execution, and
   synthesis dispositions in the
   [v0.13-to-v1.0 execution plan][pre-rc-plan]. Accepted implementations land
@@ -106,11 +107,11 @@ code that assumes they do.
 - **Persistent maintenance**
   ([scheduler TDD][tdd-scheduler], [maintenance addendum][tdd-work]) — fixed
   cadences, dirty/manual/event triggers, exact event streams, and deterministic
-  background continuation are released. Experimental immediate, FIFO, and
-  queued-coalescing backends are released for evaluation; the registered
-  dirty-bit backend has landed on `main`. Stable maintenance handles and an
-  external dense-and-sparse chunk adapter are required for `v0.13.0`; wider
-  derived-system adapters and storage-owned handles remain future work.
+  background continuation are released. Stable maintenance handles, immediate
+  execution, structural customization, and an external dense-and-sparse chunk
+  adapter have landed for `v0.13.0`. FIFO, queued-coalescing, dirty-bit, and
+  the virtual scheduler remain experimental; wider derived-system adapters
+  and storage-owned handles remain future work.
 - **Further spatial query acceleration**
   ([block TDD][tdd-block], [layout addendum][tdd-layout]) — resolved block-lazy
   pipelines and exact box/radius/chunk spans are released. Predicate bitsets,

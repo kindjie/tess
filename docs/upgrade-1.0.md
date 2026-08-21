@@ -3,6 +3,33 @@
 Version 0.13 is the final breaking-change release before 1.0. Update code to
 the forms below before adopting the first 1.0 release candidate.
 
+## Maintenance
+
+The task, budget, metrics, handle, result, structural backend, registered
+scheduler, immediate backend, and external chunk adapter are stable under
+`tess::maintenance`. Include `tess/maintenance.h` or the narrow owning header.
+
+<!-- tess-snippet: upgrade-maintenance source=tests/tess_upgrade_1_0_test.cc -->
+```cpp
+// Before:
+// #include <tess/experimental/registered_maintenance.h>
+// using Scheduler = tess::experimental::maintenance::RegisteredScheduler<
+//     tess::experimental::maintenance::ImmediateScheduler>;
+
+// After:
+using Scheduler = tess::maintenance::RegisteredScheduler<
+    tess::maintenance::ImmediateScheduler>;
+Scheduler scheduler{1};
+```
+<!-- /tess-snippet -->
+
+`ChunkMaintenanceAdapter` now defaults to synchronous immediate execution.
+FIFO, queued-coalescing, dirty-bit, and the virtual scheduler stay under
+`tess::experimental`; using one explicitly does not make it stable. A caller
+that previously accepted the experimental adapter's dirty-bit default must
+either adopt immediate execution or name the experimental dirty-bit backend
+deliberately.
+
 ## Path requests
 
 Path, reachability, coarse-path, precheck, and distance-field APIs now receive

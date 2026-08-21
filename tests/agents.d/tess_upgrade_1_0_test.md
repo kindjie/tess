@@ -2,4 +2,5 @@
 
 - `tess_upgrade_1_0_test`: compiles and runs every 1.0 migration-guide
   replacement, including the removed pipeline, diagnostics, descriptor,
-  scheduler movement-mask, blocked-exhaustion policy, and ownership spellings.
+  scheduler movement-mask, blocked-exhaustion policy, maintenance namespace,
+  and ownership spellings.
