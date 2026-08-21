@@ -630,10 +630,7 @@ def test_traffic_lab_has_large_grid_diagnostics_and_browser_evidence():
   pages = read(".github/workflows/pages.yml")
   browser_test = read("tools/test_web_demo_interactions.py")
   measurement = read("tools/measure_traffic_lab.py")
-  decision = read(
-    "docs/decisions/changelog.d/"
-    "2026-08-19-caller-planned-agent-replans.md"
-  )
+  decision = read("docs/decisions/CHANGELOG.md")
 
   assert "traffic_width = 1024" in header
   assert "traffic_height = 512" in header

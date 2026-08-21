@@ -21,863 +21,698 @@ Do not append here directly: every branch that does conflicts with every
 other, and this file is subject to the repository's 24,000-token limit --
 which it has now exceeded twice, forcing an archive split each time.
 
-Entries from 2026-07-13 through 2026-07-31 are in
+Entries from 2026-08-15 through 2026-08-17 are in
+[`optimization-log-archive-2026-08-17.md`](optimization-log-archive-2026-08-17.md);
+entries from 2026-08-10 through 2026-08-14 are in
+[`optimization-log-archive-2026-08-14.md`](optimization-log-archive-2026-08-14.md);
+entries from 2026-08-01 through 2026-08-09 are in
+[`optimization-log-archive-2026-08-09.md`](optimization-log-archive-2026-08-09.md);
+entries from 2026-07-13 through 2026-07-31 are in
 [`optimization-log-archive-2026-07-31.md`](optimization-log-archive-2026-07-31.md);
 entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
-## 2026-08-09 - Portal-first single-goal weighted replans (accepted)
-
-- Area: the weighted batch's singleton fallback; the goal-churn A*
-  target from the 2026-08-07 campaign, implemented per the reviewed
-  design (two Codex rounds, target-map probe, Fable GO with four
-  should-fixes bound into V1).
-- Hypothesis: the library's chunk-portal tier (candidates + segment
-  cache), measured on the actual goal-churn map at ~1 ms cold against
-  41.7-46.4 ms exact, could serve single-goal replans behind an opt-in
-  policy with exact fallback on every other outcome.
-- Evidence (M3 Max, `bench` preset, per-tick outcome accumulation in
-  every cell): repeated churn 23.3 us against the 18.7 ms exact guard
-  (~800x, warm segments); genuinely fresh non-repeating band goals
-  67.3 us against their 2.03 ms exact twin (~30x) under a pinned 2/1
-  cap — the same goals ALL reject under the default 4/3 cap on this
-  map (probed 60/60 both ways), so the cap is a measured dial, not a
-  free parameter; the forced all-rejected case costs ~2% over exact;
-  the no-portal-route worst case (candidates select, stitching fails
-  into a sealed pocket, full exact NoPath flood follows) ~2x. Review
-  hardening during implementation: a stitched cost total at the uint32
-  sentinel now reports CostOverflow rather than Found (found by two
-  independent reviews), a zero premium denominator normalizes instead
-  of silently disabling the cap, same-chunk failures classify as
-  verification failures, ineligible instantiations surface a counter,
-  and the eligibility gate pins the orthogonal lattice because the
-  cap's admissibility argument rests on Manhattan being a lower bound.
-- Decision: accepted as opt-in `WeightedReplanStrategy::PortalFirst`
-  with the quality contract stated at the policy (cap bounds premium
-  vs optimal; rejections pay portal work plus the exact search).
-  Bootstrap ceilings at 4x the M3 readings per protocol.
-- Follow-up, CLOSED 2026-08-09 — on-device verification: the six cells
-  ran on the Steam Deck at merged main (`2ac7868`, governor
-  `performance` on external power, 5 repetitions, CVs <= 0.16%).
-  Repeated churn 40.1 us against the 43.46 ms exact guard (~1083x);
-  fresh goals 147.8 us against their 5.85 ms exact twin (~39.6x) — the
-  Deck WIN ratios exceed the M3 ratios because exact A* costs
-  relatively more there, while the worst cases split (rejected milder
-  at +0.5%, sealed slightly worse at 2.3x); the guard cell sits inside
-  the prior three passes' band, so the default path is unmoved. The
-  profile claim closed two-sidedly on one binary and survived two
-  review rounds demanding direct evidence: the control keeps the
-  triple-confirmed A* shape (50.2% self) while the portal steady state
-  is A*-free by three independent legs — temporal confinement (the
-  last A*-containing sample sits at the calibration/measurement
-  boundary; the measured region has zero), dilution scaling (0.96% at
-  a 1 s window to 0.17% at 10 s), and cache-counter structure (no
-  sweeps, evictions, or stale rejections over 35,412 accepted serves —
-  no persistent steady-state misses). The sub-1% share is fixture
-  re-execution during benchmark calibration, a property of
-  whole-process profiling, not of the mechanism. The portal cells pay
-  a per-tick O(1) stats read their exact twins do not, so the ratios
-  are marginally conservative. Steady state's dominant self-share is
-  now candidate seam scanning (`best_chunk_portal`, 52.5% of the
-  profiled window) — the next surface if the tier ever needs to be
-  faster. Raw perf.data archived off-repository beside the campaign
-  data.
-- Follow-ups: bounded segment search (structural cold-cost bound),
-  keyed product replay for repeated goals (the fresh/repeat bench
-  split keeps it honest), Option B coarse-heuristic prototype with
-  the corrected admissibility form, multi-candidate verification,
-  hex/diagonal generalization with a lattice-aware lower bound.
-
-## 2026-08-08 - Deck re-pass: repetitions, an ABAB, and a withdrawn attribution
-
-- Area: on-device confirmation that intervening merges did not move the
-  published measurements, at main `1bb7c15`; adversarially reviewed
-  twice (initial package, then a follow-up-measurement addendum), with
-  the second round run against the follow-up data itself.
-- Method upgrades over prior passes, adopted from review: 10-repetition
-  aggregates in two interleaved sweeps with clock/thermal sampling
-  (governor found already at `performance` on external power; clocks
-  reached 3.50 GHz, temps <= 70 C); an interleaved same-session ABAB of
-  the `4d7140b` and `1bb7c15` binaries (sha256-recorded) for the fields
-  question; direct-versus-under-`perf record` probes on both the fields
-  cells and the world-edit cell.
-- Confirmed with repetition-grade evidence (CVs 0.1-0.9%): the scoped
-  route-cache advantage is ~3.2-3.3x same-pass (1.28 ms default vs
-  0.39-0.40 ms off-path, forced on-path cell ~0.65 ms), with no samples
-  attributed to `suffix_place` in the off-path profiles and ~44-45% in
-  the same binary's default profiles; indexed queued planning grows
-  16.2x for 16x operations (CV <= 0.4%) on the narrow-domain path, wide
-  operations keeping their documented linear-scan fallback; the heavy
-  weighted cells sit within noise of the campaign readings ("no gross
-  regression visible" is the supported strength), and a fresh
-  goal-churn profile matches the campaign's DWARF-validated shape
-  (A* 47.3% self) — the A* effort remains the top target.
-- CORRECTED: the re-pass initially attributed a fields improvement to
-  the #122 buffer hand-back. Review found the improved
-  `goalset_build_*` cells never touch that cache, and source reading
-  went further: the `cache_miss_store`/`cache_eviction` cells use the
-  rvalue store overload #122 explicitly kept unchanged, so NO current
-  bench cell exercises #122's change. The ABAB proves the improvement
-  itself is real and binary-level — 16-20% on every
-  build-per-iteration cell in both interleavings, hit path unchanged
-  at ~54 ns, between-binary gaps 4-5x the within-binary spread — but
-  it spans the whole `4d7140b..1bb7c15` range, so the attribution is
-  withdrawn rather than reassigned.
-- Also measured: `perf record` at 499 Hz costs ~0-1% on both the
-  fields cells and the world-edit cell, so the earlier passes' mixed
-  collection modes explain none of the observed deltas; the campaign's
-  higher world-edit reading stays unattributed (cross-session state or
-  binary layout).
-- Follow-ups recorded: a `store_reusing` member-reuse bench cell so
-  #122's actual claim is measured (and this misattribution class is
-  fenced) — CLOSED 2026-08-09: `fields/cache_store_reusing` holds one
-  member product across iterations and stores through the hand-back
-  overload, guarded so a rejecting store cannot pass silently; first
-  M3 readings 80.7 us against `cache_miss_store`'s 79.9 us (CV <=
-  0.6%), consistent with #122's accepted evidence being an allocation
-  count rather than a timing, and the cell joins the metal campaign's
-  fields counter pass; bisect the fields improvement only if its magnitude comes
-  to matter, first probe #120 versus the later tail; randomized ABBA
-  blocks next time a binary A/B is run; first handheld
-  budgeted-progress artifacts (24 files) and a 205-row 10-rep
-  main-suite baseline JSON captured this window, unanalyzed.
-
-## 2026-08-08 - Scoped route-cache staleness (accepted)
-
-- Area: unit route cache invalidation; the first optimization from the
-  2026-08-07 hotspot campaign's decision list.
-- Hypothesis: the campaign attributed ~90% of the world-edit agent tick
-  to the invalidate/repopulate/serve cycle behind whole-cache
-  invalidation. Retiring only entries whose crossed chunks changed
-  should remove repopulation from the steady state where edits land off
-  most routes, without touching default-mode behavior.
-- Method: opt-in `UnitRouteStaleness::ScopedFeasible` — per-entry
-  `(chunk, version)` footprints validated lazily at serve time against
-  an exact per-chunk version snapshot. Design reviewed adversarially
-  (two Codex rounds, Fable final GO) before implementation; the
-  implementation reviewed again (6 P2 / 4 P3, all addressed).
-- Evidence (M3 Max, `bench` preset): the new survival-steady-state cell
-  `path/agent_tick_100_unit_dirty_offpath_edit_scoped` runs ~130 us
-  against the 415 us whole-drop baseline cell — with postcondition
-  asserts proving zero retirements and pure revalidation. The forced
-  worst case (`..._onpath_edit_scoped`, every route through the edited
-  goal chunk, zero survivals) runs ~205 us: per-entry validation plus
-  targeted re-store undercuts fingerprint-plus-wholesale-repopulation
-  even when every entry retires. The default-policy cell is the
-  unchanged no-regression guard. An earlier draft of the worst-case
-  cell edited a mid-corridor chunk and measured ~160 us — replans
-  learned detours around the edited chunk and survived (their
-  footprints exclude it), so the cell was pinned to the goal chunk no
-  route can avoid; the self-healing observation is worth keeping.
-- Decision: accepted as opt-in policy with the semantics stated where
-  it is enabled (legal, truthful cost, previously optimal;
-  blocking-only edits concede nothing). Bootstrap ceilings at 4x the M3
-  readings per the standing protocol; recalibrate from CI baselines.
-- Follow-up, CLOSED 2026-08-08 — on-device verification: the Deck
-  returned and the before/after ran at merged main (`20b280d`, same
-  unpinned protocol as the campaign). Timings: scoped steady state
-  394 us against the 1.313 ms default cell (3.3x, matching the 3.2x
-  M3 ratio); forced worst case 648 us; default cell and clean tick
-  unchanged against the campaign (1.31 vs 1.37 ms, 793 vs 778 ns).
-  Profiles: `suffix_place` — 41-45% of the before profile and of the
-  after-binary's default-mode control — is absent from the scoped
-  steady state entirely; the scoped tick is ~80% route copies
-  (`_M_range_insert` plus the libc bulk-copy loop, IPC 0.98 at 24.7%
-  L1d miss), which is the design's predicted hit-serving floor. The
-  control's unchanged shape and the scoped cell's vanished hotspot
-  are the two halves of the claim, both observed on target hardware.
-  Raw perf.data archived off-repository beside the campaign data.
-- Follow-up, open: sparse-world scoped validation is a separate design
-  if a workload demands it.
-
-## 2026-08-08 - Paced-with-idle wake penalty in budgeted-progress cells
-
-- Area: budgeted-progress paced arrival cells (`tess_bench_budgeted_progress`,
-  design section 3.2); dev machine (Apple M3 Max), smoke configuration.
-- Hypothesis: pacing frames to 60 FPS edges only changes when work runs,
-  not how fast it runs inside the budget window.
-- Evidence: rejected. Sleeping ~14.7 ms to each edge lets the core enter
-  idle states; the first work after wake runs at reduced frequency with
-  cooled caches. At a 2 ms budget the paced loop consumed ~14% fewer
-  within-budget work units than the unpaced loop (4.11M vs 4.77M over
-  the same frame count; frames honored their budget — elapsed p50
-  2.26 ms) and worst quantum tails stretched ~2x (1.87 ms vs 0.80 ms).
-  The 600 events/sim-second cell is stable unpaced and unstable paced
-  at 2 ms; 8 ms absorbs the penalty entirely.
-- Decision: accepted as the honest paced-with-idle measurement and
-  documented in the binary header; artifacts stamp their pacing mode so
-  the two loops are never mixed in one curve.
-- Follow-up: a spin-paced busy-host variant (spin to the edge instead
-  of sleeping, emulating a host that renders between simulation slices)
-  is deferred; revisit alongside the controlled-hardware campaign,
-  where DVFS behavior differs (Steam Deck).
-
-## 2026-08-07 - Steam Deck hotspot campaign
-
-- Area: on-device CPU hotspot attribution for the highest-cost published
-  workloads; first `perf record` campaign on the handheld (the 2026-08-06
-  campaign was timing and counters only).
-- Method: `4d7140b` built as `linux-bench` plus `-g
-  -fno-omit-frame-pointer`, run directly on stock SteamOS. Per-workload
-  `perf record` (cycles:u, frame-pointer call graphs at 499 Hz; a DWARF
-  cross-check at 199 Hz agreed on every stable top symbol, and the one
-  larger mover was the contaminated field-rebuild share retracted below)
-  plus paired counter runs. `perf_event_paranoid=2` hides kernel time;
-  for world edit — the workload where transient allocation was the
-  suspect — page-fault counts put the allocation-driven share of that
-  hidden time near 1% (other kernel time stays unmeasured). Governor
-  unpinned: per-iteration medians of the workloads reported here matched
-  the 2026-08-06 pinned baseline within ~2%, so shares are
-  representative, and no absolute number here supersedes the published
-  baseline. An
-  adversarial review of methods and conclusions against source retracted
-  two initial findings, kept below because the traps generalize.
-- Evidence, goal churn (44.5 ms/tick, the frame-budget breaker): the
-  tick performs one replan (`tick.processed_paths=1`) and
-  `weighted_astar_path` is >77% inclusive. Reference singles put
-  open-map cost at ~5.7 ns/expansion against ~210 ns/expansion under
-  real frontiers (`weighted_astar_room_portals`: 138.6k expansions,
-  29.7 ms), so the ~34 ms replan is consistent with a rough estimate of
-  160k expansions; the leading hypothesis is plateau behavior of the
-  Manhattan heuristic on weighted 512x512 terrain, to be confirmed from
-  the benchmark's own expansion counters during the design work.
-  DWARF srcline attribution places ~37% of samples in
-  open-list heap machinery (`stl_heap.h` push/pop plus the tie-break
-  comparator at `path.h:1554`).
-- Evidence, world edit (1.37 ms/tick): ~90% is the route-cache
-  invalidate/repopulate/serve cycle — `RouteCacheScratch::suffix_place`
-  43-45% self (hash mix plus linear probe), `vector::_M_range_insert`
-  14-18%, and ~17-20% in an unsymbolized libc cluster identified from
-  instruction bytes as the AVX2 bulk-copy loop. IPC 1.25 at 10.9% L1d
-  miss is consistent with a memory-bound cycle (no stall or bandwidth
-  counters were captured). `prepare_process` invalidates the whole route
-  cache on every edited tick, so a one-tile edit forces full
-  repopulation of the suffix index.
-- Evidence, parallel backend (main-suite pool benchmarks; ratios are
-  not comparable to the pinned scaling-sweep protocol): chunk compute
-  scales 1.92x/3.76x at widths 2/4 with a ~98%-payload profile —
-  healthy. Chunk fill at IPC 1.05 and 22.5% L1d miss is consistent with
-  a bandwidth limit rather than dispatch overhead as the cause of its
-  1.29x at width 4. Tile touch at 18.5 us pooled against 3.1 us serial
-  puts the per-phase dispatch floor near 15 us on this device.
-- Retracted, with the traps recorded: a 12.9% "distance-field rebuild"
-  share in goal churn was warm-up and setup contamination — the timed
-  loop performs no field builds, and the share fell to 7.9% under
-  DWARF. A "topology rebuild dominates the example frame loop" claim
-  from a looped `tess_colony_2d` run was per-process initialization
-  amplified 400x — 171 of 175 sample chains ran through the startup
-  `build_region_graph`, not the incremental update. Within-group shares
-  from multi-benchmark perf.data are equal-time artifacts and were not
-  used for ranking.
-- Decision: the first optimization target is the world-edit route-cache
-  cycle — scoped invalidation instead of whole-cache invalidation per
-  edited tick, gated directly by
-  `path/agent_tick_100_unit_dirty_world_edit`. Goal-churn A* is the
-  larger absolute cost but is design work (expansion reduction first,
-  open-list mechanics second) and gets a design review before code.
-  Planning-path coverage is not addressed here; those measurements land
-  separately with their own instruments.
-- Artifacts: raw perf.data, benchmark logs, and counter output are
-  retained off-repository on the profiling device.
-
-## 2026-08-07 - Instruments before fixes: planning and cache eviction
-
-- Area: queued per-frame planning; field-product cache eviction. No
-  optimization in this entry — only the measurements the fixes will be
-  judged against, per the standing rule that a performance change without
-  before-and-after numbers from its owning family is not accepted.
-- Gap: the 2026-08-07 audit found `plan_operations` scanning every
-  previously accepted operation per new operation, and phase grouping
-  comparing each operation against every member of the current phase —
-  both quadratic — with **nothing timing either**. Every queued benchmark
-  plans outside its measured loop (`parallel_phase_support.h:117-119`,
-  `tess_bench.cc:760`, `:787`), and the single in-loop planner call
-  (`tess_scheduler_bench.cc:191`) plans exactly one operation. Separately,
-  `FieldProductCache` walks `entries_` linearly three times per
-  miss-and-store — `lookup`, the existing-key scan inside `store_with_key`,
-  and `evict_to_budget` — while the only benchmark exercising that path
-  holds about two entries.
-- Instruments added: `queued/plan_frame_256` and `queued/plan_frame_4096`
-  time planning plus phase grouping over disjoint per-chunk operations —
-  the worst case for grouping, since the phase never closes, and the
-  ordinary case for one edit per dirty chunk. `fields/cache_scan_entries_8`
-  and `_128` hold per-store work identical and differ only in resident
-  entry count, so their delta is the aggregate of those three scans. It is
-  NOT attributable to eviction alone, and the benchmark does not claim to
-  be: all three are linear, so a complexity change in any of them shows.
-- First readings (Apple M3 Max, `bench` preset, three repetitions,
-  coefficient of variation under 0.4%):
-
-| Benchmark | Median |
-| --- | ---: |
-| `queued/plan_frame_256` | 59.6 us |
-| `queued/plan_frame_4096` | 23.4 ms |
-| `fields/cache_scan_entries_8` | 85.7 us |
-| `fields/cache_scan_entries_128` | 93.2 us |
-
-- Reading: 16x the operations costs **392x** the time. Pure quadratic
-  scaling predicts 256x, so the excess is consistent with quadratic work
-  plus growing allocation and cache pressure. In absolute terms a
-  4096-chunk frame spends 23 ms in planning alone, which exceeds a 16.7 ms
-  frame budget before any execution happens. The audit predicted the shape
-  from source; the magnitude is what the instrument adds.
-- Scan delta is 7.5 us between 8 and 128 resident entries — real and reproducible, but small against the ~85 us product
-  build that dominates each store. Read the pair as a complexity check on
-  the cache's linear scans, not as a claim that they dominate.
-- The first version of this pair varied goal COUNT across keys (2-10
-  against 2-130) while claiming identical work. Goal count changes flood
-  seeding, key comparison length, stored byte size and therefore the
-  resident count, so the two sizes ran different workloads. Holding
-  cardinality constant and varying only goal positions both fixed the
-  claim and produced a cleaner signal: the delta grew from 4.7 us to
-  7.5 us once the confound was removed.
-- Gate sensitivity, recorded because it is easy to over-read: the scans
-  are about 7% of each `cache_scan` reading, so a ceiling set at 4x cannot
-  fire for a scan regression — one scan going quadratic at 128 entries
-  still passes. The ceilings give trend visibility. Complexity is watched
-  by the paired sentinel run instead, whose floor is a relative effect
-  size, so `fields/cache_scan_entries_128` is registered in
-  `bench/sentinels.json`.
-- Ceilings: **bootstrap, deliberately loose**, at 4x these readings. They
-  were taken on an M3 Max while the gates run on Linux runners, so a 2x
-  ceiling would flake rather than gate. Recalibrate at 2x the maximum over
-  ten CI baseline artifacts, with the rest of their families.
-- Follow-up: the fixes themselves (chunk-keyed hazard index; intrusive
-  least-recently-used list, mirroring the 2026-07-12 residency conversion)
-  land next and must show their before-and-after against these numbers.
-
-## 2026-08-06 - At-budget portal-segment store swept dependencies twice
-
-- Area: `WeightedPortalSegmentCache::store_checked`, the at-budget branch.
-- Hypothesis: the `store_capacity_status` pre-pass added in #100 walks every
-  entry calling `dependencies.is_valid`, then `compact_checked` walks them
-  again with the same predicate. If the pre-pass is redundant, removing it
-  should recover the difference, and the at-budget branch is the steady state
-  for any cache with a segment budget, so the cost is not exceptional.
-- Method: a standalone harness storing 20,000 distinct 12-node segments into a
-  256-entry budget after warming to budget, with every timed store confirmed on
-  the compaction branch (`sweeps` equal to store count). Compiled from one
-  source against three header trees — `a63371e` (pre-#100), `4a919fb` (v0.12),
-  and this branch — with AppleClang, `-O2 -DNDEBUG`, interleaved A/B/C runs on
-  an otherwise idle machine.
-- Evidence: medians of roughly 9,590 ns/store pre-#100, 10,480 ns/store on
-  v0.12 (+9.4%), and 9,740 ns/store here (+1.6% over pre-#100, -7.1% against
-  v0.12). Direction was consistent across every interleaved pair; an occasional
-  high first-run sample was warm-up and did not shift the median.
-- Decision: accepted. Both store branches already validate transactionally —
-  `compact_checked` builds its kept set in scratch and returns before the
-  `entries_`/`paths_` swap, and `reserve_append_capacity_checked` returns
-  before its reserve — so the pre-pass caught nothing the remaining checks
-  miss. A constant-time `store_capacity_precheck` preserves the one thing the
-  pre-pass did provide: rejecting an impossible store before the candidate
-  entry's dependency capture allocates.
-- Follow-up: no benchmark sentinel drives this cache to its budget, so the
-  gate saw neither the original regression nor this recovery. Adding an
-  at-budget store sentinel needs ceiling calibration under the existing
-  benchmark rules and is not a quiet addition; it remains open.
-
-## 2026-08-06 - Steam Deck controlled baseline
-
-- Area: complete on-device timing, thread scaling, and fields PMU attribution.
-- Method: commit `4a919fbd99a2` was built with Clang 19.1.7 in steamrt4,
-  then run on external power with the `performance` governor. The unrestricted
-  main and diagnostics suites used 10 repetitions and a 0.2 s minimum. Seven
-  scaling workloads used 20 repetitions at widths 1, 2, 4, and 8; widths up
-  to four were pinned to distinct physical cores and width eight used all
-  logical CPUs. Counter runs used a 1 s minimum and were separate from timing.
-- Timing evidence: all 198 main and 192 diagnostics registrations completed
-  without benchmark errors. Main real-time CV was 0.20% at the median and
-  1.58% at p95; diagnostics was 0.17% at the median and 1.27% at p95. The
-  two largest outliers were manual-time cache-maintenance cases at 11.7% and
-  20.3% CV, so they should be repeated before using small differences as
-  evidence. External power remained present and sampled APU temperature stayed
-  at or below 66 C.
-- Scaling evidence: the compute-heavy chunk workload reached 1.96x, 3.42x,
-  and 5.97x at widths 2, 4, and 8. Chunk fill peaked at 1.48x at four physical
-  cores and fell to 1.43x with SMT. Tile touch lost at every width, confirming
-  that dispatch overhead dominates extremely small work. Partial-fill results
-  varied with granularity; the 192-unit serial control reached about 7% CV,
-  so its near-break-even width-two result is not a stable crossover claim.
-- Counter evidence: all eight fields runs produced numeric cycles,
-  instructions, cache misses, branch misses, and task-clock values plus their
-  matching iteration counts. IPC ranged from 3.06 to 4.34. `perf` emitted
-  user-space-qualified event names such as `cycles:u`; a one-off validator
-  that required literal `cycles` falsely marked the otherwise complete PMU
-  artifacts as failed. Raw process totals are retained and must be normalized
-  by each run's own iteration count before comparing benchmarks.
-- Decision: accept this campaign as the first controlled handheld baseline,
-  not as a new cross-machine threshold calibration. For game-like parallel
-  work, retain physical-core-first scheduling and let SMT participate only
-  when tasks are compute-heavy enough; use four workers as the conservative
-  default for mixed work. Repeat the two noisy cache-maintenance cases and any
-  near-crossover partial-fill point before drawing optimization conclusions.
-
-## 2026-08-04 - Exception-free execution paths
-
-- Area: compiler exception mode, phase dispatch, and schedule type erasure.
-- Hypothesis: removing exception-only pool state and catch-based paths should
-  primarily reduce generated code and compilation work; runtime improvement
-  should be expected only where the removed coordination is material.
-- Method: one AppleClang 21 C++20 `-O3 -DNDEBUG` consumer instantiated a
-  four-worker pool and one every-tick schedule task in three variants: normal
-  callback, explicitly `noexcept` callback with exceptions enabled, and an
-  ordinary callback compiled with `-fno-exceptions`. Hyperfine ran 8 pool and
-  6 schedule repetitions after warmup. Six clean object compilations measured
-  compile time; macOS `time -l` measured peak RSS; Mach-O section inspection
-  measured executable code and exception metadata.
-- Evidence: compile means were 632 ms enabled, 621 ms explicitly no-throw,
-  and 565 ms exception-free. Peak compiler RSS was 158.0 MB, 157.1 MB, and
-  151.7 MB respectively. Executable `__text` was 8,308 bytes in both enabled
-  variants and 5,376 bytes exception-free; the enabled executables carried
-  540 bytes of `__gcc_except_tab` plus 328 bytes of `__unwind_info`, while the
-  exception-free executable had neither section. The implementation does not
-  add `-fno-unwind-tables`; this section difference is the compiler's result
-  for `-fno-exceptions`, not a Tess policy to discard stack metadata.
-- Runtime evidence: the pool harness means were 173.9 ms enabled, 180.7 ms
-  explicitly no-throw, and 183.0 ms exception-free, with overlapping noise;
-  no pool speedup is claimed. Schedule means were 49.8 ms, 49.3 ms, and
-  34.9 ms respectively. Representative pool peak RSS was identical at
-  1,605,632 bytes in all three variants.
-- Regression control: the repository's 12-sentinel paired base/head run used
-  10 interleaved repetitions and passed. Storage and field sentinels were
-  within -0.1%; the four main path sentinels ranged from -6.6% to +0.3%; the
-  scoped-thread parallel sentinel was +1.4% with a 95% interval of
-  [-0.8%, +5.2%]. No sentinel crossed the 5% regression budget at material
-  scale.
-- Decision: accept the policy-specialized representation and no-throw adapter
-  preservation for code-size and compile-cost value. Treat the schedule result
-  as a promising local measurement, not a general runtime claim. Reject a
-  claim that no-throw pool dispatch is faster; measured differences were noisy
-  and slightly favored the ordinary enabled baseline.
-- Follow-up: profile instruction-level scheduler differences only if schedule
-  dispatch becomes material in a representative application trace. Preserve
-  the existing sentinel names and thread-scaling baselines.
-
-## 2026-07-31 - Direct Directory For Fully Covered Sparse Worlds
-
-- Area: `SparseResidentWorld` directory lookup and sparse weighted batch path
-  planning.
-- Hypothesis: a fully resident sparse world still paid the open-addressed
-  chunk-directory hash and probe for each residency, page, and cost access,
-  accounting for most of its 2.07x time versus the dense equivalent.
-- Evidence: equal-work 512x512 baselines were 88.5 ms sparse-resident versus
-  42.8 ms dense (10 repetitions, 0.2 s minimum). A 2 kHz Samply profile
-  collected 27,168 samples; the dominant leaf was the bounded weighted-field
-  neighbor loop, whose disassembly showed repeated inlined hash/probe
-  sequences. A post-change profile removed those executed hash sequences and
-  shifted the hot samples to generation and distance-array reads. Formal
-  alternating A/B confirmation against `ccb1c30` measured 90,677,330 ns base
-  versus 57,568,792 ns head, -35.8% with a 99% confidence interval of
-  [-37.8%, -34.8%]. The dense-equivalent gap fell to about 1.35x.
-- Memory effect: at the profiled 256-chunk capacity, the directory changes from
-  512 24-byte hash buckets (12 KiB) to 256 8-byte slot entries (2 KiB). Each
-  successful lookup reads one slot entry instead of one or more buckets, and
-  insert/erase writes one slot entry. The 10 KiB peak heap-payload reduction
-  is below process-RSS measurement granularity but exact from the selected
-  layouts.
-- Decision: accepted. Use the direct array only when capacity covers the
-  complete bounded key space; genuinely sparse worlds retain bounded hash
-  storage. Tests cover lookup, erase, slot reuse, out-of-range keys, and the
-  large-key hashed representation.
-- Tradeoff and follow-up: the five-suspect paired control passed. Hash-mode
-  eviction changed by +0.9% to +2.0%, ensure-hit by -0.2%, and the 1-2 ns raw
-  lookup by +25.0%; all are below the configured absolute materiality floor.
-  Profile slot-direct page/cost access only if a hash-mode end-to-end workload
-  shows a material regression or the remaining 1.35x sparse/dense gap becomes
-  a priority. Do not specialize that API from the raw nanosecond lookup alone.
-
-## 2026-08-04 - Third Campaign (fixed mask): the published bracket was wrong
-
-Re-ran the full seven-workload sweep at `813dc9d` with the N+1 mask. 46
-minutes, ~$8, exit 0. Verified from `sweep-cpu-masks.tsv` that all 77
-points ran with N+1 CPUs -- a plan is not evidence of what ran.
-
-**The fix holds at scale.** `chunk_compute` against the pool's own
-ceiling, exactly-N to N+1: width 2 64%->99%, width 4 77%->99%, width 8
-82%->98%, width 16 79%->96%. Width 24 was already at 95% and is
-unchanged, as the diagnostic predicted -- the dispatcher's penalty is
-about 1/N of the mask.
-
-**The published crossover was wrong, and wrong in the direction that
-understates the library.** docs/performance.md said the pool loses below
-about 45 ns of work per chunk at four workers. Under the fixed mask,
-44.8 ns wins at 1.17x and 46.7 ns at 1.16x, both Holm-significant. The observed crossover is bracketed between 11.5 ns (loses, 0.34x) and
-44.8 ns (wins); nothing between them, or below 11.5 ns, was measured.
-The degraded mask had been costing the pool roughly a third of its
-throughput at low widths, and that loss was published as a property of
-the library.
-
-Corrected on the page, and the chart regenerated from this campaign
-alone. The earlier "both campaigns agree" support is withdrawn: both of
-those campaigns were measured under the defect, so their agreement
-reflected a shared artifact rather than independent confirmation.
-
-**Beyond 24 workers nothing improved, and that appears to be real.**
-`chunk_compute` plateaus near 34x from width 64 onward under either
-mask; `chunk_fill` peaks around 7x at width 24 and then declines. Those
-are saturation, not harness defects.
-
-**The curve is still not publishable**: 31 points over the 5% CV limit,
-against 24 before. High widths remain noisy (14-24% CV at 64 and above).
-
-**And the fix made width 2 worse for light workloads**, which review
-caught and my first explanation got wrong. I blamed run length -- the
-diagnostic ran ten points in two minutes against the campaign's 77 over
-35 -- but the diagnostic only ever measured `chunk_compute`, and
-`chunk_compute` at width 2 is *cleaner* in the campaign than before.
-Width-2 CV, exactly-N to N+1:
-
-| workload | exactly-N | N+1 |
-| --- | ---: | ---: |
-| `chunk_compute` | 4.28% | 0.27% |
-| `chunk_fill` | 1.21% | 0.45% |
-| `partial_fill_1536` | 2.29% | 16.41% |
-| `partial_fill_640` | 0.83% | 26.50% |
-| `partial_fill_192` | 1.46% | 17.85% |
-| `partial_fill_64` | 1.00% | 13.35% |
-| `tile_touch` | 1.04% | 6.62% |
-
-It splits by workload weight, not by run length. The same points were
-low-CV under the old mask -- and pinned in the slow mode, which is what
-the fix removed. The artifact-supported reading is that a slow mode
-still exists inside the 3-CPU mask at width 2 and is entered per
-repetition: `taskset` constrains the process, not thread placement
-within it, so two workers can land on the `{0,96}` SMT pair instead of
-`{0,1}`. Light workloads have short phases, so a placement flip costs
-proportionally more.
-
-The published bracket is unaffected: it rests on width 4, where the
-bracketing points measure 2.33% and 2.17% CV.
-
-The direct test and likely fix is per-thread affinity -- each worker
-bound to its own CPU and the dispatcher to the extra one -- rather than
-a process-wide mask. Not attempted here.
-
-**An analysis error worth recording.** My first comparison took the
-median efficiency across all seven workloads and produced nonsense --
-1% at width 190 -- because `tile_touch` and the light fills legitimately
-never scale. Their low efficiency is the crossover, not a defect.
-Efficiency has to be read per workload.
-
-## 2026-08-04 - The Width-2 Anomaly Was the Harness (resolved)
-
-The open anomaly from the 2026-08-03 campaign is closed, and it was a
-defect in the measurement setup rather than in the executor. Two
-diagnostic runs on `c3-standard-192-metal` plus one on a
-`c3-standard-4`, about $3.20 in total.
-
-**Cause.** `sweep_cpu_plan.py` pinned each point to exactly N CPUs. The
-pool runs N worker threads *and* the benchmark's dispatching thread, so
-N+1 threads shared N CPUs and the measurement dropped into a distinct
-slow mode. Varying only the mask, holding everything else fixed:
-
-| mask at width 2 | CPUs | reps in fast mode | efficiency |
-| --- | ---: | ---: | ---: |
-| `{0,1}` two adjacent cores | 2 | 0/10 | 65% |
-| `{0,24}` across NUMA nodes | 2 | 7/10 | 99% |
-| `{0,48}` across sockets | 2 | 8/10 | 98% |
-| `{0,96}` one core, both SMT threads | 2 | 10/10 | 93% |
-| `{0,1,2}` | 3 | 10/10 | 100% |
-| `{0,1,2,3}` | 4 | 10/10 | 98% |
-
-It is a mode mixture, not a level shift: adjacent cores were slow on
-every repetition, node- and socket-spanning masks only sometimes, and
-any mask with a spare CPU never. A median alone hides that, which is why
-the pass criterion below counts modes.
-
-**Fix.** `mask_for_width()` allocates N+1 CPUs. The extra one is an SMT
-sibling of a worker's core rather than the next physical core, so the
-mask stays inside the same NUMA node and the widths keep their
-topological meaning -- 24 is still exactly one node, 48 one socket.
-Verified on hardware: the dispatcher lands on CPU 96, whose node and
-socket sets match the workers' at every width.
-
-**Validation** (paired arms, one run, masks from the production planner):
-
-| width | before | after | ceiling |
-| ---: | ---: | ---: | ---: |
-| 2 | 65% | 99% | 2.0 |
-| 4 | 69% | 99% | 4.0 |
-| 8 | 80% | 98% | 8.0 |
-| 16 | 79% | 96% | 16.0 |
-| 24 | 97% | 96% | 19.5 |
-
-The fixed arm reached the fast mode on 10 of 10 repetitions at every
-width, with CV 0.40% against 5.12% at width 2. The degraded arm still
-failed in the same run, which is the control that matters: had both arms
-looked clean it would have meant the mask never reached `taskset`.
-
-**This also closes the uniform 77-82% loss** recorded on 2026-08-03 as a
-separate question. It was the same defect: the dispatcher's penalty is
-roughly 1/N of the mask, so it is catastrophic at width 2 and fades by
-width 24.
-
-**A correction to that entry's arithmetic.** It reported width 24 at 77%
-by dividing speedup by width. The pool's own quantization ceiling at 24
-workers is 19.5, not 24, so the campaign's 18.52 was 95% of what is
-achievable -- width 24 was never degraded. The report tool prints an "of
-ceiling" column for exactly this reason; the ad-hoc analysis ignored it.
-
-**Refuted along the way**, each against data rather than argument: that
-the collapse was SMT co-location (the live topology shows sibling(0) =
-96, so `{0,1}` is two distinct cores, and a real sibling pair was
-*faster* than the campaign's mask); that it was dispatcher CPU cost
-(22 us against a 20,557 us wall); that it was an Amdahl serial floor
-(fitted at 114-164 us, ~1.3% of T(4)); and that it was a fixed extra
-cost in the pool path (pool w1 equals serial to 0.015%).
-
-**Consequence for the published crossover.** The bracket on
-docs/performance.md was derived from sweeps run under the degraded mask.
-Speedups move -- `chunk_compute` at width 4 goes 2.78x to 3.96x -- so
-while that workload's verdict is unchanged, the bracket itself has to be
-re-measured under the fixed mask before it can be relied on.
-
-## 2026-08-03 - Second Bare-Metal Campaign (pinned, clock-controlled)
-
-Re-ran the sweep with each point pinned via `taskset` to a planned CPU
-set and the `performance` governor set and verified across all CPUs. 46
-minutes, ~$7.70, exit 0, all 77 points measured.
-
-**Pinning plus clock control cut variance sharply at low and mid
-widths.** Median CV by width, first campaign -> second: w4 7.12% ->
-0.65%, w8 6.12% -> 0.54%, w16 8.04% -> 0.55%, w24 9.16% -> 0.54%. Within
-socket 0 the median CV is 0.69%. The two changes cannot be separated:
-the first campaign had neither pinning nor clock control.
-
-**It did not help across sockets.** w64 18.06% -> 14.70%, w96 16.88% ->
-17.69%, w190 21.95% -> 21.48%; median 17.46% for widths >= 64. The curve
-is still not publishable, and 24 points fail the gate.
-
-**The crossover replicated, and that is the result worth having.** At
-four workers the sign agrees for every workload across both campaigns
-despite the different regimes: below ~47 ns per chunk the pool loses,
-above ~94 ns it wins. The first campaign's four-worker bracket was
-47.5-90.1 ns and the second's is 46.9-93.6 ns. Published on
-docs/performance.md as ~45-95 ns with a recommendation to measure
-locally.
-
-### What review refuted
-
-Three causal explanations I proposed do not survive:
-
-- *"Residual noise above 64 workers is memory-path contention."*
-  `tile_touch` touches one tile per chunk and has essentially no memory
-  traffic, yet its CV goes 1.80% at w48 to 11.06% at w64 to 22.54% at
-  w96. Interleaving was on in BOTH campaigns and at every width, so the
-  memory configuration does not change at w64. Thread placement does.
-  The noise also is not monotone in load: `chunk_fill` is 10.83% at w32
-  and 3.19% at w48.
-- *"Two workers are handicapped because the dispatcher does per-iteration
-  work inside the timed loop."* It does not: it wakes workers, blocks in
-  `done_cv_.wait`, then scans results. And at w1 -- where the dispatcher
-  shares one CPU with the only worker -- the total overhead is ~4 us per
-  iteration, 0.015%. A dispatcher stealing CPU would hurt w1 most; w1 is
-  unaffected and only w2 is hurt.
-- *"w32/w48 are slower pinned because of worse memory locality."* Under
-  uniform interleave across four nodes the expected access mix is
-  placement-invariant: 25% local / 25% same-socket / 50% cross-socket
-  either way. Better candidates, unmeasured: per-socket turbo budget
-  concentrating 32-48 active cores on one socket, and mesh/UPI
-  concentration. No per-point frequency telemetry exists to decide it.
-
-### The open anomaly
-
-Pinned w2 is uniformly ~1.5x slower than unpinned across every
-substantial workload, and its throughput matches two workers sharing one
-physical core's SMT threads -- which the CPU plan should have made
-impossible. Pinned w4 likewise matches the *slow* mode of the unpinned
-campaign's bimodal w4 rather than its fast mode. This cannot be
-adjudicated from the artifacts, because the masks that were actually
-applied were recorded nowhere. Both are now captured
-(`sweep-cpu-masks.tsv`, `lscpu-topology.csv`); a plan is not evidence of
-what ran. Two-worker results are withheld from the adopter page until
-this is resolved.
-
-The cheap next step is a targeted diagnostic rather than another sweep:
-A/B the masks {0,1} vs {0,2} vs {0,96} vs {0,1,2} at w2/w4 with
-per-thread placement sampling and aperf/mperf capture.
-
-### The persistence anomaly reverted
-
-`persistence/save_dense_512x512_2_fields`: 6.833 ms -> 11.821 ms (+73%)
--> **6.839 ms**, within 0.09% of the original, while the median change
-across all 184 main-pass benchmarks was +0.04%. It was not a library
-regression and not the code-layout effect proposed for it. The governor
-changed between the campaigns so attribution is not definitive, but the
-ratio 11.82/6.83 = 1.73 matches the 3.79/2.2 GHz clock range the first
-campaign recorded, which fits frequency better than layout.
-
-### Publishable, and not
-
-Published: the four-worker crossover bracket, as a range, with the
-machine stated. Withheld: any two-worker bracket, the full scaling
-curve, and every causal narrative above that review did not support.
-A methodology note worth carrying forward -- single-socket pinned points
-measure at ~0.7% median CV on this class of machine; cross-socket points
-do not get below ~15% even pinned and clock-controlled, so cross-socket
-speedup claims need interval reporting rather than point estimates.
-
-## 2026-08-03 - Thread-Scaling Sweep (first attempt; curve not publishable)
-
-A worker-count sweep from 1 to 190 workers over seven workloads on a
-4096-chunk world, run on `c3-standard-192-metal` under
-`numactl --interleave=all`, 20 repetitions, no thread pinning and no
-governor control. 39 minutes, ~$6.57, exit 0.
-
-**The curve could not be published, and the analysis gate said so.**
-`tools/thread_scaling_report.py` flagged 57 points; CV reached 16-33%
-above 32 workers.
-
-**The noise was thread placement, not jitter.** Repetitions split into
-discrete modes rather than scattering. `chunk_compute/4` sat at either
-~6.73 ms or ~8.81 ms, a 31% gap with almost nothing between; the fast
-mode is 3.94x against a 4.0 quantization ceiling, and the slow mode's
-3.01x matches two of the four workers sharing one core's SMT threads at
-sibling efficiency ~0.53. `chunk_compute/8` shows three levels in the
-same ratios that 0, 1 and 2 colocated pairs predict, with the same
-efficiency. Two alternatives were ruled out from the artifact: Google
-Benchmark's `iterations` is constant across all 20 repetitions of all 84
-points, and the pool's `job_stride` is deterministic per width.
-
-Attribution is weaker at 96 and 190 workers, where 191 threads on 192
-CPUs leaves almost no placement freedom and oversubscription and
-all-core frequency licensing are co-suspects. "Unusable" holds either
-way.
-
-**The crossover did survive, and it was the point of the exercise.**
-Corrected for multiplicity across all 77 pool comparisons, at two workers
-the pool loses at 42.3 ns of work per chunk and wins at 90.1 ns. The
-uncorrected reading was tighter and wrong: `partial_fill_64` at two
-workers has a marginal interval of 0.91-0.99, which looks decisive, and
-an adjusted p of 0.090, which is not.
-
-The bracket is conditional on this machine, this width, and unpinned
-placement. Under good placement it likely sits lower: the two fast-mode
-repetitions of `partial_fill_64/2` beat serial outright.
-
-**Frequency was uncontrolled and demonstrably wandered.** `machine.txt`
-recorded `CPU(s) scaling MHz: 21%` against an 800-3800 MHz range, and the
-counter pass measured single-thread effective clocks from 2.35 to 3.79
-GHz across benchmarks minutes apart on an idle machine.
-
-**An unrelated anomaly in the main pass.** All seven `fields/*` held
-within 0.3% of the previous campaign -- the historical regression did not
-recur -- and all 184 benchmarks stayed under their ceilings, the closest
-at 65%. But `persistence/save_dense_512x512_2_fields` measured +73%
-(6.83 -> 11.82 ms) with 0.1% CV in both campaigns, while `load_dense` in
-the same binary was unchanged at 1.000x and the same benchmark in
-`tess_bench_diagnostics` was unchanged at 1.003x. Frequency cannot
-produce that pattern. No library code changed between the campaigns, and
-an arm64 A/B of the two commits reproduces nothing (10.506 vs 10.508 ms),
-so the leading explanation is x86 code layout shifted by the
-`parallel_phase_support.h` extraction. Unresolved; it is a bench-binary
-artifact at 19% of its ceiling, invisible to library consumers, and the
-next campaign re-measures it.
-
-**Changed as a result:** each sweep point now runs in its own process
-pinned with `taskset` to a CPU set from `tools/cloud/sweep_cpu_plan.py`
-(one thread per physical core, filling NUMA nodes in order, SMT siblings
-last); the `performance` governor is set before measuring and the
-achieved state recorded; and verdicts are Holm-corrected across the whole
-artifact rather than read off marginal intervals.
-
-**A caveat on the persistence re-measurement.** The governor change
-applies to the main timing pass too, so the next campaign's
-`persistence/save_dense` number will not be a clean A/B against either
-earlier campaign: a difference could be the governor rather than layout.
-Distinguishing them needs the two binaries run under the same governor,
-not two campaigns run under different ones.
-
-**Still uncontrolled:** benchmark order is not randomised against the
-worker axis, so a smooth drift could still imitate a worker-count trend.
-Registration is workload-major, so the axis is traversed seven times and
-drift aliasing should show as knee positions disagreeing between
-workloads -- a cross-check, not a fix.
-
-## 2026-08-02 - First Bare-Metal Campaign (post-fix baseline)
-
-- Area: section 8's cloud bare-metal tier, first execution.
-- Machine: `c3-standard-192-metal`, Xeon Platinum 8481C, Ubuntu 24.04.4,
-  clang 18.1.3, kernel 6.17.0-1021-gcp. Commit `3a7b12d`
-  (`v0.4.0-86-g3a7b12d`), source archive verified by SHA-256. 28 minutes,
-  about $4.70.
-- Timing evidence: 184 and 177 benchmarks at 10 repetitions, zero errors.
-  **Median CV 0.12% against 2.03% on the shared-VM validation run** -- a
-  roughly seventeen-fold reduction. All eight fields benchmarks at
-  CV <= 0.91%. Residual noise is concentrated in three intrinsically
-  jittery groups (`queued/execute_resident_update`, the `parallel/*_pool`
-  family, and the manual-time LRU eviction benchmark) and is workload
-  behaviour rather than machine noise.
-- Counter evidence: the PMU is exposed on metal and returned usable
-  values for all eight fields benchmarks. Legitimate conclusions are
-  RATES only -- IPC 3.3-5.1, branch mispredicts around 1.0-1.6 per
-  thousand instructions on the build paths versus about 2 per million on
-  the lookup paths, and LLC misses at 0.001-0.007 MPKI, meaning the
-  fields working set is cache-resident and memory traffic is not the
-  bottleneck.
-
-### What this does NOT support
-
-Recorded because the first analysis of this data got it wrong twice.
-
-- **Cross-benchmark comparison of the raw counter columns.** `perf`
-  wraps the whole process, so a cheaper benchmark runs more iterations
-  in the fixed min-time and accumulates more of everything.
-  `fields/cache_hit` shows the highest cycle count purely because it ran
-  about 6.7M iterations; it is the cheapest operation measured.
-- **The per-iteration normalisation attempted during analysis.** It
-  divided counter-run totals by TIMING-run iteration counts, which have
-  different min-times, and inverted the true ordering: it implied
-  `goalset_build_1` costs twice `goalset_build_16` when the timings show
-  it is 13% cheaper. Per-operation cycles should come from
-  `median_ns x measured_frequency`, not from that division.
-- **Production-binary microarchitectural claims.** The counter pass runs
-  the diagnostics binary, whose fields kernels are 12-21% slower because
-  of allocation hooks.
-- **"The regression is fixed."** `90b61ef` is an ancestor of every
-  commit measured here, so there is no pre-fix arm. The hosted
-  alternating paired confirmation remains the evidence that closes it;
-  this campaign corroborates without independently proving the delta.
-- **Metal-versus-VM speedup.** The two runs differ in both machine and
-  commit.
-- **Threshold recalibration.** One snapshot on a different machine.
-
-- Follow-up: publish the counter run's own iteration count and
-  task-clock (done, this commit) so future rows can be normalised; a
-  paired pre/post-`90b61ef` run on this recipe if the fix is to be
-  quantified on metal; pinning plus a performance governor as the next
-  controlled experiment, since the counter pass drifted 2.5-3.8 GHz;
-  dedicated handling for the three noisy groups before any of them gate.
-
-## 2026-08-01 - Hosted Confirmation Of The Field Product Fix
-
-- Area: follow-up to the 2026-07-31 chunk-level capture restoration.
-- Evidence: alternating paired confirmation on the hosted ubuntu-24.04
-  runner, `c300560` base against `7f25018` head, five suspects in
-  `tess_bench_diagnostics` (run 30732908152). All five pass:
-
-| Sentinel | Base | Head | Delta | 99% CI |
-| --- | ---: | ---: | ---: | ---: |
-| `fields/cache_eviction` | 146,831 ns | 143,247 ns | -2.1% | [-3.6%, -0.6%] |
-| `fields/cache_miss_store` | 140,100 ns | 139,427 ns | -0.6% | [-3.2%, +0.4%] |
-| `fields/goalset_build_1` | 129,593 ns | 133,187 ns | +2.8% | [+1.3%, +3.7%] |
-| `fields/goalset_build_16` | 124,269 ns | 128,306 ns | +3.0% | [+2.6%, +4.3%] |
-| `fields/goalset_build_256` | 151,161 ns | 144,416 ns | -4.6% | [-5.5%, -4.0%] |
-
-  Every interval sits inside the 8% effect floor, and the hosted base
-  medians (124-151 us) match the pre-regression range. The 2.3x-2.8x
-  hosted amplification of the original slowdown is gone.
-- Decision: the 2026-07-31 remediation is confirmed on the runner family
-  the gates are calibrated against. The regression is closed as a defect
-  with a root cause, not absorbed by recalibration.
-- Ceilings: **not recalibrated, deliberately.** The fields family still
-  carries bootstrap ceilings (850 us - 1.1 ms against ~124-151 us
-  observed, roughly 7x headroom), which is why a 2.3x-2.8x regression
-  passed the gate. Recalibrating needs the documented 10-artifact rule
-  at 2x maximum observed, and only **2** unexpired baseline artifacts
-  post-date the fix. A window spanning the regression would bake the
-  inflated numbers in, which is precisely the section 2.3 loophole.
-- Follow-up conditions: recalibrate the five fields ceilings once ten
-  post-fix main-run baselines exist. The data branch landing alongside
-  this entry makes that window assemblable without racing the 30-day
-  artifact expiry that would otherwise keep resetting the count.
+## 2026-08-20 - External maintenance adapter promotion campaign
+
+- **Hypothesis:** the registered dirty-bit backend will materially beat the
+  queued-coalescing primary control on at least one of Apple M3 and Steam Deck
+  without a material primary or immediate-execution guardrail regression on
+  either device.
+- **Candidate and method:** source
+  `b4a882bbdaa32a704109d5bdd773a1adfe45b492`, built separately with the
+  recorded native Apple toolchain and pinned Steam Runtime image. Each device
+  ran a separate 30-block queued-coalescing A/A calibration, then 30 paired,
+  SHA-ranked blocks across dense, sparse, mixed, flush, budgeted, and
+  16/64/256/1,024/4,096 registered-task cells. Every cell compared dirty bit
+  with immediate, FIFO, and queued-coalescing backends. CPU time was the
+  decision metric; absolute times were never compared across devices.
+- **Correctness gate:** the exact source completed the normal suite with no
+  failures (1,567 passed and one intentionally unsupported capability
+  skipped). Adapter-focused ASan/UBSan, TSan, and warnings-as-errors runs each
+  passed 21/21 cases, and campaign-tool tests passed 43/43. The adapter cases
+  cover deterministic 1,000-run flush, archive-v2 and independent-rescan
+  equivalence, dirty ownership, typed content/residency generations,
+  generation-safe clear, retry, budget, exceptions, shutdown, concurrency,
+  and warmed dense/sparse zero-allocation behavior across all backends.
+- **Calibration:** every A/A workload was valid. The largest paired relative
+  noise p95 was 2.21% on Steam Deck, below the frozen 10% invalidation ceiling.
+  Candidate thresholds remained the predeclared maximum of the fixed floors
+  and twice each device's measured A/A noise.
+- **M3 result:** `flat` overall. It provides neither the material primary win
+  required to graduate dirty bit nor a material regression.
+- **Steam Deck result:** the aggregate primary comparison against queued
+  coalescing is `flat` at +1.46%, with a 95% interval of +1.36% to +1.64%
+  against the 8% relative and 4.98 us absolute thresholds. The overall device
+  decision is nevertheless `material_regression`: dirty bit is materially
+  slower than immediate execution in budgeted (+10.06%), flush (+10.16%),
+  scaling-256 (+10.32%), and scaling-1,024 (+10.85%) cells. The scaling-4,096
+  immediate interval crosses the regression boundary and is `inconclusive`.
+- **Memory limitation:** isolated scaling-4,096 M3 processes recorded one-off
+  roughly 1.3 MiB peak-RSS excursions under dirty bit, FIFO, and immediate.
+  Exact work counters, non-monotonic repetitions, lower dirty-bit median than
+  coalescing, and green sanitizer/allocation gates do not indicate a leak.
+  The protocol declared no memory threshold, so this remains descriptive and
+  no post-result gate was invented.
+- **Decision:** `keep_experimental`. `DirtyBitScheduler` does not satisfy the
+  portable performance rule. This performance-only result does not block the
+  separately validated stable task, handle, result, adapter, and immediate-
+  execution contract from promotion.
+- **Evidence and limitation:** the public sanitized bundle is retained under
+  [`evidence/v0.13/maintenance/`](../evidence/v0.13/maintenance/), separately
+  manifested by its inner `PUBLIC_EVIDENCE_SHA256SUMS`; the raw set stays
+  external and unchanged under
+  `CROSS_DEVICE_EVIDENCE_V4_SHA256SUMS`, SHA-256
+  `407f6279aad3a27442ca4fb8673712baf1b7c4a152c20e74607ff0a10cd77cb0`, with
+  the sanitized and omitted members pinned in the directory's redaction map.
+  The Deck wrapper's aggregate console transcript/status was not separately
+  captured; authoritative calibration and candidate phase statuses,
+  inventories, logs, governor evidence, and replay outputs are retained.
+- **Reconsideration:** retry only after a relevant implementation, adapter,
+  benchmark, fixture, compiler, flag, or SDK change, then refreeze and rerun
+  correctness plus both hardware legs. A mechanical move needs an explicit
+  representativeness record rather than an assumed carry-forward.
+
+## 2026-08-19 - Reduce CI setup and Traffic oracle latency
+
+Issue 218 was a recovered infrastructure failure: two attempts were cancelled
+while Ubuntu packages downloaded unusually slowly, then the same workflow run
+succeeded on attempt three. Across 90 observed package-install steps, p50 was
+16 seconds, p95 was 109 seconds, and the maximum was 1,306 seconds. Another run
+continuously downloaded 50.4 MB for 21 minutes 34 seconds, confirming that APT
+inactivity timeouts cannot impose a total duration bound.
+
+The package sample came from completed setup-step timings queried through the
+Actions API across 19 recent `main` push runs, from issue-218 run 32244691550
+through run 32290830241.
+
+Accepted changes remove APT from the common Linux ccache path by downloading
+the upstream 4.13.6 static binary under a pinned SHA-256 digest. The remaining
+libc++ and coverage package installs fail closed with retries and inactivity
+timeouts. Runner-provided GCC 12/14, Clang 16, clang-tidy 18, and Ninja avoid
+redundant installation and are checked explicitly so image drift is visible.
+Successful same-run retries reconcile a bot-owned failure issue only while the
+bot's unedited report remains the latest activity; ambiguous or human-owned
+issues remain open.
+
+The Traffic Lab's exact route oracle, rather than its crowd replay, dominated
+Debug and sanitizer latency. A representative hosted PR previously spent
+6 minutes 17 seconds in Dev CTest and another 11 minutes 38 seconds running two
+generic Traffic example acceptances. After decomposition, a local Debug
+Traffic slice retained all scenario checks and both 512/1,600-tick crowd
+outcomes in 11.77 seconds; the 2,048 exact comparisons passed separately in
+4.96 seconds under the optimized bench preset. These local and hosted figures
+are not a paired benchmark. Required optimized PR and main gates now own the
+exact comparisons, while Debug, GCC, ASan, Windows, and coverage retain the
+long-run behavior checks.
+
+No existing CI job was demoted. The prior failure classification still shows
+independent signal from the required portability, sanitizer, static-analysis,
+documentation, and benchmark gates, while existing benchmark sentinels and
+coverage remain advisory. Reclassify only after post-change run history shows
+a new low-signal critical path.
+
+Migrating providers was deferred. Free public hosted runners avoid a second
+control plane and currently offer a better cost boundary than an unmeasured
+replacement. Reconsider a main-push-only, no-secrets shadow pilot after the
+internal changes settle; require at least ten paired commits and a predeclared
+25% improvement in both p50 and p95 end-to-end time without weaker reliability
+or security before granting a provider authoritative work.
+
+## 2026-08-18 - Traffic Lab planner investigation
+
+- **Question:** explain the Traffic Lab's planning tail before changing
+  behavior, then prefer a generally useful library change only when the
+  measured problem falls within Tess's intended pathfinding contract.
+- **Contract and workload:** Tess documents unit A* for unit-cost terrain,
+  weighted A* for positive varying entry costs, shared-goal fields for repeated
+  goals, and opt-in portal-first routes when bounded suboptimality is
+  acceptable. The Traffic Lab has 1,024 distinct start/goal pairs, static
+  terrain during the measured 128-tick startup, and an eight-request FIFO.
+  Every terrain entry cost is initialized to one and no Traffic Lab operation
+  changes it.
+- **Root cause:** the baseline is not a retained-route or invalidation problem.
+  The queue drains exactly the 1,024 initial requests, eight per tick, with no
+  topology edit or replan. Across the 128 deterministic tick positions, median
+  planning time correlates with touched nodes at 0.9979 for funnel and 0.9994
+  for multi-gate. A statically unit-cost workload is routed through the
+  weighted API: both planners use Manhattan distance, but barrier scenarios
+  miss the unit planner's exact plane-gap shortcut and fall into weighted A*'s
+  obstacle-blind wavefront expansion. Eight first searches can therefore touch
+  about one million nodes in one tick. The request-count budget is not a work
+  or wall-time bound, as the proposed budgeted-agent-replanning design already
+  states.
+- **Controlled strategy probe:** an untracked C++ probe at commit
+  `8dda47f6a7980e4e348b66b888e81ea95b77e129` used the exact 1024x512 shape,
+  fields, barriers, openings, and 1,024 request pairs. It was compiled `-O3
+  -DNDEBUG` with Apple Clang 21.0.0 on arm64 macOS 26.5.1. Exact weighted A*
+  supplied the cost oracle, using the demo's compound movement class rather
+  than a legacy tag approximation. The probe source SHA-256 was
+  `44057de133582810405a202fd1212ab5ac2491fe0193785111a5110fb3af392e`.
+  Deterministic result and counter totals are the primary evidence; the single
+  ordered process's per-request timing is exploratory and does not meet the
+  repository's 2,000-sample p99 publication floor.
+
+  | Scenario and strategy | Exact-cost routes | Reported expanded | p50/p95 |
+  | --- | ---: | ---: | ---: |
+  | funnel, weighted exact | 1,024 | 91,701,010 | 5,259 / 5,793 us |
+  | funnel, unit exact | 1,024 | 1,271,312 | 7.3 / 8.2 us |
+  | funnel, supplied gates | 1,024 | 1,274,336 | 9.3 / 13.6 us |
+  | multi-gate, weighted exact | 1,024 | 12,935,564 | 587 / 1,227 us |
+  | multi-gate, unit exact | 1,024 | 1,058,176 | 6.8 / 7.3 us |
+  | multi-gate, supplied gates | 1,024 | 1,061,120 | 7.5 / 10.2 us |
+
+  Unit and supplied-gate results matched the weighted status and optimal cost
+  for every request. The reported expanded-node field fell 72.1x for funnel
+  and 12.2x for multi-gate under unit search; on the unit shortcut this field
+  is constructed path length, so it is not presented as a total-work ratio.
+  Supplied-gate routes use the existing weighted portal-route product with
+  exact weighted segments and no segment cache. The scenario supplies a
+  nearest opening because its static barriers make crossing an opening
+  mandatory and every entry cost is one. Each request's start and goal have
+  the same row, so a route crossing at row `g` has the fixed horizontal cost
+  plus `2 * abs(start_row - g)` vertical cost; choosing the nearest opening is
+  therefore optimal. The portal builder reads `PassableTag` and `CostTag`,
+  while the movement class additionally rejects `ConstructionTag`. Scenario
+  initialization maintains the stronger invariant that every construction
+  tile is impassable and every non-construction tile is passable; final tests
+  must either pin that equivalence or use one movement predicate throughout.
+- **Route and crowd parity:** equal optimal cost is insufficient for a traffic
+  experiment. Only 52 funnel and 160 multi-gate unit routes were byte-identical
+  to weighted A*. Unit routes often turn vertically at the spawn edge rather
+  than approach the barrier first. In a 1,600-tick deterministic replay this
+  changed congestion materially:
+
+  | Scenario and strategy | Arrived | Accumulated waits |
+  | --- | ---: | ---: |
+  | funnel, weighted exact | 438 | 296,604 |
+  | funnel, unit exact | 48 | 516,792 |
+  | funnel, supplied gates | 789 | 115,579 |
+  | multi-gate, weighted exact | 776 | 127,736 |
+  | multi-gate, unit exact | 128 | 474,432 |
+  | multi-gate, supplied gates | 1,024 | 768 |
+
+  The unit substitution is rejected. Supplied-gate routes deliberately are
+  not byte-identical either (534 funnel and 560 multi-gate matches), but retain
+  the intended barrier-first approach: at tick 512 their blocked/wait counts
+  exactly match the weighted baseline (funnel 80/441, multi-gate 16/73). Their
+  later improvement removes equal-cost route-shape gridlock rather than the
+  choke point, so the changed long-run congestion outcome is an intentional
+  scenario behavior change, not parity.
+- **Alternatives evaluated:** lowering the FIFO request count would trade a
+  smaller tick for a longer initial planning drain and would still not bound
+  one search. Existing goal-monotone chunk portals found only 128 of 1,024
+  funnel routes, so their exact fallback retains the tail. A prototype using
+  the existing region graph's non-monotone coarse path found all routes and
+  reduced funnel segment expansions to 97,587 with the default segment-cache
+  budget, but its routes were 5.0% more costly in aggregate and up to 12.3%
+  more costly than exact; the current 4/3 Manhattan quality cap accepted only
+  607 of 1,024 funnel routes. Generalizing this tier to compound movement
+  classes and runtime graph guidance would add useful weighted capability, but
+  the static gate scenarios do not justify that behavioral and API scope.
+  Resumable A* is the only candidate that could make one arbitrary search a
+  cooperative work quantum; the existing budgeted-progress plan correctly
+  keeps it contingent on broader stage-5 evidence, persistent-state semantics,
+  and resumed-versus-contiguous correctness tests.
+- **Recommendation before revised review:** keep weighted movement semantics
+  and use scenario-supplied gate waypoints only for funnel and multi-gate;
+  aligned and shuffled-crossing remain direct exact searches. Expose the
+  existing generic queued-replan lifecycle as a public callback-based wrapper
+  so callers can combine the FIFO with any `PathResult`-returning Tess strategy
+  without duplicating agent-state transitions. The current exact unit and
+  weighted helpers remain convenience wrappers over it. The callback is
+  invoked synchronously as `(agent_index, request)`. Its returned path may be
+  borrowed but must remain valid through the immediate copy into retained
+  route storage. It must not mutate or reenter the supplied agents, routes, or
+  queue, or alias the destination route. The generic mechanism manages queue
+  and lifecycle state but neither validates nor certifies the callback's path
+  legality, cost, or optimality; the exact helper APIs retain their stronger
+  guarantees. If the callback throws, the front item, agent lifecycle, and
+  retained route remain unchanged, but callback-owned side effects are not
+  rolled back. This is a small, generally useful library boundary; gate
+  selection itself remains correctly local to the demo. Do not add a unit
+  joint-tick wrapper, region-graph portal extension, or resumable search for
+  this fix.
+- **Fix acceptance evidence:** after revised review, require every planned path
+  to be legal, deterministic, and equal in status and optimal cost to direct
+  weighted A*. Byte-identical routes and crowd states are explicitly not the
+  contract. Pin gate crossing, 128-tick queue drain, representative 512-tick
+  choke-point behavior, the existing eight-request ceiling, the full native
+  percentile campaign with at least 2,048 fixed-tick samples per scenario, the
+  separate counter pass, browser capture, and the complete test suite. Timing
+  remains advisory. Also repeat the 1,600-tick replay and record its arrivals,
+  accumulated waits, progress, and state hashes: the long-run behavior change
+  is part of the chosen scenario strategy, rather than an incidental result
+  hidden by the 512-tick check. Reconsider a general weighted topology-guided
+  route only for a measured varying-cost, distinct-goal workload where current
+  goal-monotone portals fail; reconsider resumable A* only under the existing
+  stage-5 evidence requirements.
+- **Accepted implementation and native result:** the reviewed public callback
+  drain now owns only FIFO and agent lifecycle, while the Traffic Lab supplies
+  gate waypoints locally. The Release timing pass repeated every 128-tick
+  scenario in 16 fresh processes (2,048 samples each). It used nearest-rank
+  percentiles and the existing publication floors; timing remains advisory.
+
+  | Scenario | Update p50/p95/p99 us | Planning p50/p95/p99 us |
+  | --- | ---: | ---: |
+  | aligned | 132.50 / 159.54 / 170.08 | 34.62 / 49.46 / 57.83 |
+  | shuffled-crossing | 125.00 / 159.25 / 173.25 | 42.83 / 58.08 / 68.29 |
+  | funnel | 186.42 / 238.33 / 258.75 | 101.42 / 138.21 / 155.25 |
+  | multi-gate | 160.62 / 195.17 / 210.21 | 78.79 / 92.92 / 106.21 |
+
+  Funnel planning p99 fell from 47,532.71 us to 155.25 us (306x), and
+  multi-gate fell from 9,617.96 us to 106.21 us (90.6x). The separate
+  diagnostic pass reported zero touched nodes, heap pops, and neighbor
+  candidates in all scenarios. Funnel performed 1,270,288 passability checks
+  and reconstructed 1,274,336 nodes; multi-gate performed 1,057,152 and
+  1,061,120 respectively. This is direct-segment work, not a displaced heap
+  tail.
+- **Browser and behavior result:** Chrome 151.0.7922.138 captured one fresh
+  headless page per requested initial scenario at 1920x1080. The corrected
+  frame endpoint covers synchronous measurement bookkeeping, the metrics DOM
+  update, and final `requestAnimationFrame` scheduling; it inherently excludes
+  its own timestamp and bounded-sample commit, and does not include
+  asynchronous paint. Every scenario filled 4,096 frame samples and recorded
+  zero catch-up frames:
+
+  | Scenario | Render p99/max ms | Frame p50/p95/p99 ms | Frame max ms | Wasm linear memory |
+  | --- | ---: | ---: | ---: | ---: |
+  | aligned | 0.2 / 0.4 | 0.1 / 0.4 / 0.5 | 0.8 | 71.5 MiB |
+  | shuffled-crossing | 0.3 / 1.2 | 0.2 / 0.6 / 0.8 | 1.7 | 71.5 MiB |
+  | funnel | 0.3 / 0.4 | 0.2 / 0.7 / 2.0 | 4.7 | 71.5 MiB |
+  | multi-gate | 0.2 / 0.4 | 0.1 / 0.5 / 0.6 | 0.8 | 71.5 MiB |
+
+  The 74,973,184-byte value is the complete Wasm linear-memory allocation,
+  not native RSS or model-owned heap. Removing three unused
+  `PathRequestRuntime` reservations reduced the aligned fresh-page allocation
+  from the separately observed 464,715,776 bytes (443.2 MiB) by 83.9%. The
+  canvas remained exactly 2:1, fit horizontally, and caused no horizontal
+  overflow at both 1366x768 and 1920x1080. Fixed-tick browser families had
+  only 682--683 samples, so browser update p99 remained suppressed and the
+  native campaign retains authority. The browser artifact preserves summarized
+  output and rebuilt Wasm, loader, and app hashes, but not raw browser samples;
+  its percentiles are therefore not independently recomputable. Exhaustive
+  native validation matched direct compound-class
+  weighted status and optimal cost for all 2,048 guided requests, checked
+  every node and edge, selected-gate crossing, repeat determinism, and
+  whole-map legacy/compound predicate equivalence. The 512- and 1,600-tick
+  arrivals, waits, progress, and state hashes matched the reviewed acceptance
+  values.
+- **Advisory artifact integrity:** the timing, counter, and browser artifact
+  basenames are `tess-traffic-lab-percentiles-guided.json`,
+  `tess-traffic-lab-counters-guided.json`, and
+  `tess-traffic-lab-browser-guided.json`. Their SHA-256 values are respectively
+  `15e42cbeda92e881f0fce37ca00924c988cbef3d7946a8d80a605864f428883d`,
+  `a79fa7a9057e3e09df21dc7aec9405293876c3ae97d500017644b3f8efe926ff`, and
+  `a3d2937226085afd24ad37a38e3b30a2e1f190bdad78d58cf54a86050fb61bea`.
+  These remain untracked machine-local evidence; the maintained record keeps
+  the portable method and accepted conclusions.
+
+## 2026-08-18 - Traffic Lab 1024×512 baseline and tail attribution
+
+- **Hypothesis:** a 1024×512 full-map overview with 1,024 agents is a useful
+  first large-grid congestion lab, while 1024² should wait for tail-latency
+  evidence and a rendering design that justifies four times as many tiles.
+- **Controlled workload:** the compile-time model uses an eight-search-per-
+  tick FIFO. Aligned and shuffled-crossing use open terrain; funnel and
+  multi-gate use the same four-column central barrier with different
+  deterministic openings.
+- **Timing method:** Apple Silicon macOS, Apple Clang 21.0.0, Release. Each
+  scenario ran 128 fixed ticks in each of 16 fresh processes, producing 2,048
+  samples. The native executable preallocated its sample buffer and serialized
+  only after the measured loop. Percentiles use nearest rank; repository
+  publication floors are 20/200/2,000 samples for p50/p95/p99. These numbers
+  are advisory and have no CI authority.
+
+  Update time:
+
+  | Scenario | p50 µs | p95 µs | p99 µs | max µs |
+  | --- | ---: | ---: | ---: | ---: |
+  | aligned | 135.83 | 172.25 | 240.46 | 567.21 |
+  | shuffled-crossing | 127.29 | 159.25 | 179.17 | 249.17 |
+  | funnel | 41,607.00 | 45,918.62 | 47,724.38 | 50,977.17 |
+  | multi-gate | 4,705.25 | 9,412.33 | 9,783.46 | 12,769.88 |
+
+  The original table's 28.6 MiB "conservative resident-memory estimate" is
+  withdrawn. It was a synthetic model-storage allowance that omitted reusable
+  path scratch and runtime capacities, so neither "resident" nor
+  "conservative" was supported. A later fresh-page capture records exact Wasm
+  linear-memory allocation instead.
+
+  Planning time:
+
+  | Scenario | p50 µs | p95 µs | p99 µs |
+  | --- | ---: | ---: | ---: |
+  | aligned | 35.38 | 50.08 | 76.29 |
+  | shuffled-crossing | 42.46 | 56.33 | 67.83 |
+  | funnel | 41,510.04 | 45,803.42 | 47,532.71 |
+  | multi-gate | 4,558.25 | 9,287.38 | 9,617.96 |
+
+- **Counter pass:** the separately compiled `TESS_ENABLE_DIAGNOSTICS` binary
+  ran one deterministic 128-tick repetition. Its wall times are deliberately
+  unpublished. Aligned and shuffled-crossing stayed on the direct corridor
+  path; funnel and multi-gate invoked full heap search:
+
+  | Scenario | Touched nodes | Heap pops | Neighbor candidates |
+  | --- | ---: | ---: | ---: |
+  | aligned | 0 | 0 | 0 |
+  | shuffled-crossing | 0 | 0 | 0 |
+  | funnel | 93,545,738 | 91,648,586 | 365,931,036 |
+  | multi-gate | 14,511,504 | 12,774,220 | 51,016,440 |
+
+  | Scenario | Passability checks | Reconstructed nodes |
+  | --- | ---: | ---: |
+  | aligned | 1,027,072 | 1,028,096 |
+  | shuffled-crossing | 1,202,572 | 1,203,596 |
+  | funnel | 2,009,102 | 3,228,042 |
+  | multi-gate | 1,935,988 | 2,832,980 |
+
+- **Sampling profiles:** 2 kHz Samply captures used the `bench-profile`
+  configuration (`-O3 -g -fno-omit-frame-pointer`) and repeated the aligned,
+  multi-gate, and funnel scenarios 200, 20, and 3 times respectively. The
+  captures contained 6,741, 27,503, and 25,949 samples. CLI symbol summaries
+  attributed 97.6% of multi-gate and 99.5% of funnel leaf samples to the
+  weighted-A* and regular-neighbor expansion family. Aligned attributed 19.5%
+  there and 70.8% to the enclosing, partly inlined fixed-tick body. The latter
+  bucket cannot separate movement from bookkeeping, so no narrower aligned
+  cause is claimed.
+- **Browser pass:** one Chrome session at a 1,665×984 CSS-pixel viewport
+  captured the first samples after each reset; buffers stop at 4,096 rather
+  than overwriting startup work. The historical frame endpoint preceded
+  measurement bookkeeping, the metrics DOM update, and final animation-frame
+  scheduling. These values therefore cover only partial synchronous callback
+  work and are retained as baseline history, not as full-callback evidence.
+  They do not include asynchronous paint completion. Render and partial-frame
+  timing are milliseconds:
+
+  | Scenario | Frames | Render p99/max | Partial frame p50/p95/p99 | Partial frame max | Catch-up frames |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | aligned | 4,096 | 1.0 / 7.3 | 0.5 / 1.2 / 1.7 | 7.5 | 0 |
+  | shuffled-crossing | 3,269 | 0.8 / 4.1 | 0.4 / 1.2 / 1.6 | 4.3 | 0 |
+  | funnel | 2,885 | 0.9 / 5.5 | 0.5 / 1.4 / 49.4 | 1,287.3 | 26 |
+  | multi-gate | 2,778 | 1.3 / 6.1 | 0.6 / 3.0 / 43.1 | 73.4 | 0 |
+
+  Each browser frame family clears the 2,000-sample p99 floor. Browser update
+  families contain only 358–514 single-fixed-tick calls, so their p99 values
+  remain suppressed; the native campaign owns fixed-tick tail claims. Funnel's
+  26 catch-up frames explain why its callback maximum is far above p99.
+- **Result:** funnel tail cost is algorithmic search work, not rendering or
+  movement bookkeeping: planning accounts for almost its entire update, its
+  p99 is 47.5 ms, and its observed maximum update slightly exceeds the 50 ms
+  simulation period. Multi-gate has a 9.8 ms update p99. All timing runs kept
+  the eight-search ceiling, and deterministic counter runs explain the
+  scenario difference without mixing instrumented wall time into the result.
+  Browser rendering itself stays below 1.3 ms at p99. The historical partial
+  frame values are insufficient to decide full animation-callback budget.
+  Funnel entered a catch-up cascade with an observed 1.29 s partial sample.
+- **Decision:** retain 1024×512 and the full-map overview for version one. Do
+  not introduce 1024², zoom/pan, or a more complex renderer. Keep timing
+  advisory; deterministic scenario and search-budget checks remain blocking.
+  The browser exposes a bounded capture only under `?measure=1`, while normal
+  previews retain live exponential averages.
+- **Limitations and reconsideration:** native samples pool deterministic tick
+  positions across fresh processes on one host; they are not a calibrated
+  cross-machine threshold. Samply identifies hot call paths but not why the
+  CPU executes them at a given rate, and its measurements are not benchmark
+  timings. Browser figures come from one foreground session and are not paint
+  completion or a cross-device calibration; timer resolution produces visible
+  quantization. Their partial frame endpoint is superseded by the corrected
+  guided capture. Reconsider 1024² only after a concrete experiment needs the
+  extra area and both native planning tails and browser frame tails fit their
+  stated budgets.
+
+## 2026-08-18 - The portal-tick cache premise held; its ceiling did not
+
+- Area: `detail::best_chunk_portal` in the portal steady-state tick,
+  and the deferred per-tick cache experiment sized against it. No code
+  changed; this records a re-measurement that keeps a deferred
+  experiment honest.
+- Why: the deferred cache rested on two figures measured on 2026-08-11
+  at an older `main` - a 65.32% profile share and a 67.13% within-tick
+  call-redundancy rate. `main` has since advanced ~40 commits,
+  including the budgeted-replanning and bounded-recovery rewrite of
+  `include/tess/sim/path_agent_tick.h`, so both inputs were stale and
+  every figure derived from them inherited that.
+- Profile: `path/agent_tick_100_weighted_goal_churn_portal_512x512` on
+  controlled hardware, three `perf record -F 499 -g --call-graph fp`
+  captures of a `-O3 -DNDEBUG -g -fno-omit-frame-pointer` build,
+  18,470 pooled samples, zero lost. Sampled user-cycle self share:
+  `best_chunk_portal` 68.42/69.14/68.90%,
+  `process_weighted_batch_impl` 16.91/16.46/15.92%,
+  `vector<Coord3>::_M_range_insert` 5.52/5.68/6.28%. That three-way
+  ordering of report entries repeats in all three captures and matches
+  the 2026-08-11 ordering. Timing, from retained benchmark JSON at a
+  fixed iteration count with five repetitions: median 30,451 ns.
+- Census: the measurement-only redundancy scaffold was re-applied to
+  the current tree and both cells re-run at the same fixed iteration
+  counts. Every published figure reproduces - 456,750 calls, 217.5 per
+  tick, 0.12% cold, 67.13% within-tick duplicates, 32.75% cross-tick,
+  95.24% replayed ticks for the repeated cell; 66.68% within-tick and
+  zero cross-tick for the fresh one. The decompressed dumps are
+  byte-identical to the 2026-08-11 dumps: every tick stamp, semantic
+  key and scan count is unchanged. The analysis script was validated by
+  reproducing the older published figures from the older dumps before
+  it was pointed at the new ones.
+- What that settles: the redundancy input is current, not stale. It
+  also shows only that these two synthetic cells do not exercise what
+  the tick rewrite changed - not that the tick at large is invariant.
+- What it does not settle: the ceiling. Multiplying share by redundancy
+  by tick time gives ~14.1 us/tick and a ~65 ns per-call cache budget,
+  but that product assumes a duplicate call costs what an average call
+  costs, and multiplies a sampled CPU-cycle share by a wall-clock
+  total measured from a differently-sized run. Duplicates within a
+  tick touch data the original just warmed, so they are plausibly
+  cheaper than average and the product likely over-estimates removable
+  time. The equal 32-tile scan per call fixes the scanned-tile count,
+  which is not the same as equal work and further still from equal
+  cost. Two adversarial review passes rejected the ceiling framing;
+  the figure is recorded as a scenario.
+- Also observed, not claimed: the 2026-08-11 fourth entry
+  `build_bounded_weighted_distance_field_core` was 3.34% there and is
+  0.67% in these captures. Symbolization and inlining are not
+  established as comparable across the two binaries, so this is a
+  thread to pull, not a measured change.
+- Ranking limit: each capture holds a contiguous cluster of
+  unsymbolized `libc.so.6` addresses totalling ~3.2%, more than the
+  fourth resolved entry. Nothing below ~3% in these captures is a
+  ranking of code regions.
+- Status: the per-tick cache stays deferred. With cost weighting
+  measured, what still separates the scenario from a ceiling is the
+  second premise - share and total come from different runs and
+  different clocks. Closing that needs both measured together, or a
+  prototype timed end to end against an interleaved control, in the
+  shape this repository already used to reject the four-ary heap. A
+  seam-only `(from, to)` index remains unruled-out and unmeasured; this
+  census counts calls, not scoring operations.
+
+## 2026-08-18 - Request-scoped memo for chunk-portal seam queries
+
+- Area: `detail::select_chunk_portal_waypoints` and the two
+  `best_chunk_portal` call sites beneath it. Accepted.
+- Evidence for the target: a Steam Deck profile of
+  `path/agent_tick_100_weighted_goal_churn_portal_512x512` put
+  `best_chunk_portal` at 68.4-69.1% of sampled user-cycle self share
+  across three captures, and an offline census of every call in two
+  portal cells measured 67.13% and 66.68% of calls repeating a key
+  already answered in the same tick. Cost-weighted rather than
+  call-counted, those rates are 66.73% and 65.14% net of instrument, so
+  duplicates are marginally cheaper than average but not materially.
+- Shape of the duplication: every `(tick, seam)` pair carries exactly
+  one distinct `(current, goal)` query, and each is visited by 3.04
+  candidate routes with zero same-route repeats. The redundancy is
+  therefore cross-candidate reuse of the same seam under the same
+  query, never the same seam under a different query.
+- Result, paired on device, main against branch, alternating rounds
+  with bootstrap intervals: the repeated-goal portal cell falls 30,415
+  to 19,045 ns (-37.3% [-37.5, -37.1]) and the fresh-goal portal cell
+  134,296 to 125,585 ns (-6.4% [-7.2, -4.8]).
+- Capacity: 128 and 256 entries measure the same within overlapping
+  intervals (-36.8% and -37.3% on the repeated cell). 256 was chosen for
+  headroom rather than speed: the measured maximum live entry count is
+  74 per selection, and entry count scales with chunk distance, so the
+  larger table saturates only on routes about three times longer. The
+  packed entry is 32 bytes, so the thread-local table is 8 KB.
+- Design: the key is `(tile index of current, signed six-way step)`. The
+  goal is omitted because it is invariant across one selection; `from`
+  is omitted because it is the chunk containing `current`, and a caller
+  passing an inconsistent pair bypasses the memo rather than colliding.
+  A generation stamp retires every entry when a selection begins, and an
+  RAII scope makes a nested selection — reachable through a
+  user-supplied passability predicate — bypass the memo instead of
+  sharing its generation. Saturation falls back to the uncached call and
+  is sticky, so a saturated selection does not re-walk the table on
+  every later miss.
+- Rejected along the way: a compile-time flag, because a macro that
+  changes inline definitions in a header-only library is an ODR hazard
+  and would leave the gated path untested; a `PathRuntimeCachePolicy`
+  field, because the direct portal builders never receive one and the
+  memo retains nothing across calls for a caller to reason about; and a
+  hit-rate guard, because it would disable the memo during exactly the
+  cold phase whose entries later candidates reuse.
+- Mechanism confirmed on the merged binary, not inferred from the
+  prototype. Scratch counters compiled in for one run reported 456,750
+  memoized calls and 306,600 hits on the profiled cell - 67.13%, the
+  census figure to the digit - and zero calls taking the non-keyable
+  bypass across 46.6k calls in a second cell, so the
+  `from == chunk_coord(current)` invariant holds everywhere reachable
+  and nothing silently skips the memo. Independently, the public
+  `portal_scan_tiles()` counter on
+  `path/weighted_chunk_portal_product_room_portals_512x512` falls 7,456
+  to 3,328 (-55.4%) between main and the branch; that cell's topology
+  differs from the profiled cells, so its rate differs from 67% as
+  expected. The scratch counters were removed before commit.
+- Why the merged shape wins less than the prototype did (-37.3% against
+  -43.2%): the hit rate is identical, so the difference is the
+  consistency guard and the tile-index conversions the merged version
+  adds, not fewer hits. The guard costs a `chunk_coord` per call and
+  has never once rejected; it is kept because it converts a
+  load-bearing assumption into an enforced property.
+- The consistency guard was measured rather than argued about. Three
+  shapes ran paired on device against each other: the guard as written,
+  the guard moved onto the hit path with `from` stored in the entry and
+  compared there, and the guard compiled out of release builds.
+  Moving it to the hit path is 1.9% SLOWER on the repeated cell
+  ([+1.7, +2.3]) - hits are two thirds of calls, so the extra compare
+  lands on the majority path and the entry grows 32 to 40 bytes -
+  and compiling it out of release measures -0.0% ([-0.3, +0.4]) and
+  +0.1% ([-1.7, +0.9]), which is nothing. So the guard is free on the
+  target hardware and stays in release: there is no cost to recover by
+  weakening it. An earlier 2.3% figure from an unpaired host run was
+  noise, as its overlapping variation suggested.
+- Worth recording about the measurement: the exact-strategy control cell
+  moves -1.2%, and the memo provably never runs there. That residue is a
+  codegen and layout confound from the added code, so the portal figures
+  contain an unquantified component of the same effect.
+- Artifacts: `portal-tick-profile-2026-08-18`,
+  `portal-redundancy-census-2026-08-18`,
+  `portal-cost-weighted-2026-08-18`, `portal-cache-prototype`.
+
+## 2026-08-18 - Pathfinding strategy comparison
+
+- Hypothesis: source-backed teaching examples plus paired benchmark evidence
+  can explain when route caches, weighted batches, and distance fields repay
+  their lifecycle cost without implying that any strategy is universally
+  fastest.
+- Method: Release Google Benchmark CPU time on one Apple M3 Max, single
+  threaded, with ten repetitions and a minimum one-second sample per
+  repetition. Each pair used the same world and request array. The run could
+  not pin thread affinity, reported a load average around 4.0, and therefore
+  remains informational rather than a portable threshold.
+- Shared-goal result: 100 independent unit-cost A* requests took a median
+  17.80 ms; one distance-field build plus 100 reconstructions took 2.78 ms,
+  about 6.4x faster.
+- Exact-repeat result: 100 independent A* requests took 48.88 ms; the exact
+  route cache took 14.52 ms with 70 hits and 30 misses, about 3.4x faster.
+- Suffix result: 100 independent A* requests took 113.08 us; the route cache
+  took 17.41 us with one miss and 99 suffix hits, about 6.5x faster.
+- Weighted-batch result: 100 independent weighted A* requests across eight
+  goals took 441.16 ms; the planner built eight fields with no A* fallbacks
+  and took 42.29 ms, about 10.4x faster.
+- Decision: publish the measurements as machine-labelled workload evidence
+  alongside the source-synchronized comparison. Keep API selection conditional
+  on measured reuse, and make no benchmark threshold or implementation change.
+
+## 2026-08-18 - Endpoint guard narrowed to substantial barriers
+
+- Premise: the optional browser policy should spread routes around interior
+  congestion while retaining the known safety fallback for a dense one-sided
+  barrier immediately before an endpoint band.
+- Reproduction: replay the checked-in `browser-guard` native scenario, whose
+  297 wall coordinates preserve the user-drawn browser fixture, with 1,024
+  agents in canonical and spread modes. Seven wall tiles crossed the protected
+  approach zones: five along one horizontal wall on the left and two along
+  another on the right.
+- Finding: the original any-tile guard silently disabled the option for the
+  entire leg. Canonical and checked spread modes were identical at 3,277 ticks,
+  388,436 routed waits, 1,458 low-progress ticks, and zero seed waves. Both
+  still reached all 1,024 goals, so terminal outcome alone hid the policy
+  suppression.
+- Controlled probe: retain every wall but bypass only the global endpoint
+  veto. One normal seed wave then completed all 1,024 agents in 455 ticks with
+  25,166 waits, no crowd-blocked or unreachable agents, and no low-progress
+  ticks. The existing one-shot merge detector observed 22 merge tiles and
+  correctly scheduled no second wave.
+- Change: count accepted construction tiles in each eight-column approach zone
+  and suppress spreading only when either zone contains at least 64 tiles,
+  half the map height. This keeps the mechanism demo-local and additive; it
+  does not infer portals, change passability, or alter movement authority.
+- Verification: the central two-gate native fixture now includes sparse wall
+  touches in both approach zones and must still schedule exactly one seed wave.
+  Direct 63/64 boundary checks include duplicate submissions. The existing
+  96-tile goal-wall control remains canonical with zero seed waves, and
+  maximum-scale terminal checks remain authoritative.
+- Decision and limit: accept the narrower guard. The 64-tile threshold
+  distinguishes the two measured geometries without claiming a general
+  endpoint-capacity proof. Reconsider it only with a failing deterministic
+  endpoint fixture; compare terminal outcomes before optimizing tick or wait
+  counts.
+
+## 2026-08-18 - Endpoint cross-cuts and stable-topology seeding accepted
+
+- Area and contract: the browser colony's tutorial-owned endpoint placement
+  and optional congestion response. Every supported slider population must
+  retain a correctly classified terminal outcome, and an incrementally drawn
+  wall must receive the same kind of bounded response as its batch equivalent.
+- Root cause: the eight goal-free vertical aisles were not cross-cuts through
+  their adjacent populated columns. At 896 agents, the 128-agent cohort for
+  away column 113 settled first and sealed that full height at tick 409. Three
+  spread-routed agents targeting column 115 remained at column 112 and were
+  classified crowd-blocked. At 864 agents, column 113 held only 96 goals and
+  never sealed. At 1,024, the added column-111 cohort delayed column-113
+  closure to tick 439; the last observed affected agent crossed by tick 430.
+  Canonical routing failed differently at 896: two agents became trapped in
+  one-column pockets between already settled populated columns.
+- Scale evidence before the change: the checked-in `browser-guard` replay
+  reached 894 plus two crowd-blocked agents canonically and 893 plus three
+  crowd-blocked with spreading at 896. At 928 the outcomes were 927+1 and
+  925+3; at 960 they were 959+1 and 958+2. Both modes happened to reach all
+  agents at 1,024, so a maximum-only test concealed the non-monotonic defect.
+- Endpoint change: relocate only the row-64 agent from each of the eight dense
+  endpoint columns into the unused sparse outer column at rows 56 through 63.
+  Row 64 is then a shared horizontal cross-cut through every dense column and
+  through the sparse column. Goals remain unique and every open-terrain leg
+  remains 109 steps. A native structural oracle settles every other goal and
+  proves that a delayed agent can still reach either endpoint.
+- Endpoint alternatives rejected: alternating 16-agent rows made endpoint
+  closure impossible but regressed the browser replay to 731 ticks. Placing
+  the eight sparse goals at rows 64 through 71 blocked the cross-cut's outer
+  continuation and lost two agents from populations 336 through 448. Spacing
+  those goals across the full height passed the terminal sweep but regressed
+  the 1,024-agent wall tip to 2,040 ticks. Rows 56 through 63 preserved the
+  cross-cut without scattering the convoy lanes.
+- Interactive root cause and change: topology edits already canceled an
+  in-flight seed but left the leg's one-shot eligibility consumed. The first
+  incremental probe exposed this but silently skipped six occupied wall tiles,
+  so its 2,042-tick spread and 2,083-tick canonical counts describe only 291
+  accepted walls and are not acceptance evidence. The corrected runner admits
+  up to four walls per tick and retries an occupied coordinate in order. With
+  all 297 walls and the cross-cut layout, the old one-shot behavior took 2,986
+  ticks and 535,127 waits, close to the 3,172-tick, 564,929-wait canonical
+  control. Each topology edit now resets seed eligibility and records its
+  schedule tick; a new congestion seed may start after eight edit-free ticks.
+  Waiting for all canonical work to drain was rejected because it regressed
+  the two-gate control to 1,469 ticks. The idle-only gate keeps work bounded by
+  the existing eight-query budget.
+- Results after both changes, 1,024 agents: open travel completed in 236 ticks
+  and 1,317 waits with no seed; wall tip in 1,323 ticks and 290,749 waits; two
+  gates in 792 ticks and 62,849 waits; four gates in 600 ticks and 26,165
+  waits with no seed; and the batch browser replay in 471 ticks and 28,079
+  waits. The guarded goal wall completed canonically in 1,004 ticks and
+  229,359 waits. The exact-topology incremental replay completed in 801 ticks
+  and 78,557 waits with one seed and all 297 walls accepted. Every case reached
+  all agents with no crowd-blocked or unreachable outcome.
+- Scale verification: run `tess_web_colony_model --scenario browser-guard
+  --agents N --mode spread --max-ticks 1000 --require-complete` for every
+  `N` from 16 through 1,024 in steps of 16. All 64 supported populations
+  completed. The same 64-population sweep completed canonically. CI retains
+  canonical and spread 896 controls, the structural delayed-agent oracle, and
+  a 1,024-agent incremental replay that requires all 297 wall admissions.
+- Decision and limits: accept both demo-local changes. The cross-cut fixes a
+  proven endpoint-layout defect; it is not a general multi-agent pathfinding
+  policy. The incremental fixture preserves the final coordinate set and
+  coordinate order with up to four acceptances per tick; occupied coordinates
+  delay later admissions, so it does not reproduce original pointer timing. A
+  user who pauses longer than the idle window and resumes drawing can
+  legitimately cause another bounded wave; topology cancellation and the
+  per-tick query cap remain authoritative.
+  This supersedes only the known full-column limitation in the earlier aisled
+  endpoint record; its routing-policy limits still apply.

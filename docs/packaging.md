@@ -72,7 +72,7 @@ include(FetchContent)
 FetchContent_Declare(
   tess
   GIT_REPOSITORY https://github.com/kindjie/tess.git
-  GIT_TAG v0.12.0
+  GIT_TAG v0.13.0
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(tess)
@@ -106,7 +106,7 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH="$HOME/.local"
 Then consume the exported target:
 
 ```cmake
-find_package(tess 0.12 CONFIG REQUIRED)
+find_package(tess 0.13 CONFIG REQUIRED)
 target_link_libraries(my_target PRIVATE tess::tess)
 ```
 
