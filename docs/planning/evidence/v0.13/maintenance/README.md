@@ -96,17 +96,23 @@ also records cleanup and the superseded failed attempts.
 
 ## Representativeness of post-freeze changes
 
-Every repository change after the frozen source `b4a882bb` is evidence
-tooling, records, tests, or documentation: this evidence directory, the
-redaction map and its archive regression test, the planning and roadmap
-records, and a configure-time fix that resolves the campaign source
-identity through `cmake/TessMaintenanceCampaignSourceSha.cmake` instead
-of an unconditional `git rev-parse` (benchmark configuration previously
-failed without Git or a `.git` directory). None of it changes the
-measured workloads, the maintenance implementation or adapter, the
-campaign benchmark source, fixtures, effective compile or link flags, the
-SDK, or the evidence-admissibility semantics. In a Git checkout the
-resolver embeds the same commit identity the frozen build embedded, and a
-sentinel-carrying binary is rejected by evidence staging. The measured
-binaries in the bundle therefore remain representative of the frozen
-candidate, and the recorded result stands without a rerun.
+Between the frozen source `b4a882bb` and the evidence-record merge, every
+repository change was evidence tooling, records, tests, or documentation:
+this evidence directory, the redaction map and its archive regression test,
+the planning and roadmap records, and a configure-time fix that resolves the
+campaign source identity through
+`cmake/TessMaintenanceCampaignSourceSha.cmake` instead of an unconditional
+`git rev-parse` (benchmark configuration previously failed without Git or a
+`.git` directory). None of it changed the measured workloads, maintenance
+implementation or adapter, campaign benchmark source, fixtures, effective
+compile or link flags, SDK, or evidence-admissibility semantics. In a Git
+checkout the resolver embeds the same commit identity the frozen build
+embedded, and evidence staging rejects a sentinel-carrying binary.
+
+The subsequent MNT-4 graduation adds alias-only stable headers, consumers,
+tests, records, and CI classification while leaving those measured inputs
+unchanged. The
+[2026-08-20 graduation decision](../../../../decisions/CHANGELOG.md#2026-08-20---graduate-maintenance-with-immediate-execution)
+records that carry-forward explicitly. The measured binaries in the bundle
+therefore remain representative of the frozen candidate, and the recorded
+result stands without a rerun.

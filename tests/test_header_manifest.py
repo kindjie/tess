@@ -183,4 +183,4 @@ def test_compatibility_umbrella_does_not_reexport_maintenance():
       encoding="utf-8"
   )
 
-  assert "#include <tess/maintenance.h>" not in umbrella
+  assert "#include <tess/maintenance" not in umbrella
