@@ -112,6 +112,39 @@ Consequences recorded in the scenario harness rather than the library:
   resident set can support only a worse route, so a loop that reports
   the latest rather than the best would regress its own bound.
 
+## 2026-07-31 - Direct Directory For Fully Covered Sparse Worlds
+
+- Area: `SparseResidentWorld` directory lookup and sparse weighted batch path
+  planning.
+- Hypothesis: a fully resident sparse world still paid the open-addressed
+  chunk-directory hash and probe for each residency, page, and cost access,
+  accounting for most of its 2.07x time versus the dense equivalent.
+- Evidence: equal-work 512x512 baselines were 88.5 ms sparse-resident versus
+  42.8 ms dense (10 repetitions, 0.2 s minimum). A 2 kHz Samply profile
+  collected 27,168 samples; the dominant leaf was the bounded weighted-field
+  neighbor loop, whose disassembly showed repeated inlined hash/probe
+  sequences. A post-change profile removed those executed hash sequences and
+  shifted the hot samples to generation and distance-array reads. Formal
+  alternating A/B confirmation against `ccb1c30` measured 90,677,330 ns base
+  versus 57,568,792 ns head, -35.8% with a 99% confidence interval of
+  [-37.8%, -34.8%]. The dense-equivalent gap fell to about 1.35x.
+- Memory effect: at the profiled 256-chunk capacity, the directory changes from
+  512 24-byte hash buckets (12 KiB) to 256 8-byte slot entries (2 KiB). Each
+  successful lookup reads one slot entry instead of one or more buckets, and
+  insert/erase writes one slot entry. The 10 KiB peak heap-payload reduction
+  is below process-RSS measurement granularity but exact from the selected
+  layouts.
+- Decision: accepted. Use the direct array only when capacity covers the
+  complete bounded key space; genuinely sparse worlds retain bounded hash
+  storage. Tests cover lookup, erase, slot reuse, out-of-range keys, and the
+  large-key hashed representation.
+- Tradeoff and follow-up: the five-suspect paired control passed. Hash-mode
+  eviction changed by +0.9% to +2.0%, ensure-hit by -0.2%, and the 1-2 ns raw
+  lookup by +25.0%; all are below the configured absolute materiality floor.
+  Profile slot-direct page/cost access only if a hash-mode end-to-end workload
+  shows a material regression or the remaining 1.35x sparse/dense gap becomes
+  a priority. Do not specialize that API from the raw nanosecond lookup alone.
+
 ## 2026-07-30 - Full-Suite Paired Confirmation Rejected On Tail Validity
 
 - Area: the design of section 4.2's on-demand confirmation

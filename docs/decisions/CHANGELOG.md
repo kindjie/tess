@@ -8,6 +8,467 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-20 - Graduate maintenance with immediate execution
+
+- Graduated the documented task, budget, metrics, opaque handle, explicit
+  result, structural backend, registered scheduler, immediate execution, and
+  external dense-and-sparse chunk adapter spellings under
+  `tess::maintenance`. The stable adapter defaults to immediate execution.
+- Kept FIFO, queued-coalescing, dirty-bit, and the virtual scheduler under
+  `tess::experimental`. M3 was flat without a material regression, but the
+  Steam Deck dirty-bit result materially regressed the immediate guardrail in
+  budgeted, flush, and 256- and 1,024-task scaling workloads; the 4,096-task
+  cell was inconclusive. The portable decision rule therefore rejects
+  dirty-bit graduation even though its correctness gates passed.
+- Made graduation a source-level facade over the exact measured task,
+  scheduler, and adapter types. No implementation or adapter body, MNT-3
+  campaign configuration, build flag, benchmark, or fixture changed, and the
+  stable default names the same immediate specialization measured by the
+  campaign. The generic paired-sentinel source-map update is CI metadata, not
+  an MNT-3 input. The retained M3 and Steam Deck evidence therefore remains
+  representative.
+- Preserved the compile-time structural customization boundary and callback
+  exception semantics. The stable contract does not include a virtual ABI,
+  object layout, mixed Tess versions, cross-DSO identity, or experimental
+  backend behavior.
+- This supersedes the historical maintenance TDD's expectation that a
+  coalescing backend would graduate with the public contract. Portable
+  evidence selects synchronous immediate execution while leaving deferred
+  backend work open to later experimentation.
+- This also supersedes the v1-stabilization TDD's requirement that a stable
+  aggregate never transitively include an experimental header. The alias-only
+  facade must see the measured implementation declarations; it therefore
+  makes experimental maintenance spellings reachable through the explicit
+  `tess/maintenance.h` aggregate. The compatibility umbrella `tess/tess.h`
+  deliberately excludes maintenance, and the support contract grants
+  stability only to the documented `tess::maintenance` names and semantics.
+
+## 2026-08-19 - Put stable maintenance in v0.13 before pre-RC prototypes
+
+- Made stable maintenance handles, an external dense-and-sparse chunk adapter,
+  cross-hardware evidence, a focused downstream tryout, and API graduation
+  release gates for `v0.13.0`. FIFO and queued-coalescing backends remain
+  experimental comparison machinery. Dirty-bit promotion additionally
+  requires a portable performance win; a flat result may graduate the contract
+  with immediate execution while keeping dirty-bit experimental. World
+  construction and authoritative storage do not acquire an implicit scheduler.
+- Scheduled the bounded pathfinding, movement, congestion, and execution
+  prototype queue after 0.13 and before `v1.0.0-rc.1`. Each candidate may be
+  accepted, rejected, or explicitly deferred, but every disposition must be
+  recorded and every accepted implementation must land before downstream
+  evaluation.
+- Required paired M3 and Steam Deck evidence before a portable performance
+  change is accepted or rejected on performance. One material win with no
+  material regression on the other platform passes; correctness, contract,
+  determinism, lifetime, or allocation failures may stop a run earlier. Changes
+  to the measured implementation, adapter, build, benchmark, or fixtures
+  invalidate that evidence and require both device legs to rerun.
+- Applied the stable failure-diagnostics boundary to maintenance: capacity,
+  idle, budget, and stall outcomes remain explicit results; callback exceptions
+  propagate verbatim; unsafe lifecycle or ownership misuse fails fast, while
+  expected stale-handle uncertainty uses a checked operation.
+- Kept scheduler customization as a small structural, compile-time backend
+  contract, verified by a non-derived custom backend. The existing experimental
+  virtual scheduler interface remains comparison machinery rather than a stable
+  virtual ABI.
+- Kept controlled campaign evidence distinct from permanent CI authority.
+  Hosted timing thresholds remain advisory until representative calibration
+  establishes useful sensitivity and an acceptable false-positive rate.
+- Recorded the complete ordering, dependencies, parallel streams, hardware
+  requirements, evidence rules, downstream gate, RC checks, and GA observation
+  in `docs/planning/v0.13-to-v1.0-execution-plan.md`.
+- Required each release to be assembled as a draft around the exact successful
+  SHA and retained assets, then published once and verified as immutable with
+  its tag target and every asset intact.
+
+## 2026-08-19 - Verified new branches use local pre-push ranges
+
+- Changed: qualify the 2026-07-30 rule that all new refs run the full local
+  suite. A new remote branch may now use path-based selection when Git supplies
+  exactly the configured destination remote and one of its effective push
+  URLs, the remote's symbolic default stays inside its local tracking
+  namespace, and that default and the pushed tip have exactly one merge base.
+  New tags and other new refs, missing or mismatched destination evidence,
+  cross-remote defaults, and ambiguous or disconnected histories still fail
+  open to the full suite.
+- Reason: the all-zero remote object identifies every first branch push as an
+  unresolvable range even when the repository has an offline heuristic in its
+  locally tracked remote default. That made trivial first pushes pay for the
+  full suite and weakened the intended benefit of tested path classification.
+- Authority: the heuristic does not know or certify a pull request's base.
+  Ordinary behind-staleness can select extra work; rewritten or changed
+  defaults and non-linear history can instead narrow the local evidence. CI
+  remains authoritative, and `TESS_PREPUSH_FULL=1` remains the explicit local
+  full-cycle escape hatch.
+- Affected docs: `docs/git-hooks.md`, `tests/agents.d/`.
+- Affected code: `tools/git_hooks.py`, pre-push topology tests, CI pytest
+  inventory.
+
+## 2026-08-19 - Give maintenance registrations explicit identity and lifecycle
+
+- Added a fixed registered-task facade over the experimental maintenance
+  backends. Opaque handles carry scheduler-owner, slot, and generation identity;
+  expected stale uncertainty uses checked operations, while wrong-owner and
+  unsafe lifecycle use fail-fast diagnostics in every build.
+- Defined backend customization structurally at compile time instead of
+  freezing the raw experimental virtual scheduler as stable ABI. Custom
+  backends implement the small schedule/drain/metrics/pending contract,
+  linearize concurrent producers against pending observations, and preserve
+  every accepted offer. Pending observations linearize against scheduling and
+  drains, while metrics are thread-safe monotonic diagnostic snapshots. The
+  facade serializes drains. Backends may optionally provide no-throw fixed
+  registration and seal hooks as a required pair.
+- Made capacity, idle, drained, budget-exhausted, and stalled states explicit.
+  Preserved verbatim callback exception propagation rather than translating an
+  arbitrary exception to a lossy task-failure status. The throwing invocation
+  and follow-ups coalesced into its synchronous call-local frame are consumed,
+  while independently retained accepted offers remain reachable.
+- Required a fresh positive `Idle` observation for post-seal release and made
+  release retire rather than cancel a slot. In-flight schedules prevent an
+  `Idle` result. `Idle` covers only scheduler-reachable work; adapters must
+  close and join producers, then separately coordinate dirty state and
+  residency mutation at their quiescent boundary.
+- Allowed callback scheduling through the same registered owner, including
+  self-scheduling, while rejecting nested identity, scheduling, drain, and
+  lifecycle operations on another registered scheduler across backend types
+  and rejecting reentrant drains. Read-only metrics remain callable across
+  owners. This avoids implicit lock orders and their cycle hazards.
+- Kept immediate, FIFO, queued-coalescing, and dirty-bit implementations under
+  the experimental namespace. The facade grants no authority over exact events
+  or authoritative simulation mutation and does not decide backend promotion.
+
+## 2026-08-19 - Match diagnostics to the recoverability boundary
+
+- Expected domain outcomes continue through statuses and checked lookups;
+  unchecked coordinate and span hot paths retain their documented debug-only
+  assertions.
+- Object-lifecycle and ownership violations fail fast in every build when
+  continuing would fabricate a normal-looking result, orphan retained
+  accounting, or mutate storage during its own dispatch.
+- Path-result publication is transactional. A processing pass publishes only
+  after every borrowed path span is installed, and interrupted passes expose no
+  partial batch through `results()` or `try_result()`.
+- `PathTicket` remains an additive two-field value. Stale, out-of-range, and
+  unpublished states are detectable; foreign-runtime provenance remains a
+  documented precondition because matching index and generation values cannot
+  encode ownership.
+- Compile-fail fixtures protect stable Tess-authored requirement phrases while
+  leaving compiler-specific framing and instantiation traces unconstrained.
+
+## 2026-08-19 - Keep chunk maintenance external and residency-aware
+
+- Added one experimental `ChunkMaintenanceAdapter` as the first real consumer
+  of the registered scheduler contract. The adapter borrows an immovable world
+  and owns its scheduler, fixed tasks, handles, and derived product slots;
+  authoritative storage and world construction remain unchanged.
+- Bound dense slots directly to chunk keys and sparse slots to resident
+  capacity using `{key, residency_generation}`. Sparse rebinding is allowed
+  only after producers close and join and an explicit drain returns a fresh
+  positive `Idle`; arbitrary direct world residency mutation is unsupported.
+- Made each product's key, content version, and residency generation explicit.
+  A task rechecks sparse residency before unchecked access, publishes only
+  after its callback returns, and clears only its generation-safe dirty
+  observation. Intervening marks, eviction/reload, archive load, and exceptions
+  therefore leave products stale or unavailable and authoritative work
+  retryable.
+- Kept current-product freshness tied to the shared content version. A retry
+  rebuilds version drift even when this adapter's owned dirty observation is
+  empty, while generation-safe clear still cannot remove a disjoint owner's
+  bits.
+- Required a nonzero, disjoint dirty-mask owner and recorded dirty state before
+  offering work. A fixed per-slot retry-debt bit also retains a follow-up that
+  cannot enter a bounded comparison queue. Unbounded flush reoffers the debt;
+  budgeted drains expose it without risking synchronous work outside their
+  budget, and neither can report `Idle` while it remains. This keeps queue
+  capacity failure recoverable without making coalesced scheduling an
+  exact-event mechanism.
+- Kept the complete surface experimental. Cross-platform promotion evidence,
+  rather than this correctness integration alone, decides which backend and
+  adapter pieces graduate.
+
+## 2026-08-19 - Canonical terminology defines the 1.0 contract
+
+Tess now treats its domain language as part of the public contract. Ambiguous
+raw metadata scalars became explicit mask, version, and residency-generation
+types; chunk activity and active-category count derive from the active mask;
+and archive format v2 no longer stores contradictory activity state.
+
+Names now state ownership and scope: operation batches are not frames, the
+unit route cache retains results rather than acting as scratch, weighted paths
+name one movement class, topology build results distinguish a version sum from
+a chunk version, and content-version dependencies identify the value they
+observe. Sparse searches report an indeterminate result by default when
+unknown space prevents a whole-world conclusion, and path agents keep an
+optional last search result instead of inventing `NoPath` as lifecycle state.
+Default, cleared, stale, and mismatched products instead report `NotComputed`;
+bounded or heuristic misses report `NoCandidate`; `NoPath` is reserved for an
+authoritative policy-relative search conclusion.
+Two-call sparse field readers retain an indeterminate build for every unreached
+or non-resident start, while inconsistent derived gradients are `NotComputed`.
+Movement validation separates impassable endpoint terrain, blocked
+transitions, stale content, and stale topology. Compatibility aliases were not
+retained because this pre-1.0 change defines the vocabulary intended for the
+1.x line.
+
+The maintained terminology page is the shared human reference, while public
+headers and specialized architecture pages remain authoritative for behaviour.
+Global hover definitions are limited to phrases whose meaning is unambiguous
+on every page; overloaded qualifiers still require visible context.
+
+## 2026-08-19 - Separate replan scheduling from route authority
+
+- `process_path_agent_replans` owns bounded FIFO scheduling and agent
+  lifecycle transitions, while its synchronous callback owns the legality and
+  optimality of the returned route. The callback's borrowed path must remain
+  valid through the immediate retained-route copy and must not reenter or
+  mutate the queue, agents, or routes. A thrown callback leaves the current
+  queue item and lifecycle state unchanged, but callback side effects are not
+  rolled back.
+- This qualifies the exact-only queue rationale recorded on 2026-08-14 and in
+  the historical budgeted-replanning TDD. The generic drain permits callers to
+  compose domain-specific route construction without moving that policy into
+  Tess. `process_unit_path_agent_replans` and
+  `process_weighted_path_agent_replans` remain the exact helpers and retain
+  their legality and optimality guarantees.
+
+## 2026-08-19 - Keep 2D convenience lossless and storage-generic
+
+- `Coord3` remains Tess's canonical world-space representation, while
+  `Coord2` converts losslessly to its `z = 0` plane. This lets ordinary
+  top-down calls use the shorter type without duplicating every API overload.
+  As with any new implicit conversion, unusual downstream overload sets may
+  gain another viable candidate; that additive pre-1.0 compatibility risk is
+  accepted in exchange for one consistent conversion boundary.
+- `Extent3` remains the only extent type. Its existing `z = 1` default already
+  expresses a 2D extent as `Extent3{width, height}` without adding a parallel
+  shape vocabulary.
+- Dense worlds expose `fill_field<Tag>(value)` because every shaped tile is
+  resident and “fill the field” is unambiguous. Sparse worlds do not: a
+  similarly named operation could either modify only resident pages or
+  unexpectedly materialize the complete bounded shape.
+- Filling is a direct storage write. Its world traversal allocates no memory,
+  although assignment of a user-defined field value may allocate or throw and
+  leave a partially assigned field. Like repeated `field()` assignments, it
+  does not implicitly alter dirty, active, topology, or content-version
+  metadata; simulation-time changes still use the existing explicit
+  notification or queued-operation paths.
+- Beginner-facing 2D material uses the convenience forms. Architecture,
+  persistence, sparse-residency, and genuinely 3D examples retain explicit
+  canonical coordinates where those details are part of the lesson.
+
+## 2026-08-15 - Separate content-version changes from dirty notification
+
+- Added `World::mark_content_changed` for authoritative field writes that
+  must invalidate version-keyed derived state but do not concern a dirty-mask
+  consumer. It increments only the chunk content version and therefore also
+  makes an earlier `DirtyObservation` stale.
+- Kept notification ownership explicit: content-only notification does not
+  set dirty flags or bounds, advance topology freshness, or wake schedule
+  tasks. Callers use the corresponding dirty-metadata, topology, and schedule
+  notification protocols when those consumers must observe the edit.
+- Shared the metadata mutation between dense and sparse worlds so their
+  version semantics cannot diverge. Sparse residency generations and LRU
+  state remain unchanged.
+- Kept synchronization external. The generation check protects a maintenance
+  pass from clearing after a serialized intervening change; it does not make
+  simultaneous unsynchronized world mutation thread-safe.
+
+## 2026-08-14 - Prefer registered dirty bits for chunk maintenance
+
+- Selected the preallocated `DirtyBitScheduler` as the experimental backend
+  for future chunk-maintenance integration. Its explicit registration and
+  seal phase publishes stable task identities, after which producers set
+  atomic task bits without a producer lock. Scheduling is allocation-free
+  after each participating thread's first successful post-seal schedule or
+  first task execution; either first use may initialize platform thread-local
+  runtime state.
+- Kept the immediate, FIFO, and indexed queued-coalescing backends as semantic
+  and performance comparisons. The queued membership index removes the
+  prototype's quadratic sparse scan, but it still misses the sparse-overhead
+  criterion and is materially slower than dirty bits in every measured chunk
+  workload.
+- Applied the TDD's conditional selection rule: dirty bits beat queued
+  coalescing by more than 20% in sparse, dense, and mixed chunk scenarios while
+  also satisfying determinism, dirty-generation, concurrency, shutdown,
+  allocation, sanitizer, latency, amplification, and flush criteria.
+- Kept ownership outside storage. This decision does not alter world
+  construction, embed handles in `ChunkMeta`, or schedule maintenance from
+  authoritative mutation paths. A future external adapter remains a separate
+  integration change.
+- Added the new benchmark cells as informational evidence. They require
+  representative Linux main-tier calibration before any timing ceiling gains
+  blocking authority.
+- Retained thread-local run attribution so a task that schedules a zero-progress
+  follow-up stops the drain without misclassifying concurrent producers. An
+  explicit per-thread preparation API remains deferred until a consumer needs
+  allocation-free first use.
+
+## 2026-08-14 - Keep crowd recovery in the browser colony controller
+
+- Treat settled-aware `NoPath` as a snapshot outcome until an independent
+  terrain-only search agrees. A terrain failure remains durably unreachable;
+  a teammate-only enclosure cancels the unfinished goal and records a
+  crowd-blocked outcome for the current leg.
+- When every agent has arrived or is crowd-blocked, abort the incomplete leg
+  and rearm the entire synchronized wave in the opposite direction. Count and
+  display completed and crowd-aborted legs separately. This preserves one-way
+  convoy traffic and avoids temporary sidestep goals, teleports, or a new
+  movement authority.
+- Keep the policy in the browser demo. Core path results, terminal lifecycle
+  phases, joint movement, PIBT, and the rule that arrived agents are immovable
+  are unchanged. The existing PIBT tier remains an optional experiment for
+  classified live congestion, but cannot recover a state with no active
+  agents.
+- Rejected per-agent wakeups after a bounded dwell because they produced
+  mixed-direction congestion at 1,024 agents. Deferred goal-column staging
+  because it guarantees destination order by reducing the scale demo to one
+  128-agent column at a time. Repeated crowd turnarounds remain visible rather
+  than being mislabeled as successful trips.
+
+## 2026-08-14 - Separate liveness budgets from reachability verdicts
+
+- Retry exhaustion is a liveness-policy event, not evidence of `NoPath`.
+  `PathAgentTickOptions` therefore defaults to `RemainBlocked`; callers that
+  require the historical timeout-as-terminal behavior opt into
+  `MarkUnreachable`.
+- Expensive blocked checks use caller-owned deterministic exponential backoff
+  with equal jitter and a per-tick cap. Scheduling selects work but never owns
+  movement-class, sparse-residency, or reachability semantics.
+- Legitimate all-agent invalidations use a separate exact FIFO replan queue.
+  Its request budget bounds synchronous query count while preserving direct A*
+  results and retained-route storage. Existing tick drivers remain synchronous
+  and unchanged unless callers opt into the queue.
+- Queue and recovery scratch are index-paired, externally synchronized state.
+  Independent owners may run concurrently with independent search scratch;
+  neither mechanism owns threads or global randomness.
+
+## 2026-08-12 - Keep C++ semantics in compiled compatibility evidence
+
+- Removed the handwritten C++ declaration parser and its grammar-edge test
+  corpus from the compatibility snapshot gate. Maintaining a second,
+  incomplete C++ frontend in Python created false confidence and repeated
+  source-compatibility false positives and negatives.
+- Evaluated a concrete-syntax parser and a compiler-owned API extractor as
+  replacements. The syntax parser could not model valid declarations split
+  across preprocessing branches. The compiler extractor owned the language
+  semantics but emitted compiler- and standard-library-specific spellings, so
+  an immutable cross-platform source snapshot would not be portable without
+  another normalization language.
+- Kept snapshots deliberately mechanical: header classes, direct aggregate
+  membership, per-header documented public namespace-scope and `TESS_*` macro
+  names, consumer/archive metadata, and release-tag immutability. C++
+  signatures and behavior are evidence from compiled immutable consumers,
+  optional-integration builds, the toolchain matrix, and release review rather
+  than a repository-maintained parser.
+
+## 2026-08-11 - Define the enforceable 1.x stability boundary
+
+- Decided: one exhaustive header manifest classifies installed headers as
+  stable, optional-stable, experimental, or implementation-only. CMake derives
+  installation file sets from it, while `surface.json` remains a symbol
+  documentation inventory rather than being repurposed as a compatibility
+  manifest. Stable aggregates may not directly import either excluded class;
+  this removes both maintenance and `path/node_index_space.h` from the main
+  umbrella.
+- The 1.x contract covers documented source APIs, configuration macros, CMake
+  package entry points and targets, stable aggregate membership, and archive
+  v1. It excludes ABI, object layout, mixed versions or configurations across
+  translation units, implementation names, and cross-DSO comparison of
+  process-local type identities. Public identity-bearing caches, graphs,
+  payloads, and products state that exclusion directly.
+- Worker-pool nested or concurrent dispatch and reservation during dispatch
+  fail fast in release as well as debug builds under the existing once-per-call
+  mutex. Detectable misuse must not remain able to corrupt shared state merely
+  because assertions were compiled out. A dispatch keeps that ownership until
+  its plan-ordered result has been copied from shared storage under the mutex.
+  Even an empty nested dispatch performs the once-per-call misuse check.
+  Both threaded executor variants are stable; callback-state synchronization,
+  join, allocation, result-order, and worker-count contracts remain unchanged.
+- CMake prereleases carry an explicit label and full version string. An
+  unversioned package lookup may select an RC, while every versioned request is
+  rejected. Stable 0.x packages use same-minor selection and stable 1.x
+  packages use same-major selection, preventing a numerically equal RC from
+  satisfying a request for stable 1.0.0.
+- The in-tree vcpkg overlay remains checkout-based. A release archive cannot
+  contain its own final hash, so central-registry metadata and the archive hash
+  are post-release publication work rather than self-fetching 1.0 gates. The
+  Conan recipe and checkout-based vcpkg overlay are instead tested through
+  consuming executables. Their release job clears the workflow-level compiler
+  launcher because the hosted image has no `ccache`, and Conan creation pins
+  the supported C++20 language mode rather than accepting its detected C++17
+  default.
+- Dense queued-operation, field-product, and PIBT signatures freeze for 1.x;
+  sparse support must be additive. Breaking argument-pair, options, handle,
+  ordering, duplicate-name, lifetime, and identity cleanups land in v0.13 and
+  are documented in the 1.0 upgrade guide.
+- Compatibility snapshots retain header classes, direct aggregate membership,
+  and per-header documented public namespace-scope and `TESS_*` macro names.
+  They do not parse C++ declarations. Signatures, defaults, aggregate use,
+  fields, overload resolution, and configuration-selected APIs remain
+  protected by immutable compiled consumers, integration builds, and release
+  review. The name inventory is one evidence layer, not a complete proof of
+  source compatibility. Direct aggregate imports remain unconditional and
+  sparse extensions use distinctly named entry points rather than ambiguous
+  overloads.
+- Released snapshot bytes are anchored to their `v<version>` tag, with path
+  confinement and immutability checked on ordinary changes. Their named
+  consumer targets discover and link the candidate installation through
+  supported CMake package entry points, and release CI builds and runs each
+  named test explicitly. Release tags anchor the append-only snapshot-directory
+  inventory; future unmerged tags do not constrain maintenance branches. A new
+  required snapshot must exactly match current inventories before becoming
+  immutable. Prerelease package configs export numeric, prerelease, and full
+  version metadata even though discovery must be unversioned.
+- The release evidence JSON records the expected/pinned toolchain contract and
+  checksums retained copies of the successful platform-job logs containing the
+  actual current and floor tool versions. The workflow-run URL remains
+  supplemental provenance; expected floors are not mislabeled as observations,
+  and missing MSVC metadata or a version other than 19.44 fails the floor job.
+
+## 2026-08-10 - Per-test fragments record purpose and traps
+
+- Decided: each `tests/agents.d/` fragment carries a compact statement of what
+  its test pins plus facts that cannot be recovered safely from case names and
+  implementation alone: chosen constants and their rationale, deliberately
+  narrow claims, untestable exclusions, mutation findings, assertion
+  ownership, and load-bearing coverage gates.
+- Behavior inventories belong in test sources, where case names, fixtures, and
+  assertions keep them reviewable with the implementation. Repeating those
+  inventories in prose creates an unverified drift surface; no gate can prove
+  that a comma-separated catalogue still matches the test.
+- When a source comment already records a trap, the fragment references that
+  comment instead of maintaining a second copy. This is allowed only after
+  confirming that the comment carries the rationale, not merely the result.
+- Editorial removals remain conservative. Specific rationale survives even
+  when verbose, because a lost trap fails silently while an extra sentence is
+  cheap. The first-line and one-fragment-per-test mirror remain unchanged and
+  CI-enforced.
+
+## 2026-08-10 - Per-test documentation moves to agents.d fragments
+
+- Changed: the per-test catalogue moves from one shared `tests/AGENTS.md`
+  file into per-test fragments under `tests/agents.d/` (one `<name>.md`
+  per GoogleTest target and per pytest file); `tests/AGENTS.md` keeps only
+  the cross-cutting conventions and points at the fragments.
+- Why: the shared file sat at 23,926 of the 24,000-token file limit while
+  the drift gate required every new test target to be added to it — one or
+  two more tests and any test-adding branch fails CI with no legal move.
+  It was also the repository's largest merge-conflict surface (166 commits
+  in the 90 days before the split), the same shared-append-file pathology
+  the changelog and optimization-log fragment directories already solved.
+- Decided: the drift gate becomes an exact bidirectional mirror
+  (`agents_fragment_issues` in `tools/git_hooks.py`). Every
+  `add_executable(tess_*)` target and every `tests/test_*.py` file needs a
+  named fragment — the old regex only saw CMake targets, so nine pytest
+  suites had silently accumulated with no entry — and an orphan fragment,
+  an empty body, or a mismatched `# <name>` heading fails, so a renamed or
+  removed test cannot leave stale documentation and an empty placeholder
+  cannot satisfy the gate.
+- Fragment content at migration is the old catalogue entry verbatim; a
+  deferred editorial pass (design doc, reviewed 2026-08-10) may later trim
+  enumeration that duplicates test sources, gated on review before any
+  trim lands.
+
 ## 2026-08-09 - Single-goal weighted replans become a two-strategy policy
 
 - Recorded: the weighted batch's single-goal fallback ran raw exact A*
@@ -75,6 +536,63 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   (`cost_scale == 1 && !has_special_transitions`), which is closed under
   the step-policy surface: diagonal clearance reads off-path tiles and
   providers declare no read footprint, so both fall back per entry.
+
+## 2026-08-08 - Field-product stores return what they stored
+
+- Fixed: `FieldProductCache::store` took the product by move, so the
+  caller's member was left empty and the next
+  `build_distance_field_product` ran `distance_.assign` against a
+  zero-capacity vector — a fresh world-sized allocation on every world
+  edit, cache eviction or provider revision change. The previous comment
+  argued only that the moved-from state was never observed, which was true
+  and beside the point: the capacity was gone, so
+  `reserve_unit_field_product_nodes` helped only the first build.
+- Fixed: the caller then called `lookup` to recover the pointer the store
+  already had. That rescanned every entry, reconstructing the `Model`
+  inside the loop, and counted a HIT — so every miss-then-build published
+  one cache hit for work the cache had not reused, in the very counters
+  the benchmarks report as evidence.
+- Changed: `store_reusing` and `store_weighted_reusing` return the stored
+  product and leave the caller holding whatever storage the cache
+  displaced (the replaced entry's buffers, or an evicted one's). The
+  rvalue `store` overloads keep their `bool` contract as thin wrappers.
+- Scope, recorded because the first draft did not state it: a store only
+  hands storage back when it displaces something. A same-key replacement
+  always does, and an admission does once the byte budget forces an
+  eviction, but an admission into a cache still under budget displaces
+  nothing. A world edit or provider revision change produces a new key, so
+  it is an admission -- meaning a runtime keeps reallocating the
+  world-sized array until its product cache reaches budget, and only then
+  stops. The removed relookup is saved on every build regardless. Review
+  raised this against a draft that read as though every rebuild was
+  covered; the allocation test exercises the displacing path only, which
+  is what the claim is now limited to.
+- Recorded: "existing callers are unaffected" was too strong, and a review
+  pass proved why. The displaced product is handed back with its CONTENTS,
+  not just its storage, so before the follow-up fix an evicting store left
+  the caller's argument reporting `Found`, carrying another key's goals,
+  and passing `is_valid` — strictly worse than the old moved-from state,
+  which failed validity and hit the size guard. Both displacing paths now
+  `clear()` the argument, which is noexcept and retains capacity, so the
+  performance goal is unaffected and the argument can never be observed as
+  a valid wrong-goal product.
+- Fixed before merge: the replace path read `entries_[i]` AFTER eviction,
+  and eviction erases from that vector — so evicting anything below `i`
+  shifted it and the store returned a different entry, or indexed past the
+  end. Proven twice by execution: a three-entry case returned the wrong
+  key's product, and a two-entry case tripped an AddressSanitizer
+  container-overflow. The pointer is now read before eviction. Not
+  reachable through `PathRequestRuntime`, whose stores always take the
+  append path, but live for any direct consumer of the public cache.
+- Evidence is an allocation count rather than a timing, because the claim
+  is about allocation and the machine was too loaded for a trustworthy
+  benchmark. Mutation-verified: reverting only the hand-back gives five
+  allocations where the fix gives zero.
+- Recorded: two existing tests were asserting the inflated counter —
+  `hits >= 1` after a single build, which only the store's own relookup
+  could satisfy. They now assert that a build is not a hit and that a
+  genuine reuse is exactly one. That they had to change is the clearest
+  evidence the finding was real.
 
 ## 2026-08-07 - Counter, format, and cost-arithmetic hardening
 
@@ -173,6 +691,7 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   measured at 4611686018427387903 against a chunk count of 4 — which
   `capture_field_product_dependencies` uses to index an unchecked array.
   Latent, since the only in-tree caller passes in-world tiles.
+
 ## 2026-08-07 - Terminal agents are immovable under priority inheritance
 
 - Fixed: `start_deciding` refuses an agent with no goal or a phase of
@@ -199,6 +718,7 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   path is no longer reachable through PIBT; the guard is kept because the
   invariant belongs at the check, not in an argument about which callers
   can reach it, and the test pins the invariant rather than the path.
+
 ## 2026-08-07 - Residency intervals scope dirty observations
 
 - Fixed: `DirtyObservation` carries the residency generation it was taken
@@ -299,6 +819,49 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 - Added: every cache-using job reports its hit rate. Caching was
   configured in nine steps and measured in one, which is why the restore
   key collision went unnoticed for as long as it did.
+
+## 2026-08-07 - Changelog entries move to per-change fragments
+
+- Changed: `CHANGELOG.md` and `docs/decisions/CHANGELOG.md` are assembled
+  from fragment files rather than edited directly. Every branch that edits
+  a shared changelog conflicts with every other such branch, so a stack of
+  N pull requests costs on the order of N² resolutions. Measured on the
+  2026-08-07 audit stack: eight conflict resolutions across seven pull
+  requests, all in the same two files, none of them related to the code
+  under review.
+- Rationale beyond the time cost: a changelog conflict is unusually easy
+  to mis-resolve *silently*. One resolution in that stack had an empty
+  incoming side, where a mechanical keep-both would have deleted entries
+  that had just merged, and nothing would have failed. Fragments make the
+  common case a no-op instead of a judgement call.
+- Shape: release fragments are `<slug>.<category>.md` holding complete
+  markdown list items, so assembly is concatenation and the reviewed text
+  is the shipped text. Decision fragments are `<YYYY-MM-DD>-<slug>.md`
+  holding a complete dated section, ordered newest first by filename.
+- Decided: assembly MERGES the existing `Unreleased` body with the
+  fragments by category rather than stacking them. Entries written before
+  this change still sit under `Unreleased`, and appending a second set of
+  `### Fixed` headings under one release would be malformed. Merging keeps
+  one heading per category through the transition, after which the
+  `Unreleased` body is empty and the merge is a no-op. An end-to-end dry
+  run against the real changelogs is what surfaced both that and a stray
+  blank line; neither was visible from the unit tests alone.
+- Assembly is all-or-nothing: both documents are rendered and validated
+  before either is written. The first version wrote `CHANGELOG.md` before
+  the decisions file was even read, so a failure there left a half-applied
+  release with the fragments still present, and re-running duplicated the
+  release section -- the "all-or-nothing" claim held only for the
+  invalid-fragment path. A review pass proved that by execution. Assembly
+  now also refuses a version already present, refuses content under
+  `[Unreleased]` that belongs to no category rather than dropping it, and
+  folds the `Unreleased` body even when only decision fragments are
+  pending.
+- Heading detection skips fenced blocks. The decisions file ships a
+  Template that quotes a dated heading inside a fence; matching it split
+  the owning section in half and relocated its body to the bottom of the
+  file, silently and with green CI.
+  `--check` runs in the hook-backstop tier so that failure lands on the
+  pull request that introduced it rather than on the release.
 
 ## 2026-08-06 - Bounded Steam Deck benchmark builds
 

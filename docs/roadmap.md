@@ -1,16 +1,16 @@
 # Scope and roadmap
 
-What is released, what has landed only on `main`, what remains release-gated,
-and what tess will not become. The [support policy](support.md) governs
+What is released, what remains release-gated, and what tess will not become.
+The [support policy](support.md) governs
 stability; architecture documents describe the current checkout, the
 [completion record][completion-plan] preserves the historical v0.5-v0.12
 sequence, and the [release process][release-process] owns the path to 1.0.
 
-## Released in v0.12.0
+## Released in v0.13.0
 
-`v0.12.0` provides the following tested machinery. The
-[Concepts](architecture/README.md) pages document the current checkout and may
-also contain main-only additions identified below: compile-time shapes and
+`v0.13.0` provides the following tested machinery. The
+[Concepts](architecture/README.md) pages document this released checkout:
+compile-time shapes and
 field schemas, dense and sparse residency, queued operations with result
 channels, the block kernel layer, topology and the reachability precheck, A*
 with movement classes, weighted batches, distance-field products and caches,
@@ -25,8 +25,10 @@ version/invalidation policy; cooperative tickets resume budgeted work across
 ticks; and exact event streams drive coalesced OnEvent schedule cadences.
 Block-resolved lazy pipelines fuse adapters into explicit terminals, while
 exact box, Euclidean-radius, and chunk-local span queries emit allocation-free
-x-runs. Experimental immediate, FIFO, and queued-coalescing maintenance
-backends remain opt-in and are not integrated into storage.
+x-runs. Stable maintenance tasks, budgets, results, handles, structural
+customization, immediate execution, and an external fixed-slot chunk adapter
+support dense and sparse residency without integrating handles into storage.
+FIFO, queued-coalescing, dirty-bit, and virtual scheduling remain experimental.
 Region graphs also reconstruct shortest coarse region/portal routes and chunk
 corridors. Dense weighted multi-goal products are versioned, byte-budgeted,
 provider-aware, and reusable across runtime calls through an opt-in policy.
@@ -49,41 +51,15 @@ derived products. Optional Dear ImGui helpers inspect dense and sparse world
 state and return caller-applied boolean field intents without introducing a
 core UI dependency or direct editor mutation.
 
-## Landed on main, not yet released
-
-These changes are available in the current source checkout but not in the
-`v0.12.0` release. Consumers of a released package must not assume they exist.
-The [unreleased changelog fragments][unreleased-fragments] are the complete
-change inventory; the bullets here summarize the release-shaping additions
-without maintaining a second exhaustive list.
-
-- The breaking API cleanups documented for the final pre-1.0 release have
-  landed. The [1.0 upgrade guide](upgrade-1.0.md) describes the principal
-  migration themes; consult the unreleased fragments for every change.
-- `World::mark_content_changed` can invalidate version-keyed derived state
-  without scheduling dirty-mask work, and path-overlay collection can include
-  retained and queue-produced routes whose runtime tickets are no longer
-  directly usable.
-- Stable maintenance task, budget, result, handle, immediate-execution,
-  structural-backend, and external fixed-slot chunk-adapter spellings now live
-  under `tess::maintenance`. The adapter exercises dense and sparse residency
-  without integrating handles into world storage. Portable evidence found no
-  M3 regression but a material Steam Deck regression for dirty-bit scheduling,
-  so dirty-bit, FIFO, queued-coalescing, and the virtual scheduler remain
-  explicit `tess::experimental` machinery.
-- Budgeted-progress benchmark infrastructure, controlled-hardware campaign
-  tooling, and further diagnostics and correctness fixes have landed. The
-  [budgeted-progress record][budgeted-progress] preserves its staged design
-  and acceptance evidence.
-
-Release notes are assembled from the repository's unreleased fragments when a
-release is prepared; source presence alone does not make a change released.
+This final breaking-change release also adds explicit content-version
+notification, retained and queue-produced route overlays, the 1.0 migration
+spellings documented in the [upgrade guide](upgrade-1.0.md), and calibrated
+budgeted-progress and maintenance evidence. The
+[budgeted-progress record][budgeted-progress] preserves its staged design and
+acceptance evidence.
 
 ## Release-gated next steps
 
-- Publish `v0.13.0` only after the breaking API changes and upgrade guide are
-  complete, the stable maintenance API and external chunk adapter land, and
-  the exact release commit passes release-mode CI.
 - After `v0.13.0`, complete the bounded pathfinding, movement, execution, and
   synthesis dispositions in the
   [v0.13-to-v1.0 execution plan][pre-rc-plan]. Accepted implementations land
@@ -109,7 +85,7 @@ code that assumes they do.
   cadences, dirty/manual/event triggers, exact event streams, and deterministic
   background continuation are released. Stable maintenance handles, immediate
   execution, structural customization, and an external dense-and-sparse chunk
-  adapter have landed for `v0.13.0`. FIFO, queued-coalescing, dirty-bit, and
+  adapter are released in `v0.13.0`. FIFO, queued-coalescing, dirty-bit, and
   the virtual scheduler remain experimental; wider derived-system adapters
   and storage-owned handles remain future work.
 - **Further spatial query acceleration**
@@ -151,7 +127,6 @@ substrate; the application owns meaning, entities, and presentation.
 [tdd-index]: https://github.com/kindjie/tess/blob/main/docs/tdd/README.md
 [completion-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/roadmap-completion.md
 [release-process]: https://github.com/kindjie/tess/blob/main/docs/releasing.md
-[unreleased-fragments]: https://github.com/kindjie/tess/tree/main/changelog.d
 [budgeted-progress]: https://github.com/kindjie/tess/blob/main/docs/planning/budgeted-progress-benchmarks.md
 [pre-rc-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md
 [tdd-scheduler]: https://github.com/kindjie/tess/blob/main/docs/tdd/simulation-scheduler.md

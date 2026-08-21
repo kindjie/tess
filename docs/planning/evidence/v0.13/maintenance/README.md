@@ -116,3 +116,8 @@ unchanged. The
 records that carry-forward explicitly. The measured binaries in the bundle
 therefore remain representative of the frozen candidate, and the recorded
 result stands without a rerun.
+
+The REL-13 release-assembly change updates version metadata and release-facing
+records only. It does not change the maintenance implementation or adapter,
+campaign benchmark or fixtures, compiler or effective flags, or SDK, so the
+same evidence remains representative of the v0.13.0 release candidate.
