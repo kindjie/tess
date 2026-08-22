@@ -26,6 +26,12 @@
   keeps working from repository settings. Serving the branch directly would
   have required a repository settings change and a tracked `CNAME`, and would
   have broken the site if the two were not switched together.
+- The initial `0.13` tree was bootstrapped from the adoption branch rather
+  than the `v0.13.0` tag, because dispatching against the tag would run the
+  tag's workflow, which has no publish job. Its site content differs from the
+  tag only by documents the site excludes and by the link migration itself.
+  From the next release onward, a tag push publishes exactly the tagged
+  content.
 - Only the publish job carries a write token, and its checkout does not
   persist credentials; it authorizes its own remote commands instead. The
   build job that runs the container and browser steps stays read-only.

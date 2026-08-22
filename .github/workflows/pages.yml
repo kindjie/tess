@@ -367,7 +367,9 @@ jobs:
           git config --local "http.extraheader" "$auth"
 
           # mike reads the existing branch to preserve every other version.
-          git fetch --no-tags --depth=1 origin gh-pages || true
+          # No `|| true`: the branch exists, so a failed fetch means mike
+          # would commit onto an orphan and drop every published version.
+          git fetch --no-tags --depth=1 origin gh-pages
 
           # mike shells out to mkdocs, so the virtualenv has to be on PATH
           # rather than only addressed by absolute path.
