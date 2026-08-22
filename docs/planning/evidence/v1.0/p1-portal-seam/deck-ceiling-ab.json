@@ -1,0 +1,90 @@
+{
+  "mode": "shadow",
+  "verdict": "regression",
+  "repetitions": 10,
+  "confidence": 0.95,
+  "resamples": 2000,
+  "skipped": {},
+  "sentinels": {
+    "path/agent_tick_100_unit_dirty_onpath_edit_scoped_512x512": {
+      "base_median_ns": 643213.3610905961,
+      "head_median_ns": 645767.5508929201,
+      "delta_relative": 0.0012403203689281828,
+      "ci_low": -0.00179810502974187,
+      "ci_high": 0.009318077056042817,
+      "verdict": "pass",
+      "confirmation": {
+        "base_median_ns": 645821.9886282245,
+        "head_median_ns": 647610.3213638463,
+        "delta_relative": 0.004057344015403919,
+        "ci_low": -0.004752988554931337,
+        "ci_high": 0.01709668459720426,
+        "flagged": false
+      }
+    },
+    "path/agent_tick_100_unit_dirty_world_edit_512x512": {
+      "base_median_ns": 1329304.5728447358,
+      "head_median_ns": 1335182.9230769235,
+      "delta_relative": 0.00475165992623916,
+      "ci_low": 0.0018516947471536316,
+      "ci_high": 0.00573909855506427,
+      "verdict": "pass",
+      "confirmation": {
+        "base_median_ns": 1331877.4852939546,
+        "head_median_ns": 1339629.085624188,
+        "delta_relative": 0.0032483918360943775,
+        "ci_low": -0.001513988307474179,
+        "ci_high": 0.01481014846476958,
+        "flagged": false
+      }
+    },
+    "path/agent_tick_100_weighted_fresh_churn_portal_512x512": {
+      "base_median_ns": 123498.85354026285,
+      "head_median_ns": 124832.1079373633,
+      "delta_relative": 0.010795683046728621,
+      "ci_low": 0.010256385918041344,
+      "ci_high": 0.012018582881146767,
+      "verdict": "pass",
+      "confirmation": {
+        "base_median_ns": 123436.16455966549,
+        "head_median_ns": 124869.23490835918,
+        "delta_relative": 0.011974360038095488,
+        "ci_low": 0.009860414466333456,
+        "ci_high": 0.013012757095511418,
+        "flagged": false
+      }
+    },
+    "path/agent_tick_100_weighted_goal_churn_portal_512x512": {
+      "base_median_ns": 20852.43143474758,
+      "head_median_ns": 23080.112171808418,
+      "delta_relative": 0.10788824531887786,
+      "ci_low": 0.10173591435024565,
+      "ci_high": 0.11611875138109662,
+      "verdict": "regression",
+      "confirmation": {
+        "base_median_ns": 20816.207624040268,
+        "head_median_ns": 23135.05236848964,
+        "delta_relative": 0.10842433372546023,
+        "ci_low": 0.10669566863064461,
+        "ci_high": 0.1151669510530191,
+        "flagged": true
+      }
+    },
+    "path/agent_tick_100_weighted_shared_dirty_512x512": {
+      "base_median_ns": 8771740.110389609,
+      "head_median_ns": 8783292.376623377,
+      "delta_relative": 0.0030555883907608106,
+      "ci_low": -0.0002818553911176913,
+      "ci_high": 0.004219781752045959,
+      "verdict": "pass",
+      "confirmation": {
+        "base_median_ns": 8763352.525974024,
+        "head_median_ns": 8793630.941558443,
+        "delta_relative": 0.004103993002527728,
+        "ci_low": 0.0006223380625196562,
+        "ci_high": 0.005534842237744808,
+        "flagged": false
+      }
+    }
+  }
+}
