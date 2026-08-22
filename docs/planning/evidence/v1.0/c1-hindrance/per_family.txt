@@ -1,0 +1,7 @@
+warehouse      paired=20 excluded= 0  ticks ctl= 2246 cand= 2246  geomean=1.0000 (+0.00%)  wedged 0->0  sealed 10->10
+ring           paired=20 excluded= 0  ticks ctl= 3351 cand= 3343  geomean=0.9989 (-0.11%)  wedged 0->0  sealed 0->0
+colony         paired= 8 excluded=12  ticks ctl=  879 cand=  800  geomean=0.9336 (-6.64%)  wedged 36->37  sealed 294->302
+random_sparse  paired=20 excluded= 0  ticks ctl= 1858 cand= 1857  geomean=0.9994 (-0.06%)  wedged 0->0  sealed 0->0
+random_medium  paired=20 excluded= 0  ticks ctl= 1854 cand= 1855  geomean=1.0006 (+0.06%)  wedged 0->0  sealed 4->4
+random_dense   paired=20 excluded= 0  ticks ctl= 2182 cand= 2186  geomean=1.0017 (+0.17%)  wedged 2->2  sealed 29->29
+adversarial    paired=12 excluded= 0  ticks ctl=  372 cand=  369  geomean=0.9934 (-0.66%)  wedged 0->0  sealed 35->35

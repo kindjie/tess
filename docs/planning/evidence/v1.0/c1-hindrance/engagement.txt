@@ -1,0 +1,5 @@
+warehouse      ranking calls=148257    with nonzero hindrance=5430     (3.66%)
+ring           ranking calls=260549    with nonzero hindrance=13214    (5.07%)
+colony         ranking calls=200493    with nonzero hindrance=29944    (14.94%)
+random_dense   ranking calls=188163    with nonzero hindrance=4576     (2.43%)
+adversarial    ranking calls=4244      with nonzero hindrance=351      (8.27%)

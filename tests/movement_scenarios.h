@@ -724,9 +724,9 @@ inline auto refresh_settled(Scenario& scenario) -> bool {
 // when in fact the experiment stopped. Under a shared cap that biases
 // residual counts against slower arms, which is exactly the comparison
 // the movement experiments exist to make.
-template <typename Ranking>
-[[nodiscard]] auto settle_with_pibt(Scenario& scenario, Ranking&& rank)
-    -> Outcome {
+template <typename Ranking, typename BeforeTick = decltype([](Scenario&) {})>
+[[nodiscard]] auto settle_with_pibt(Scenario& scenario, Ranking&& rank,
+                                    BeforeTick&& before_tick = {}) -> Outcome {
   Outcome outcome;
   tess::PathRequestRuntime runtime;
   runtime.reserve_requests(128);
@@ -743,6 +743,7 @@ template <typename Ranking>
   auto options = tess::PathAgentTickOptions{};
   options.max_blocked_retries = scenario.options.max_blocked_retries;
   options.blocked_exhaustion_policy = scenario.options.exhaustion_policy;
+  TESS_ASSERT(options.max_steps == 1);
   const auto move_options = tess::JointMoveOptions{scenario.options.swap};
 
   std::vector<tess::Coord3> previous;
@@ -771,6 +772,10 @@ template <typename Ranking>
     if (refresh_settled(scenario)) {
       tess::mark_pathing_dirty(scenario.state);
     }
+    // Runs once per pass, which is the same as once per tick only while
+    // `max_steps` is 1. An arm that raises it must move any per-pass
+    // state rebuild inside the tier instead.
+    before_tick(scenario);
     tess::JointMoveStats move_stats;
     (void)tess::tick_weighted_path_agents_with_pibt<
         World, Traveler, 4u, OccupancyTag, ReservationTag>(

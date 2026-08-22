@@ -1,0 +1,10 @@
+warehouse      seeds=20 paired=20 excluded= 0 (0%)  agent regressions=0 improvements=0
+ring           seeds=20 paired=20 excluded= 0 (0%)  agent regressions=0 improvements=0
+colony         seeds=20 paired= 8 excluded=12 (60%)  agent regressions=22 improvements=13
+random_sparse  seeds=20 paired=20 excluded= 0 (0%)  agent regressions=0 improvements=0
+random_medium  seeds=20 paired=20 excluded= 0 (0%)  agent regressions=0 improvements=0
+random_dense   seeds=20 paired=20 excluded= 0 (0%)  agent regressions=0 improvements=0
+adversarial    seeds=12 paired=12 excluded= 0 (0%)  agent regressions=0 improvements=0
+
+POOLED paired=120 excluded=12 of 132 seeds (9%)  geomean=0.9948 (-0.52%)
+AGENT-LEVEL regressions=22 improvements=13
