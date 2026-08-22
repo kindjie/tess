@@ -340,8 +340,12 @@ jobs:
           # mkdocs copies non-Markdown files in docs/ verbatim, which is how
           # the API reference and demos reach mike's build. Both are generated
           # and gitignored, matching the fetched Mermaid runtime.
-          cp -R build/generated/build/docs-api/docs/html docs/api
-          cp -R build/generated/build/site/demo docs/demo
+          # upload-artifact strips the paths' common ancestor, so the
+          # downloaded tree starts below build/.
+          cp -R build/generated/docs-api/docs/html docs/api
+          cp -R build/generated/site/demo docs/demo
+          test -f docs/api/index.html
+          test -d docs/demo/colony
 
       - name: Deploy version tree
         env:
