@@ -1,3 +1,5 @@
 # Documentation site generator. Regenerate requirements-docs.txt with
 # tools/compile_docs_requirements.sh after changing a pin.
 mkdocs-material==9.7.7
+# Versioned documentation deploys (release trees plus a development tree).
+mike==2.2.0

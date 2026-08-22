@@ -25,7 +25,7 @@ systems. tess is not an engine, renderer, physics system, navigation-mesh
 library, or entity-component system.
 
 [See A*, route caching, batches, and distance fields in
-action →](https://tess.owx.dev/pathfinding-strategy-comparison/)
+action →](https://tess.owx.dev/latest/pathfinding-strategy-comparison/)
 
 ## Capabilities
 
@@ -49,17 +49,17 @@ action →](https://tess.owx.dev/pathfinding-strategy-comparison/)
   sets to an external renderer and enable
   [instrumentation][diagnostics-guide] when it is needed.
 
-[getting-started]: https://tess.owx.dev/getting-started/
-[pathfinding-guide]: https://tess.owx.dev/guide/pathfinding/
-[strategy-comparison]: https://tess.owx.dev/pathfinding-strategy-comparison/
-[residency-guide]: https://tess.owx.dev/guide/residency/
-[simulation-concepts]: https://tess.owx.dev/architecture/simulation/
-[concepts]: https://tess.owx.dev/architecture/
-[query-concepts]: https://tess.owx.dev/architecture/query/
-[persistence-concepts]: https://tess.owx.dev/architecture/persistence/
-[examples]: https://tess.owx.dev/examples/
-[presentation-guide]: https://tess.owx.dev/guide/presentation/
-[diagnostics-guide]: https://tess.owx.dev/guide/diagnostics/
+[getting-started]: https://tess.owx.dev/latest/getting-started/
+[pathfinding-guide]: https://tess.owx.dev/latest/guide/pathfinding/
+[strategy-comparison]: https://tess.owx.dev/latest/pathfinding-strategy-comparison/
+[residency-guide]: https://tess.owx.dev/latest/guide/residency/
+[simulation-concepts]: https://tess.owx.dev/latest/architecture/simulation/
+[concepts]: https://tess.owx.dev/latest/architecture/
+[query-concepts]: https://tess.owx.dev/latest/architecture/query/
+[persistence-concepts]: https://tess.owx.dev/latest/architecture/persistence/
+[examples]: https://tess.owx.dev/latest/examples/
+[presentation-guide]: https://tess.owx.dev/latest/guide/presentation/
+[diagnostics-guide]: https://tess.owx.dev/latest/guide/diagnostics/
 
 ## Start with A*
 
@@ -119,7 +119,7 @@ cost: 3
 scratch storage and remains valid only until that scratch is reused. The
 [complete quickstart](examples/quickstart.cc) includes the executable error
 boundary; the
-[getting-started tutorial](https://tess.owx.dev/getting-started/) builds from
+[getting-started tutorial](https://tess.owx.dev/latest/getting-started/) builds from
 shapes and schemas through the schedule loop and render bridge.
 
 ## Use in your project
@@ -136,14 +136,14 @@ fits your project.
   overlay for local use. Publication in their central registries is planned
   after 1.0.
 
-The [installation guide](https://tess.owx.dev/packaging/) has the exact
+The [installation guide](https://tess.owx.dev/latest/packaging/) has the exact
 commands and archive verification steps.
 
 The latest release is `v0.13.0`. This checkout documents the `v0.13.0` release,
 including its portable `.zip` and `.tar.gz` header archives. Before 1.0, public
 APIs may change between minor versions. See
-[support and compatibility](https://tess.owx.dev/support/) and the
-[roadmap](https://tess.owx.dev/roadmap/).
+[support and compatibility](https://tess.owx.dev/latest/support/) and the
+[roadmap](https://tess.owx.dev/latest/roadmap/).
 
 ## Performance
 
@@ -153,21 +153,21 @@ Representative single-threaded medians on an Apple M3 Max:
 - Clean tick for 100 agents with retained routes: ~330 ns.
 - Weighted batch of 100 near-goal requests on a 512x512 grid: ~50 us.
 
-The [performance page](https://tess.owx.dev/performance/) records the benchmark
+The [performance page](https://tess.owx.dev/latest/performance/) records the benchmark
 protocol, calibrated CI ceilings, and trend snapshots.
 
 ## Learn more
 
-- [Choose your architecture](https://tess.owx.dev/guide/) — residency,
+- [Choose your architecture](https://tess.owx.dev/latest/guide/) — residency,
   writes, path strategy, topology, entities, presentation, and diagnostics.
 - [Compare pathfinding
-  strategies](https://tess.owx.dev/pathfinding-strategy-comparison/)
+  strategies](https://tess.owx.dev/latest/pathfinding-strategy-comparison/)
   — see A*, route caching, weighted batches, and distance fields operate over
   the same obstacle map.
-- [Examples](https://tess.owx.dev/examples/) — annotated, self-checking
+- [Examples](https://tess.owx.dev/latest/examples/) — annotated, self-checking
   programs from the quickstart to the flagship colony simulation.
-- [API reference](https://tess.owx.dev/api/) — the supported C++ surface.
-- [Roadmap](https://tess.owx.dev/roadmap/) — implemented, planned, and
+- [API reference](https://tess.owx.dev/latest/api/) — the supported C++ surface.
+- [Roadmap](https://tess.owx.dev/latest/roadmap/) — implemented, planned, and
   deliberately excluded work.
 
 ## Contributing

@@ -1270,7 +1270,7 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   assert "set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)" in cmake
   assert "set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)" in cmake
   assert '"tess::detail::*"' in cmake
-  assert "API reference: https://tess.owx.dev/api/" in mkdocs
+  assert "API reference: https://tess.owx.dev/latest/api/" in mkdocs
 
 
 def test_webgpu_smoke_only_adapter_unavailable_is_unsupported():

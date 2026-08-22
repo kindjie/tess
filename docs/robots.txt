@@ -1,3 +1,6 @@
 User-agent: *
 Allow: /
-Sitemap: https://tess.owx.dev/sitemap.xml
+# The development tree duplicates released pages; only the release
+# trees should be indexed.
+Disallow: /dev/
+Sitemap: https://tess.owx.dev/latest/sitemap.xml

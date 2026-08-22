@@ -172,7 +172,10 @@ def test_docs_search_metadata_establishes_tess_site_identity():
   assert robots == (
     "User-agent: *\n"
     "Allow: /\n"
-    "Sitemap: https://tess.owx.dev/sitemap.xml\n"
+    "# The development tree duplicates released pages; only the release\n"
+    "# trees should be indexed.\n"
+    "Disallow: /dev/\n"
+    "Sitemap: https://tess.owx.dev/latest/sitemap.xml\n"
   )
 
   assert 'property="og:site_name" content="{{ config.site_name }}"' in template
