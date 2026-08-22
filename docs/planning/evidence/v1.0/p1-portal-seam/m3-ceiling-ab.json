@@ -1,0 +1,50 @@
+{
+  "mode": "shadow",
+  "verdict": "pass",
+  "repetitions": 10,
+  "confidence": 0.95,
+  "resamples": 2000,
+  "skipped": {},
+  "sentinels": {
+    "path/agent_tick_100_unit_dirty_onpath_edit_scoped_512x512": {
+      "base_median_ns": 208684.9018703975,
+      "head_median_ns": 209220.3385612598,
+      "delta_relative": -0.001766246917454417,
+      "ci_low": -0.008934186238444886,
+      "ci_high": 0.010722768729144683,
+      "verdict": "pass"
+    },
+    "path/agent_tick_100_unit_dirty_world_edit_512x512": {
+      "base_median_ns": 413512.63565710344,
+      "head_median_ns": 408762.9665946956,
+      "delta_relative": 0.002056711679404133,
+      "ci_low": -0.04124122821452225,
+      "ci_high": 0.032370833926644416,
+      "verdict": "pass"
+    },
+    "path/agent_tick_100_weighted_fresh_churn_portal_512x512": {
+      "base_median_ns": 66958.72252485363,
+      "head_median_ns": 64613.182129892826,
+      "delta_relative": -0.040702454158598744,
+      "ci_low": -0.04971647649055244,
+      "ci_high": -0.02469757039468401,
+      "verdict": "pass"
+    },
+    "path/agent_tick_100_weighted_goal_churn_portal_512x512": {
+      "base_median_ns": 15592.662051013296,
+      "head_median_ns": 12805.43021767449,
+      "delta_relative": -0.18378932654301083,
+      "ci_low": -0.1923875232157185,
+      "ci_high": -0.16172986259451438,
+      "verdict": "immaterial-scale"
+    },
+    "path/agent_tick_100_weighted_shared_dirty_512x512": {
+      "base_median_ns": 4463837.941663602,
+      "head_median_ns": 4441834.116955627,
+      "delta_relative": -0.013361332722113706,
+      "ci_low": -0.04372980862741027,
+      "ci_high": 0.018837024876081854,
+      "verdict": "pass"
+    }
+  }
+}
