@@ -68,3 +68,8 @@ graph_info.json
 # Pinned Mermaid runtime fetched at docs build time (tools/fetch_mermaid.py);
 # far over the tracked-file token budget, so never committed.
 docs/assets/javascripts/mermaid.min.js
+
+# Generated documentation trees staged inside docs/ so mike's mkdocs
+# build carries them into each published version.
+docs/api/
+docs/demo/

@@ -1,8 +1,51 @@
 # Documentation hosting runbook
 
 The public documentation is a static MkDocs site with a Doxygen API reference
-under `/api/`, deployed by GitHub Actions to GitHub Pages. Hosting needs no
+under `api/`, deployed by GitHub Actions to GitHub Pages. Hosting needs no
 separate server, database, or deploy credential.
+
+## Version trees
+
+The site publishes one tree per documented version, managed by
+[mike](https://github.com/jimporter/mike):
+
+| URL | Content |
+| --- | --- |
+| `/` | Redirect to the default version |
+| `/latest/` | Newest release; every documented deep link points here |
+| `/<major>.<minor>/` | That release, kept as it was published |
+| `/dev/` | `main`, republished on every push |
+
+Each tree is self-contained: its own pages, its own `api/` reference, and its
+own `demo/` builds. The version selector in the header comes from Material and
+reads mike's `versions.json`.
+
+Two choices in that pipeline are load-bearing and should not be changed
+casually:
+
+- **Aliases are copies, not symlinks** (`--alias-type copy`). GitHub Pages
+  does not serve symlinked directories, and `latest` is where every published
+  link resolves, so a symlink alias would return 404 for the whole site.
+- **The generated API and demo trees are staged into `docs/` before deploy.**
+  mike runs mkdocs itself and has no prebuilt-directory mode, so anything that
+  must appear inside a version tree has to be somewhere mkdocs copies. Both
+  are generated and gitignored, matching the fetched Mermaid runtime.
+
+`gh-pages` is storage, not the served branch. The workflow commits each
+version tree there, then checks the whole branch out and uploads it as the
+Pages artifact, so the Pages source stays **GitHub Actions** and the custom
+domain keeps working from repository settings. Only the publish job holds a
+write token, and it never touches `main`.
+
+### Publishing a version
+
+- Pushing to `main` publishes `/dev/`.
+- Pushing a `v*` tag publishes `/<major>.<minor>/`, moves the `latest` alias,
+  and sets the site default.
+- Dispatching the workflow against a ref with `publish_version` set does the
+  same for that ref, which is how an existing tag is published retroactively.
+
+Pull requests build and verify without publishing anything.
 
 ## GitHub settings
 
