@@ -1,0 +1,17 @@
+-- serpentine scaling (same recipe, growing map) --
+serp64  k=1   chunks=16 slices=2199 deps=13 | base=12542 resumed=44237 (lib=12542 cap=3121 reval=28574) growth=+252.71% | entry 2->4398 | max_slice_exp=1
+serp64  k=8   chunks=16 slices=275 deps=13 | base=12542 resumed=19225 (lib=12542 cap=3121 reval=3562) growth=+53.28% | entry 2->550 | max_slice_exp=8
+serp64  k=64  chunks=16 slices=35 deps=13 | base=12542 resumed=16105 (lib=12542 cap=3121 reval=442) growth=+28.41% | entry 2->70 | max_slice_exp=64
+serp128 k=1   chunks=64 slices=8503 deps=43 | base=49694 resumed=369047 (lib=49694 cap=11397 reval=307956) growth=+642.64% | entry 2->17006 | max_slice_exp=1
+serp128 k=8   chunks=64 slices=1063 deps=43 | base=49694 resumed=99555 (lib=49694 cap=11397 reval=38464) growth=+100.34% | entry 2->2126 | max_slice_exp=8
+serp128 k=64  chunks=64 slices=133 deps=43 | base=49694 resumed=65873 (lib=49694 cap=11397 reval=4782) growth=+32.56% | entry 2->266 | max_slice_exp=64
+serp256 k=1   chunks=256 slices=33399 deps=151 | base=197726 resumed=3828875 (lib=197726 cap=43309 reval=3587840) growth=+1836.45% | entry 2->66798 | max_slice_exp=1
+serp256 k=8   chunks=256 slices=4175 deps=151 | base=197726 resumed=689407 (lib=197726 cap=43309 reval=448372) growth=+248.67% | entry 2->8350 | max_slice_exp=8
+serp256 k=64  chunks=256 slices=522 deps=151 | base=197726 resumed=297012 (lib=197726 cap=43309 reval=55977) growth=+50.21% | entry 2->1044 | max_slice_exp=64
+-- random maps --
+random64 k=1   trials=10 mean_growth=+314.11% max_growth=+374.56%
+random64 k=8   trials=10 mean_growth=+68.03% max_growth=+73.70%
+random64 k=64  trials=10 mean_growth=+37.34% max_growth=+38.89%
+
+ALL VALUE CHECKS PASSED
+exit=0
