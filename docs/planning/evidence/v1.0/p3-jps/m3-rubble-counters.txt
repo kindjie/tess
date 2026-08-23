@@ -1,0 +1,4 @@
+base N=64: passability=3974 pushes=8528 pops=7299 stale=0 closed=429 touched=7877 heuristic=8528 reconstruct=1418
+base N=256: passability=15696 pushes=60763 pops=51541 stale=0 closed=6570 touched=50726 heuristic=60763 reconstruct=4682
+jps  N=64: passability=27723 pushes=4716 pops=4107 stale=172 closed=294 touched=3821 heuristic=4697 reconstruct=1418
+jps  N=256: passability=176440 pushes=32885 pops=27870 stale=1512 closed=2725 touched=24573 heuristic=32865 reconstruct=4682

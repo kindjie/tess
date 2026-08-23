@@ -1,0 +1,74 @@
+{
+  "mode": "shadow",
+  "verdict": "pass",
+  "repetitions": 10,
+  "confidence": 0.95,
+  "resamples": 2000,
+  "skipped": {},
+  "sentinels": {
+    "p3/search_maze_256": {
+      "base_median_ns": 6865650.765496641,
+      "head_median_ns": 6826061.463046761,
+      "delta_relative": 0.003181875186812899,
+      "ci_low": -0.006001624000208983,
+      "ci_high": 0.009124102050816818,
+      "verdict": "pass"
+    },
+    "p3/search_maze_64": {
+      "base_median_ns": 602462.007863854,
+      "head_median_ns": 605372.7359613373,
+      "delta_relative": -0.0008357521323029138,
+      "ci_low": -0.005707166662077823,
+      "ci_high": 0.007334658337009969,
+      "verdict": "pass"
+    },
+    "p3/search_open_256": {
+      "base_median_ns": 7129.091657378207,
+      "head_median_ns": 7200.9002864417835,
+      "delta_relative": 0.00850779991522943,
+      "ci_low": 6.324089132592192e-05,
+      "ci_high": 0.020929250027831747,
+      "verdict": "immaterial-scale"
+    },
+    "p3/search_open_64": {
+      "base_median_ns": 1730.8136553639056,
+      "head_median_ns": 1749.3353460670553,
+      "delta_relative": 0.010207369976975134,
+      "ci_low": 0.005850674188876859,
+      "ci_high": 0.019007667486546698,
+      "verdict": "immaterial-scale"
+    },
+    "p3/search_rubble_256": {
+      "base_median_ns": 906141.9609785298,
+      "head_median_ns": 922409.8396827755,
+      "delta_relative": 0.0075644841228079684,
+      "ci_low": -0.0144514145292588,
+      "ci_high": 0.04825966965667061,
+      "verdict": "pass"
+    },
+    "p3/search_rubble_64": {
+      "base_median_ns": 164403.5087690769,
+      "head_median_ns": 164383.6223257364,
+      "delta_relative": -0.00656190928912892,
+      "ci_low": -0.02133607814487748,
+      "ci_high": 0.013207822467681707,
+      "verdict": "pass"
+    },
+    "p3/search_wall_gap_256": {
+      "base_median_ns": 10008955.935613688,
+      "head_median_ns": 10024259.154929575,
+      "delta_relative": 0.0028476591573194376,
+      "ci_low": -0.010828979680559847,
+      "ci_high": 0.019421923937361196,
+      "verdict": "pass"
+    },
+    "p3/search_wall_gap_64": {
+      "base_median_ns": 388045.0498575499,
+      "head_median_ns": 389838.94040867,
+      "delta_relative": 0.005681445433315613,
+      "ci_low": 0.0003129494245510678,
+      "ci_high": 0.018844449137015884,
+      "verdict": "pass"
+    }
+  }
+}
