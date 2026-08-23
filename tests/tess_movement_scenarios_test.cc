@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "movement_scenarios.h"
@@ -416,6 +417,218 @@ TEST(MovementScenarios, WedgeDetectionRequiresSustainedNoProgress) {
   auto scenario = mv::build_scenario(mv::Family::Warehouse, 0);
   ASSERT_GT(scenario->options.wedge_ticks, 1)
       << "a one-tick wedge rule would stop on ordinary contention";
+}
+
+// ---------------------------------------------------------------------
+// Anonymous goal pool (C2 fixture mode)
+// ---------------------------------------------------------------------
+
+struct PoolDigestEntry {
+  mv::Family family = mv::Family::Ring;
+  unsigned trial = 0;
+  std::size_t factor_index = 0;
+  std::uint64_t digest = 0;
+};
+
+// Same regeneration discipline as kDigests: set
+// TESS_PRINT_SCENARIO_DIGESTS=1 to regenerate, and only when the pool
+// instances are meant to change. The C2 pre-registration pins this
+// fixture BEFORE any arm code exists; a changed digest afterward makes a
+// new experiment, never an amendment.
+constexpr std::array<PoolDigestEntry, 21> kPoolDigests = {{
+    {mv::Family::Warehouse, 0, 0, 13691435587856427398ULL},
+    {mv::Family::Warehouse, 0, 1, 10103837903294546932ULL},
+    {mv::Family::Warehouse, 0, 2, 10575679626700154813ULL},
+    {mv::Family::Ring, 0, 0, 3591358782500173963ULL},
+    {mv::Family::Ring, 0, 1, 14325227751878351246ULL},
+    {mv::Family::Ring, 0, 2, 16884129021424623923ULL},
+    {mv::Family::Colony, 0, 0, 9695339305605627581ULL},
+    {mv::Family::Colony, 0, 1, 5783506830881913941ULL},
+    {mv::Family::Colony, 0, 2, 10816223022826253047ULL},
+    {mv::Family::RandomSparse, 0, 0, 12069867491230950168ULL},
+    {mv::Family::RandomSparse, 0, 1, 1158820824455983734ULL},
+    {mv::Family::RandomSparse, 0, 2, 1508907155312261574ULL},
+    {mv::Family::RandomMedium, 0, 0, 16780062229212987133ULL},
+    {mv::Family::RandomMedium, 0, 1, 10462654428432605234ULL},
+    {mv::Family::RandomMedium, 0, 2, 8103523740994922718ULL},
+    {mv::Family::RandomDense, 0, 0, 2304258320982681957ULL},
+    {mv::Family::RandomDense, 0, 1, 3423277459645813768ULL},
+    {mv::Family::RandomDense, 0, 2, 3502368278778460381ULL},
+    {mv::Family::Adversarial, 0, 0, 13262839204652011255ULL},
+    {mv::Family::Adversarial, 0, 1, 13672345175824846968ULL},
+    {mv::Family::Adversarial, 0, 2, 2868776078338776092ULL},
+}};
+
+TEST(MovementScenarioPool, PoolDigestsMatchTheCommittedTable) {
+  // getenv suppression: same rationale as the instance-digest test.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+  const char* const print_digests = std::getenv("TESS_PRINT_SCENARIO_DIGESTS");
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+  if (print_digests != nullptr) {
+    for (const auto& entry : kPoolDigests) {
+      const auto pool = mv::build_pool_scenario(entry.family, entry.trial,
+                                                entry.factor_index);
+      std::printf(
+          "    {mv::Family::%s, %u, %zu, %lluULL},\n",
+          std::string(mv::family_name(entry.family)).c_str(), entry.trial,
+          entry.factor_index,
+          static_cast<unsigned long long>(mv::pool_scenario_digest(pool)));
+    }
+    GTEST_SKIP() << "printed pool digests";
+  }
+  for (const auto& entry : kPoolDigests) {
+    const auto pool =
+        mv::build_pool_scenario(entry.family, entry.trial, entry.factor_index);
+    ASSERT_NE(pool.scenario, nullptr);
+    EXPECT_EQ(mv::pool_scenario_digest(pool), entry.digest)
+        << mv::family_name(entry.family) << " trial " << entry.trial
+        << " factor " << entry.factor_index
+        << ": the pool instance changed, so earlier results for this "
+           "family describe a different fixture";
+  }
+}
+
+TEST(MovementScenarioPool, AgentsArePlacedGoalLessWithOccupancy) {
+  // Arm neutrality is structural: assignment is arm code, so the fixture
+  // must not hand any agent a goal, and the arms' supersession
+  // accounting must start from zero rather than from N fixture calls.
+  for (const auto family : kFamilies) {
+    const auto pool = mv::build_pool_scenario(family, 0, 0);
+    ASSERT_FALSE(pool.scenario->agents.empty()) << mv::family_name(family);
+    for (const auto& agent : pool.scenario->agents) {
+      EXPECT_FALSE(agent.has_goal) << mv::family_name(family);
+      EXPECT_TRUE(
+          pool.scenario->world.template field<mv::OccupancyTag>(agent.position))
+          << mv::family_name(family);
+    }
+  }
+}
+
+TEST(MovementScenarioPool, PoolIsDistinctFreeAndDeclaredSize) {
+  for (const auto family : kFamilies) {
+    for (std::size_t factor = 0; factor < mv::kPoolFactors.size(); ++factor) {
+      const auto pool = mv::build_pool_scenario(family, 0, factor);
+      const auto n = pool.scenario->agents.size();
+      // These instances have far more free tiles than 2N, so the clamp
+      // must not have fired; a clamped pool would silently test a
+      // different ratio than the declared one.
+      EXPECT_EQ(pool.pool.size(), mv::pool_target_size(n, factor))
+          << mv::family_name(family) << " factor " << factor;
+      auto sorted = pool.pool;
+      std::sort(sorted.begin(), sorted.end(),
+                [](tess::Coord3 a, tess::Coord3 b) {
+                  return std::tie(a.x, a.y, a.z) < std::tie(b.x, b.y, b.z);
+                });
+      EXPECT_EQ(std::adjacent_find(sorted.begin(), sorted.end()), sorted.end())
+          << mv::family_name(family) << " factor " << factor
+          << ": pool tiles must be distinct";
+      const auto extent = pool.scenario->options.extent;
+      for (const auto goal : pool.pool) {
+        ASSERT_GE(goal.x, 0);
+        ASSERT_GE(goal.y, 0);
+        ASSERT_LT(goal.x, extent);
+        ASSERT_LT(goal.y, extent);
+        EXPECT_TRUE(mv::grid_at(pool.scenario->terrain, extent,
+                                static_cast<int>(goal.x),
+                                static_cast<int>(goal.y)))
+            << mv::family_name(family) << ": pool tile is not free terrain";
+      }
+    }
+  }
+}
+
+TEST(MovementScenarioPool, EqualSizePoolIsThePairedInstanceGoalSequence) {
+  // The pool draw consumes the same shuffled goal stream build_scenario
+  // consumes, so at M = N the pool is exactly the goals the paired C0
+  // instance assigns, in the same order. This is the property that makes
+  // pool results interpretable against C0 baselines: the pool
+  // generalizes the instance rather than replacing it.
+  for (const auto family : kFamilies) {
+    const auto pool = mv::build_pool_scenario(family, 0, 0);
+    const auto paired = mv::build_scenario(family, 0);
+    ASSERT_EQ(pool.pool.size(), paired->agents.size())
+        << mv::family_name(family);
+    for (std::size_t i = 0; i < pool.pool.size(); ++i) {
+      EXPECT_EQ(pool.pool[i].x, paired->agents[i].goal.x)
+          << mv::family_name(family) << " index " << i;
+      EXPECT_EQ(pool.pool[i].y, paired->agents[i].goal.y)
+          << mv::family_name(family) << " index " << i;
+    }
+    // Starts must match too, or the two modes describe different
+    // populations.
+    ASSERT_EQ(pool.scenario->agents.size(), paired->agents.size());
+    for (std::size_t i = 0; i < paired->agents.size(); ++i) {
+      EXPECT_EQ(pool.scenario->agents[i].position.x,
+                paired->agents[i].position.x)
+          << mv::family_name(family) << " index " << i;
+      EXPECT_EQ(pool.scenario->agents[i].position.y,
+                paired->agents[i].position.y)
+          << mv::family_name(family) << " index " << i;
+    }
+  }
+}
+
+TEST(MovementScenarioPool, LargerPoolsExtendSmallerOnesUnchanged) {
+  // All three pool sizes are prefixes of one shuffled stream, so the
+  // N-pool is a prefix of the 1.25N-pool is a prefix of the 2N-pool, and
+  // terrain and starts are identical across sizes. Cross-pool-size
+  // comparisons therefore vary exactly one thing: how many extra goals
+  // the arms may exploit.
+  for (const auto family : kFamilies) {
+    const auto p0 = mv::build_pool_scenario(family, 0, 0);
+    const auto p1 = mv::build_pool_scenario(family, 0, 1);
+    const auto p2 = mv::build_pool_scenario(family, 0, 2);
+    ASSERT_LE(p0.pool.size(), p1.pool.size()) << mv::family_name(family);
+    ASSERT_LE(p1.pool.size(), p2.pool.size()) << mv::family_name(family);
+    for (std::size_t i = 0; i < p0.pool.size(); ++i) {
+      EXPECT_EQ(p0.pool[i].x, p1.pool[i].x) << mv::family_name(family);
+      EXPECT_EQ(p1.pool[i].x, p2.pool[i].x) << mv::family_name(family);
+      EXPECT_EQ(p0.pool[i].y, p1.pool[i].y) << mv::family_name(family);
+      EXPECT_EQ(p1.pool[i].y, p2.pool[i].y) << mv::family_name(family);
+    }
+    for (std::size_t i = p0.pool.size(); i < p1.pool.size(); ++i) {
+      EXPECT_EQ(p1.pool[i].x, p2.pool[i].x) << mv::family_name(family);
+      EXPECT_EQ(p1.pool[i].y, p2.pool[i].y) << mv::family_name(family);
+    }
+    EXPECT_EQ(p0.scenario->terrain, p1.scenario->terrain)
+        << mv::family_name(family);
+    EXPECT_EQ(p1.scenario->terrain, p2.scenario->terrain)
+        << mv::family_name(family);
+    ASSERT_EQ(p0.scenario->agents.size(), p2.scenario->agents.size());
+    for (std::size_t i = 0; i < p0.scenario->agents.size(); ++i) {
+      EXPECT_EQ(p0.scenario->agents[i].position.x,
+                p2.scenario->agents[i].position.x)
+          << mv::family_name(family);
+      EXPECT_EQ(p0.scenario->agents[i].position.y,
+                p2.scenario->agents[i].position.y)
+          << mv::family_name(family);
+    }
+  }
+}
+
+TEST(MovementScenarioPool, RepeatedConstructionIsDeterministic) {
+  for (const auto family : kFamilies) {
+    const auto first = mv::build_pool_scenario(family, 0, 1);
+    const auto second = mv::build_pool_scenario(family, 0, 1);
+    EXPECT_EQ(mv::pool_scenario_digest(first), mv::pool_scenario_digest(second))
+        << mv::family_name(family);
+  }
+}
+
+TEST(MovementScenarioPool, DeclaredFactorsMatchThePreRegistration) {
+  // M in {N, ceil(1.25N), 2N}, declared in issue #241 before any arm
+  // code. 48 agents must yield 48, 60, 96 -- the instance sizes the
+  // pre-registration quotes.
+  EXPECT_EQ(mv::pool_target_size(48, 0), 48u);
+  EXPECT_EQ(mv::pool_target_size(48, 1), 60u);
+  EXPECT_EQ(mv::pool_target_size(48, 2), 96u);
+  // Ceiling, not truncation, for counts the ratio does not divide.
+  EXPECT_EQ(mv::pool_target_size(10, 1), 13u);
 }
 
 }  // namespace
