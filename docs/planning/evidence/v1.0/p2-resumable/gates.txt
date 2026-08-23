@@ -1,0 +1,5 @@
+dense memory: deps=13 entries (312 B) + sizeof(P2Slice)=152 B; incumbent scratch nodes=4096; slices=275 capture_probes=3121 revalidation_checks=3562
+sparse: deps=2 slices=63 capture_probes=96 revalidation_checks=124
+
+ALL GATE CHECKS PASSED
+exit=0 (release build; assert build verified to abort on the D4 misuse case)
