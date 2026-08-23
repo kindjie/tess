@@ -1,0 +1,26 @@
+C3 pocket_yield/forbid    pibt      optimal=8 bound=24 ticks=21 arrived=0 wedged=2 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 pocket_yield/forbid    joint     optimal=8 bound=24 ticks=19 arrived=0 wedged=2 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 pocket_yield/forbid    seq       optimal=8 bound=24 ticks=19 arrived=0 wedged=2 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 pocket_yield/forbid    pibt-bfs  optimal=8 bound=24 ticks=21 arrived=0 wedged=2 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 head_on/permit         pibt      optimal=5 bound=15 ticks=5 arrived=2 wedged=0 sealed=0 goal_occupied=0 censored=0 -> PASS
+C3 head_on/permit         joint     optimal=5 bound=15 ticks=5 arrived=2 wedged=0 sealed=0 goal_occupied=0 censored=0 -> PASS
+C3 head_on/permit         seq       optimal=5 bound=15 ticks=18 arrived=0 wedged=2 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 head_on/permit         pibt-bfs  optimal=5 bound=15 ticks=5 arrived=2 wedged=0 sealed=0 goal_occupied=0 censored=0 -> PASS
+C3 rotation/forbid        pibt      optimal=1 bound=9 ticks=1 arrived=4 wedged=0 sealed=0 goal_occupied=0 censored=0 -> PASS
+C3 rotation/forbid        joint     optimal=1 bound=9 ticks=1 arrived=4 wedged=0 sealed=0 goal_occupied=0 censored=0 -> PASS
+C3 rotation/forbid        seq       optimal=1 bound=9 ticks=17 arrived=0 wedged=4 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 rotation/forbid        pibt-bfs  optimal=1 bound=9 ticks=1 arrived=4 wedged=0 sealed=0 goal_occupied=0 censored=0 -> PASS
+C3 rotation/permit        pibt      optimal=1 bound=9 ticks=1 arrived=4 wedged=0 sealed=0 goal_occupied=0 censored=0 -> PASS
+C3 rotation/permit        joint     optimal=1 bound=9 ticks=1 arrived=4 wedged=0 sealed=0 goal_occupied=0 censored=0 -> PASS
+C3 rotation/permit        seq       optimal=1 bound=9 ticks=17 arrived=0 wedged=4 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 rotation/permit        pibt-bfs  optimal=1 bound=9 ticks=1 arrived=4 wedged=0 sealed=0 goal_occupied=0 censored=0 -> PASS
+C3 junction_cross/forbid  pibt      optimal=9 bound=27 ticks=20 arrived=0 wedged=4 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 junction_cross/forbid  joint     optimal=9 bound=27 ticks=18 arrived=0 wedged=4 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 junction_cross/forbid  seq       optimal=9 bound=27 ticks=18 arrived=0 wedged=4 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 junction_cross/forbid  pibt-bfs  optimal=9 bound=27 ticks=20 arrived=0 wedged=4 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 queued_yields/forbid   pibt      optimal=15 bound=45 ticks=26 arrived=2 wedged=0 sealed=2 goal_occupied=0 censored=0 -> FAIL
+C3 queued_yields/forbid   joint     optimal=15 bound=45 ticks=19 arrived=0 wedged=4 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 queued_yields/forbid   seq       optimal=15 bound=45 ticks=20 arrived=0 wedged=4 sealed=0 goal_occupied=0 censored=0 -> FAIL
+C3 queued_yields/forbid   pibt-bfs  optimal=15 bound=45 ticks=26 arrived=2 wedged=0 sealed=2 goal_occupied=0 censored=0 -> FAIL
+[  PASSED  ] 8 tests.
+exit=0 (8/8 tests green with observed verdicts pinned)
