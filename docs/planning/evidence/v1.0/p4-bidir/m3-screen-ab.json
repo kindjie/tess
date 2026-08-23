@@ -1,0 +1,138 @@
+{
+  "mode": "shadow",
+  "verdict": "regression",
+  "repetitions": 10,
+  "confidence": 0.95,
+  "resamples": 2000,
+  "skipped": {},
+  "sentinels": {
+    "p4/search_maze_256": {
+      "base_median_ns": 6892365.194174756,
+      "head_median_ns": 11696534.505552609,
+      "delta_relative": 0.7001815046842834,
+      "ci_low": 0.6867688581452132,
+      "ci_high": 0.7066002918128658,
+      "verdict": "regression",
+      "confirmation": {
+        "base_median_ns": 6754975.274725272,
+        "head_median_ns": 11709242.89617487,
+        "delta_relative": 0.7165522860526075,
+        "ci_low": 0.6999987601786752,
+        "ci_high": 0.747711355981447,
+        "flagged": true
+      }
+    },
+    "p4/search_maze_64": {
+      "base_median_ns": 599559.6859570341,
+      "head_median_ns": 682629.5912265873,
+      "delta_relative": 0.1327717851889374,
+      "ci_low": 0.12122842598902217,
+      "ci_high": 0.14651471121385828,
+      "verdict": "regression",
+      "confirmation": {
+        "base_median_ns": 612258.1186118267,
+        "head_median_ns": 690028.4335530405,
+        "delta_relative": 0.12575487163349308,
+        "ci_low": 0.1150764045724304,
+        "ci_high": 0.13600344400194153,
+        "flagged": true
+      }
+    },
+    "p4/search_open_256": {
+      "base_median_ns": 7361.9452342358345,
+      "head_median_ns": 7365.738499399278,
+      "delta_relative": 0.005476118046733092,
+      "ci_low": -0.008679201270043735,
+      "ci_high": 0.013779428751140577,
+      "verdict": "immaterial-scale",
+      "confirmation": {
+        "base_median_ns": 7317.7186565308975,
+        "head_median_ns": 7252.321649657724,
+        "delta_relative": -0.006638950309049707,
+        "ci_low": -0.026130284457212216,
+        "ci_high": 0.24797213182176225,
+        "flagged": false
+      }
+    },
+    "p4/search_open_64": {
+      "base_median_ns": 1759.6151561990623,
+      "head_median_ns": 1747.5608284850423,
+      "delta_relative": -0.0032569194292348946,
+      "ci_low": -0.02303247760838678,
+      "ci_high": 0.010366865037596096,
+      "verdict": "immaterial-scale",
+      "confirmation": {
+        "base_median_ns": 1748.8614472766462,
+        "head_median_ns": 1763.995879651248,
+        "delta_relative": 0.010311636970810056,
+        "ci_low": -0.001991957519752008,
+        "ci_high": 0.020767731234919262,
+        "flagged": false
+      }
+    },
+    "p4/search_rubble_256": {
+      "base_median_ns": 898926.9768577883,
+      "head_median_ns": 3228548.125261831,
+      "delta_relative": 2.653345941519106,
+      "ci_low": 2.5452240063484552,
+      "ci_high": 2.731912557170034,
+      "verdict": "regression",
+      "confirmation": {
+        "base_median_ns": 904452.5868188662,
+        "head_median_ns": 3307152.984397676,
+        "delta_relative": 2.59257820937061,
+        "ci_low": 2.5802546593507776,
+        "ci_high": 2.7150158801245077,
+        "flagged": true
+      }
+    },
+    "p4/search_rubble_64": {
+      "base_median_ns": 164975.01585076872,
+      "head_median_ns": 139209.71382341243,
+      "delta_relative": -0.15802393554533767,
+      "ci_low": -0.18502960173207905,
+      "ci_high": -0.13713349923122986,
+      "verdict": "pass",
+      "confirmation": {
+        "base_median_ns": 167829.07594579743,
+        "head_median_ns": 138144.767929048,
+        "delta_relative": -0.17865014009562463,
+        "ci_low": -0.1861080838262409,
+        "ci_high": -0.16813559074673834,
+        "flagged": false
+      }
+    },
+    "p4/search_wall_gap_256": {
+      "base_median_ns": 10332373.294970162,
+      "head_median_ns": 37229315.78947368,
+      "delta_relative": 2.598825652649867,
+      "ci_low": 2.567042952079571,
+      "ci_high": 2.6192624322719906,
+      "verdict": "regression",
+      "confirmation": {
+        "base_median_ns": 10028979.979879273,
+        "head_median_ns": 36483868.42105261,
+        "delta_relative": 2.6072012888575027,
+        "ci_low": 2.5802458937503703,
+        "ci_high": 2.6360326339502933,
+        "flagged": true
+      }
+    },
+    "p4/search_wall_gap_64": {
+      "base_median_ns": 383486.6357594782,
+      "head_median_ns": 596505.1561318306,
+      "delta_relative": 0.5500928001875649,
+      "ci_low": 0.5187745638018861,
+      "ci_high": 0.587287261003933,
+      "verdict": "regression",
+      "confirmation": {
+        "base_median_ns": 388453.7743506496,
+        "head_median_ns": 614420.377727546,
+        "delta_relative": 0.5815193085534331,
+        "ci_low": 0.5695286466177816,
+        "ci_high": 0.5909831184920482,
+        "flagged": true
+      }
+    }
+  }
+}
