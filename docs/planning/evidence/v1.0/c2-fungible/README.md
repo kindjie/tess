@@ -18,7 +18,7 @@ two-platform timing was required.
 
 `programs.md` records the single three-arm binary; `arms.txt` is its
 captured output (Apple clang 21.0.0, `-std=c++23 -O2 -DNDEBUG`, single
-run; the program's own determinism gate replays arms B and C per seed and
+run; the program's own determinism gate replays every arm per seed and
 requires bit-identical outcomes). All randomness is the fixture's
 closed-formula seeds plus a fixed bootstrap seed; runs are deterministic.
 
@@ -47,11 +47,13 @@ candidate vs Control B, to be at least 8% in the candidate's favour
 | C/B at M = N | 1.0154 | [0.9960, 1.0457] | 124 |
 | C/B at M = 1.25N | 0.9577 | [0.9147, 0.9911] | 129 |
 | C/B at M = 2N | 0.9684 | [0.9281, 0.9929] | 129 |
-| **A/B (dispatch quality)** | **1.4739** | [1.4103, 1.5411] | 278 |
+| **A/B (dispatch quality)** | **1.4739** | [1.4103, 1.5411] | 278 of 396 |
 
 The candidate's improvement is real (the pooled CI excludes 1.0) but a
-quarter of the declared bar, and at M = N reassignment is *harmful*
-(exchange churn with no goal surplus; ring M=48 gm 1.0924). Meanwhile
+quarter of the declared bar. At M = N the candidate shows no benefit and
+trends harmful (gm 1.0154, CI [0.9960, 1.0457] -- includes 1.0), with the
+ring cell (gm 1.0924) showing the mechanism: no goal surplus means the
+policy can only exchange, and exchange churn slows settling. Meanwhile
 greedy dispatch is 47% slower than optimal dispatch on the same pools:
 the anonymous-pool advantage overwhelmingly lives in the one-shot
 assignment a caller makes at dispatch, exactly the boundary the
@@ -62,6 +64,10 @@ matching on 11.8% of ticks pooled (per-cell up to 48%), so the mechanism
 had headroom it could not convert. Colony M=48 exceeded the 20% seed
 exclusion cap (5/20), making that cell's tick metric uninterpretable; its
 residual counts favour Control B (+2), consistent with the rejection.
+Dropping that cell's surviving seeds moves the pooled statistic from
+0.9797 to 0.9789 (367 seeds) -- the verdict does not hinge on them. The
+A/B statistic is context, not the accept bar; its 118 exclusions follow
+the same severity rule, reported here rather than left to subtraction.
 Residual (non-arrived) deltas were never negative in any cell: the
 candidate never improved terminal outcomes, and the 14 excluded seeds are
 severity changes the reassignment itself introduced.
@@ -84,8 +90,8 @@ allocation (buffers preallocated per run).
 The finding is a caller recipe: with an anonymous goal pool, spend the
 effort on a good one-shot dispatch matching (optimal is cheap at these
 sizes and worth 47% over greedy); in-movement reassignment on top of it
-is not worth a mechanism, and with no goal surplus it is
-counterproductive. No library change is proposed. Reconsideration: a
+is not worth a mechanism, and with no goal surplus it showed no benefit
+and trended harmful. No library change is proposed. Reconsideration: a
 candidate operating where the caller layer cannot (inside the tier's
 decision loop, with congestion-aware rather than distance-based costs)
 would be a different experiment under the plan's rules.

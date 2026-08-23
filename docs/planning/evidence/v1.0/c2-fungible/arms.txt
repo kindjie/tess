@@ -23,7 +23,8 @@ adversarial    M=96   seeds=12 excl=0 gm(C/B)=1.0000 | contention A=0.124 B=0.00
 factor M=48: gm(C/B)=1.0154 CI [0.9960, 1.0457] over 124 seeds
 factor M=60: gm(C/B)=0.9577 CI [0.9147, 0.9911] over 129 seeds
 factor M=96: gm(C/B)=0.9684 CI [0.9281, 0.9929] over 129 seeds
-dispatch quality gm(A/B)=1.4739 CI [1.4103, 1.5411] seeds=278
+dispatch quality gm(A/B)=1.4739 CI [1.4103, 1.5411] seeds=278 of 396 (rest excluded by the severity rule)
+pooled excluding uninterpretable cells: gm=0.9789 over 367
 POOLED gm(C/B)=0.9797 CI [0.9580, 0.9986] seeds=382 excluded=14/396 control-B contention=0.1182
 pre-registered bar: gm<=0.92 AND CI excludes 1.0 -> REJECT (>=1 family cell over the 20% exclusion cap)
 ALL GATES PASSED

@@ -444,6 +444,7 @@ int main() {
       mv::Family::Adversarial,
   };
   std::vector<double> pooled_logs;
+  std::vector<double> pooled_logs_strict;  // drops uninterpretable cells
   std::vector<double> pooled_logs_ab;
   std::vector<double> per_factor_logs[3];
   std::uint64_t total_contended_b = 0, total_ticks_b = 0;
@@ -457,9 +458,12 @@ int main() {
         const auto a = run_arm(family, trial, factor, Arm::Greedy);
         const auto b = run_arm(family, trial, factor, Arm::Optimal);
         const auto c = run_arm(family, trial, factor, Arm::Candidate);
-        // Determinism: bit-identical replay per arm.
+        // Determinism: bit-identical replay per seed for EVERY arm, as
+        // pre-registered.
+        const auto a2 = run_arm(family, trial, factor, Arm::Greedy);
         const auto b2 = run_arm(family, trial, factor, Arm::Optimal);
         const auto c2 = run_arm(family, trial, factor, Arm::Candidate);
+        CHECK(a.position_digest == a2.position_digest, "replay A");
         CHECK(b.position_digest == b2.position_digest, "replay B");
         CHECK(c.position_digest == c2.position_digest, "replay C");
 
@@ -517,6 +521,7 @@ int main() {
       for (const auto v : cell.log_ratios) {
         pooled_logs.push_back(v);
         per_factor_logs[factor].push_back(v);
+        if (!uninterpretable) pooled_logs_strict.push_back(v);
       }
       for (const auto v : cell.log_ratios_ab) pooled_logs_ab.push_back(v);
     }
@@ -537,8 +542,18 @@ int main() {
     // dispatch assignment alone (greedy vs optimal), no reassignment.
     const auto gm_ab = geo_mean(pooled_logs_ab);
     const auto [lo_ab, hi_ab] = bootstrap_ci(pooled_logs_ab);
-    std::printf("dispatch quality gm(A/B)=%.4f CI [%.4f, %.4f] seeds=%zu\n",
-                gm_ab, lo_ab, hi_ab, pooled_logs_ab.size());
+    std::printf(
+        "dispatch quality gm(A/B)=%.4f CI [%.4f, %.4f] seeds=%zu of %d "
+        "(rest excluded by the severity rule)\n",
+        gm_ab, lo_ab, hi_ab, pooled_logs_ab.size(), total_seeds);
+  }
+  {
+    // Sensitivity: the pooled statistic minus every seed from a cell over
+    // the 20% exclusion cap, so the verdict cannot hinge on including an
+    // uninterpretable cell's surviving seeds.
+    const auto gm_strict = geo_mean(pooled_logs_strict);
+    std::printf("pooled excluding uninterpretable cells: gm=%.4f over %zu\n",
+                gm_strict, pooled_logs_strict.size());
   }
   const auto gm = geo_mean(pooled_logs);
   const auto [lo, hi] = bootstrap_ci(pooled_logs);
