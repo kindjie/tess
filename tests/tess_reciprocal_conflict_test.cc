@@ -188,8 +188,13 @@ constexpr std::size_t kOracleStateCap = 20'000'000;
   frontier.emplace_back(start, 0);
   std::vector<int> next(n);
   while (!frontier.empty()) {
-    const auto [state, depth] = frontier.front();
+    // Plain members rather than structured bindings: the analyzer cannot
+    // model bindings captured by the compose lambda and reports a
+    // spurious undefined dereference.
+    const auto entry = std::move(frontier.front());
     frontier.pop_front();
+    const auto& state = entry.first;
+    const auto depth = entry.second;
     if (state == goal) return depth;
     if (seen.size() > kOracleStateCap) return kOracleUnsolved;
     // Compose one agent at a time, pruning vertex conflicts and (under
