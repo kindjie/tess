@@ -23,7 +23,7 @@ requires bit-identical outcomes). All randomness is the fixture's
 closed-formula seeds plus a fixed bootstrap seed; runs are deterministic.
 
 Arms, all on identical instances over 7 families x 3 pool sizes x the
-pre-registered trial counts (396 seed-cells, 5 settles each including
+pre-registered trial counts (396 seed-cells, 6 settles each including
 replays):
 
 - **A greedy dispatch**: repeated global minimum (agent, goal) edge over
@@ -80,7 +80,7 @@ quiescence; `offered == N + reassignment calls` and `superseded ==
 reassignment calls` exactly (exchanges count two calls), so every
 reassignment surfaced as supersession; `completed` equals the arrived
 count. Assignment validity (holder/held coherence, goals only from the
-declared pool) checked every tick. Determinism: arms B and C replayed
+declared pool) checked every tick. Determinism: every arm replayed
 bit-identically per seed. Reassignment state is O(agents + goals) plus
 the per-instance BFS distance fields shared by all arms; no per-tick
 allocation (buffers preallocated per run).

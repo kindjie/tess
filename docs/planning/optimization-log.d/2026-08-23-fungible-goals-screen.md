@@ -18,7 +18,7 @@ per tick over unheld-goal moves and pairwise exchanges, improvement > 1
 tile, applied only through `set_path_agent_goal`). One shared distance
 (BFS on bare terrain) for dispatch, reassignment, and the contention
 metric. 7 families x 3 pool sizes x pre-registered trials = 396
-seed-cells; arms B and C replayed per seed with bit-identical outcomes
+seed-cells; every arm replayed per seed with bit-identical outcomes
 required.
 
 **Result: reject.** Pooled gm(C/B) = 0.9797, CI [0.9580, 0.9986] over 382
@@ -45,7 +45,7 @@ the one-shot matching made at dispatch, which is fully expressible today
 through `set_path_agent_goal` with no library change. The caller recipe:
 solve the assignment well once (optimal is cheap at 48 x 96), and do not
 bother reassigning mid-movement on distance grounds -- with no surplus it
-is counterproductive.
+showed no benefit and trended harmful.
 
 **Gates all passed**: `GoalOccupied` zero in every arm (its reclassification
 as a defect gate held), flow admission and retention identities at
