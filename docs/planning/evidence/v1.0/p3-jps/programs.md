@@ -471,3 +471,194 @@ int main() {
   run<256>(label);
 }
 ```
+
+## tess_p3_jps_bench.cc (the timed arms; recovered addendum)
+
+Omitted from the original recording: the diff in `prototype.md` was
+taken with `git diff`, which does not include untracked files, and the
+branch-only bench source was untracked. Recovered from the working
+copy and recorded here; the committed binary SHA-256 hashes in
+`README.md` are the ground truth this text reproduces.
+
+```cpp
+// P3 screen benchmark, branch-only, never merged. One source builds both
+// arms: the base binary compiles without TESS_P3_JPS and runs the
+// incumbent search; the head binary compiles with it and opts every
+// query into the gated JPS arm. Families, sizes, seeds, and query draws
+// follow issue #249. Unlike the correctness probe (per-trial terrains,
+// one query each), each timed cell holds ONE terrain -- trial 0's -- and
+// draws 20 queries against it, so the paired timer compares identical
+// memory images; the counters program asserts equal reconstruct totals
+// between the arms on this exact workload, which pins cost consistency
+// here independently of the probe.
+#include <benchmark/benchmark.h>
+#include <tess/tess.h>
+
+#include <memory>
+#include <vector>
+
+namespace {
+
+struct PassableTag {};
+using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>>;
+
+struct Rng {
+  std::uint64_t s;
+  auto next() -> std::uint64_t {
+    s += 0x9E3779B97F4A7C15ULL;
+    std::uint64_t z = s;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+  }
+  auto below(std::uint64_t b) -> std::uint64_t {
+    return ((next() >> 32) * b) >> 32;
+  }
+};
+
+enum class FamilyKind { Open, WallGap, Maze, Rubble };
+
+std::vector<std::uint8_t> build_terrain(FamilyKind family, int n,
+                                        std::uint64_t seed) {
+  std::vector<std::uint8_t> grid(static_cast<std::size_t>(n) * n, 1);
+  const auto close = [&](int x, int y) {
+    grid[static_cast<std::size_t>(y) * n + x] = 0;
+  };
+  switch (family) {
+    case FamilyKind::Open:
+      break;
+    case FamilyKind::WallGap: {
+      const int spacing = n / 8;
+      int k = 0;
+      for (int x = spacing; x < n - 1; x += spacing, ++k) {
+        const bool gap_high = (k % 2) == 0;
+        for (int y = 0; y < n; ++y) {
+          const bool in_gap = gap_high ? (y >= n - 2) : (y <= 1);
+          if (!in_gap) close(x, y);
+        }
+      }
+      break;
+    }
+    case FamilyKind::Maze: {
+      int k = 0;
+      for (int y = 4; y < n - 1; y += 4, ++k) {
+        const bool gap_right = (k % 2) == 0;
+        for (int x = 0; x < n; ++x) {
+          const bool in_gap = gap_right ? (x >= n - 2) : (x <= 1);
+          if (!in_gap) close(x, y);
+        }
+      }
+      break;
+    }
+    case FamilyKind::Rubble: {
+      Rng rng{seed};
+      for (int y = 0; y < n; ++y)
+        for (int x = 0; x < n; ++x)
+          if (rng.below(100) < 25) close(x, y);
+      break;
+    }
+  }
+  return grid;
+}
+
+template <int N>
+struct Workload {
+  using Shape = tess::Shape<tess::Extent3{N, N, 1}, tess::Extent3{16, 16, 1}>;
+  using World = tess::AlwaysResidentWorld<Shape, Schema>;
+
+  std::unique_ptr<World> world = std::make_unique<World>();
+  std::vector<tess::PathRequest> queries;
+
+  explicit Workload(FamilyKind family) {
+    // 20 pre-registered trials; each trial contributes its query pair,
+    // reachable or not (NoPath answers are part of the eligible
+    // workload). The world holds trial 0's terrain and every query runs
+    // against it -- unlike the correctness probe there is one terrain
+    // per family x size cell, so the paired timer compares identical
+    // memory images; trial variation lives in the query draw.
+    const auto seed = 0x9E3779B97F4A7C15ULL *
+                      (static_cast<std::uint64_t>(family) * 1000003ULL + 1);
+    const auto grid = build_terrain(family, N, seed);
+    for (auto& page : world->chunks()) {
+      auto open = page.template field_span<PassableTag>();
+      for (std::size_t i = 0; i < open.size(); ++i) open[i] = false;
+    }
+    std::vector<tess::Coord3> free;
+    for (int y = 0; y < N; ++y) {
+      for (int x = 0; x < N; ++x) {
+        if (grid[static_cast<std::size_t>(y) * N + x] != 0) {
+          world->template field<PassableTag>(tess::Coord3{x, y, 0}) = true;
+          free.push_back(tess::Coord3{x, y, 0});
+        }
+      }
+    }
+    Rng rng{seed ^ 0x5A5A5A5A5A5A5A5AULL};
+    for (unsigned trial = 0; trial < 20; ++trial) {
+      const auto s = free[rng.below(free.size())];
+      const auto g = free[rng.below(free.size())];
+      queries.push_back(tess::PathRequest{s, g});
+    }
+  }
+};
+
+template <int N, FamilyKind F>
+void run_cell(benchmark::State& state) {
+  // The workload is a function-local static, so the family must be a
+  // template parameter: a runtime argument would initialize one shared
+  // instance for whichever family ran first.
+  static const Workload<N> workload(F);
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(static_cast<std::size_t>(N) * N);
+#ifdef TESS_P3_JPS
+  scratch.p3_jps_ = true;
+#endif
+  for (auto _ : state) {
+    std::uint64_t sink = 0;
+    for (const auto& req : workload.queries) {
+      const auto r = tess::astar_path<typename Workload<N>::World, PassableTag>(
+          *workload.world, req, scratch,
+          tess::MissingChunkPolicy::ReportIndeterminate);
+      sink += r.cost + static_cast<std::uint64_t>(r.status);
+    }
+    benchmark::DoNotOptimize(sink);
+  }
+}
+
+void BM_p3_open_64(benchmark::State& state) {
+  run_cell<64, FamilyKind::Open>(state);
+}
+void BM_p3_open_256(benchmark::State& state) {
+  run_cell<256, FamilyKind::Open>(state);
+}
+void BM_p3_wall_gap_64(benchmark::State& state) {
+  run_cell<64, FamilyKind::WallGap>(state);
+}
+void BM_p3_wall_gap_256(benchmark::State& state) {
+  run_cell<256, FamilyKind::WallGap>(state);
+}
+void BM_p3_maze_64(benchmark::State& state) {
+  run_cell<64, FamilyKind::Maze>(state);
+}
+void BM_p3_maze_256(benchmark::State& state) {
+  run_cell<256, FamilyKind::Maze>(state);
+}
+void BM_p3_rubble_64(benchmark::State& state) {
+  run_cell<64, FamilyKind::Rubble>(state);
+}
+void BM_p3_rubble_256(benchmark::State& state) {
+  run_cell<256, FamilyKind::Rubble>(state);
+}
+
+BENCHMARK(BM_p3_open_64)->Name("p3/search_open_64");
+BENCHMARK(BM_p3_open_256)->Name("p3/search_open_256");
+BENCHMARK(BM_p3_wall_gap_64)->Name("p3/search_wall_gap_64");
+BENCHMARK(BM_p3_wall_gap_256)->Name("p3/search_wall_gap_256");
+BENCHMARK(BM_p3_maze_64)->Name("p3/search_maze_64");
+BENCHMARK(BM_p3_maze_256)->Name("p3/search_maze_256");
+BENCHMARK(BM_p3_rubble_64)->Name("p3/search_rubble_64");
+BENCHMARK(BM_p3_rubble_256)->Name("p3/search_rubble_256");
+
+}  // namespace
+
+BENCHMARK_MAIN();
+```
