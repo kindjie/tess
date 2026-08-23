@@ -450,11 +450,15 @@ void report(const char* tier, const Fixture& fixture, int optimal,
         static_cast<std::size_t>(extent) * static_cast<std::size_t>(extent),
         0xFFFFFFFFu);
     std::deque<tess::Coord3> frontier{goal};
-    dist[static_cast<std::size_t>(goal.y) * extent + goal.x] = 0;
+    const auto cell_index = [extent](tess::Coord3 c) {
+      return static_cast<std::size_t>(c.y) * static_cast<std::size_t>(extent) +
+             static_cast<std::size_t>(c.x);
+    };
+    dist[cell_index(goal)] = 0;
     while (!frontier.empty()) {
       const auto cur = frontier.front();
       frontier.pop_front();
-      const auto d = dist[static_cast<std::size_t>(cur.y) * extent + cur.x];
+      const auto d = dist[cell_index(cur)];
       const std::array<tess::Coord3, 4> steps = {
           tess::Coord3{cur.x + 1, cur.y, 0}, tess::Coord3{cur.x - 1, cur.y, 0},
           tess::Coord3{cur.x, cur.y + 1, 0}, tess::Coord3{cur.x, cur.y - 1, 0}};
@@ -466,13 +470,13 @@ void report(const char* tier, const Fixture& fixture, int optimal,
                          static_cast<int>(step.y))) {
           continue;
         }
-        auto& cell = dist[static_cast<std::size_t>(step.y) * extent + step.x];
+        auto& cell = dist[cell_index(step)];
         if (cell != 0xFFFFFFFFu) continue;
         cell = d + 1;
         frontier.push_back(step);
       }
     }
-    return dist[static_cast<std::size_t>(from.y) * extent + from.x];
+    return dist[cell_index(from)];
   };
   const auto& agents = scenario->agents;
   const auto rank = [&](std::size_t agent, tess::Coord3 c) -> std::uint32_t {
