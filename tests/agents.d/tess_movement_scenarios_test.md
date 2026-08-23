@@ -34,3 +34,13 @@
   `PibtPriorities` state leaking between runs: it is index-paired with the
   agent span and only grows, so a reused instance carries stale `elapsed`
   into the next run and silently changes decision order.
+- The anonymous-goal-pool mode (C2) is arm-neutral by construction: agents
+  are placed goal-less, so assignment is arm code and supersession
+  accounting starts at zero. The pool consumes the same shuffled goal
+  stream as the paired mode, which two tests pin: at M = N the pool IS
+  the paired instance's goal sequence, and larger pools extend smaller
+  ones as prefixes with terrain and starts unchanged. Its digest table
+  is separate from the paired table because the pre-registration forbids
+  fixture changes after arm code exists; the placement code deliberately
+  mirrors `build_scenario` rather than sharing a helper so one refactor
+  cannot shift both tables in one edit.

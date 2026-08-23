@@ -32,6 +32,7 @@
 #include <tess/tess.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -471,6 +472,146 @@ inline void fill_world(World& world) {
     scenario->agents.push_back(agent);
   }
   return scenario;
+}
+
+// ---------------------------------------------------------------------
+// Anonymous goal pool (C2 fixture mode)
+// ---------------------------------------------------------------------
+
+// Pool mode for the fungible-goals screen: the same terrain families and
+// the same seed formula, but instead of pairing agent i with goal i the
+// fixture publishes M >= N distinct free tiles as a shared anonymous
+// pool and places every agent GOAL-LESS. Assignment is arm code by
+// construction: the fixture cannot leak a pairing to any arm, and no
+// `set_path_agent_goal` call happens here, so arm accounting starts from
+// zero (the screen's supersession identity depends on that).
+//
+// The goal draw consumes the same shuffled stream `build_scenario` uses,
+// so the M = N pool is exactly the set of goals the paired C0 instance
+// assigns -- the pool generalizes the instance rather than replacing it.
+// Placement below deliberately mirrors `build_scenario` line for line
+// instead of sharing a refactored helper: the C0 digests pin that
+// construction and the pool digests pin this one, and coupling them
+// through shared code would let a refactor shift both tables in one
+// edit. A change to either construction must change its own table.
+
+// Declared pool sizes M as a ratio of the agent count N: N, ceil(1.25N),
+// and 2N, pre-registered before any arm code existed.
+struct PoolFactor {
+  unsigned numerator = 1;
+  unsigned denominator = 1;
+};
+
+inline constexpr std::array<PoolFactor, 3> kPoolFactors = {{
+    {1U, 1U},
+    {5U, 4U},
+    {2U, 1U},
+}};
+
+[[nodiscard]] inline auto pool_target_size(std::size_t agent_count,
+                                           std::size_t factor_index)
+    -> std::size_t {
+  const auto& factor = kPoolFactors.at(factor_index);
+  return (agent_count * factor.numerator + factor.denominator - 1U) /
+         factor.denominator;
+}
+
+struct PoolScenario {
+  std::unique_ptr<Scenario> scenario{};  // agents placed, all goal-less
+  std::vector<tess::Coord3> pool{};      // M distinct free tiles
+  std::size_t factor_index = 0;
+};
+
+[[nodiscard]] inline auto build_pool_scenario(Family family, unsigned trial,
+                                              std::size_t factor_index)
+    -> PoolScenario {
+  PoolScenario out;
+  out.factor_index = factor_index;
+  out.scenario = std::make_unique<Scenario>();
+  auto& scenario = *out.scenario;
+  scenario.family = family;
+  scenario.trial = trial;
+  scenario.options = fixture_options(family);
+  const auto extent = scenario.options.extent;
+  const auto seed = scenario_seed(family, trial);
+  scenario.terrain = family_terrain(family, extent, seed);
+
+  fill_world(scenario.world);
+  for (int y = 0; y < extent; ++y) {
+    for (int x = 0; x < extent; ++x) {
+      if (grid_at(scenario.terrain, extent, x, y)) {
+        scenario.world.template field<PassableTag>(tess::Coord3{x, y, 0}) =
+            true;
+      }
+    }
+  }
+
+  std::vector<tess::Coord3> free;
+  for (int y = 0; y < extent; ++y) {
+    for (int x = 0; x < extent; ++x) {
+      if (grid_at(scenario.terrain, extent, x, y)) {
+        free.push_back(tess::Coord3{x, y, 0});
+      }
+    }
+  }
+  if (free.empty()) {
+    return out;
+  }
+  auto starts = free;
+  auto goals = free;
+  SplitMix64 start_rng(seed ^ 0xA5A5A5A5A5A5A5A5ULL);
+  SplitMix64 goal_rng(seed ^ 0x5A5A5A5A5A5A5A5AULL);
+  for (std::size_t i = starts.size(); i > 1;) {
+    --i;
+    std::swap(starts[i], starts[static_cast<std::size_t>(start_rng.below(
+                             static_cast<std::uint64_t>(i) + 1U))]);
+  }
+  for (std::size_t i = goals.size(); i > 1;) {
+    --i;
+    std::swap(goals[i], goals[static_cast<std::size_t>(goal_rng.below(
+                            static_cast<std::uint64_t>(i) + 1U))]);
+  }
+
+  const auto n = std::min(
+      static_cast<std::size_t>(scenario.options.agent_count), starts.size());
+  for (std::size_t i = 0; i < n; ++i) {
+    tess::PathAgentState agent;
+    agent.position = starts[i];
+    scenario.world.template field<OccupancyTag>(agent.position) = true;
+    scenario.agents.push_back(agent);
+  }
+  // A cramped instance cannot host the declared ratio; the pool is
+  // clamped to the free-tile count and the digest pins whichever size
+  // resulted, so a clamp cannot pass silently as the declared ratio.
+  const auto m = std::min(pool_target_size(n, factor_index), goals.size());
+  out.pool.assign(goals.begin(),
+                  goals.begin() + static_cast<std::ptrdiff_t>(m));
+  return out;
+}
+
+// Pool digest: terrain, starts, the pool itself, and the declared factor.
+// Same construction-pinning role as `scenario_digest`, one table per mode.
+[[nodiscard]] inline auto pool_scenario_digest(const PoolScenario& pool)
+    -> std::uint64_t {
+  std::uint64_t hash = 0xCBF29CE484222325ULL;
+  const auto mix = [&hash](std::uint64_t value) {
+    hash ^= value + 0x9E3779B97F4A7C15ULL + (hash << 6U) + (hash >> 2U);
+  };
+  const auto& scenario = *pool.scenario;
+  mix(static_cast<std::uint64_t>(scenario.options.extent));
+  for (const auto cell : scenario.terrain) {
+    mix(static_cast<std::uint64_t>(cell));
+  }
+  for (const auto& agent : scenario.agents) {
+    mix(static_cast<std::uint64_t>(agent.position.x));
+    mix(static_cast<std::uint64_t>(agent.position.y));
+  }
+  mix(static_cast<std::uint64_t>(pool.factor_index));
+  for (const auto& goal : pool.pool) {
+    mix(static_cast<std::uint64_t>(goal.x));
+    mix(static_cast<std::uint64_t>(goal.y));
+  }
+  return hash;
 }
 
 // ---------------------------------------------------------------------
