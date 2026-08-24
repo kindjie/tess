@@ -16,6 +16,24 @@ reach. The plan's cheap supplement (one outside read of the public
 surface and upgrade guide, no integration) remains OPEN and is
 deliberately left to an actual outside reader rather than simulated.
 
+## Status of the primary downstream (disclosed mid-evaluation)
+
+Between the plan's coverage snapshot and this evaluation, the
+downstream project deliberately retired the very harness that supplied
+its tess coverage (its decision D-0003, 2026-08-19): the 2D game-state,
+topology, agents, and tests were removed from its maintained
+implementation -- preserved through git history -- and replaced by a
+minimal storage-contract probe while the project pivots to a different
+prototype roadmap. The migration below therefore exercised that
+harness AT ITS FINAL STATE, as the largest available body of real
+downstream usage, and its result grades the upgrade guide; it was not
+merged into the downstream's live line (the migration PR was closed
+against the retirement decision, branch retained). Consequences stated
+plainly: the coverage measured in this record describes the retired
+harness, no live external consumer currently tracks the proposed
+surface beyond that probe, and the outside cold-read (F6) plus the
+repository's own examples and demos remain the living coverage.
+
 ## The upgrade leg (the largest single finding)
 
 The reference consumer predated the v0.13 terminology migration and did
