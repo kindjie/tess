@@ -161,10 +161,9 @@ template&lt;typename <a class="el" href="classtess_1_1World.html">World</a>, typ
 template&lt;typename <a class="el" href="classtess_1_1World.html">World</a>, typename Class&gt; </td></tr>
 <tr class="memitem:aceea6bce04b04c8e3f94bbbb8b32e9a3 template"><td class="memItemLeft">auto&#160;</td><td class="memItemRight"><b>weighted_astar_path</b> (const <a class="el" href="classtess_1_1World.html">World</a> &amp;world, <a class="el" href="structtess_1_1PathRequest.html">PathRequest</a> request, <a class="el" href="classtess_1_1PathScratch.html">PathScratch</a> &amp;scratch, <a class="el" href="structtess_1_1PathTieBreak.html">PathTieBreak</a> tie_break, MissingChunkPolicy policy=MissingChunkPolicy::ReportIndeterminate) -&gt; <a class="el" href="structtess_1_1PathResult.html">PathResult</a></td></tr>
 <tr class="memdesc:aceea6bce04b04c8e3f94bbbb8b32e9a3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Finds an optimal weighted path with seeded equal-cost tie-breaking. <br /></td></tr>
-<tr class="memitem:aa95ff184a9767db00624e49b36b8d090" id="r_aa95ff184a9767db00624e49b36b8d090"><td class="memTemplParams" colspan="2"><a id="aa95ff184a9767db00624e49b36b8d090" name="aa95ff184a9767db00624e49b36b8d090"></a>
-template&lt;typename <a class="el" href="classtess_1_1World.html">World</a>, typename Tag&gt; </td></tr>
-<tr class="memitem:aa95ff184a9767db00624e49b36b8d090 template"><td class="memItemLeft">auto&#160;</td><td class="memItemRight"><b>cached_astar_path</b> (const <a class="el" href="classtess_1_1World.html">World</a> &amp;world, <a class="el" href="structtess_1_1PathRequest.html">PathRequest</a> request, <a class="el" href="classtess_1_1PathScratch.html">PathScratch</a> &amp;scratch, <a class="el" href="classtess_1_1UnitRouteCache.html">UnitRouteCache</a> &amp;cache, MissingChunkPolicy policy=MissingChunkPolicy::ReportIndeterminate) -&gt; <a class="el" href="structtess_1_1PathResult.html">PathResult</a></td></tr>
-<tr class="memdesc:aa95ff184a9767db00624e49b36b8d090"><td class="mdescLeft">&#160;</td><td class="mdescRight">Finds a cached empty-provider route or computes and stores one. <br /></td></tr>
+<tr class="memitem:aa95ff184a9767db00624e49b36b8d090" id="r_aa95ff184a9767db00624e49b36b8d090"><td class="memTemplParams" colspan="2">template&lt;typename <a class="el" href="classtess_1_1World.html">World</a>, typename Tag&gt; </td></tr>
+<tr class="memitem:aa95ff184a9767db00624e49b36b8d090 template"><td class="memItemLeft">auto&#160;</td><td class="memItemRight"><a class="el" href="#aa95ff184a9767db00624e49b36b8d090">cached_astar_path</a> (const <a class="el" href="classtess_1_1World.html">World</a> &amp;world, <a class="el" href="structtess_1_1PathRequest.html">PathRequest</a> request, <a class="el" href="classtess_1_1PathScratch.html">PathScratch</a> &amp;scratch, <a class="el" href="classtess_1_1UnitRouteCache.html">UnitRouteCache</a> &amp;cache, MissingChunkPolicy policy=MissingChunkPolicy::ReportIndeterminate) -&gt; <a class="el" href="structtess_1_1PathResult.html">PathResult</a></td></tr>
+<tr class="memdesc:aa95ff184a9767db00624e49b36b8d090"><td class="mdescLeft">&#160;</td><td class="mdescRight">Finds a cached empty-provider route or computes and stores one.  <br /></td></tr>
 <tr class="memitem:a4611f0d900f6f0efc6aa3e04209f0a98" id="r_a4611f0d900f6f0efc6aa3e04209f0a98"><td class="memTemplParams" colspan="2"><a id="a4611f0d900f6f0efc6aa3e04209f0a98" name="a4611f0d900f6f0efc6aa3e04209f0a98"></a>
 template&lt;typename <a class="el" href="classtess_1_1World.html">World</a>, typename Tag, typename Provider&gt; </td></tr>
 <tr class="memitem:a4611f0d900f6f0efc6aa3e04209f0a98 template"><td class="memItemLeft">auto&#160;</td><td class="memItemRight"><b>cached_astar_path</b> (const <a class="el" href="classtess_1_1World.html">World</a> &amp;world, <a class="el" href="structtess_1_1PathRequest.html">PathRequest</a> request, <a class="el" href="classtess_1_1PathScratch.html">PathScratch</a> &amp;scratch, <a class="el" href="classtess_1_1UnitRouteCache.html">UnitRouteCache</a> &amp;cache, const Provider &amp;provider, MissingChunkPolicy policy=MissingChunkPolicy::ReportIndeterminate) -&gt; <a class="el" href="structtess_1_1PathResult.html">PathResult</a></td></tr>
@@ -214,6 +213,60 @@ template&lt;typename <a class="el" href="classtess_1_1World.html">World</a>, typ
 </div><div class="memdoc">
 <p>Finds a minimum-step path using a truthy passability field.</p>
 <p>The returned path borrows <span class="tt">scratch</span> until its next mutation. Invalid endpoints and exhausted searches are distinguished in <span class="tt">PathStatus</span>. </p>
+
+</div>
+</div>
+<a id="aa95ff184a9767db00624e49b36b8d090" name="aa95ff184a9767db00624e49b36b8d090"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa95ff184a9767db00624e49b36b8d090">&#9670;&#160;</a></span>cached_astar_path</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename <a class="el" href="classtess_1_1World.html">World</a>, typename Tag&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">auto cached_astar_path </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="classtess_1_1World.html">World</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>world</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structtess_1_1PathRequest.html">PathRequest</a></td>          <td class="paramname"><span class="paramname"><em>request</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="classtess_1_1PathScratch.html">PathScratch</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>scratch</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="classtess_1_1UnitRouteCache.html">UnitRouteCache</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>cache</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">MissingChunkPolicy</td>          <td class="paramname"><span class="paramname"><em>policy</em></span><span class="paramdefsep"> = </span><span class="paramdefval">MissingChunkPolicy::ReportIndeterminate</span>&#160;) -&gt; <a class="el" href="structtess_1_1PathResult.html">PathResult</a></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel friend">friend</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Finds a cached empty-provider route or computes and stores one. </p>
+<p>Contract: cached_astar_path never refreshes <span class="tt">cache</span> against the world by itself (the refresh scans world versions: O(chunk_count) on dense worlds, O(resident_count) on sparse ones &ndash; paid once per edit batch rather than per lookup). Direct adopters must therefore run cache.refresh_if_world_changed(world) at two points:</p>
+<ol type="1">
+<li>Once immediately after binding the cache to a world, BEFORE the first lookup. The first refresh only captures the baseline fingerprint in exact mode &ndash; with no baseline it cannot detect a change &ndash; so entries stored before that baseline survive an edit made before the first refresh, and a later hit can serve the pre-edit route.</li>
+<li>After every world edit batch &ndash; including correctly version-marked edits (field write plus mark_content_changed) &ndash; before the next lookup. Otherwise a hit may return the pre-edit route (for example, straight through a tile the edit just closed).</li>
+</ol>
+<p><a class="el" href="classtess_1_1PathRequestRuntime.html">PathRequestRuntime</a> performs the refresh once per batch in prepare_process under the DEFAULT cache policy; a runtime caller that sets PathRuntimeCachePolicy::invalidate_unit_route_cache_on_world_change to false opts out of that and carries this obligation directly. The definition in <a class="el" href="route__cache_8h_source.html">route_cache.h</a> carries the full staleness contract, including the exact-mode alternatives. </p>
 
 </div>
 </div>
