@@ -18,7 +18,9 @@ recorded for reuse: consistent vertices popped through the
 underconsistent branch toggle g between infinity and rhs forever --
 duplicates must be discarded on pop.
 
-**Stage 2 rejected it 23 cells to 1 on M3.** Sole pass: wall-gap,
+**Stage 2 rejected it 23 cells to 1 on M3** (timing arms unverified by
+construction; correctness coverage is stage 1's, which ran the
+identical trace construction with every answer checked). Sole pass: wall-gap,
 uniform edits, E=1, 256x256 (-20.0%). Everything else confirmed
 material regressions from +30.9% to +2,846%, worst where edits are
 frequent or route-local. Per the pre-registered platform-existential

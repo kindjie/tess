@@ -27,7 +27,11 @@ to infinity and back forever -- consistent pops must be discarded.
 
 ## Stage 2 (wall time, M3: `m3-calibration-aa.json`, `m3-screen-ab.json`)
 
-A/A clean. The A/B is one-sided: the sole pass is wall_gap uniform E=1
+The stage-2 arms are UNVERIFIED BY CONSTRUCTION -- a timing harness
+strips the oracle -- so correctness coverage for the timed workload
+comes from stage 1 running the identical trace construction (same
+generators, same seeds, same cycle structure), where every answer was
+checked. A/A clean. The A/B is one-sided: the sole pass is wall_gap uniform E=1
 at 256x256 (-20.0%, CI [-21.5%, -18.7%]); every other cell is a
 confirmed material regression, from +30.9% to +2,846%, with the worst
 cells exactly where edits are frequent or route-local. Per the
