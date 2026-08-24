@@ -1062,6 +1062,18 @@ tess_apply_project_options(tess_reciprocal_conflict_test)
 tess_discover_tests(tess_reciprocal_conflict_test LABELS core path sim storage topology)
 
 add_executable(
+  tess_escalation_test
+  tess_escalation_test.cc
+)
+target_link_libraries(
+  tess_escalation_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_escalation_test)
+
+tess_discover_tests(tess_escalation_test LABELS core path sim storage topology)
+
+add_executable(
   tess_path_runtime_test
   allocation_counter.cc
   tess_path_runtime_test.cc
