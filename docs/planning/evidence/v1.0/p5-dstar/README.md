@@ -1,62 +1,85 @@
 # P5 D* Lite screen: retained evidence
 
-Pre-registration: issue #255, applied without amendment. Source under
-measurement: main `b87900a5` with NO library change in either arm -- the
-candidate is a program-local goal-keyed D* Lite (recorded in
-`programs.md`), the incumbent is `tess::astar_path` through its public
-entry point, and the stage-2 bench arms differ only by `-DTESS_P5_DSTAR`
-selecting which one answers each cycle (base binary SHA-256 `bcd9f40e…9c73e8da`, head `cb98b625…3efe5ed5`; both binaries build from one worktree).
+Pre-registration: issue #255, with amendment 1 (review-driven
+conformance corrections, posted before the corrected run; see the
+issue). Source under measurement: main `b87900a5` with NO library
+change in either arm -- the candidate is a program-local goal-keyed
+D* Lite (recorded in `programs.md`), the incumbent is
+`tess::astar_path` through its public entry point.
 
-**Verdict: stage 1 passed -- the only P-stream candidate to clear its
-feasibility bar -- and stage 2 rejected it with 23 of 24 cells as
-confirmed material regressions on M3.** The inversion is the finding.
+**Verdict: rejected at stage 1 under the registration's own bar,
+applied with the accounting the registration actually declared.** The
+originally captured stage-1 "pass" (pooled ratio 1.913,
+`stage1-v1-asymmetric.txt`) was a counter artifact: the program
+counted every incumbent neighbor candidate while counting a D* Lite
+`update_vertex` as one unit, omitting its per-neighbor rhs-scan
+examinations. Review caught the asymmetry. With symmetric per-neighbor
+accounting -- and the registration's other under-implemented terms
+fixed (route-local offsets drawn from the true Manhattan-2 table, the
+edit/start trace pregenerated from the INCUMBENT's routes so both arms
+replay one identical workload, warm-allocation and memory gates
+actually enforced, the whole sweep replayed twice) -- the pooled
+median incumbent/candidate work ratio is **1.012** against the >= 1.5
+bar (`stage1.txt`). Repair machinery that saves no abstract work
+cannot win wall time against this incumbent; the registration's stop
+condition rejects without a hardware campaign.
 
-## Stage 1 (work ratio, `stage1.txt`)
+## The corrected stage-1 gates (all pass)
 
-Pooled median incumbent/candidate primitive-operation ratio **1.913**
-against the pre-registered >= 1.5 bar, across the full pinned churn
-trace (wall-gap + rubble x 64/256 x locality x edit rate x 10 trials x
-64 cycles). Per-cell medians ranged from 0.62 (rubble uniform E=16 at
-64x64) to 15.4 (wall-gap uniform E=1 at 256x256). Every correctness
-gate passed on EVERY cycle of every trial: cost equality with the BFS
-oracle AND the fresh incumbent, oracle-checked route validity,
-Found/NoPath agreement, deterministic replay. One implementation defect
-was caught on the way and is recorded for reuse: popping an
-already-consistent vertex through the underconsistent branch toggles g
-to infinity and back forever -- consistent pops must be discarded.
+- Invalidation: cost equality with the independent BFS oracle AND the
+  fresh incumbent after every edit batch, 15,360 answers, zero
+  mismatches -- a stale or omitted repair in either arm would surface
+  here.
+- Warm-path allocation (registered "no warm-path allocation after the
+  first cycle"): zero in both arms once the prototype used
+  array-based neighbor iteration and a reserved heap (the v1
+  prototype's per-call `std::vector` neighbors would have failed this
+  gate; conformance required fixing it, which also REDUCED the
+  candidate's true cost -- the symmetric ratio is not an artifact of a
+  hobbled candidate).
+- Memory (registered "figures go in the record"): peak D* Lite
+  resident state 13,107,200 bytes at 256x256 (g + rhs + heap),
+  recorded per the registration.
+- Determinism: the full sweep replayed twice, outcome digests
+  identical (`1050b34bcdbc7bca`).
+- Route-local sampling: 13-offset Manhattan-2 table, zero uniform
+  fallbacks after bounded redraws.
 
-## Stage 2 (wall time, M3: `m3-calibration-aa.json`, `m3-screen-ab.json`)
+Per-cell symmetric medians range 0.294 (rubble uniform E=16 at 64x64)
+to 5.212 (wall-gap uniform E=1 at 256x256): the candidate only
+approaches its promised advantage on the sparse-edit wall-gap cells
+and pays everywhere edits are frequent or the map is rubble-like.
 
-The stage-2 arms are UNVERIFIED BY CONSTRUCTION -- a timing harness
-strips the oracle -- so correctness coverage for the timed workload
-comes from stage 1 running the identical trace construction (same
-generators, same seeds, same cycle structure), where every answer was
-checked. A/A clean. The A/B is one-sided: the sole pass is wall_gap uniform E=1
-at 256x256 (-20.0%, CI [-21.5%, -18.7%]); every other cell is a
-confirmed material regression, from +30.9% to +2,846%, with the worst
-cells exactly where edits are frequent or route-local. Per the
-pre-registered platform-existential rule, the Steam Deck leg was not
-run: acceptance requires no material regression on either platform, and
-M3 supplies twenty-three.
+## The prior stage-2 wall-time capture (context, superseded as gate)
 
-## Why a 1.9x op advantage became a 10x-28x time loss
+`m3-calibration-aa.json` / `m3-screen-ab.json` are retained: 23 of 24
+cells were confirmed material regressions on M3 (+30.9% to +2,846%),
+the sole pass being wall-gap uniform E=1 at 256x256 (-20.0%). Two
+caveats now attach: the 12 route-local cells did not time an identical
+workload in both arms (the edit stream followed each arm's own routes
+-- the defect amendment 1 fixes), and the trace's route-local sampling
+overshot the declared Manhattan bound. The 12 uniform-locality cells
+carry neither caveat and alone contain 11 confirmed material
+regressions, so the wall-time picture corroborates the corrected
+stage-1 rejection; it is no longer needed to carry it.
 
-The stage-1 ratio counts primitive operations as equals, but the
-incumbent's operations are a two-bucket dial frontier over packed
-arrays behind a fast-path preamble, while the candidate's are
-pair-keyed lazy-deletion heap pushes, per-vertex rhs re-scans over
-neighbor g-values, and per-edit repair cascades that run whether or not
-any query needs the repaired region. The pre-registered stage-1 bar of
-1.5x was calibrated as if operations cost the same; against THIS
-incumbent the bar would need to be roughly an order of magnitude to
-predict wall-time survival. That calibration lesson is the reusable
-output: for any future incremental-search candidate, stage-1 feasibility
-should demand a work ratio comparable to the measured per-op cost gap
-(>= 10x), or measure per-op cost directly before promising timing.
+## What the correction rescinds and keeps
+
+- RESCINDED: "the only P-stream candidate to clear its feasibility
+  bar" and the inversion narrative built on it.
+- KEPT (restated): the calibration lesson. The asymmetric 1.913 was
+  measuring REAL asymmetry -- the incumbent's per-operation cost is
+  far below the candidate's -- but op-count ratios only predict wall
+  time when both sides count comparable primitives. The durable form:
+  compare per-op-cost-weighted work, or measure per-op cost directly,
+  before promising timing; and count both arms with the same ruler.
+- KEPT: the consistent-pop discard defect (popping an
+  already-consistent vertex through the underconsistent branch toggles
+  g to infinity and back forever), recorded for any successor.
 
 ## Dispositions this record feeds
 
-- P6 (priority-queue retry): P5 merges no new open-set structure, so
-  P6's opening condition remains unmet from this stream (X3 records it).
-- P2 reconsideration: not reopened -- this screen rejected D* Lite's
-  continuation shape on cost, not semantics.
+- P6 (priority-queue retry): unchanged -- P5 merges no new open-set
+  structure, so P6's opening condition remains unmet from this stream.
+- P2 reconsideration: unchanged -- rejected on cost, not semantics,
+  now at the feasibility stage.

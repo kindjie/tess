@@ -1,42 +1,39 @@
-## 2026-08-24 - D* Lite: passes the work-ratio bar, rejected 23-to-1 on wall time
+## 2026-08-24 - D* Lite screen rejected at feasibility once both arms were counted with the same ruler
 
-**Hypothesis** (pre-registered in issue #255, applied without
-amendment): for a caller repeatedly querying one goal under
-version-marked churn, D* Lite's incremental repair beats fresh
-canonical search -- gated in two stages, work ratio first (>= 1.5x
-median across the pinned trace) and wall time on hardware second.
+**Question** (pre-registered in issue #255; amendment 1 recorded
+review-driven conformance corrections before the corrected run): does a
+goal-keyed D* Lite that repairs search state across version-marked
+edits do materially less work per edit-query cycle than fresh
+`tess::astar_path`, and does the advantage survive into wall time?
 
-**Stage 1 passed -- the only P-stream candidate to clear its
-feasibility bar.** Pooled median incumbent/candidate primitive-op ratio
-1.913 across wall-gap and rubble at 64/256 with swept edit locality and
-frequency; per-cell medians 0.62 to 15.4. Every correctness gate held
-on every cycle: cost equality with the BFS oracle and the fresh
-incumbent, oracle-checked route validity, NoPath agreement,
-deterministic replay. No library change existed in either arm; the
-candidate is recorded program source. One D* Lite implementation trap
-recorded for reuse: consistent vertices popped through the
-underconsistent branch toggle g between infinity and rhs forever --
-duplicates must be discarded on pop.
+**Answer: no, at stage 1.** The first capture reported a stage-1 pass
+(pooled work ratio 1.913 against the >= 1.5 bar) and a wall-time
+rejection -- an "inversion." Review found the pass was a counter
+artifact: every incumbent neighbor candidate was counted while a D*
+Lite `update_vertex` counted as one unit, hiding its per-neighbor rhs
+re-scans. With symmetric accounting -- plus the registration's other
+under-implemented terms fixed (true Manhattan-2 route-local offsets,
+an incumbent-derived pregenerated edit trace so both arms replay one
+identical workload, warm-allocation and memory gates enforced, the
+sweep replayed twice with identical digests) -- the pooled median
+ratio is **1.012**: the repair machinery does essentially the same
+abstract work as searching fresh, and the registration's stop
+condition rejects without a hardware campaign. The retained M3
+wall-time capture corroborates as context: its 12 uniform-locality
+cells (which the trace defects do not touch) hold 11 confirmed
+material regressions, up to +1,846% relative.
 
-**Stage 2 rejected it 23 cells to 1 on M3** (timing arms unverified by
-construction; correctness coverage is stage 1's, which ran the
-identical trace construction with every answer checked). Sole pass: wall-gap,
-uniform edits, E=1, 256x256 (-20.0%). Everything else confirmed
-material regressions from +30.9% to +2,846%, worst where edits are
-frequent or route-local. Per the pre-registered platform-existential
-rule the Deck leg was unnecessary. The inversion mechanism: stage 1
-counts a dial-frontier bump over packed arrays as equal to a
-pair-keyed lazy-heap push plus rhs re-scans plus per-edit repair
-cascades that run whether or not any query needs them. Against this
-incumbent the 1.5x bar was an order of magnitude too generous.
+**The durable lessons.** (1) Count both arms with the same ruler:
+asymmetric counters manufactured a feasibility pass that two further
+stages of measurement then had to un-earn. (2) The prior capture's
+lesson survives in corrected form: op-count ratios predict wall time
+only over comparable primitives; weight by per-op cost or measure it
+directly before promising timing. (3) The consistent-pop discard
+defect (a consistent vertex popped through the underconsistent branch
+toggles g to infinity and back forever) is recorded for any successor.
 
-**The reusable output is the calibration rule**: a stage-1 work-ratio
-bar must be set against the measured per-op cost gap versus the
-incumbent (here ~10x), not against parity. Recorded for any future
-incremental-search candidate alongside the reconsideration boundaries:
-P6's opening condition remains unmet (no new open-set structure
-merges), and P2 is not reopened (cost, not semantics, decided this).
+**Consequences.** No library change existed in either arm; the record
+is the disposition. P6's opening condition stays unmet (no new
+open-set structure merges); P2 stays closed (cost, not semantics).
 
-Evidence: `docs/planning/evidence/v1.0/p5-dstar/` (stage-1 capture,
-A/A and A/B JSONs, programs as source including the branch-only bench
-diff, binary hashes).
+Evidence: `docs/planning/evidence/v1.0/p5-dstar/`.
