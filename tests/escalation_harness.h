@@ -401,7 +401,8 @@ struct LocalPlan {
       static_cast<std::size_t>(extent) * static_cast<std::size_t>(extent), 0);
   for (int y = 0; y < extent; ++y) {
     for (int x = 0; x < extent; ++x) {
-      open[static_cast<std::size_t>(y) * extent + x] =
+      open[static_cast<std::size_t>(y) * static_cast<std::size_t>(extent) +
+           static_cast<std::size_t>(x)] =
           grid_at(scenario.terrain, extent, x, y) ? 1 : 0;
     }
   }
