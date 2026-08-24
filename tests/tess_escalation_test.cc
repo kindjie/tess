@@ -203,20 +203,6 @@ struct SubstrateDelta {
 // is evidence, reproducible from the recorded program.
 void check_substrate_family(mv::Family family,
                             std::span<const SubstrateDelta> pinned) {
-  const auto severity = [](mv::Category category) {
-    switch (category) {
-      case mv::Category::Arrived:
-        return 0;
-      case mv::Category::Wedged:
-      case mv::Category::GoalOccupied:
-        return 1;
-      case mv::Category::Sealed:
-        return 2;
-      case mv::Category::Censored:
-        return 3;
-    }
-    return 3;
-  };
   const auto in_subset = [&](unsigned trial) {
     if (trial <= 1) return true;
     for (const auto& d : pinned) {
@@ -280,9 +266,6 @@ void check_substrate_family(mv::Family family,
       EXPECT_EQ(observed.sealed, entry->sealed)
           << mv::family_name(family) << " trial " << trial;
     }
-    // The severity map documents the ordering the pins encode; keep it
-    // referenced so the comparison intent is checkable.
-    (void)severity;
   }
 }
 

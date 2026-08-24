@@ -53,6 +53,13 @@ int main() {
 
 ## c4_seed_debug.cc (single-seed diagnostic used during the defect hunt)
 
+NOTE: this diagnostic's quoted outputs in `README.md` (the 18-fire /
+16-abort collapse; the fired=3 one-seal case) were taken against
+PRE-FIX revisions of the harness while the defects they diagnose still
+existed. Compiling this source against the merged harness reproduces
+the FIXED behavior, not those historical numbers -- deliberately: the
+narrative is the history, the sweep output is the current truth.
+
 ```cpp
 #include <cstdio>
 #include "escalation_harness.h"
