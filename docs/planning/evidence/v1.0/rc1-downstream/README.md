@@ -82,10 +82,20 @@ distance-field products at all.
 
 The targeted consumer (`programs.md`, `targeted.txt`) closes exactly
 that measured gap as an adopter against public headers: the unit route
-cache under version-marked edits; maintenance marks, budgets, and
-flush points with derived products; a persistence schema round trip;
-and sparse residency search-policy verdicts (`ReportIndeterminate`
-default vs explicit `AssumeImpassable`). All contracts held.
+cache under version-marked edits (baseline refresh included, plus the
+F7 trap demonstration below); maintenance marks and flush points with
+derived products, asserting the view's freshness classification
+(`Current`) and version advance -- with the measured caveat that the
+default no-pool configuration executes offers inline, so queued
+bounded-drain semantics are NOT claimed here (they are pool-backed
+behavior, covered by the repository's own maintenance tests; the
+`run_some` budget entry point is exercised on the reachable settled
+state); a persistence schema round trip that also warms a
+distance-field product against the load target and asserts the load
+invalidates it; the weighted distance-field builder verified
+cost-sensitive against the unit builder; and sparse residency
+search-policy verdicts (`ReportIndeterminate` default vs explicit
+`AssumeImpassable`). All contracts held.
 
 ## Findings ledger
 
@@ -102,9 +112,24 @@ default vs explicit `AssumeImpassable`). All contracts held.
   say nothing, and `PathRequestRuntime` performs the refresh for its
   own users, which hides the sharpness from anyone reading
   runtime-based examples. Accepted fix: the declaration site now
-  carries the contract note and points at the full statement. The API
-  is unchanged (folding the refresh into every call would charge every
-  lookup for the O(chunk_count) version scan by design).
+  carries the contract note (Doxygen ///, per the style policy) and
+  points at the full statement. Review refinements folded in: the note
+  states the baseline requirement (see F7), qualifies that the runtime
+  refresh applies under the DEFAULT cache policy only
+  (`invalidate_unit_route_cache_on_world_change = false` opts out and
+  carries the obligation), and states the cost accurately per
+  residency model (O(chunk_count) dense, O(resident_count) sparse).
+  The API is unchanged (folding the refresh into every call would
+  charge every lookup for that scan by design).
+- **F7 (documented + pinned as current behavior):** a fresh exact-mode
+  cache whose FIRST `refresh_if_world_changed` happens only after an
+  edit cannot detect that edit -- the first refresh only captures the
+  baseline fingerprint -- so entries stored before the baseline
+  survive and a hit serves the pre-edit route. The targeted consumer
+  demonstrates the trap and pins the current behavior so any future
+  change to first-refresh semantics flips the test visibly; the
+  declaration-site contract now instructs the baseline refresh before
+  the first lookup.
 - **F3 (recorded, not acted on):** the build/update region-graph
   result-type asymmetry (guide gap 2 above); unifying the result types
   is an API change deliberately not taken during the compatibility

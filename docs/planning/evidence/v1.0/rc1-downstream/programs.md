@@ -15,7 +15,11 @@ c++ -std=c++23 -O2 -DNDEBUG -Iinclude -Ibuild/dev/generated/include \
 // invalidation, the unit route cache under versioned edits, weighted
 // distance-field products, and sparse residency interplay -- written as
 // an adopter against public headers and the documented flows only.
-// Self-checking; returns nonzero on any failed contract.
+// Self-checking; returns nonzero on any failed contract. Second
+// review round added: the exact-mode baseline-refresh demonstration
+// (F7), bounded maintenance drains via run_some, product freshness
+// classification asserted at the flush point, post-load derived-product
+// invalidation, and the weighted distance-field builder.
 #include <tess/maintenance/chunk_adapter.h>
 #include <tess/tess.h>
 
@@ -67,6 +71,10 @@ void route_cache_invalidation() {
   }
   tess::PathScratch scratch;
   tess::UnitRouteCache cache;
+  // Baseline refresh BEFORE the first lookup: the first exact-mode
+  // refresh only captures the fingerprint, so it must precede entry
+  // population or pre-baseline entries survive a pre-refresh edit.
+  (void)cache.refresh_if_world_changed(world);
   const tess::PathRequest req{{2, 16, 0}, {40, 16, 0}};
   const auto first = tess::cached_astar_path<World, PassableTag>(
       world, req, scratch, cache, tess::MissingChunkPolicy::ReportIndeterminate);
@@ -111,6 +119,42 @@ void route_cache_invalidation() {
   CHECK(uses_new_gap, "reroute threads the version-marked opening");
 }
 
+// RC-1 FINDING F7 (recorded as current behavior, so a future behavior
+// change flips this visibly): a fresh cache whose FIRST refresh happens
+// only after an edit cannot detect that edit -- the first exact-mode
+// refresh captures the post-edit fingerprint and keeps pre-baseline
+// entries -- so the documented sequence (baseline refresh before the
+// first lookup) is a requirement, not a nicety.
+void route_cache_baseline_trap() {
+  World world;
+  fill(world);
+  for (int y = 0; y < 32; ++y) {
+    if (y != 16) world.field<PassableTag>(tess::Coord3{20, y, 0}) = false;
+  }
+  tess::PathScratch scratch;
+  tess::UnitRouteCache cache;
+  const tess::PathRequest req{{2, 16, 0}, {40, 16, 0}};
+  // Populate WITHOUT a baseline refresh (the trap sequence).
+  const auto seeded = tess::cached_astar_path<World, PassableTag>(
+      world, req, scratch, cache, tess::MissingChunkPolicy::ReportIndeterminate);
+  CHECK(seeded.status == tess::PathStatus::Found, "trap seed");
+  world.field<PassableTag>(tess::Coord3{20, 16, 0}) = false;
+  world.mark_content_changed(
+      tess::chunk_key<Shape>(tess::chunk_coord<Shape>({20, 16, 0})));
+  const bool detected = cache.refresh_if_world_changed(world);
+  CHECK(!detected,
+        "first-ever refresh cannot detect the pre-baseline edit (F7)");
+  const auto stale = tess::cached_astar_path<World, PassableTag>(
+      world, req, scratch, cache, tess::MissingChunkPolicy::ReportIndeterminate);
+  bool through_closed = false;
+  for (const auto step : stale.path) {
+    if (step.x == 20 && step.y == 16) through_closed = true;
+  }
+  CHECK(stale.status == tess::PathStatus::Found && through_closed,
+        "pre-baseline entry serves the pre-edit route (F7, current "
+        "behavior)");
+}
+
 // --- Maintenance adapter: marks, budgets, flush points ---------------
 struct CostSummary {
   std::uint64_t total = 0;
@@ -144,10 +188,44 @@ void maintenance_flush_points() {
   CHECK(view.value != nullptr && view.value->total ==
                                        (16 * 16 - 1) + 5,
         "derived product reflects the edit after flush");
+  // The flush-point contract is freshness, not mere presence: the view
+  // must classify as Current, or a consumer cannot safely depend on it.
+  CHECK(view.state == tess::maintenance::ChunkProductState::Current,
+        "product classifies Current at the flush point");
   // A second flush with no marks is an idle no-op -- the documented
   // flush-point contract a consumer leans on before reading products.
   CHECK(adapter.flush() == tess::maintenance::DrainResult::Idle,
         "idle flush");
+
+  // Second mark through the versioned-edit flow. MEASURED behavior of
+  // this default (no worker pool) configuration, recorded rather than
+  // assumed: the offer executes inline, so by the time mark_dirty
+  // returns the owned dirty bit is already clear and the product is
+  // republished at the advanced content version -- there is no
+  // observable Stale window to assert against. Queued-drain semantics
+  // belong to pool-backed configurations and are covered by the
+  // repository's own maintenance tests, not claimed here.
+  const auto version_before = world.meta(key).content_version;
+  world.field<CostTag>(tess::Coord3{2, 2, 0}) = 7;
+  world.mark_content_changed(key);
+  CHECK(adapter.mark_dirty(key, cost_dirty,
+                           tess::Box3{{2, 2, 0}, tess::Extent3{1, 1, 1}}) ==
+            tess::maintenance::ChunkMarkResult::Accepted,
+        "second mark accepted");
+  const auto after_mark = adapter.product(key);
+  CHECK(after_mark.state == tess::maintenance::ChunkProductState::Current &&
+            after_mark.token.content_version.value >
+                version_before.value &&
+            after_mark.value != nullptr &&
+            after_mark.value->total == (16 * 16 - 2) + 5 + 7,
+        "inline-configuration mark republishes Current at the advanced "
+        "version");
+  // The budgeted-drain entry point on the reachable state: a settled
+  // adapter must report Idle under a unit budget (and Idle must be
+  // truthful -- the product above is Current, so nothing was skipped).
+  CHECK(adapter.run_some(tess::maintenance::MaintenanceBudget{1}) ==
+            tess::maintenance::DrainResult::Idle,
+        "unit-budget run_some reports Idle on the settled adapter");
 }
 
 // --- Persistence round trip with derived invalidation ----------------
@@ -159,16 +237,9 @@ void persistence_round_trip() {
   world.mark_content_changed(
       tess::chunk_key<Shape>(tess::chunk_coord<Shape>({10, 10, 0})));
 
-  // A distance-field product built BEFORE the save; after a load into a
-  // fresh world the adopter expectation is that products derived from
-  // the pre-load world are not silently trusted for the loaded one.
   tess::DistanceFieldScratch field_scratch;
   tess::GoalSet goals;
   goals.add(tess::Coord3{5, 5, 0});
-  tess::DistanceFieldProduct product;
-  const auto build = tess::build_distance_field_product<World, PassableTag>(
-      world, goals, product, field_scratch);
-  CHECK(build.status == tess::PathStatus::Found, "product builds");
 
   using Archive = tess::PersistenceSchema<
       0x7263312d6172ULL, 1,
@@ -178,13 +249,56 @@ void persistence_round_trip() {
   const auto save = tess::save_world_archive<Archive>(world, bytes);
   CHECK(save.bytes_written > 0, "archive saves");
 
+  // Derived-product invalidation across a load: warm a product against
+  // the LOAD TARGET before the load, then assert the load invalidates
+  // it -- an archive restore that left warmed products validating would
+  // let a consumer trust pre-load derivations for post-load content.
   World loaded;
+  fill(loaded);  // passable warm target; the load then overwrites it
+  tess::DistanceFieldProduct warmed;
+  const auto warm = tess::build_distance_field_product<World, PassableTag>(
+      loaded, goals, warmed, field_scratch);
+  CHECK(warm.status == tess::PathStatus::Found, "pre-load product warms");
+  CHECK(warmed.is_valid(loaded), "warmed product validates before load");
   const auto load = tess::load_world_archive<Archive>(loaded, bytes);
   CHECK(load.status == tess::WorldArchiveStatus::Ok, "archive loads");
+  CHECK(!warmed.is_valid(loaded),
+        "archive load invalidates the pre-load product");
   CHECK(loaded.field<CostTag>(tess::Coord3{3, 3, 0}) == 9,
         "scalar field survives the round trip");
   CHECK(loaded.field<PassableTag>(tess::Coord3{10, 10, 0}) == false,
         "edited passability survives");
+}
+
+// --- Weighted distance-field product ---------------------------------
+void weighted_field_product() {
+  World world;
+  fill(world);
+  // A cheap detour vs an expensive straight line: the weighted builder
+  // must price CostTag, so the weighted distance at the probe exceeds
+  // the unit-cost distance.
+  for (int x = 1; x < 12; ++x) {
+    world.field<CostTag>(tess::Coord3{x, 8, 0}) = 9;
+  }
+  tess::GoalSet goals;
+  goals.add(tess::Coord3{0, 8, 0});
+  tess::DistanceFieldScratch scratch;
+  tess::DistanceFieldProduct unit_product;
+  const auto unit = tess::build_distance_field_product<World, PassableTag>(
+      world, goals, unit_product, scratch);
+  CHECK(unit.status == tess::PathStatus::Found, "unit product builds");
+  tess::DistanceFieldProduct weighted_product;
+  const auto weighted =
+      tess::build_weighted_distance_field_product<World, Traveler>(
+          world, goals, weighted_product, scratch);
+  CHECK(weighted.status == tess::PathStatus::Found,
+        "weighted product builds");
+  const tess::Coord3 probe{12, 8, 0};
+  const auto unit_d = unit_product.distance_at<World>(probe);
+  const auto weighted_d = weighted_product.distance_at<World>(probe);
+  CHECK(unit_d == 12, "unit distance counts steps");
+  CHECK(weighted_d > unit_d,
+        "weighted distance prices the CostTag field (cost-sensitive)");
 }
 
 // --- Sparse residency and search policy ------------------------------
@@ -224,7 +338,9 @@ void sparse_residency_paths() {
 
 int main() {
   route_cache_invalidation();
+  route_cache_baseline_trap();
   maintenance_flush_points();
+  weighted_field_product();
   persistence_round_trip();
   sparse_residency_paths();
   std::printf("rc1 targeted consumer: %s (%d failures)\n",

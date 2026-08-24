@@ -622,16 +622,29 @@ class WeightedPortalRouteProduct {
 // on a template's first declaration, and a friend declaration may not
 // introduce them.
 //
-// Contract: cached_astar_path never refreshes `cache` against the world by
-// itself (a world-version scan costs O(chunk_count), paid once per edit
-// batch rather than per lookup). After any world edit -- including a
-// correctly version-marked one (field write plus mark_content_changed) --
-// the caller must run cache.refresh_if_world_changed(world) before the
-// next lookup, or a hit may return the pre-edit route (for example,
-// straight through a tile the edit just closed). PathRequestRuntime does
-// this once per batch in prepare_process; only direct adopters carry the
-// obligation. The definition in route_cache.h carries the full staleness
-// contract, including the exact-mode alternatives.
+/// Contract: cached_astar_path never refreshes `cache` against the world
+/// by itself (the refresh scans world versions: O(chunk_count) on dense
+/// worlds, O(resident_count) on sparse ones -- paid once per edit batch
+/// rather than per lookup). Direct adopters must therefore run
+/// cache.refresh_if_world_changed(world) at two points:
+///
+/// 1. Once immediately after binding the cache to a world, BEFORE the
+///    first lookup. The first refresh only captures the baseline
+///    fingerprint in exact mode -- with no baseline it cannot detect a
+///    change -- so entries stored before that baseline survive an edit
+///    made before the first refresh, and a later hit can serve the
+///    pre-edit route.
+/// 2. After every world edit batch -- including correctly version-marked
+///    edits (field write plus mark_content_changed) -- before the next
+///    lookup. Otherwise a hit may return the pre-edit route (for
+///    example, straight through a tile the edit just closed).
+///
+/// PathRequestRuntime performs the refresh once per batch in
+/// prepare_process under the DEFAULT cache policy; a runtime caller that
+/// sets PathRuntimeCachePolicy::invalidate_unit_route_cache_on_world_change
+/// to false opts out of that and carries this obligation directly. The
+/// definition in route_cache.h carries the full staleness contract,
+/// including the exact-mode alternatives.
 template <typename World, typename Tag>
 [[nodiscard]] auto cached_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
