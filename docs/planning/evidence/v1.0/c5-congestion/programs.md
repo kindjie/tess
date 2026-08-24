@@ -3,9 +3,15 @@
 Both programs compile against the repository as measured (main
 `b87900a5`); neither is a maintained tool. Rebuild lines are exact.
 
-## c5_colony_leg.cc -- the plan-mandated demo-classifier leg
+## c5_colony_leg.cc -- the demo-classifier leg (amendment-3 matrix)
 
-Compile from the repository root:
+The amendment-3 program: six scenarios (browser-guard included via the
+demo's own guard-wall fixture header) x all 64 supported populations,
+gates G1-G5 enforced inline, machine-parseable per-cell output, one
+scenario per invocation for parallel capture. The superseded
+amendment-2 two-population version is recoverable from this file's git
+history; its capture remains `colony-leg.txt`. Compile from the
+repository root:
 
 ```
 c++ -std=c++23 -O2 -DNDEBUG -Iinclude -Ibuild/dev/generated/include \
@@ -13,18 +19,31 @@ c++ -std=c++23 -O2 -DNDEBUG -Iinclude -Ibuild/dev/generated/include \
   examples/web_colony/colony_model.cc -o c5_colony_leg
 ```
 
+The Deck leg runs the identical source cross-compiled for x86-64 Linux
+(gcc 14, `-static`, same flags); tick counts and classifications are
+deterministic simulation outputs, so G6 compares the emitted `cell,`
+tables byte-for-byte.
+
 ```cpp
-// C5 demo-classifier leg (issue #256 amendment 2): the execution plan
-// requires C5's terminal-classification gate to be judged by the
-// web-colony demo's own recovery classifier -- arrived, crowd-blocked,
-// durably unreachable -- over supported populations, NOT by the C0
-// substrate. Canonical vs the one pre-registered price policy, injected
-// through the same native access the demo's own evidence runner uses.
+// C5 demo-classifier leg, amendment-3 matrix (issue #256): the
+// execution plan requires C5's terminal-classification gate to be
+// judged by the web-colony demo's own recovery classifier -- arrived,
+// crowd-blocked, durably unreachable -- over EVERY supported
+// population. Six scenarios (the native CLI's own set, browser-guard
+// included) x all 64 supported populations (16..1024 step 16) x
+// {canonical, priced, priced-replay}; the shipped spread mode is
+// context only at {256, 1024}. Gates G1-G5 from amendment 3 are
+// enforced inline; pooled tick value (the pre-declared gm/CI rule) is
+// computed by the recorded post-processing step over the per-cell CSV
+// this program emits. Usage: c5_colony_leg [scenario] to run one
+// scenario (for parallel capture), no argument for all six.
 #include <array>
 #include <cstdio>
+#include <cstring>
 #include <string_view>
 #include <vector>
 
+#include "colony_endpoint_guard_fixture.h"
 #include "colony_model_internal.h"
 
 namespace wc = tess::examples::web_colony;
@@ -42,13 +61,25 @@ int failures = 0;
     }                                                                 \
   } while (0)
 
-std::size_t queue_walls(wc::ColonyModel& model, std::string_view scenario) {
+// Returns {accepted, attempted}; amendment-3 gate G5 requires them
+// equal in every arm of every cell.
+std::pair<std::size_t, std::size_t> queue_walls(wc::ColonyModel& model,
+                                                std::string_view scenario) {
   auto accepted = std::size_t{0};
+  auto attempted = std::size_t{0};
+  if (scenario == "browser-guard") {
+    for (const auto& [x, y] : wc::kEndpointGuardReproductionWalls) {
+      ++attempted;
+      accepted += model.set_wall(x, y, true) ? 1u : 0u;
+    }
+    return {accepted, attempted};
+  }
   if (scenario == "goal-wall") {
     for (auto y = 0; y < 96; ++y) {
+      ++attempted;
       accepted += model.set_wall(wc::kWidth - 19, y, true) ? 1u : 0u;
     }
-    return accepted;
+    return {accepted, attempted};
   }
   for (auto y = 0; y < wc::kHeight; ++y) {
     const auto wall = scenario == "tip" ? y >= 32
@@ -59,10 +90,11 @@ std::size_t queue_walls(wc::ColonyModel& model, std::string_view scenario) {
                               (y >= 80 && y < 88) || (y >= 112 && y < 120))
                           : false;
     if (wall) {
+      ++attempted;
       accepted += model.set_wall(64, y, true) ? 1u : 0u;
     }
   }
-  return accepted;
+  return {accepted, attempted};
 }
 
 // The pre-registered bounded policy, applied through the demo's own
@@ -134,7 +166,10 @@ Terminal run(std::string_view scenario, int agents, bool priced,
   Terminal out;
   for (int tick = 0; tick < 5000 && !model.turnaround_ready(); ++tick) {
     if (tick == 4) {
-      (void)queue_walls(model, scenario);
+      const auto [accepted, attempted] = queue_walls(model, scenario);
+      CHECK(accepted == attempted,
+            "%.*s N=%d wall admission %zu/%zu (G5)", (int)scenario.size(),
+            scenario.data(), agents, accepted, attempted);
     }
     (void)model.tick(0.05);
     if (priced && tick % 4 == 0) {
@@ -151,52 +186,75 @@ Terminal run(std::string_view scenario, int agents, bool priced,
 
 }  // namespace
 
-int main() {
-  const std::array<std::string_view, 5> scenarios = {
-      "open", "tip", "two-gates", "four-gates", "goal-wall"};
-  const std::array<int, 2> populations = {256, 1024};
+int main(int argc, char** argv) {
+  const std::array<std::string_view, 6> all_scenarios = {
+      "open", "tip", "two-gates", "four-gates", "goal-wall",
+      "browser-guard"};
+  std::vector<std::string_view> scenarios;
+  if (argc > 1) {
+    scenarios.push_back(argv[1]);
+  } else {
+    scenarios.assign(all_scenarios.begin(), all_scenarios.end());
+  }
+  bool rejection = false;
   for (const auto scenario : scenarios) {
-    for (const auto agents : populations) {
+    for (int agents = 16; agents <= 1024; agents += 16) {
       const auto canonical = run(scenario, agents, false);
       const auto priced = run(scenario, agents, true);
       const auto priced_replay = run(scenario, agents, true);
-      // Context: the demo's own shipped congestion answer.
-      const auto spread = run(scenario, agents, false, true);
+      // G4: bit-identical priced replay.
       CHECK(priced.arrived == priced_replay.arrived &&
                 priced.crowd_blocked == priced_replay.crowd_blocked &&
                 priced.unreachable == priced_replay.unreachable &&
                 priced.ticks == priced_replay.ticks,
-            "%.*s/%d replay", (int)scenario.size(), scenario.data(), agents);
-      const bool same_classes =
-          priced.arrived == canonical.arrived &&
-          priced.crowd_blocked == canonical.crowd_blocked &&
-          priced.unreachable == canonical.unreachable;
-      const bool no_worse_failures =
-          priced.crowd_blocked + priced.unreachable <=
-          canonical.crowd_blocked + canonical.unreachable;
+            "%.*s N=%d replay (G4)", (int)scenario.size(), scenario.data(),
+            agents);
+      const bool canon_complete =
+          canonical.turnaround && canonical.arrived == agents;
+      const bool priced_complete =
+          priced.turnaround && priced.arrived == agents;
+      const char* gate = "pass";
+      if (canon_complete) {
+        // G1 retention; its violation is also G3 re-rejection.
+        if (!priced_complete || priced.crowd_blocked != 0 ||
+            priced.unreachable != 0) {
+          gate = "G1-RETENTION-FAIL(G3)";
+          rejection = true;
+        }
+      } else {
+        // G2 no-worse where canonical fails.
+        if (priced.arrived < canonical.arrived ||
+            priced.crowd_blocked > canonical.crowd_blocked ||
+            priced.unreachable > canonical.unreachable) {
+          gate = "G2-NOWORSE-FAIL";
+          rejection = true;
+        }
+      }
       std::printf(
-          "c5-colony %-10.*s N=%-4d canonical arr=%d cb=%d unr=%d t=%d "
-          "turn=%d | priced arr=%d cb=%d unr=%d t=%d turn=%d%s%s\n",
+          "cell,%.*s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s\n",
           (int)scenario.size(), scenario.data(), agents, canonical.arrived,
           canonical.crowd_blocked, canonical.unreachable, canonical.ticks,
-          canonical.turnaround ? 1 : 0, priced.arrived, priced.crowd_blocked,
-          priced.unreachable, priced.ticks, priced.turnaround ? 1 : 0,
-          same_classes ? "" : "  <-- CLASSIFICATION DIVERGES",
-          no_worse_failures ? "" : "  <-- FAILURES WORSE");
-      std::printf(
-          "c5-colony %-10.*s N=%-4d spread    arr=%d cb=%d unr=%d t=%d "
-          "turn=%d (shipped congestion answer, context)\n",
-          (int)scenario.size(), scenario.data(), agents, spread.arrived,
-          spread.crowd_blocked, spread.unreachable, spread.ticks,
-          spread.turnaround ? 1 : 0);
-      CHECK(no_worse_failures, "%.*s/%d re-rejection rule",
-            (int)scenario.size(), scenario.data(), agents);
-      (void)same_classes;
+          canonical.turnaround ? 1 : 0, priced.arrived,
+          priced.crowd_blocked, priced.unreachable, priced.ticks,
+          priced.turnaround ? 1 : 0, gate);
+      std::fflush(stdout);
+      // Context-only spread arm at the amendment-2 populations.
+      if (agents == 256 || agents == 1024) {
+        const auto spread = run(scenario, agents, false, true);
+        std::printf("spread-context,%.*s,%d,%d,%d,%d,%d,%d\n",
+                    (int)scenario.size(), scenario.data(), agents,
+                    spread.arrived, spread.crowd_blocked,
+                    spread.unreachable, spread.ticks,
+                    spread.turnaround ? 1 : 0);
+        std::fflush(stdout);
+      }
     }
   }
-  std::printf("mechanical checks: %s (%d)\n",
+  std::printf("mechanical+gate checks: %s (%d)\n",
               failures == 0 ? "clean" : "FAILED", failures);
-  return failures == 0 ? 0 : 1;
+  std::printf("classification gates G1-G3: %s\n",
+              rejection ? "REJECTION (see cells)" : "PASS");
+  return (failures == 0 && !rejection) ? 0 : 1;
 }
 ```
 

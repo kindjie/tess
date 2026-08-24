@@ -117,14 +117,20 @@ Congestion pricing needs no library mechanism: give the movement class
 a `FieldCost` term over an ordinary cost field, then periodically write
 per-tile prices from observed local demand through the versioned edit
 channel (`mark_content_changed` plus a pathing-dirty mark), and every
-planner and cache sees a legitimate edit. A bounded policy of this
+planner and cache sees a legitimate edit. One bounded policy of this
 shape -- cost `1 + min(3, live agents within Manhattan distance 1)`,
 repriced every 4 ticks -- was validated against the web_colony demo's
-recovery classifier: it retained or improved terminal classification
-on every supported population and materially cut congested settle
-times (see `docs/planning/evidence/v1.0/c5-congestion/`). Its measured
-boundary applies: pricing helps where gate or corridor throughput is
-the binding constraint, mildly hurts detour-shaped maps with
-uncontended walls, and perturbs per-seed terminal classification under
-fixpoint-style settles, so callers needing seed-stable classification
-parity should not arm it.
+recovery classifier over all six scenario geometries and all 64
+supported populations: terminal classification retained or improved on
+every cell, and settle ticks improved on five of the six geometries
+(per-scenario geometric means 0.20-0.90; the canonical tier's 41
+arrival-incomplete tip cells all complete under pricing). The measured
+boundary: on the goal-wall geometry -- detour-shaped, walls never
+contended -- pricing REGRESSES settle time (geometric mean 1.49x, up
+to +89%) while classification holds, and on the C0 fixpoint substrate
+17 of 132 marginal seeds reclassify chaotically, so callers needing
+seed-stable per-agent terminal classification under a fixpoint-style
+settle should not arm it. These are outcome-level measurements on the
+tested geometries and populations; contention mechanics were not
+instrumented. Evidence and programs:
+`docs/planning/evidence/v1.0/c5-congestion/`.

@@ -1,40 +1,37 @@
-## 2026-08-24 - Congestion pricing revalidated under the demo classifier; retained as a caller recipe
+## 2026-08-24 - Congestion pricing revalidated at full supported coverage; retained as a caller recipe
 
 **Question** (pre-registered in issue #256; amendment 2 added the
-plan-mandated demo-classifier leg after review flagged that the
-original registration mis-placed its gate on the C0 substrate): does
-one bounded dynamic price policy -- per-tile cost `1 + min(3, live
-agents within Manhattan 1)`, recomputed every 4 ticks, written through
-the versioned edit channel -- preserve terminal classification and buy
-anything, or does the colony-era rejection reconfirm?
+plan-mandated demo-classifier judge after review caught the original
+registration gating on the wrong harness; amendment 3 -- posted before
+its run -- added the full supported-population matrix, exact gates,
+and a pre-declared value rule after a second review round showed the
+two-population sample could not close the plan's "every supported
+population" gate): does one bounded dynamic price policy (per-tile
+cost `1 + min(3, live agents within Manhattan 1)`, every 4 ticks,
+versioned edits) preserve terminal classification and buy anything?
 
-**Answer: the rejection does not reconfirm under the plan's own
-gate.** On the web_colony demo's recovery classifier (5 scenarios x
-populations {256, 1024}), pricing keeps zero crowd-blocked and zero
-durably-unreachable on every cell, rescues the one canonical failure
-(tip/1024: canonical strands 519 agents at the 5000-tick cap; priced
-delivers all 1024 in 1085 ticks), and wins congested cells outright
-(tip/256 3362 -> 566; two-gates/1024 4431 -> 531), beating even the
-demo's shipped spread mode on the two heaviest cells. The boundary:
-detour-shaped maps pay modestly (goal-wall 1004 -> 1146), and the
-originally-registered substrate parity gate fails on 17 of 132 C0
-seeds in both directions -- the substrate's fixpoint classifier is
-trajectory-sensitive on marginal wedge/seal seeds and a price signal
-perturbs trajectories (C4's divergence mechanism), while the demo's
-recovery loop absorbs trajectory changes and measures delivered
-outcomes. Tick counts and classifications decided everything; no
-wall-time claim, so no hardware campaign.
+**Answer: retained.** Across six scenario geometries x all 64
+supported populations (384 cells): priced classification retained or
+improved everywhere, zero crowd-blocked and zero durably-unreachable
+in the priced arm, replay bit-identical, every scenario wall admission
+assertion-checked, and the canonical tier's own 41 arrival-incomplete
+tip cells (every population >= 384, stranded at the 5000-tick cap)
+all complete under pricing. Pre-declared value rule: pooled gm of
+priced/canonical ticks 0.4677, CI [0.4310, 0.5103] -- PASS. The
+boundary in exact numbers: goal-wall regresses at gm 1.49 (up to
++89%) with classification intact, and the originally-registered C0
+substrate screen stays failed as the sensitivity record (17 of 132
+fixpoint seeds reclassify chaotically). Outcome-level only: waits and
+gate utilization were not instrumented, so no mechanism claim is made.
 
-**Consequences.** Pricing is retained as a documented caller recipe
-with its boundary (use under gate/corridor congestion; avoid where
-fixpoint-style per-seed classification stability is required; expect
-small detour-map regressions). No library change was ever involved --
-an ordinary cost field plus versioned edits express the whole policy
--- so nothing merges beyond the record, and the demo's default spread
-mechanism is unchanged. C6's opening condition is answered precisely:
-a capacity-contention premise IS isolated (gate throughput), but it is
-served by this recipe with zero library authority, so the
-capacity-aware crossing reservation dispositions without a run in X3
-on no-UNSERVED-premise grounds.
+**Consequences.** Pricing is documented as a caller recipe with its
+boundary in the spatial-coordination architecture notes; no library
+change, demo spread default unchanged. C6 dispositions without a run:
+no MECHANISM-level capacity premise was isolated for a crossing
+reservation to represent (the earlier "served premise" phrasing
+overclaimed and is corrected). The review sequence itself is part of
+the record: two rounds each invalidated a verdict-carrying element
+(wrong judge; insufficient coverage), and both corrections were
+registered before their reruns.
 
 Evidence: `docs/planning/evidence/v1.0/c5-congestion/`.

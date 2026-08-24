@@ -1,3 +1,5 @@
+# Superseded 10-cell exploratory capture (amendment 2); the
+# amendment-3 full matrix in matrix/ is the primary evidence.
 c5-colony open       N=256  canonical arr=256 cb=0 unr=0 t=140 turn=1 | priced arr=256 cb=0 unr=0 t=110 turn=1
 c5-colony open       N=256  spread    arr=256 cb=0 unr=0 t=140 turn=1 (shipped congestion answer, context)
 c5-colony open       N=1024 canonical arr=1024 cb=0 unr=0 t=236 turn=1 | priced arr=1024 cb=0 unr=0 t=158 turn=1
