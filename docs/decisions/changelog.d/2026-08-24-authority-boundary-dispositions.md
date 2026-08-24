@@ -29,7 +29,13 @@ completion-planning escalation bounded by component, never by horizon
 -- the queued-yields fixture exists precisely because bounded-horizon
 candidates hide exactly that failure mode. The C3 pins and C4's merged
 harness are the standing gate any temporal-planning candidate must
-pass; a global fixed-horizon planner cannot, by construction.
+pass. That gate is a policy boundary, not an impossibility proof: the
+retained evidence rules out candidates that plan only over the
+immediately live conflict (the seal forms outside their window), and
+C4 tested its completion planner, not every fixed-horizon design -- a
+horizon long enough to cover the fixture (oracle-optimal settle is 15
+ticks) or a receding-horizon variant remains untested and would be
+judged by the same pins.
 
 **Movement-tier planning authority was evaluated and declined on
 evidence.** C4's two-phase structure separated mechanism from authority
