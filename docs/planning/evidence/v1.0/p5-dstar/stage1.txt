@@ -1,0 +1,22 @@
+p5 wall_gap local=1 E=1  median symmetric ratio: 64=1.713 256=1.885
+p5 wall_gap local=1 E=4  median symmetric ratio: 64=0.570 256=0.955
+p5 wall_gap local=1 E=16 median symmetric ratio: 64=0.751 256=0.614
+p5 wall_gap local=0 E=1  median symmetric ratio: 64=3.760 256=5.212
+p5 wall_gap local=0 E=4  median symmetric ratio: 64=1.708 256=3.440
+p5 wall_gap local=0 E=16 median symmetric ratio: 64=0.576 256=2.191
+p5 rubble   local=1 E=1  median symmetric ratio: 64=0.774 256=0.743
+p5 rubble   local=1 E=4  median symmetric ratio: 64=1.230 256=0.578
+p5 rubble   local=1 E=16 median symmetric ratio: 64=1.645 256=1.390
+p5 rubble   local=0 E=1  median symmetric ratio: 64=0.805 256=0.961
+p5 rubble   local=0 E=4  median symmetric ratio: 64=0.484 256=0.957
+p5 rubble   local=0 E=16 median symmetric ratio: 64=0.294 256=0.801
+
+invalidation gate (oracle equality after every edit batch): PASS over 15360 answers
+warm-path allocation gate (cycles >= 1): dstar=0 incumbent=0 (bar: 0 each)
+memory: peak D* Lite resident state 13107200 bytes (g+rhs+heap, largest cell)
+route-local uniform fallbacks after bounded redraws: 0
+
+pooled median incumbent/candidate SYMMETRIC work ratio = 1.012 (stage-1 bar: >= 1.5)
+stage 1 -> REJECT WITHOUT HARDWARE
+replay digests: run1=1050b34bcdbc7bca run2=1050b34bcdbc7bca -> IDENTICAL
+correctness+conformance gates: ALL PASSED (0)
