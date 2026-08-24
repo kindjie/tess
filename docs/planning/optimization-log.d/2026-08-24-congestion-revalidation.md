@@ -10,14 +10,17 @@ population" gate): does one bounded dynamic price policy (per-tile
 cost `1 + min(3, live agents within Manhattan 1)`, every 4 ticks,
 versioned edits) preserve terminal classification and buy anything?
 
-**Answer: retained.** Across six scenario geometries x all 64
-supported populations (384 cells): priced classification retained or
+**Answer: retained.** Across seven scenario geometries (the native
+CLI's full set, browser-incremental's progressive wall admission
+included per the amendment-3 addendum) x all 64 supported populations
+(448 cells): priced classification retained or
 improved everywhere, zero crowd-blocked and zero durably-unreachable
 in the priced arm, replay bit-identical, every scenario wall admission
 assertion-checked, and the canonical tier's own 41 arrival-incomplete
 tip cells (every population >= 384, stranded at the 5000-tick cap)
 all complete under pricing. Pre-declared value rule: pooled gm of
-priced/canonical ticks 0.4677, CI [0.4310, 0.5103] -- PASS. The
+priced/canonical ticks 0.4180, CI [0.3859, 0.4522] -- PASS, on both
+platforms with byte-identical tables. The
 boundary in exact numbers: goal-wall regresses at gm 1.49 (up to
 +89%) with classification intact, and the originally-registered C0
 substrate screen stays failed as the sensitivity record (17 of 132

@@ -5,8 +5,10 @@ Both programs compile against the repository as measured (main
 
 ## c5_colony_leg.cc -- the demo-classifier leg (amendment-3 matrix)
 
-The amendment-3 program: six scenarios (browser-guard included via the
-demo's own guard-wall fixture header) x all 64 supported populations,
+The amendment-3 program with its addendum: seven scenarios
+(browser-guard and browser-incremental included via the demo's own
+guard-wall fixture header, the latter with the native progressive
+admission schedule) x all 64 supported populations,
 gates G1-G5 enforced inline, machine-parseable per-cell output, one
 scenario per invocation for parallel capture. The superseded
 amendment-2 two-population version is recoverable from this file's git
@@ -164,18 +166,50 @@ Terminal run(std::string_view scenario, int agents, bool priced,
   model.set_spread_congested_routes(spread);
   auto& impl = wc::ColonyModelNativeAccess::impl(model);
   Terminal out;
-  for (int tick = 0; tick < 5000 && !model.turnaround_ready(); ++tick) {
-    if (tick == 4) {
+  // browser-incremental replicates the native CLI's progressive
+  // admission schedule verbatim: from tick 4, up to 4 walls per tick
+  // from the guard fixture, a refused admission retried next tick, and
+  // the run gated on full admission as well as turnaround.
+  const bool incremental = scenario == "browser-incremental";
+  std::size_t incremental_wall = 0;
+  constexpr std::size_t kIncrementalTotal =
+      std::size(wc::kEndpointGuardReproductionWalls);
+  const auto incremental_pending = [&] {
+    return incremental && incremental_wall < kIncrementalTotal;
+  };
+  for (int tick = 0;
+       tick < 5000 && (!model.turnaround_ready() || incremental_pending());
+       ++tick) {
+    if (tick == 4 && !incremental) {
       const auto [accepted, attempted] = queue_walls(model, scenario);
       CHECK(accepted == attempted,
             "%.*s N=%d wall admission %zu/%zu (G5)", (int)scenario.size(),
             scenario.data(), agents, accepted, attempted);
+    }
+    if (tick >= 4 && incremental_pending()) {
+      constexpr std::size_t kWallsPerTick = 4;
+      std::size_t accepted_this_tick = 0;
+      while (accepted_this_tick < kWallsPerTick && incremental_pending()) {
+        const auto [x, y] =
+            wc::kEndpointGuardReproductionWalls[incremental_wall];
+        if (!model.set_wall(x, y, true)) {
+          break;  // occupied: retry the same wall next tick
+        }
+        ++accepted_this_tick;
+        ++incremental_wall;
+      }
     }
     (void)model.tick(0.05);
     if (priced && tick % 4 == 0) {
       apply_pricing(impl);
     }
     out.ticks = tick + 1;
+  }
+  // G5 for the incremental scenario: every wall eventually admitted.
+  if (incremental) {
+    CHECK(incremental_wall == kIncrementalTotal,
+          "browser-incremental N=%d walls admitted %zu/%zu (G5)", agents,
+          incremental_wall, kIncrementalTotal);
   }
   out.turnaround = model.turnaround_ready();
   out.arrived = model.arrived();
@@ -187,9 +221,9 @@ Terminal run(std::string_view scenario, int agents, bool priced,
 }  // namespace
 
 int main(int argc, char** argv) {
-  const std::array<std::string_view, 6> all_scenarios = {
-      "open", "tip", "two-gates", "four-gates", "goal-wall",
-      "browser-guard"};
+  const std::array<std::string_view, 7> all_scenarios = {
+      "open",      "tip",           "two-gates", "four-gates",
+      "goal-wall", "browser-guard", "browser-incremental"};
   std::vector<std::string_view> scenarios;
   if (argc > 1) {
     scenarios.push_back(argv[1]);
@@ -206,7 +240,8 @@ int main(int argc, char** argv) {
       CHECK(priced.arrived == priced_replay.arrived &&
                 priced.crowd_blocked == priced_replay.crowd_blocked &&
                 priced.unreachable == priced_replay.unreachable &&
-                priced.ticks == priced_replay.ticks,
+                priced.ticks == priced_replay.ticks &&
+                priced.turnaround == priced_replay.turnaround,
             "%.*s N=%d replay (G4)", (int)scenario.size(), scenario.data(),
             agents);
       const bool canon_complete =

@@ -6,11 +6,11 @@ Steam Deck (gcc 14, x86-64 Linux, -static; `deck-*.txt`), compared by
 tick equality is reported separately and does not gate.
 
 ```
-G6 classification identity over 384 cells: PASS
-tick equality (reported, non-gating): identical on all 384 cells
+G6 classification identity over 448 cells: PASS
+tick equality (reported, non-gating): identical on all 448 cells
 ```
 
 Both platforms produce byte-identical `cell,` tables: every
-classification, turnaround flag, AND tick count matches on all 384
+classification, turnaround flag, AND tick count matches on all 448
 cells — the demo's simulation is fully deterministic across the two
 compilers and architectures.

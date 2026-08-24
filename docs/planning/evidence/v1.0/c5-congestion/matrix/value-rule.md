@@ -1,7 +1,8 @@
 # Amendment-3 value rule: recorded computation
 
-Inputs: the 384 `cell,` lines across `m3-*.txt` (6 scenarios x 64
-supported populations). Ratio per cell: priced ticks / canonical
+Inputs: the 448 `cell,` lines across `m3-*.txt` (7 scenarios x 64
+supported populations; browser-incremental joined per the amendment-3
+addendum). Ratio per cell: priced ticks / canonical
 ticks; canonical cap-censored cells (41, all tip, N >= 384) enter at
 the cap value 5000, conservatively understating any priced win.
 Bootstrap: 2000 resamples, seed 0xC5C5, percentile CI.
@@ -23,7 +24,7 @@ boots = sorted(
 lo, hi = boots[int(0.025 * 2000)], boots[int(0.975 * 2000) - 1]
 ```
 
-Result: pooled gm = 0.4677, CI [0.4310, 0.5103], over 384 cells.
+Result: pooled gm = 0.4180, CI [0.3859, 0.4522], over 448 cells.
 Rule (pre-declared in amendment 3): gm <= 0.95 and CI high < 1.0 ->
 **PASS**.
 
@@ -32,6 +33,7 @@ Per-scenario geometric means (same per-cell ratios):
 | scenario | gm |
 |---|---|
 | tip | 0.2028 |
+| browser-incremental | 0.2131 |
 | two-gates | 0.2203 |
 | browser-guard | 0.2320 |
 | open | 0.7491 |
@@ -41,5 +43,7 @@ Per-scenario geometric means (same per-cell ratios):
 Extremes: best cells two-gates N in {880, 960, 992} at 0.11x;
 worst cells goal-wall N in {432, 496, 512} at 1.89x (+89%).
 Canonical fails to complete 41 cells (tip, every N >= 384, stranded at
-the 5000-tick cap); the priced arm completes all 384 cells with zero
-crowd-blocked and zero durably-unreachable anywhere.
+the 5000-tick cap); the priced arm completes all 448 cells with zero
+crowd-blocked and zero durably-unreachable anywhere. The six
+amendment-3 scenarios reproduce their prior per-cell values exactly
+under the v3 program (the G4/G5 additions changed no outcome).

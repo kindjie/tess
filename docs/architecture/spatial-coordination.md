@@ -120,10 +120,12 @@ channel (`mark_content_changed` plus a pathing-dirty mark), and every
 planner and cache sees a legitimate edit. One bounded policy of this
 shape -- cost `1 + min(3, live agents within Manhattan distance 1)`,
 repriced every 4 ticks -- was validated against the web_colony demo's
-recovery classifier over all six scenario geometries and all 64
+recovery classifier over all seven scenario geometries and all 64
 supported populations: terminal classification retained or improved on
-every cell, and settle ticks improved on five of the six geometries
-(per-scenario geometric means 0.20-0.90; the canonical tier's 41
+every cell on both tested platforms, and settle ticks improved on six
+of the seven geometries
+(per-scenario geometric means 0.20-0.90, including the demo's
+progressive wall-admission flow at 0.21; the canonical tier's 41
 arrival-incomplete tip cells all complete under pricing). The measured
 boundary: on the goal-wall geometry -- detour-shaped, walls never
 contended -- pricing REGRESSES settle time (geometric mean 1.49x, up
