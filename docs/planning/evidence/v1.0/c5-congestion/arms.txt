@@ -25,6 +25,6 @@ c5 adversarial    failures canonical=35 priced=35
 c5 edit-replay (priced): ticks=102 arrived=48 wedged=0 sealed=0
 
 pooled gm(priced/canonical ticks)=0.9977 CI [0.9810, 1.0180] over 115 identical-classification seeds
-verdict: REJECT (classification regression / re-rejection rule)
-ALL GATES PASSED
-exit=0
+substrate-leg verdict: REJECT (classification regression / re-rejection rule)
+mechanical checks: clean (0)
+exit=1 (nonzero by design: the substrate parity gate failed as registered; mechanical checks clean; the demo-classifier leg carries the verdict -- see README.md)

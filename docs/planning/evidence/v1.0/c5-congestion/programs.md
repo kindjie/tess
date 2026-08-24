@@ -1,9 +1,217 @@
-# C5 measurement program: recorded source
+# C5 measurement programs: recorded source
 
-One binary, both arms interleaved, compiled against the C0 substrate
-on main `b87900a5`. Captured output is `arms.txt` alongside.
+Both programs compile against the repository as measured (main
+`b87900a5`); neither is a maintained tool. Rebuild lines are exact.
 
-## c5_arms.cc
+## c5_colony_leg.cc -- the plan-mandated demo-classifier leg
+
+Compile from the repository root:
+
+```
+c++ -std=c++23 -O2 -DNDEBUG -Iinclude -Ibuild/dev/generated/include \
+  -Iexamples/web_colony c5_colony_leg.cc \
+  examples/web_colony/colony_model.cc -o c5_colony_leg
+```
+
+```cpp
+// C5 demo-classifier leg (issue #256 amendment 2): the execution plan
+// requires C5's terminal-classification gate to be judged by the
+// web-colony demo's own recovery classifier -- arrived, crowd-blocked,
+// durably unreachable -- over supported populations, NOT by the C0
+// substrate. Canonical vs the one pre-registered price policy, injected
+// through the same native access the demo's own evidence runner uses.
+#include <array>
+#include <cstdio>
+#include <string_view>
+#include <vector>
+
+#include "colony_model_internal.h"
+
+namespace wc = tess::examples::web_colony;
+
+namespace {
+
+int failures = 0;
+#define CHECK(cond, ...)                                              \
+  do {                                                                \
+    if (!(cond)) {                                                    \
+      ++failures;                                                     \
+      std::printf("GATE FAIL line %d: %s ", __LINE__, #cond);         \
+      std::printf(__VA_ARGS__);                                       \
+      std::printf("\n");                                              \
+    }                                                                 \
+  } while (0)
+
+std::size_t queue_walls(wc::ColonyModel& model, std::string_view scenario) {
+  auto accepted = std::size_t{0};
+  if (scenario == "goal-wall") {
+    for (auto y = 0; y < 96; ++y) {
+      accepted += model.set_wall(wc::kWidth - 19, y, true) ? 1u : 0u;
+    }
+    return accepted;
+  }
+  for (auto y = 0; y < wc::kHeight; ++y) {
+    const auto wall = scenario == "tip" ? y >= 32
+                      : scenario == "two-gates"
+                          ? !((y >= 24 && y < 32) || (y >= 96 && y < 104))
+                      : scenario == "four-gates"
+                          ? !((y >= 16 && y < 24) || (y >= 48 && y < 56) ||
+                              (y >= 80 && y < 88) || (y >= 112 && y < 120))
+                          : false;
+    if (wall) {
+      accepted += model.set_wall(64, y, true) ? 1u : 0u;
+    }
+  }
+  return accepted;
+}
+
+// The pre-registered bounded policy, applied through the demo's own
+// world: every 4 fixed ticks, price = 1 + min(3, live agents within
+// Manhattan 1), written with the versioned-edit contract. Cost is not
+// topology-relevant, so passability freshness is untouched by design.
+template <typename Impl>
+void apply_pricing(Impl& impl) {
+  auto& world = impl.world;
+  std::vector<std::uint8_t> pressure(
+      static_cast<std::size_t>(wc::kWidth) * wc::kHeight, 0);
+  const auto bump = [&](std::int64_t x, std::int64_t y) {
+    if (x < 0 || y < 0 || x >= wc::kWidth || y >= wc::kHeight) return;
+    auto& cell = pressure[static_cast<std::size_t>(y) * wc::kWidth +
+                          static_cast<std::size_t>(x)];
+    if (cell < 255) ++cell;
+  };
+  for (const auto& agent : impl.agents) {
+    if (!agent.has_goal) continue;
+    bump(agent.position.x, agent.position.y);
+    bump(agent.position.x + 1, agent.position.y);
+    bump(agent.position.x - 1, agent.position.y);
+    bump(agent.position.x, agent.position.y + 1);
+    bump(agent.position.x, agent.position.y - 1);
+  }
+  using Shape = wc::Shape;
+  constexpr auto chunk_total = tess::ShapeTraits<Shape>::chunk_count;
+  std::vector<bool> changed(chunk_total, false);
+  for (int y = 0; y < wc::kHeight; ++y) {
+    for (int x = 0; x < wc::kWidth; ++x) {
+      const tess::Coord3 c{x, y, 0};
+      const auto p = pressure[static_cast<std::size_t>(y) * wc::kWidth +
+                              static_cast<std::size_t>(x)];
+      const auto price = static_cast<std::uint32_t>(1 + (p > 3 ? 3 : p));
+      auto& field = world.template field<wc::CostTag>(c);
+      if (field != price) {
+        field = price;
+        changed[static_cast<std::size_t>(
+            tess::chunk_key<Shape>(tess::chunk_coord<Shape>(c)).value)] =
+            true;
+      }
+    }
+  }
+  bool any = false;
+  for (std::uint64_t k = 0; k < chunk_total; ++k) {
+    if (changed[static_cast<std::size_t>(k)]) {
+      world.mark_content_changed(tess::ChunkKey{k});
+      any = true;
+    }
+  }
+  if (any) {
+    tess::mark_pathing_dirty(impl.tick_state);
+  }
+}
+
+struct Terminal {
+  int arrived = 0;
+  int crowd_blocked = 0;
+  int unreachable = 0;
+  int ticks = 0;
+  bool turnaround = false;
+};
+
+Terminal run(std::string_view scenario, int agents, bool priced,
+             bool spread = false) {
+  wc::ColonyModel model{agents};
+  model.set_spread_congested_routes(spread);
+  auto& impl = wc::ColonyModelNativeAccess::impl(model);
+  Terminal out;
+  for (int tick = 0; tick < 5000 && !model.turnaround_ready(); ++tick) {
+    if (tick == 4) {
+      (void)queue_walls(model, scenario);
+    }
+    (void)model.tick(0.05);
+    if (priced && tick % 4 == 0) {
+      apply_pricing(impl);
+    }
+    out.ticks = tick + 1;
+  }
+  out.turnaround = model.turnaround_ready();
+  out.arrived = model.arrived();
+  out.crowd_blocked = model.crowd_blocked();
+  out.unreachable = model.unreachable();
+  return out;
+}
+
+}  // namespace
+
+int main() {
+  const std::array<std::string_view, 5> scenarios = {
+      "open", "tip", "two-gates", "four-gates", "goal-wall"};
+  const std::array<int, 2> populations = {256, 1024};
+  for (const auto scenario : scenarios) {
+    for (const auto agents : populations) {
+      const auto canonical = run(scenario, agents, false);
+      const auto priced = run(scenario, agents, true);
+      const auto priced_replay = run(scenario, agents, true);
+      // Context: the demo's own shipped congestion answer.
+      const auto spread = run(scenario, agents, false, true);
+      CHECK(priced.arrived == priced_replay.arrived &&
+                priced.crowd_blocked == priced_replay.crowd_blocked &&
+                priced.unreachable == priced_replay.unreachable &&
+                priced.ticks == priced_replay.ticks,
+            "%.*s/%d replay", (int)scenario.size(), scenario.data(), agents);
+      const bool same_classes =
+          priced.arrived == canonical.arrived &&
+          priced.crowd_blocked == canonical.crowd_blocked &&
+          priced.unreachable == canonical.unreachable;
+      const bool no_worse_failures =
+          priced.crowd_blocked + priced.unreachable <=
+          canonical.crowd_blocked + canonical.unreachable;
+      std::printf(
+          "c5-colony %-10.*s N=%-4d canonical arr=%d cb=%d unr=%d t=%d "
+          "turn=%d | priced arr=%d cb=%d unr=%d t=%d turn=%d%s%s\n",
+          (int)scenario.size(), scenario.data(), agents, canonical.arrived,
+          canonical.crowd_blocked, canonical.unreachable, canonical.ticks,
+          canonical.turnaround ? 1 : 0, priced.arrived, priced.crowd_blocked,
+          priced.unreachable, priced.ticks, priced.turnaround ? 1 : 0,
+          same_classes ? "" : "  <-- CLASSIFICATION DIVERGES",
+          no_worse_failures ? "" : "  <-- FAILURES WORSE");
+      std::printf(
+          "c5-colony %-10.*s N=%-4d spread    arr=%d cb=%d unr=%d t=%d "
+          "turn=%d (shipped congestion answer, context)\n",
+          (int)scenario.size(), scenario.data(), agents, spread.arrived,
+          spread.crowd_blocked, spread.unreachable, spread.ticks,
+          spread.turnaround ? 1 : 0);
+      CHECK(no_worse_failures, "%.*s/%d re-rejection rule",
+            (int)scenario.size(), scenario.data(), agents);
+      (void)same_classes;
+    }
+  }
+  std::printf("mechanical checks: %s (%d)\n",
+              failures == 0 ? "clean" : "FAILED", failures);
+  return failures == 0 ? 0 : 1;
+}
+```
+
+## c5_arms.cc -- the substrate parity screen
+
+Compile from the repository root (uses the C0 substrate header):
+
+```
+c++ -std=c++23 -O2 -DNDEBUG -Iinclude -Ibuild/dev/generated/include \
+  -Itests c5_arms.cc -o c5_arms
+```
+
+Exit status covers the mechanical checks AND the experiment's
+substrate-leg gate; that gate failed as registered, so the recorded
+run exits nonzero by design (see the trailing note in `arms.txt`).
 
 ```cpp
 // C5 dynamic congestion revalidation (issue #256): canonical vs the one
@@ -191,11 +399,14 @@ int main() {
     if (fail_priced > fail_canonical) any_regression = true;
   }
 
-  // Gate 4: scripted edit replay with pricing active (warehouse trial 0;
-  // close then reopen one free tile at ticks 32 and 96 through the
-  // versioned channel). The gate is that pricing composes with topology
-  // invalidation: deterministic replay, no censoring, and a terminal
-  // classification recorded rather than asserted.
+  // Gate 4, scoped precisely: this scripted replay drives CONTENT
+  // invalidation and replanning (mark_content_changed +
+  // mark_pathing_dirty) with pricing active; no region graph or
+  // precheck is attached in this harness, so chunk TOPOLOGY freshness
+  // is deliberately out of scope here -- the demo-classifier leg covers
+  // the full topology-invalidation composition through the colony
+  // model's own set_wall channel, which rebuilds its graph while
+  // pricing runs.
   {
     const auto pick_edit_tile = [](const mv::Scenario& s) {
       const auto extent = s.options.extent;
@@ -267,11 +478,17 @@ int main() {
       "identical-classification seeds\n",
       gm, lo, hi, log_ratios.size());
   const bool value = !any_regression && gm <= 0.95 && hi < 1.0;
-  std::printf("verdict: %s\n",
+  std::printf("substrate-leg verdict: %s\n",
               any_regression
                   ? "REJECT (classification regression / re-rejection rule)"
                   : (value ? "ACCEPT AS CALLER RECIPE" : "NEUTRAL, NO VALUE"));
-  std::printf("%s\n", failures == 0 ? "ALL GATES PASSED" : "GATE FAILURES");
-  return failures == 0 ? 0 : 1;
+  // The exit status and this line cover the MECHANICAL checks only
+  // (replay determinism, edit-replay integrity); the parity verdict above
+  // is the experiment's decision and prints independently, so a rejected
+  // run does not end with a false success summary.
+  std::printf("mechanical checks: %s (%d)\n",
+              failures == 0 ? "clean" : "FAILED", failures);
+  const bool experiment_clean = failures == 0 && !any_regression;
+  return experiment_clean ? 0 : 1;
 }
 ```

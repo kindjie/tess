@@ -1,0 +1,21 @@
+c5-colony open       N=256  canonical arr=256 cb=0 unr=0 t=140 turn=1 | priced arr=256 cb=0 unr=0 t=110 turn=1
+c5-colony open       N=256  spread    arr=256 cb=0 unr=0 t=140 turn=1 (shipped congestion answer, context)
+c5-colony open       N=1024 canonical arr=1024 cb=0 unr=0 t=236 turn=1 | priced arr=1024 cb=0 unr=0 t=158 turn=1
+c5-colony open       N=1024 spread    arr=1024 cb=0 unr=0 t=236 turn=1 (shipped congestion answer, context)
+c5-colony tip        N=256  canonical arr=256 cb=0 unr=0 t=3362 turn=1 | priced arr=256 cb=0 unr=0 t=566 turn=1
+c5-colony tip        N=256  spread    arr=256 cb=0 unr=0 t=577 turn=1 (shipped congestion answer, context)
+c5-colony tip        N=1024 canonical arr=505 cb=0 unr=0 t=5000 turn=0 | priced arr=1024 cb=0 unr=0 t=1085 turn=1  <-- CLASSIFICATION DIVERGES
+c5-colony tip        N=1024 spread    arr=1024 cb=0 unr=0 t=1323 turn=1 (shipped congestion answer, context)
+c5-colony two-gates  N=256  canonical arr=256 cb=0 unr=0 t=1099 turn=1 | priced arr=256 cb=0 unr=0 t=358 turn=1
+c5-colony two-gates  N=256  spread    arr=256 cb=0 unr=0 t=213 turn=1 (shipped congestion answer, context)
+c5-colony two-gates  N=1024 canonical arr=1024 cb=0 unr=0 t=4431 turn=1 | priced arr=1024 cb=0 unr=0 t=531 turn=1
+c5-colony two-gates  N=1024 spread    arr=1024 cb=0 unr=0 t=792 turn=1 (shipped congestion answer, context)
+c5-colony four-gates N=256  canonical arr=256 cb=0 unr=0 t=252 turn=1 | priced arr=256 cb=0 unr=0 t=269 turn=1
+c5-colony four-gates N=256  spread    arr=256 cb=0 unr=0 t=211 turn=1 (shipped congestion answer, context)
+c5-colony four-gates N=1024 canonical arr=1024 cb=0 unr=0 t=600 turn=1 | priced arr=1024 cb=0 unr=0 t=439 turn=1
+c5-colony four-gates N=1024 spread    arr=1024 cb=0 unr=0 t=600 turn=1 (shipped congestion answer, context)
+c5-colony goal-wall  N=256  canonical arr=256 cb=0 unr=0 t=408 turn=1 | priced arr=256 cb=0 unr=0 t=570 turn=1
+c5-colony goal-wall  N=256  spread    arr=256 cb=0 unr=0 t=408 turn=1 (shipped congestion answer, context)
+c5-colony goal-wall  N=1024 canonical arr=1024 cb=0 unr=0 t=1004 turn=1 | priced arr=1024 cb=0 unr=0 t=1146 turn=1
+c5-colony goal-wall  N=1024 spread    arr=1024 cb=0 unr=0 t=1004 turn=1 (shipped congestion answer, context)
+mechanical checks: clean (0)

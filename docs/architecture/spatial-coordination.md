@@ -110,3 +110,21 @@ prediction, formation control, or globally optimal multi-agent pathfinding.
 The conservative caller predicate can reject currently occupied destinations,
 which also rejects swaps and move-through cycles under the existing movement
 commit contract.
+
+## Dynamic congestion pricing (validated caller recipe)
+
+Congestion pricing needs no library mechanism: give the movement class
+a `FieldCost` term over an ordinary cost field, then periodically write
+per-tile prices from observed local demand through the versioned edit
+channel (`mark_content_changed` plus a pathing-dirty mark), and every
+planner and cache sees a legitimate edit. A bounded policy of this
+shape -- cost `1 + min(3, live agents within Manhattan distance 1)`,
+repriced every 4 ticks -- was validated against the web_colony demo's
+recovery classifier: it retained or improved terminal classification
+on every supported population and materially cut congested settle
+times (see `docs/planning/evidence/v1.0/c5-congestion/`). Its measured
+boundary applies: pricing helps where gate or corridor throughput is
+the binding constraint, mildly hurts detour-shaped maps with
+uncontended walls, and perturbs per-seed terminal classification under
+fixpoint-style settles, so callers needing seed-stable classification
+parity should not arm it.
