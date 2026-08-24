@@ -1,0 +1,2 @@
+rc1 targeted consumer: ALL CONTRACTS HELD (0 failures)
+exit=0
