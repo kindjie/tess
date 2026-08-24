@@ -80,9 +80,10 @@ records the exact deltas so any successor must consciously flip them.
    at either limit. Together: the armed sweep fell from 10+ CPU-minutes
    to 13 seconds (release).
 
-The merged substrate test pins a deterministic 18-seed subset (trials 0
-and 1 of every family plus every divergent seed) to fit the
-repository's 60-second per-test contract; `substrate-sweep.txt` is the
+The merged per-seed substrate tests pin a deterministic 18-seed subset
+(trials 0 and 1 of every family plus every divergent seed), one test
+per seed so the slowest sanitizer runner stays inside the repository's
+60-second per-test contract; `substrate-sweep.txt` is the
 captured FULL sweep and `programs.md` records the program that
 reproduces it.
 
