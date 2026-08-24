@@ -22,13 +22,19 @@
   (planning-time position snapshot); an aborted plan tick must fall
   through to a tier tick or fire/abort cycles starve the population
   into the wedge rule; both triggers need cooldowns.
-- The per-family substrate tests pin a deterministic subset -- trials
-  0-1 of each family plus every divergent seed -- to honor the
-  60-second per-test contract. Consequence stated plainly: trials >= 2
-  of non-divergent seeds are covered by the evidence sweep ONLY, and
-  the aggregate (+3/-2/-1) and the 71/61 clean/residual split are
-  asserted nowhere in the merged suite; the recorded sweep program is
-  their check. the full 132-seed sweep is evidence, captured with its
+- The per-seed substrate tests pin OUTCOME DIGESTS (plain and armed)
+  as cross-build constants for a deterministic subset -- trials 0-1 of
+  each family plus every divergent seed. One armed settle per seed,
+  compared against the pinned constant, proves determinism more
+  strongly than an in-process replay at a third of the cost; that is
+  what keeps the fire-heavy seeds inside the 60-second contract on
+  sanitizer and MSVC-debug runners, where capped escalation solves run
+  an order of magnitude slower. Consequences stated plainly: the plain
+  runs are not re-executed by the merged suite (their digests are the
+  pins), trials >= 2 of non-divergent seeds are covered by the evidence
+  sweep ONLY, and the aggregate (+3/-2/-1) and the 71/61 clean/residual
+  split are asserted nowhere in the merged suite; the recorded sweep
+  program is their check. the full 132-seed sweep is evidence, captured with its
   program in `docs/planning/evidence/v1.0/c4-escalation/`. Solver cost
   needed three layers (packed nodes, a futility memo, and the
   amendment-2 cap verified outcome-identical) before the armed sweep
