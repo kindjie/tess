@@ -1,0 +1,17 @@
+p5 wall_gap local=1 E=1  median ratio: 64=5.986 256=8.346
+p5 wall_gap local=1 E=4  median ratio: 64=1.792 256=3.104
+p5 wall_gap local=1 E=16 median ratio: 64=0.935 256=1.516
+p5 wall_gap local=0 E=1  median ratio: 64=10.329 256=15.363
+p5 wall_gap local=0 E=4  median ratio: 64=4.664 256=10.166
+p5 wall_gap local=0 E=16 median ratio: 64=1.302 256=6.335
+p5 rubble   local=1 E=1  median ratio: 64=1.967 256=1.564
+p5 rubble   local=1 E=4  median ratio: 64=1.399 256=1.289
+p5 rubble   local=1 E=16 median ratio: 64=1.678 256=1.269
+p5 rubble   local=0 E=1  median ratio: 64=1.623 256=2.156
+p5 rubble   local=0 E=4  median ratio: 64=1.041 256=2.014
+p5 rubble   local=0 E=16 median ratio: 64=0.622 256=1.751
+
+pooled median incumbent/candidate work ratio = 1.913 (stage-1 bar: >= 1.5)
+stage 1 -> PROCEED TO TIMING
+ALL GATES PASSED
+exit=0
