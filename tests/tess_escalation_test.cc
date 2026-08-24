@@ -201,17 +201,9 @@ struct SubstrateDelta {
 // Each family checks trials 0 and 1 plus its divergent seeds, split
 // per family to honor the 60-second per-test contract; the full sweep
 // is evidence, reproducible from the recorded program.
-void check_substrate_family(mv::Family family,
-                            std::span<const SubstrateDelta> pinned) {
-  const auto in_subset = [&](unsigned trial) {
-    if (trial <= 1) return true;
-    for (const auto& d : pinned) {
-      if (d.trial == trial) return true;
-    }
-    return false;
-  };
-  for (unsigned trial = 0; trial < mv::trial_count(family); ++trial) {
-    if (!in_subset(trial)) continue;
+void check_substrate_trial(mv::Family family, unsigned trial,
+                           std::span<const SubstrateDelta> pinned) {
+  {
     auto plain_scenario = mv::build_scenario(family, trial);
     const auto plain_ranking = mv::route_attachment_ranking(*plain_scenario);
     const auto plain = mv::settle_with_pibt(*plain_scenario, plain_ranking);
@@ -239,7 +231,7 @@ void check_substrate_family(mv::Family family,
           << mv::family_name(family) << " trial " << trial;
       ASSERT_EQ(stats.fired, 0u)
           << mv::family_name(family) << " trial " << trial;
-      continue;
+      return;
     }
     const SubstrateDelta observed{
         trial,
@@ -269,29 +261,67 @@ void check_substrate_family(mv::Family family,
   }
 }
 
-TEST(EscalationSubstrate, Warehouse) {
-  const SubstrateDelta pinned[] = {{4, +1, 0, -1}, {10, -1, 0, +1}};
-  check_substrate_family(mv::Family::Warehouse, pinned);
+// One test per sampled seed: CI's sanitizer runners multiply the
+// settle-plus-solver cost several-fold, and the per-test budget is 60
+// seconds, so each seed gets its own timer.
+TEST(EscalationSubstrate, WarehouseT0) {
+  check_substrate_trial(mv::Family::Warehouse, 0, {});
 }
-TEST(EscalationSubstrate, Ring) {
-  check_substrate_family(mv::Family::Ring, {});
+TEST(EscalationSubstrate, WarehouseT1) {
+  check_substrate_trial(mv::Family::Warehouse, 1, {});
 }
-TEST(EscalationSubstrate, Colony) {
+TEST(EscalationSubstrate, WarehouseT4Improves) {
+  const SubstrateDelta pinned[] = {{4, +1, 0, -1}};
+  check_substrate_trial(mv::Family::Warehouse, 4, pinned);
+}
+TEST(EscalationSubstrate, WarehouseT10Worsens) {
+  const SubstrateDelta pinned[] = {{10, -1, 0, +1}};
+  check_substrate_trial(mv::Family::Warehouse, 10, pinned);
+}
+TEST(EscalationSubstrate, RingT0) {
+  check_substrate_trial(mv::Family::Ring, 0, {});
+}
+TEST(EscalationSubstrate, RingT1) {
+  check_substrate_trial(mv::Family::Ring, 1, {});
+}
+TEST(EscalationSubstrate, ColonyT0) {
+  check_substrate_trial(mv::Family::Colony, 0, {});
+}
+TEST(EscalationSubstrate, ColonyT1) {
+  check_substrate_trial(mv::Family::Colony, 1, {});
+}
+TEST(EscalationSubstrate, ColonyT10Mixed) {
   const SubstrateDelta pinned[] = {{10, +1, -2, +1}};
-  check_substrate_family(mv::Family::Colony, pinned);
+  check_substrate_trial(mv::Family::Colony, 10, pinned);
 }
-TEST(EscalationSubstrate, RandomSparse) {
-  check_substrate_family(mv::Family::RandomSparse, {});
+TEST(EscalationSubstrate, RandomSparseT0) {
+  check_substrate_trial(mv::Family::RandomSparse, 0, {});
 }
-TEST(EscalationSubstrate, RandomMedium) {
-  check_substrate_family(mv::Family::RandomMedium, {});
+TEST(EscalationSubstrate, RandomSparseT1) {
+  check_substrate_trial(mv::Family::RandomSparse, 1, {});
 }
-TEST(EscalationSubstrate, RandomDense) {
-  check_substrate_family(mv::Family::RandomDense, {});
+TEST(EscalationSubstrate, RandomMediumT0) {
+  check_substrate_trial(mv::Family::RandomMedium, 0, {});
 }
-TEST(EscalationSubstrate, Adversarial) {
-  const SubstrateDelta pinned[] = {{0, +1, 0, -1}, {9, +1, 0, -1}};
-  check_substrate_family(mv::Family::Adversarial, pinned);
+TEST(EscalationSubstrate, RandomMediumT1) {
+  check_substrate_trial(mv::Family::RandomMedium, 1, {});
+}
+TEST(EscalationSubstrate, RandomDenseT0) {
+  check_substrate_trial(mv::Family::RandomDense, 0, {});
+}
+TEST(EscalationSubstrate, RandomDenseT1) {
+  check_substrate_trial(mv::Family::RandomDense, 1, {});
+}
+TEST(EscalationSubstrate, AdversarialT0Improves) {
+  const SubstrateDelta pinned[] = {{0, +1, 0, -1}};
+  check_substrate_trial(mv::Family::Adversarial, 0, pinned);
+}
+TEST(EscalationSubstrate, AdversarialT1) {
+  check_substrate_trial(mv::Family::Adversarial, 1, {});
+}
+TEST(EscalationSubstrate, AdversarialT9Improves) {
+  const SubstrateDelta pinned[] = {{9, +1, 0, -1}};
+  check_substrate_trial(mv::Family::Adversarial, 9, pinned);
 }
 
 }  // namespace
