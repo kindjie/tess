@@ -29,7 +29,10 @@ identical-classification seeds -- the interval includes 1.0, so even
 without the parity failures there is nothing to accept.
 
 Gates that PASSED, for the record: bit-identical replay of the priced
-arm on every seed; the scripted edit replay with pricing active
+arm on every seed (the canonical arm was NOT re-replayed here -- a
+letter-gap against gate 3's "per arm" wording, noted rather than left
+silent; canonical determinism is separately pinned by the substrate's
+own rebuild-reproducibility test and by C4's per-seed replays); the scripted edit replay with pricing active
 (warehouse trial 0, close/reopen a tile at ticks 32/96 through the
 versioned channel) is deterministic, uncensored, and fully arrives --
 pricing composes correctly with topology invalidation; the policy's
