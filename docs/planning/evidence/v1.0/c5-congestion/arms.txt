@@ -1,0 +1,30 @@
+DIVERGENCE warehouse t3: canonical arr=47 wed=0 seal=1 cen=0 | priced arr=46 wed=0 seal=2 cen=0
+DIVERGENCE warehouse t4: canonical arr=47 wed=0 seal=1 cen=0 | priced arr=48 wed=0 seal=0 cen=0
+DIVERGENCE warehouse t17: canonical arr=47 wed=0 seal=1 cen=0 | priced arr=46 wed=0 seal=2 cen=0
+c5 warehouse      failures canonical=10 priced=11  <-- WORSE
+c5 ring           failures canonical=0 priced=0
+DIVERGENCE colony t0: canonical arr=32 wed=8 seal=8 cen=0 | priced arr=34 wed=7 seal=7 cen=0
+DIVERGENCE colony t1: canonical arr=44 wed=0 seal=4 cen=0 | priced arr=42 wed=0 seal=6 cen=0
+DIVERGENCE colony t2: canonical arr=25 wed=2 seal=21 cen=0 | priced arr=22 wed=0 seal=26 cen=0
+DIVERGENCE colony t3: canonical arr=30 wed=1 seal=17 cen=0 | priced arr=34 wed=0 seal=14 cen=0
+DIVERGENCE colony t4: canonical arr=23 wed=0 seal=25 cen=0 | priced arr=20 wed=2 seal=26 cen=0
+DIVERGENCE colony t7: canonical arr=14 wed=3 seal=31 cen=0 | priced arr=14 wed=1 seal=33 cen=0
+DIVERGENCE colony t9: canonical arr=38 wed=1 seal=9 cen=0 | priced arr=41 wed=0 seal=7 cen=0
+DIVERGENCE colony t10: canonical arr=34 wed=2 seal=12 cen=0 | priced arr=33 wed=2 seal=13 cen=0
+DIVERGENCE colony t11: canonical arr=41 wed=0 seal=7 cen=0 | priced arr=40 wed=0 seal=8 cen=0
+DIVERGENCE colony t13: canonical arr=38 wed=1 seal=9 cen=0 | priced arr=40 wed=0 seal=8 cen=0
+DIVERGENCE colony t15: canonical arr=32 wed=0 seal=16 cen=0 | priced arr=33 wed=0 seal=15 cen=0
+DIVERGENCE colony t17: canonical arr=27 wed=0 seal=21 cen=0 | priced arr=27 wed=1 seal=20 cen=0
+DIVERGENCE colony t19: canonical arr=29 wed=1 seal=18 cen=0 | priced arr=29 wed=0 seal=19 cen=0
+c5 colony         failures canonical=330 priced=328
+c5 random_sparse  failures canonical=0 priced=0
+c5 random_medium  failures canonical=4 priced=4
+DIVERGENCE random_dense t19: canonical arr=43 wed=2 seal=3 cen=0 | priced arr=44 wed=1 seal=3 cen=0
+c5 random_dense   failures canonical=31 priced=30
+c5 adversarial    failures canonical=35 priced=35
+c5 edit-replay (priced): ticks=102 arrived=48 wedged=0 sealed=0
+
+pooled gm(priced/canonical ticks)=0.9977 CI [0.9810, 1.0180] over 115 identical-classification seeds
+substrate-leg verdict: REJECT (classification regression / re-rejection rule)
+mechanical checks: clean (0)
+exit=1 (nonzero by design: the substrate parity gate failed as registered; mechanical checks clean; the demo-classifier leg carries the verdict -- see README.md)
