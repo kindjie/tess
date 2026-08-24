@@ -2,6 +2,33 @@
   "version": 1,
   "runs": [
     {
+      "commit": "b57f8d37ad44e27a07ad6886938bb139df4c3243",
+      "timestamp": "2026-08-24T21:39:35Z",
+      "run_id": "32775493665",
+      "files": [
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/block-pipeline.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/block.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/diagnostics.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/ecs.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/fields.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/key.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/maintenance.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/metadata.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/parallel.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/path.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/persistence.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/query.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/queued.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/render-delta.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/residency.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/scheduler.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/spatial.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/storage.json",
+        "baselines/2026/08/b57f8d37ad44e27a07ad6886938bb139df4c3243/topology.json"
+      ],
+      "benchmark_count": 3430
+    },
+    {
       "commit": "a6bd1bba8cd8d71ce0a12bfc3207beb13018ddb4",
       "timestamp": "2026-08-24T02:58:50Z",
       "run_id": "32682858381",
