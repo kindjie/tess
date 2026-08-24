@@ -1,0 +1,9 @@
+warehouse t4: dArr=+1 dWed=+0 dSeal=-1 fired=1
+warehouse t10: dArr=-1 dWed=+0 dSeal=+1 fired=3
+colony t10: dArr=+1 dWed=-2 dSeal=+1 fired=1
+adversarial t0: dArr=+1 dWed=+0 dSeal=-1 fired=1
+adversarial t9: dArr=+1 dWed=+0 dSeal=-1 fired=1
+
+clean=71 (fires on clean=0) residual=61 same=56 better=3 worse=1 mixed=1
+residual totals: dArrived=+3 dWedged=-2 dSealed=-1 fires=91
+exit=0 (release build, 250k cap; identical to the 2M-cap sweep per amendment 2)
