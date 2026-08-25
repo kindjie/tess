@@ -595,7 +595,8 @@ struct ColonyModel::Impl {
     // refresh the reference positions afterwards.
     const bool needs_stall = congestion_policy == 5 ||
                              congestion_policy == 10 ||
-                             congestion_policy == 11 || congestion_policy == 12;
+                             congestion_policy == 11 ||
+                             congestion_policy == 12 || congestion_policy >= 14;
     std::vector<std::uint8_t> stalled_now;
     if (needs_stall) {
       stalled_now.assign(agents.size(), 0);
@@ -846,6 +847,62 @@ struct ColonyModel::Impl {
           congestion_heat[i] =
               static_cast<std::uint16_t>(congestion_heat[i] / 2 + signal[i]);
           signal[i] = congestion_heat[i];
+        }
+        break;
+      }
+      case 14:
+      case 15:
+      case 16:
+      case 17:
+      case 18:
+      case 19:
+      case 20:
+      case 21:
+      case 22: {
+        // Amendment-5 factorial: signal source x kernel x memory, with
+        // an optional queue overlay added before the shared cap.
+        // 14 stallpeakcool; 15 prox1q; 16 peak1q; 17 coolq;
+        // 18 peakcoolq; 19 stalledq; 20 stallpeakq; 21 stallcoolq;
+        // 22 stallpeakcoolq.
+        struct Axes {
+          bool stall_source;
+          bool peaked;
+          bool cooling;
+          bool overlay;
+        };
+        static constexpr Axes kAxes[] = {
+            {true, true, true, false},    // 14
+            {false, false, false, true},  // 15
+            {false, true, false, true},   // 16
+            {false, false, true, true},   // 17
+            {false, true, true, true},    // 18
+            {true, false, false, true},   // 19
+            {true, true, false, true},    // 20
+            {true, false, true, true},    // 21
+            {true, true, true, true},     // 22
+        };
+        const auto axes =
+            kAxes[static_cast<std::size_t>(congestion_policy - 14)];
+        for (std::size_t i = 0; i < agents.size(); ++i) {
+          if (!agents[i].has_goal) continue;
+          if (axes.stall_source && stalled_now[i] == 0) continue;
+          const auto ax = static_cast<int>(agents[i].position.x);
+          const auto ay = static_cast<int>(agents[i].position.y);
+          if (axes.peaked) {
+            peak1(ax, ay);
+          } else {
+            halo1(ax, ay, 1);
+          }
+        }
+        if (axes.cooling) {
+          for (std::size_t i = 0; i < tiles; ++i) {
+            congestion_heat[i] =
+                static_cast<std::uint16_t>(congestion_heat[i] / 2 + signal[i]);
+            signal[i] = congestion_heat[i];
+          }
+        }
+        if (axes.overlay) {
+          apply_queue2_pricing(signal, stalled_now);
         }
         break;
       }

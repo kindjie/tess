@@ -12,6 +12,15 @@ cell,four-gates,256,queue2,256,0,0,176,1,pass,4933
 cell,four-gates,256,stallpeak,256,0,0,163,1,pass,4950
 cell,four-gates,256,stallcool,256,0,0,163,1,pass,4950
 cell,four-gates,256,peakcool,256,0,0,170,1,pass,33309
+cell,four-gates,256,stallpeakcool,256,0,0,163,1,pass,4950
+cell,four-gates,256,prox1q,256,0,0,167,1,pass,32812
+cell,four-gates,256,peak1q,256,0,0,167,1,pass,33040
+cell,four-gates,256,coolq,256,0,0,168,1,pass,33059
+cell,four-gates,256,peakcoolq,256,0,0,170,1,pass,33309
+cell,four-gates,256,stalledq,256,0,0,163,1,pass,4950
+cell,four-gates,256,stallpeakq,256,0,0,163,1,pass,4950
+cell,four-gates,256,stallcoolq,256,0,0,163,1,pass,4950
+cell,four-gates,256,stallpeakcoolq,256,0,0,163,1,pass,4950
 cell,four-gates,1024,canonical,1024,0,0,600,1,-,69180
 cell,four-gates,1024,prox1,1024,0,0,567,1,pass,231640
 cell,four-gates,1024,prox2,1024,0,0,535,1,pass,250083
@@ -26,5 +35,14 @@ cell,four-gates,1024,queue2,1024,0,0,539,1,pass,77503
 cell,four-gates,1024,stallpeak,1024,0,0,461,1,pass,96588
 cell,four-gates,1024,stallcool,1024,0,0,451,1,pass,97009
 cell,four-gates,1024,peakcool,1024,0,0,437,1,pass,241348
+cell,four-gates,1024,stallpeakcool,1024,0,0,586,1,pass,97260
+cell,four-gates,1024,prox1q,1024,0,0,509,1,pass,232303
+cell,four-gates,1024,peak1q,1024,0,0,595,1,pass,239099
+cell,four-gates,1024,coolq,1024,0,0,440,1,pass,234973
+cell,four-gates,1024,peakcoolq,1024,0,0,607,1,pass,248387
+cell,four-gates,1024,stalledq,1024,0,0,465,1,pass,99466
+cell,four-gates,1024,stallpeakq,1024,0,0,578,1,pass,99400
+cell,four-gates,1024,stallcoolq,1024,0,0,730,1,pass,99195
+cell,four-gates,1024,stallpeakcoolq,1024,0,0,649,1,pass,98831
 mechanical checks: clean (0)
 safety gates: ALL PASS

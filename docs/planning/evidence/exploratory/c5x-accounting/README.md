@@ -23,47 +23,68 @@ defect (replan-queue saturation, far-field oscillation, and per-tick
 compute inflated up to ~500x, e.g. the memory policy at ~84 ms/tick
 vs ~1.6 ms scoped).
 
-## Ranking (amendment-4 unified table: 13 policies, one protocol;
-safe cells; gm of policy/canonical ticks; planning load as gm of
-policy/canonical pending-plan integrals)
+## Ranking (amendment-5 unified table: the full factorial, 22 arms,
+one protocol; safe cells; gm of policy/canonical ticks; planning load
+as gm of pending-plan integrals vs canonical)
 
-| policy | tick gm | load | safe | note |
-|---|---|---|---|---|
-| cool (prox1 halo + TRUE-cooling memory) | **0.3947** | 5.3x | 14/14 | overall best; fixing the ceil-residue turned memory from mid-pack into first |
-| peak1 (peaked kernel) | 0.4052 | 5.4x | 14/14 | beats its flat counterpart (prox1 0.4118) -- per-agent gradients help |
-| peakcool (peak + cooling) | 0.4111 | 5.5x | 14/14 | combo does NOT stack: no better than prox1 |
-| prox1 (validated C5 recipe) | 0.4118 | 5.4x | 14/14 | the anchor |
-| stallcool (stalled halo + cooling) | 0.4209 | **2.0x** | 14/14 | new efficiency frontier: better value than stalled at the same load |
-| decay (ceil memory, permanent residue) | 0.4263 | 5.5x | 14/14 | superseded by cool |
-| stalled | 0.4288 | 2.0x | 14/14 | |
-| self | 0.4291 | 5.4x | 14/14 | |
-| prox2 | 0.4306 | 5.4x | 14/14 | |
-| stallpeak (stalled + peak) | 0.4325 | 2.1x | 14/14 | combo does not stack |
-| demand | 0.5557 | 5.7x | 12/14 | STILL DISQUALIFIED (structural feedback) |
-| queue (v1, ungated uniform) | 0.6348 | 3.9x | 14/14 | manufactures queues: convoy-blind detection + uniform thin-line pricing herds escapees into one lane |
-| queue2 (stall-gated, graded) | 0.6906 | **1.09x** | 13/14 | minimal-intervention specialist: leaves healthy flow untouched (open 1.000), near-zero planning cost, kills v1's goal-wall pathology (1.12 vs 2.18); narrowly fails no-worse on tip/1024 (503 vs 505 at the cap) |
+The mechanism axes: signal source {all live agents | stalled only} x
+kernel {flat | peaked} x memory {snapshot | true-cooling} x optional
+stall-gated graded queue overlay. All sixteen factorial points plus
+the six legacy arms ran under one roof.
 
-## The findings that matter (amendment-4 round)
+| policy | tick gm | load | safe |
+|---|---|---|---|
+| **cool** (all+flat+cooling) | **0.3947** | 5.3x | 14/14 |
+| coolq (+overlay) | 0.4020 | 5.3x | 14/14 |
+| peak1 (all+peak+snap) | 0.4052 | 5.4x | 14/14 |
+| peak1q | 0.4111 | 5.4x | 14/14 |
+| peakcool | 0.4111 | 5.5x | 14/14 |
+| prox1q | 0.4114 | 5.4x | 14/14 |
+| prox1 (the validated anchor) | 0.4118 | 5.4x | 14/14 |
+| **stallcool** (stall+flat+cooling) | 0.4209 | **2.0x** | 14/14 |
+| peakcoolq | 0.4233 | 5.5x | 14/14 |
+| decay (superseded ceil memory) | 0.4263 | 5.5x | 14/14 |
+| stalled | 0.4288 | 2.0x | 14/14 |
+| self | 0.4291 | 5.4x | 14/14 |
+| prox2 | 0.4306 | 5.4x | 14/14 |
+| stallpeak | 0.4325 | 2.1x | 14/14 |
+| stalledq | 0.4354 | 2.0x | 14/14 |
+| stallpeakcool | 0.4376 | 2.1x | 14/14 |
+| stallpeakq | 0.4439 | 2.1x | 14/14 |
+| stallpeakcoolq (all four) | 0.4446 | 2.0x | 14/14 |
+| stallcoolq | 0.4477 | 2.0x | 14/14 |
+| demand | 0.5557 | 5.7x | 12/14 DISQUALIFIED |
+| queue (v1) | 0.6348 | 3.9x | 14/14 |
+| queue2 (overlay alone) | 0.6906 | 1.09x | 13/14 (tip/1024: 503 vs 505) |
 
-1. **True cooling wins outright.** Removing the memory policy's
-   permanent +1 residue (floor instead of ceil halving) moved it from
-   mid-pack to the best pooled value measured in this stream.
-2. **Peaked kernels beat flat ones** (0.405 vs 0.412): giving every
-   agent a local gradient instead of a plateau differentiates escape
-   routes, as the maintainer's kernel question predicted.
-3. **Most combinations do not stack.** peak+cooling and stall+peak
-   add nothing over their better component; the exception is
-   stallcool, which improves the efficiency frontier (0.421 at 2.0x
-   load vs stalled's 0.429).
-4. **Stall-gating transforms the queue policy from harmful to a
-   cheap specialist.** queue2 prices only real jams: healthy maps see
-   literally no intervention (open gm 1.000, planning load 1.09x),
-   the v1 queue-manufacturing artifact is gone from the demo, and the
-   corridor pathology drops 2.18 -> 1.12 -- but it remains worst
-   pooled among safe-ish arms and repeats a two-arrival no-worse
-   failure on the one cell canonical itself cannot complete.
-5. Amendment-2/3 findings stand: scoped replanning is the real
-   optimization; demand pricing is structurally unsafe.
+## The findings that matter (amendment-5 round)
+
+1. **Composition is not additive; the registered hypotheses were
+   REFUTED.** Both predictions (queue overlay composing well with
+   stallcool and with cool) failed: every one of the nine higher-order
+   arms is equal to or worse than its best component, and the queue
+   overlay never improves any base field. The maintainer-requested
+   triple (stalled+peaked+cooling, 0.4376) is worse than both
+   stallcool (0.4209) and stalled (0.4288).
+2. A plausible mechanism, stated as interpretation rather than
+   measurement: combined signals add on the same tiles under the
+   shared cap of 3, so the better component's gradient is clipped
+   flat exactly where guidance matters most -- composition saturates
+   rather than sharpens.
+3. **The landscape has converged at this screening scale.** Three
+   distinct optima stand: cool for value (0.395 at ~5.3x planning
+   load), stallcool for efficiency (0.421 at 2.0x), queue2 for
+   minimal intervention (near-zero cost, jams only, one narrow
+   no-worse miss on the cell canonical itself cannot complete).
+   Everything between them is a plateau, and further mechanism mixing
+   at this scale is unpromising by the factorial's own evidence.
+4. One incidental positive: the queue overlay INSIDE a base field is
+   safe on all 14 cells everywhere (the base carries tip/1024), so
+   overlay unsafety is specific to running it alone.
+5. Amendment-2/3/4 findings stand: scoped replanning is the real
+   optimization; true cooling beats residue memory; peaked beats
+   flat; stall-gating makes queue detection convoy-safe; demand
+   pricing is structurally unsafe.
 
 ## Files
 

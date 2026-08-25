@@ -12,6 +12,15 @@ cell,tip,256,queue2,256,0,0,1061,1,pass,7920
 cell,tip,256,stallpeak,256,0,0,425,1,pass,20019
 cell,tip,256,stallcool,256,0,0,406,1,pass,16308
 cell,tip,256,peakcool,256,0,0,391,1,pass,51694
+cell,tip,256,stallpeakcool,256,0,0,442,1,pass,18847
+cell,tip,256,prox1q,256,0,0,376,1,pass,51540
+cell,tip,256,peak1q,256,0,0,393,1,pass,51581
+cell,tip,256,coolq,256,0,0,402,1,pass,52224
+cell,tip,256,peakcoolq,256,0,0,488,1,pass,51669
+cell,tip,256,stalledq,256,0,0,521,1,pass,16632
+cell,tip,256,stallpeakq,256,0,0,423,1,pass,19899
+cell,tip,256,stallcoolq,256,0,0,406,1,pass,16308
+cell,tip,256,stallpeakcoolq,256,0,0,437,1,pass,18323
 cell,tip,1024,canonical,505,0,0,5000,0,-,69246
 cell,tip,1024,prox1,1024,0,0,1010,1,pass,448129
 cell,tip,1024,prox2,1024,0,0,912,1,pass,423426
@@ -26,5 +35,14 @@ cell,tip,1024,queue2,503,0,0,5000,0,NOWORSE-FAIL,69309
 cell,tip,1024,stallpeak,1024,0,0,1072,1,pass,419817
 cell,tip,1024,stallcool,1024,0,0,997,1,pass,424396
 cell,tip,1024,peakcool,1024,0,0,859,1,pass,449066
+cell,tip,1024,stallpeakcool,1024,0,0,1071,1,pass,428926
+cell,tip,1024,prox1q,1024,0,0,804,1,pass,415544
+cell,tip,1024,peak1q,1024,0,0,905,1,pass,467796
+cell,tip,1024,coolq,1024,0,0,893,1,pass,417642
+cell,tip,1024,peakcoolq,1024,0,0,867,1,pass,459018
+cell,tip,1024,stalledq,1024,0,0,1032,1,pass,407629
+cell,tip,1024,stallpeakq,1024,0,0,1027,1,pass,405733
+cell,tip,1024,stallcoolq,1024,0,0,1123,1,pass,417614
+cell,tip,1024,stallpeakcoolq,1024,0,0,1117,1,pass,435969
 mechanical checks: clean (0)
 safety gates: DISQUALIFICATIONS (see cells)

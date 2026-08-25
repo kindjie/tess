@@ -12,6 +12,15 @@ cell,open,256,queue2,256,0,0,140,1,pass,3968
 cell,open,256,stallpeak,256,0,0,140,1,pass,3993
 cell,open,256,stallcool,256,0,0,140,1,pass,3993
 cell,open,256,peakcool,256,0,0,144,1,pass,30760
+cell,open,256,stallpeakcool,256,0,0,140,1,pass,3993
+cell,open,256,prox1q,256,0,0,140,1,pass,30726
+cell,open,256,peak1q,256,0,0,140,1,pass,30736
+cell,open,256,coolq,256,0,0,140,1,pass,30731
+cell,open,256,peakcoolq,256,0,0,144,1,pass,30760
+cell,open,256,stalledq,256,0,0,140,1,pass,3993
+cell,open,256,stallpeakq,256,0,0,140,1,pass,3993
+cell,open,256,stallcoolq,256,0,0,140,1,pass,3993
+cell,open,256,stallpeakcoolq,256,0,0,140,1,pass,3993
 cell,open,1024,canonical,1024,0,0,236,1,-,65024
 cell,open,1024,prox1,1024,0,0,258,1,pass,180758
 cell,open,1024,prox2,1024,0,0,391,1,pass,194080
@@ -26,5 +35,14 @@ cell,open,1024,queue2,1024,0,0,236,1,pass,65087
 cell,open,1024,stallpeak,1024,0,0,236,1,pass,65724
 cell,open,1024,stallcool,1024,0,0,236,1,pass,65801
 cell,open,1024,peakcool,1024,0,0,350,1,pass,189335
+cell,open,1024,stallpeakcool,1024,0,0,239,1,pass,65803
+cell,open,1024,prox1q,1024,0,0,260,1,pass,180747
+cell,open,1024,peak1q,1024,0,0,261,1,pass,185770
+cell,open,1024,coolq,1024,0,0,288,1,pass,189982
+cell,open,1024,peakcoolq,1024,0,0,350,1,pass,189335
+cell,open,1024,stalledq,1024,0,0,236,1,pass,65716
+cell,open,1024,stallpeakq,1024,0,0,236,1,pass,65730
+cell,open,1024,stallcoolq,1024,0,0,236,1,pass,65801
+cell,open,1024,stallpeakcoolq,1024,0,0,239,1,pass,65812
 mechanical checks: clean (0)
 safety gates: ALL PASS
