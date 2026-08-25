@@ -60,11 +60,12 @@ acceptance evidence.
 
 ## Release-gated next steps
 
-- After `v0.13.0`, complete the bounded pathfinding, movement, execution, and
-  synthesis dispositions in the
-  [v0.13-to-v1.0 execution plan][pre-rc-plan]. Accepted implementations land
-  before downstream evaluation; rejection or explicit deferral completes an
-  optional experiment.
+- The bounded pathfinding, movement, execution, and synthesis
+  dispositions in the [v0.13-to-v1.0 execution plan][pre-rc-plan] are
+  complete: every candidate is dispositioned with retained evidence
+  (`docs/planning/evidence/v1.0/`), no new library authority was
+  accepted, and the accepted test suites and caller-recipe
+  documentation have landed.
 - Create `v1.0.0-rc.1` only after adding its immutable compatibility snapshot,
   recording a substantial downstream evaluation of the resulting surface,
   assembling release records, and passing release-mode CI on the exact

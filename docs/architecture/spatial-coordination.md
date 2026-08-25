@@ -73,6 +73,17 @@ other scarce candidates where applications want a predictable fast baseline.
 Applications needing a global optimum can use the same request, candidate, and
 score vocabulary with their own matching solver.
 
+For anonymous goal pools -- interchangeable work sites, storage slots, or
+rally points where any agent may take any goal -- the measured guidance is to
+spend that optimal matching once, at dispatch: on the movement-substrate
+evaluation, greedy dispatch settled 47% slower than exact one-shot assignment
+over the same pools (geometric mean 1.4739), while continuous post-dispatch
+reassignment recovered only ~2% pooled (0.9797, a quarter of its declared
+bar) and trended harmful when the pool held no goal surplus. The library
+deliberately provides no reassignment authority; the caller owns dispatch,
+and the exact-assignment recipe with its measurements is retained in
+`docs/planning/evidence/v1.0/c2-fungible/`.
+
 ## Local Move Coordination
 
 `include/tess/spatial/local_coordination.h` resolves a caller-generated set of

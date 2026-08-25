@@ -70,11 +70,15 @@ internal data structure is not a rejection of the broader research idea.
   and failed the second-platform non-regression gate
   ([evidence][quad-heap-rejection]).
 - **Dynamic congestion prices in the colony demo** —
-  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
-  The tested policies reduced some waits but produced incomplete arrivals,
-  violating the demo's terminal-outcome contract
-  ([evidence][congestion-rejection]). This does not reject future local
-  congestion fields.
+  <span class="strategy-status strategy-status--released">Validated caller recipe</span>
+  The original policies produced incomplete arrivals and were rejected
+  ([evidence][congestion-rejection]); a later revalidation on the corrected
+  topology superseded that result — a bounded demand-driven price policy
+  retained or improved terminal classification on every supported population
+  across all seven demo scenarios on two platforms, and is documented as a
+  caller recipe with its measured boundary
+  ([spatial coordination](architecture/spatial-coordination.md),
+  [evidence][congestion-revalidation]). No library mechanism was added.
 - **Balanced gate waypoints** —
   <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
   Assigning equal cohorts to exact crossing tiles synchronized agents onto
@@ -308,6 +312,7 @@ does not justify another invalidation or grouping lifecycle.
 [benchmark-source]: https://github.com/kindjie/tess/tree/main/bench
 [quad-heap-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-10-quad-heap-rejected.md
 [congestion-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-wide-merge-second-wave.md
+[congestion-revalidation]: https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/c5-congestion/README.md
 [waypoint-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-balanced-waypoints-rejected.md
 [movement-screening]: https://github.com/kindjie/tess/blob/main/docs/planning/local-movement-resolution.md#evidence
 [execution-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md
