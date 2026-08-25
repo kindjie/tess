@@ -41,8 +41,10 @@ write token, and it never touches `main`.
 
 - Pushing to `main` publishes `/dev/`.
 - Pushing a stable `v<major>.<minor>.<patch>` tag publishes
-  `/<major>.<minor>/`, moves the `latest` alias, and sets the site
-  default.
+  `/<major>.<minor>/`; the `latest` alias and site default move only
+  when the tag's version is at least the currently defaulted one, so a
+  patch on an older minor line refreshes its own tree without pointing
+  the site backward.
 - A prerelease tag (for example `v1.0.0-rc.1`) publishes nothing:
   `/dev/` already tracks the candidate during its observation window,
   and `latest` keeps pointing at the newest stable release.

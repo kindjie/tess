@@ -27,7 +27,7 @@ using Stairs = tess::StairTransitions<StairTag>;
 
 constexpr auto kStairFoot = tess::Coord3{2, 1, 0};
 
-// Ground floor open on rows y < 2; an upper platform over impassable
+// Ground floor passable on rows y < 2; an upper platform over impassable
 // ground (rows y in [2,4)) so no vertical face adjacency connects the
 // levels; the offset stair from the passable ground row is the only
 // link.

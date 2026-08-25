@@ -118,9 +118,10 @@ stream and now used by maintained architecture pages and permanent test
 suites:
 
 - A **settle** runs the movement tier until a **no-progress fixpoint**:
-  no agent position has changed for a configured window of consecutive
-  ticks (`wedge_ticks`, 16 by default in the pinned harness), or a
-  tick cap ends the run first (**censored**). Classification happens
+  every agent has reached its goal (immediately), or no agent position
+  has changed for a configured window of consecutive ticks
+  (`wedge_ticks`, 16 by default in the pinned harness); a tick cap can
+  end the run before either (**censored**). Classification happens
   after termination, not during it. **Settle ticks** count that run's
   simulation ticks.
 - **Terminal classification** assigns every agent one of five
@@ -132,7 +133,9 @@ suites:
   experiments subtract those rather than credit a movement arm for
   them; distinct from the *sealed schedule* of the simulation-tick
   vocabulary above), **wedged** (live but permanently unable to make
-  progress), or **censored** (the tick cap ended the settle first).
+  progress), or **censored** (the tick cap ended the settle before a fixpoint;
+  applies to still-live agents -- already-arrived agents classify
+  arrived even in a censored run).
 - The web-colony demo's own recovery classifier uses a distinct
   three-way vocabulary -- **arrived**, **crowd-blocked**, **durably
   unreachable** -- which stays distinct; do not translate between the

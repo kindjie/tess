@@ -124,7 +124,7 @@ concept PibtRanking = requires(Ranking& rank, std::size_t agent, Coord3 coord) {
 // graded by its distance to the nearest route point so displaced agents
 // steer back to the corridor. Agents with no usable route (fewer than two
 // points, or no goal) fall back to distance toward the goal, which is
-// also the natural open-terrain behavior. All distances are the
+// also the natural passable-terrain behavior. All distances are the
 // overflow-safe three-axis Manhattan metric clamped into the score
 // domain, so stacked 3D worlds rank levels apart as apart.
 //

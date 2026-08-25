@@ -49,7 +49,7 @@ cycles re-expand forever.
 `tools/paired_bench.py`, shadow mode, `bench/sentinels.json` parameters
 (10 repetitions, 8% relative floor, 2000 ns materiality floor, 2000
 bootstrap resamples, 95% CI), seed 130049, A/A calibration first
-(`m3-calibration-aa.json`: all cells within +/-1%, no flags). Decision
+(`m3-calibration-aa.json`: all cells within +/-1.1% (one cell, search_open_64, at +1.02%), no flags). Decision
 run `m3-screen-ab.json` (delta = head vs base; negative is a JPS win):
 
 | cell | base median | head median | delta | 95% CI | verdict |

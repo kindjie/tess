@@ -52,7 +52,7 @@ void add_agent(World& world, std::vector<tess::PathAgentState>& agents,
 }
 
 // Steady state: head-on pairs boxed in two-tile pockets under Forbid. Unlike
-// the joint entry's open plain, PIBT on open ground resolves head-ons by
+// the joint entry's open plain, PIBT on passable ground resolves head-ons by
 // yielding sideways, so the steady state needs walls; each pair re-runs the
 // full decision pipeline every call (priority order, candidate ranking,
 // inheritance into the boxed peer, backtracking, edge-conflict denial)

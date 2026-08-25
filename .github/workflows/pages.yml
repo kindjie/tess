@@ -384,6 +384,25 @@ jobs:
           # rather than only addressed by absolute path.
           export PATH="$PWD/.venv-docs/bin:$PATH"
 
+          # A patch tag on an older minor line must not re-point `latest`
+          # or the site default backward. Keep the tree publish, but drop
+          # the alias when the currently defaulted version is numerically
+          # newer than this one.
+          if [ -n "$ALIAS" ]; then
+            current="$(git show FETCH_HEAD:versions.json 2>/dev/null \
+              | python -c 'import json, sys; e = json.load(sys.stdin); print(next((v["version"] for v in e if "latest" in v.get("aliases", [])), ""))' \
+              || true)"
+            if [ -n "$current" ] && [ "$current" != "$VERSION" ]; then
+              newest="$(printf '%s\n%s\n' "$current" "$VERSION" \
+                | sort -V | tail -1)"
+              if [ "$newest" = "$current" ]; then
+                echo "published latest $current is newer than $VERSION;" \
+                  "publishing the tree without moving the alias"
+                ALIAS=""
+              fi
+            fi
+          fi
+
           # --alias-type copy, not the default symlink: GitHub Pages does not
           # serve symlinked directories, and every documented deep link now
           # points through /latest/. --update-aliases lets a new release take
