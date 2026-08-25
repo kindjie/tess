@@ -23,16 +23,20 @@ downstream project deliberately retired the very harness that supplied
 its tess coverage (its decision D-0003, 2026-08-19): the 2D game-state,
 topology, agents, and tests were removed from its maintained
 implementation -- preserved through git history -- and replaced by a
-minimal storage-contract probe while the project pivots to a different
-prototype roadmap. The migration below therefore exercised that
+minimal storage-contract probe. Maintainer correction to this record's
+first framing: the reset was made in preparation for the tess 1.0.0
+release and to focus the project on early prototyping; the intent is
+to build it out against more of the 1.0 API, not to withdraw from it. The migration below therefore exercised that
 harness AT ITS FINAL STATE, as the largest available body of real
 downstream usage, and its result grades the upgrade guide; it was not
 merged into the downstream's live line (the migration PR was closed
 against the retirement decision, branch retained). Consequences stated
 plainly: the coverage measured in this record describes the retired
-harness, no live external consumer currently tracks the proposed
-surface beyond that probe, and the outside cold-read (F6) plus the
-repository's own examples and demos remain the living coverage.
+harness; at evaluation time no live external consumer tracks the
+surface beyond that probe (by the plan above, expanding coverage is
+ahead of it, not behind it); and until that build-out lands, the
+outside cold-read (F6) plus the repository's own examples and demos
+remain the living coverage.
 
 ## The upgrade leg (the largest single finding)
 
