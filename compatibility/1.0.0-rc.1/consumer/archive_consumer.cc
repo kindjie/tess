@@ -1,4 +1,5 @@
-// Immutable archive-v1 fixture consumer: loads every fixture listed in
+// Immutable archive fixture consumer (wire-format v2): loads every
+// fixture listed in
 // this snapshot's manifest.json from the snapshot directory passed as
 // argv[1]. The fixture list below mirrors the manifest by construction
 // and is frozen with it. Nonzero on any failed load or content check.

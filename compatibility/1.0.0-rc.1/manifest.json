@@ -99,13 +99,13 @@
   "archive_consumer_target": "tess_snapshot_archive_consumer",
   "archives": [
     {
-      "format": 1,
+      "format": 2,
       "path": "archives/dense-two-field.tessarchive",
       "producer_version": "1.0.0-rc.1",
       "schema": "dense-two-field-v1"
     },
     {
-      "format": 1,
+      "format": 2,
       "path": "archives/sparse-two-field.tessarchive",
       "producer_version": "1.0.0-rc.1",
       "schema": "sparse-two-field-v1"

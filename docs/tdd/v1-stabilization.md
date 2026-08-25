@@ -12,7 +12,7 @@ Implementation divergences are recorded in the
 [1.0 stabilization decision][stabilization-decision].
 
 [stabilization-decision]:
-  ../decisions/CHANGELOG.md#2026-08-11---define-the-enforceable-1x-stability-boundary
+  ../decisions/CHANGELOG-archive-2026-07-29-08-19.md#2026-08-11---define-the-enforceable-1x-stability-boundary
 
 ## 2. Summary
 
@@ -474,4 +474,4 @@ source-level declaration model to inventories plus compiled consumers. See the
 [2026-08-12 compatibility evidence decision][compatibility-evidence].
 
 [compatibility-evidence]:
-  ../decisions/CHANGELOG.md#2026-08-12---keep-c-semantics-in-compiled-compatibility-evidence
+  ../decisions/CHANGELOG-archive-2026-07-29-08-19.md#2026-08-12---keep-c-semantics-in-compiled-compatibility-evidence

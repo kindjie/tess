@@ -69,13 +69,34 @@ int main() {
   CHECK(product.distance_at<World>(tess::Coord3{5, 8, 0}) == 3,
         "product distance");
 
-  // Route cache under the documented baseline-then-edit contract.
+  // Route cache under the documented baseline-then-edit contract:
+  // baseline refresh, seed an entry, version-mark an edit that closes
+  // a tile on the returned route, refresh, and require the served
+  // route to reflect the edit -- the direct-adopter contract the RC-1
+  // evaluation surfaced (F2/F7).
   tess::UnitRouteCache cache;
   (void)cache.refresh_if_world_changed(world);
+  const tess::PathRequest cached_request{{2, 20, 0}, {30, 20, 0}};
   const auto cached = tess::cached_astar_path<World, PassableTag>(
-      world, tess::PathRequest{{2, 10, 0}, {30, 10, 0}}, scratch, cache,
+      world, cached_request, scratch, cache,
       tess::MissingChunkPolicy::ReportIndeterminate);
-  CHECK(cached.status == tess::PathStatus::Found, "cached path");
+  CHECK(cached.status == tess::PathStatus::Found, "cached path seeds");
+  CHECK(cached.path.size() > 2, "seeded route long enough to cut");
+  const auto cut = cached.path[cached.path.size() / 2];
+  world.field<PassableTag>(cut) = false;
+  world.mark_content_changed(
+      tess::chunk_key<Shape>(tess::chunk_coord<Shape>(cut)));
+  CHECK(cache.refresh_if_world_changed(world),
+        "refresh detects the version-marked edit");
+  const auto rerouted = tess::cached_astar_path<World, PassableTag>(
+      world, cached_request, scratch, cache,
+      tess::MissingChunkPolicy::ReportIndeterminate);
+  CHECK(rerouted.status == tess::PathStatus::Found, "reroute exists");
+  bool avoids_cut = true;
+  for (const auto step : rerouted.path) {
+    if (step.x == cut.x && step.y == cut.y) avoids_cut = false;
+  }
+  CHECK(avoids_cut, "served route reflects the post-edit world");
 
   // Persistence round trip through the stable archive surface.
   using Archive = tess::PersistenceSchema<

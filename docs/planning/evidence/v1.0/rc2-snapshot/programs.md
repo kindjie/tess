@@ -73,7 +73,7 @@ add_test(NAME {archive_target}
 archives = [
     {
         "path": f"archives/{name}",
-        "format": 1,
+        "format": 2,
         "producer_version": version,
         "schema": schema,
     }

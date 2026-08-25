@@ -380,7 +380,10 @@ def check_snapshots(
             archive_path is None
             or not isinstance(archive_format, int)
             or isinstance(archive_format, bool)
-            or archive_format != 1
+            # world_archive_format_version in
+            # include/tess/persistence/archive.h; the recorded metadata
+            # must state the actual wire format of the immutable bytes.
+            or archive_format != 2
             or archive.get("producer_version") != directory.name
             or not isinstance(archive.get("schema"), str)
             or not archive["schema"]
