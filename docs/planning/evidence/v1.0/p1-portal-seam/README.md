@@ -51,8 +51,8 @@ python3 tools/paired_bench.py --mode shadow \
   claim that the arms perform identical downstream work on those cells.
   (Capture defect, noted rather than edited: the Deck file's arm labels
   printed empty, so its rows cannot be attributed to base/stand-in by
-  label; all four rows are identical, which is what the identity claim
-  rests on.)
+  label; each cell's two rows are identical, which is what the identity
+  claim rests on.)
 - `seam-standin.md` — the measured scaffolding, recorded as source.
 
 ## Two limits of what is retained

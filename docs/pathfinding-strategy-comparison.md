@@ -315,7 +315,6 @@ The decision is workload-specific: compare paired names with the same suffix,
 inspect their counters, and retain the simpler API when the measured benefit
 does not justify another invalidation or grouping lifecycle.
 
-[strategy-source]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies_model.cc
 [strategy-main]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies.cc
 [benchmark-source]: https://github.com/kindjie/tess/tree/main/bench
 [quad-heap-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-14.md

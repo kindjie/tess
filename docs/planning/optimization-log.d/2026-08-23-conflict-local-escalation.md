@@ -12,7 +12,8 @@ whose settle would strand a live agent -- discovered necessary because
 queued_yields' seal forms at tick ~7 and terminal-set monotonicity
 makes repair impossible, only prevention); component closure with
 region radius 2 growing once to 4 on unsolvable; A_max 6, T_max 32,
-solver cap 2M states, over-bounds = counted skip, never truncation;
+solver cap 250k states (amendment 2, reduced from 2M, verified
+outcome-identical), over-bounds = counted skip, never truncation;
 whole-plan invalidation; deterministic throughout.
 
 **Fixture gates: all pass.** pocket_yield 24 ticks (bound 24, 1 fire),

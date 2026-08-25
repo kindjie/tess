@@ -10,7 +10,9 @@ on:
       publish_version:
         description: >-
           Version directory to publish from the selected ref, such as "0.13".
-          Supplying it also moves the "latest" alias and the site default.
+          Supplying it also moves the "latest" alias and the site default,
+          unless the currently published latest is numerically newer
+          (the deploy-step guard then publishes the tree only).
           Leave empty for an ordinary verification run.
         required: false
         type: string
@@ -421,6 +423,9 @@ jobs:
           git worktree add build/pages FETCH_HEAD
           # Jekyll would otherwise drop Doxygen's underscore-prefixed assets.
           touch build/pages/.nojekyll
+          # Crawlers read robots.txt only at the site root; the versioned
+          # trees each carry a copy that nothing ever requests.
+          cp docs/robots.txt build/pages/robots.txt
           git config --local --unset "http.extraheader"
 
       - name: Configure Pages

@@ -45,3 +45,8 @@ improvement) decided against always-on arming, so no public planning
 authority ships in v1.0. The promotion blockers are recorded in the C4
 evidence: bounded trajectory divergence (or an explicit quality-delta
 contract) and incremental reachability for seal prediction.
+
+**The execution-delay harness (X1) was dispositioned without a run**
+on harness-scope grounds -- an existing authority boundary, recorded
+in its own fragment (2026-08-22) and the synthesis ledger; it is
+listed here because the plan carries X1 into this record.
