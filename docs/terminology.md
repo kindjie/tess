@@ -118,13 +118,19 @@ stream and now used by maintained architecture pages and permanent test
 suites:
 
 - A **settle** runs the movement tier until a **no-progress fixpoint**:
-  no agent moved, replanned, or changed classification over a full
-  pass. **Settle ticks** count that run's simulation ticks.
+  no agent position has changed for a configured window of consecutive
+  ticks (`wedge_ticks`, 16 by default in the pinned harness), or a
+  tick cap ends the run first (**censored**). Classification happens
+  after termination, not during it. **Settle ticks** count that run's
+  simulation ticks.
 - **Terminal classification** assigns every agent one of five
   categories at the fixpoint: **arrived** (on its goal),
   **goal-occupied** (its goal is permanently held by another settled
-  agent), **sealed** (its goal region was walled off by settled
-  agents; distinct from the *sealed schedule* of the simulation-tick
+  agent), **sealed** (its goal is unreachable under the terrain and
+  the terminal-agent set together -- the harness separately counts
+  **structural seals**, goals bare terrain already disconnects, so
+  experiments subtract those rather than credit a movement arm for
+  them; distinct from the *sealed schedule* of the simulation-tick
   vocabulary above), **wedged** (live but permanently unable to make
   progress), or **censored** (the tick cap ended the settle first).
 - The web-colony demo's own recovery classifier uses a distinct

@@ -49,8 +49,10 @@ accepted behavior without new authority.
   PR, with the measurements retained in `c2-fungible/`), X2 fragment
   (#262). This PR also reconciles the public strategy-comparison page
   with C5's superseding result. Nothing else was accepted.
-- Fragment assembly previewed at this commit: 22 fragments valid
-  (`tools/assemble_changelog.py --check`); the assembled optimization
+- Fragment assembly validates green (`tools/assemble_changelog.py
+  --check`; 23 fragments at the pre-RC audit-fix commit -- the count
+  grows with each fragment-adding PR until RC assembly, so rerun the
+  command rather than trusting a literal); the assembled optimization
   log projects well under the 24,000-token file limit, so no archive
   maintenance is required at assembly time.
 - Roadmap updated from outcomes (see `docs/roadmap.md`); the historical

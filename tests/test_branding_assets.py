@@ -530,7 +530,7 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   assert "api.setWall(key % width, Math.floor(key / width), 1) === 1" in app
   assert "strokeBuilt = !walls.has" in app
   assert "paintLine(lastTile, at, strokeBuilt)" in app
-  assert "Drag open space to draw; drag from a wall to erase." in html
+  assert "Drag empty space to draw; drag from a wall to erase." in html
   assert "wall removal did not recover route" in native
   assert "idempotent add rebuilt topology" in native
 

@@ -100,7 +100,7 @@ concept PibtRanking = requires(Ranking& rank, std::size_t agent, Coord3 coord) {
   { rank(agent, coord) } -> std::convertible_to<std::uint32_t>;
 };
 
-// A production ranking oracle for open worlds with walls. The oracle
+// A production ranking oracle for passable worlds with walls. The oracle
 // contract at the top of this header names the two hazards a ranking must
 // avoid; this adds the third one measured in the mixed-colony bench:
 // distance heuristics that ignore terrain (Manhattan, or any field

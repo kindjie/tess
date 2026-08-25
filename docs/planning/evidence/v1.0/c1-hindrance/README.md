@@ -58,6 +58,10 @@ replay matrix (a pre-RC audit correction): the retained prototype's
 registered target -- replayed the CANDIDATE arm on two sampled seeds
 (warehouse and colony trial 0), and the decision program ran each arm
 once. The canonical arm's determinism rests on the substrate's own
-rebuild-reproducibility pinning, not on a C1 artifact; a reader
-requiring stronger per-seed determinism evidence should rerun the
-recorded programs twice and compare.
+rebuild-reproducibility pinning, not on a C1 artifact. A reader
+requiring per-seed determinism evidence cannot get it by rerunning
+these programs and comparing output -- they emit aggregates, and
+identical aggregates can mask offsetting per-seed differences -- so
+the check would need the programs extended to emit per-seed outcome
+digests for both arms, compared across two runs (the shape the C4 and
+C5 records later adopted).

@@ -110,8 +110,8 @@ and the right default for small or dense worlds. `SparseResidentWorld`
 a byte-budgeted residency manager for large or mostly-empty worlds.
 Construct the world inside the application lifecycle so allocation failures
 can be reported at its error boundary. Zero-initialized fields mean a fresh
-world is fully blocked for the identity movement class below: open tiles
-before pathing.
+world is fully impassable for the identity movement class below: mark
+tiles passable before pathing.
 
 - Architecture: [`architecture/storage.md`](architecture/storage.md)
 - Example: `examples/sparse_stream.cc` (budget-bounded residency and the

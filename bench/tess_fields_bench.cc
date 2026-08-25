@@ -204,7 +204,7 @@ void BM_fields_nearest_target(benchmark::State& state) {
     benchmark::DoNotOptimize(status);
   }
   fields_bench_check(status == tess::PathStatus::Found,
-                     "nearest_target failed on an open world");
+                     "nearest_target failed on a fully passable world");
 }
 
 // Cache hit: the steady-state shared-goal reuse path.

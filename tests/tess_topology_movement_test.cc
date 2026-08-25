@@ -677,7 +677,7 @@ using Stairs = tess::StairTransitions<StairTag>;
 
 // Ground floor open on rows y < 2; an upper platform over impassable ground
 // (rows y in [2,4)) so no vertical face adjacency connects the levels; the
-// offset stair from the open ground row is the only link.
+// offset stair from the passable ground row is the only link.
 void build_two_levels(LevelWorld& world) {
   for (std::int64_t y = 0; y < 8; ++y) {
     for (std::int64_t x = 0; x < 8; ++x) {
@@ -690,7 +690,7 @@ void build_two_levels(LevelWorld& world) {
       world.field<PassableTag>(tess::Coord3{x, y, 0}) = 0;
     }
   }
-  // Foot on the open ground row; landing (2,2,1) on the platform.
+  // Foot on the passable ground row; landing (2,2,1) on the platform.
   world.field<StairTag>(tess::Coord3{2, 1, 0}) =
       static_cast<std::uint8_t>(tess::StairDirection::PositiveY);
 }
