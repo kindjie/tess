@@ -2,6 +2,33 @@
   "version": 1,
   "runs": [
     {
+      "commit": "8e9651c339b9a92708a31b1b7b729c07924c5172",
+      "timestamp": "2026-08-25T14:03:59Z",
+      "run_id": "32851681651",
+      "files": [
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/block-pipeline.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/block.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/diagnostics.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/ecs.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/fields.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/key.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/maintenance.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/metadata.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/parallel.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/path.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/persistence.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/query.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/queued.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/render-delta.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/residency.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/scheduler.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/spatial.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/storage.json",
+        "baselines/2026/08/8e9651c339b9a92708a31b1b7b729c07924c5172/topology.json"
+      ],
+      "benchmark_count": 3430
+    },
+    {
       "commit": "b57f8d37ad44e27a07ad6886938bb139df4c3243",
       "timestamp": "2026-08-24T21:39:35Z",
       "run_id": "32775493665",
