@@ -2051,11 +2051,12 @@ budgeted-progress and maintenance evidence. The
 acceptance evidence.</p>
 <h2 id="release-gated-next-steps">Release-gated next steps</h2>
 <ul>
-<li>After <code>v0.13.0</code>, complete the bounded pathfinding, movement, execution, and
-  synthesis dispositions in the
-  <a href="https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md">v0.13-to-v1.0 execution plan</a>. Accepted implementations land
-  before downstream evaluation; rejection or explicit deferral completes an
-  optional experiment.</li>
+<li>The bounded pathfinding, movement, execution, and synthesis
+  dispositions in the <a href="https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md">v0.13-to-v1.0 execution plan</a> are
+  complete: every candidate is dispositioned with retained evidence
+  (<code>docs/planning/evidence/v1.0/</code>), no new library authority was
+  accepted, and the accepted test suites and caller-recipe
+  documentation have landed.</li>
 <li>Create <code>v1.0.0-rc.1</code> only after adding its immutable compatibility snapshot,
   recording a substantial downstream evaluation of the resulting surface,
   assembling release records, and passing release-mode CI on the exact

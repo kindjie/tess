@@ -2218,11 +2218,15 @@ internal data structure is not a rejection of the broader research idea.</p>
   and failed the second-platform non-regression gate
   (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-10-quad-heap-rejected.md">evidence</a>).</li>
 <li><strong>Dynamic congestion prices in the colony demo</strong> —
-  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
-  The tested policies reduced some waits but produced incomplete arrivals,
-  violating the demo's terminal-outcome contract
-  (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-wide-merge-second-wave.md">evidence</a>). This does not reject future local
-  congestion fields.</li>
+  <span class="strategy-status strategy-status--released">Validated caller recipe</span>
+  The original policies produced incomplete arrivals and were rejected
+  (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-wide-merge-second-wave.md">evidence</a>); a later revalidation on the corrected
+  topology superseded that result — a bounded demand-driven price policy
+  retained or improved terminal classification on every supported population
+  across all seven demo scenarios on two platforms, and is documented as a
+  caller recipe with its measured boundary
+  (<a href="../architecture/spatial-coordination/">spatial coordination</a>,
+  <a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/c5-congestion/README.md">evidence</a>). No library mechanism was added.</li>
 <li><strong>Balanced gate waypoints</strong> —
   <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
   Assigning equal cohorts to exact crossing tiles synchronized agents onto
