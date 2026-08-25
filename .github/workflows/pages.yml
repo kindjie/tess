@@ -45,6 +45,7 @@ jobs:
         env:
           REF: ${{ github.ref }}
           REQUESTED: ${{ inputs.publish_version }}
+          EVENT: ${{ github.event_name }}
         run: |
           version=""
           alias=""
@@ -61,6 +62,12 @@ jobs:
             fi
             version="$REQUESTED"
             alias="latest"
+          elif [ "$EVENT" != "push" ]; then
+            # A dispatch without publish_version verifies only -- even on a
+            # tag ref. Otherwise an empty dispatch on a tag would republish
+            # it (restaging that ref's robots.txt at the root) instead of
+            # doing the documented verification run.
+            :
           elif [ "$REF" = "refs/heads/main" ]; then
             # Development snapshot. It never takes the "latest" alias, so the
             # site default keeps pointing at the newest release.

@@ -1,4 +1,4 @@
-## 2026-08-24 - The platform-existential rejection refinement is the recorded rule
+## 2026-08-24 - Platform-existential rejection is the recorded rule
 
 The execution plan's cross-hardware section said "a performance-only
 rejection is not final until both platforms run" while its own decision
