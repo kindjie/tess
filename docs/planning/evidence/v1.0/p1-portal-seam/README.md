@@ -49,6 +49,10 @@ python3 tools/paired_bench.py --mode shadow \
 - `m3-counter-identity.txt`, `deck-counter-identity.txt` — per-arm counters at
   a fixed 2000 iterations on the two decision cells. These substantiate the
   claim that the arms perform identical downstream work on those cells.
+  (Capture defect, noted rather than edited: the Deck file's arm labels
+  printed empty, so its rows cannot be attributed to base/stand-in by
+  label; each cell's two rows are identical, which is what the identity
+  claim rests on.)
 - `seam-standin.md` — the measured scaffolding, recorded as source.
 
 ## Two limits of what is retained

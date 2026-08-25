@@ -90,10 +90,18 @@ internal data structure is not a rejection of the broader research idea.
   degraded at dense bottlenecks whose queues exceeded the fixed horizon
   ([screening study][movement-screening]).
 
-JPS, bidirectional A\*, and D\* Lite have no acceptance or rejection decision
-in this repository. Bounded pre-RC screens are scheduled in the
-[execution plan][execution-plan]; Theta\* remains deferred until its supporting
-contracts exist. Their current absence is not a performance verdict.
+The pre-RC screens in the [execution plan][execution-plan] rejected all
+three of the remaining classical candidates on retained evidence:
+gated 4-connected JPS regressed dense rubble maps despite large
+structured-map wins ([evidence][jps-rejection]); whole-query
+bidirectional A\* confirmed material regressions on five of eight cells
+with correctness gates green ([evidence][bidir-rejection]); and goal-keyed
+D\* Lite rejected at feasibility once both arms were counted with the
+same ruler — its repair machinery does essentially the same abstract
+work as searching fresh against this incumbent
+([evidence][dstar-rejection]). Each record carries its scoped
+reconsideration condition; none is a verdict on other domains.
+Theta\* remains deferred until its supporting contracts exist.
 
 </details>
 
@@ -118,7 +126,7 @@ for later reads.
 ## One world, one request set
 
 The example uses three solid vertical walls with alternating single-tile gaps.
-Every open tile has unit passability and cost, so each strategy must solve the
+Every passable tile has unit cost, so each strategy must solve the
 same visible obstacle course and the returned costs remain comparable. The
 demo model copies each borrowed path before the next scratch mutation so the
 browser reads read-only C++ result snapshots.
@@ -307,12 +315,14 @@ The decision is workload-specific: compare paired names with the same suffix,
 inspect their counters, and retain the simpler API when the measured benefit
 does not justify another invalidation or grouping lifecycle.
 
-[strategy-source]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies_model.cc
 [strategy-main]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies.cc
 [benchmark-source]: https://github.com/kindjie/tess/tree/main/bench
-[quad-heap-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-10-quad-heap-rejected.md
-[congestion-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-wide-merge-second-wave.md
+[quad-heap-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-14.md
+[congestion-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-17.md
 [congestion-revalidation]: https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/c5-congestion/README.md
-[waypoint-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.d/2026-08-17-colony-balanced-waypoints-rejected.md
+[jps-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p3-jps/README.md
+[bidir-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p4-bidir/README.md
+[dstar-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p5-dstar/README.md
+[waypoint-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-17.md
 [movement-screening]: https://github.com/kindjie/tess/blob/main/docs/planning/local-movement-resolution.md#evidence
 [execution-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md

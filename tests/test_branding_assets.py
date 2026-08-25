@@ -435,13 +435,16 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert '<details class="strategy-alternatives" markdown="1">' in article
   assert "<summary>Why some alternatives were not promoted</summary>" in article
   assert ".strategy-alternatives" in site_css
-  assert "JPS, bidirectional A\\*, and D\\* Lite" in article
-  assert "no acceptance or rejection decision" in article
+  assert "rejected all" in article
+  assert "evidence/v1.0/p3-jps/README.md" in article
+  assert "evidence/v1.0/p4-bidir/README.md" in article
+  assert "evidence/v1.0/p5-dstar/README.md" in article
   assert "[execution plan][execution-plan]" in article
   assert "Theta\\* remains deferred" in article
-  assert "2026-08-10-quad-heap-rejected.md" in article
-  assert "2026-08-17-colony-balanced-waypoints-rejected.md" in article
-  assert "2026-08-17-colony-wide-merge-second-wave.md" in article
+  assert "optimization-log-archive-2026-08-14.md" in article
+  assert "optimization-log-archive-2026-08-17.md" in article
+  # The congestion and waypoint rejections both live in the 08-17
+  # archive; the assertion above covers that link target once.
   assert "planning/local-movement-resolution.md" in article
 
   assert "demo/strategies/" in pages
@@ -528,7 +531,7 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   assert "api.setWall(key % width, Math.floor(key / width), 1) === 1" in app
   assert "strokeBuilt = !walls.has" in app
   assert "paintLine(lastTile, at, strokeBuilt)" in app
-  assert "Drag open space to draw; drag from a wall to erase." in html
+  assert "Drag empty space to draw; drag from a wall to erase." in html
   assert "wall removal did not recover route" in native
   assert "idempotent add rebuilt topology" in native
 

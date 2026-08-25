@@ -83,3 +83,6 @@ stage-1 rejection; it is no longer needed to carry it.
   structure, so P6's opening condition remains unmet from this stream.
 - P2 reconsideration: unchanged -- rejected on cost, not semantics,
   now at the feasibility stage.
+- Reconsideration condition for D* Lite itself: a successor that
+  clears the registered 1.5 symmetric-work bar, or demonstrates
+  favorable per-op-cost-weighted work against this incumbent.

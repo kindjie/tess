@@ -64,7 +64,7 @@ struct ArmedRun {
 // ---------------------------------------------------------------------
 
 TEST(Escalation, ComponentClosesOverTouchingAgentsAndBounds) {
-  // Three agents in a row on open terrain: seed the middle one; both
+  // Three agents in a row on passable terrain: seed the middle one; both
   // neighbors stand inside its radius-2 region, so the closure must
   // absorb them; a distant fourth agent must stay out.
   auto scenario = std::make_unique<mv::Scenario>();
@@ -91,7 +91,7 @@ TEST(Escalation, ComponentClosesOverTouchingAgentsAndBounds) {
 }
 
 TEST(Escalation, OverBoundsComponentIsSkippedNotTruncated) {
-  // Seven agents chained across open terrain exceed A_max = 6; the
+  // Seven agents chained across passable terrain exceed A_max = 6; the
   // pre-registered outcome is a skip, never a truncated component.
   auto scenario = std::make_unique<mv::Scenario>();
   scenario->options.extent = 16;

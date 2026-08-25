@@ -153,7 +153,7 @@ TEST(TessMovementClass, WalkerAvoidsConstructionBuilderEntersIt) {
   const tess::LocalTileId site{2};
   const tess::LocalTileId wall{3};
 
-  // Open terrain: both classes may enter.
+  // Passable terrain: both classes may enter.
   EXPECT_TRUE(Walker::passable(page, open));
   EXPECT_TRUE(Builder::passable(page, open));
 

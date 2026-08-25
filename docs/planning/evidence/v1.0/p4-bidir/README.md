@@ -86,3 +86,9 @@ both directions fail it symmetrically and the doubled machinery loses.
 Prototype removed from the branch; this directory retains the diff
 (bench included), programs as source, both paired-bench JSONs, the
 counters, and the captured correctness run.
+
+## Reconsideration
+
+A weak-heuristic or heuristic-free search surface would reopen the
+question; where the heuristic works this incumbent is near-minimal,
+and where it fails it fails both directions symmetrically.

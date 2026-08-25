@@ -10,7 +10,9 @@ on:
       publish_version:
         description: >-
           Version directory to publish from the selected ref, such as "0.13".
-          Supplying it also moves the "latest" alias and the site default.
+          Supplying it also moves the "latest" alias and the site default,
+          unless the currently published latest is numerically newer
+          (the deploy-step guard then publishes the tree only).
           Leave empty for an ordinary verification run.
         required: false
         type: string
@@ -43,12 +45,29 @@ jobs:
         env:
           REF: ${{ github.ref }}
           REQUESTED: ${{ inputs.publish_version }}
+          EVENT: ${{ github.event_name }}
         run: |
           version=""
           alias=""
           if [ -n "$REQUESTED" ]; then
+            # Only a major.minor release tree may be requested: anything
+            # else -- "dev" especially, which sort -V ranks above every
+            # number and would sail through the deploy-step alias guard --
+            # must fail loudly rather than re-point the site default.
+            if ! printf '%s' "$REQUESTED" | grep -Eq '^[0-9]+\.[0-9]+$'
+            then
+              echo "publish_version must be <major>.<minor>," \
+                "got '$REQUESTED'" >&2
+              exit 1
+            fi
             version="$REQUESTED"
             alias="latest"
+          elif [ "$EVENT" != "push" ]; then
+            # A dispatch without publish_version verifies only -- even on a
+            # tag ref. Otherwise an empty dispatch on a tag would republish
+            # it (restaging that ref's robots.txt at the root) instead of
+            # doing the documented verification run.
+            :
           elif [ "$REF" = "refs/heads/main" ]; then
             # Development snapshot. It never takes the "latest" alias, so the
             # site default keeps pointing at the newest release.
@@ -56,9 +75,18 @@ jobs:
           elif [ "${REF#refs/tags/v}" != "$REF" ]; then
             tag="${REF#refs/tags/}"
             numbers="${tag#v}"
-            # A release publishes a major.minor tree; patches replace it.
-            version="${numbers%.*}"
-            alias="latest"
+            # A stable release publishes a major.minor tree and moves the
+            # latest alias; patches replace the tree. Prerelease tags
+            # (v1.0.0-rc.1) publish nothing: /dev/ already tracks the
+            # candidate during observation, and latest must keep pointing
+            # at the newest stable release.
+            if printf '%s' "$numbers" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+            then
+              version="${numbers%.*}"
+              alias="latest"
+            else
+              echo "prerelease or malformed tag $tag: skipping publish"
+            fi
           fi
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "alias=$alias" >>"$GITHUB_OUTPUT"
@@ -375,6 +403,25 @@ jobs:
           # rather than only addressed by absolute path.
           export PATH="$PWD/.venv-docs/bin:$PATH"
 
+          # A patch tag on an older minor line must not re-point `latest`
+          # or the site default backward. Keep the tree publish, but drop
+          # the alias when the currently defaulted version is numerically
+          # newer than this one.
+          if [ -n "$ALIAS" ]; then
+            current="$(git show FETCH_HEAD:versions.json 2>/dev/null \
+              | python -c 'import json, sys; e = json.load(sys.stdin); print(next((v["version"] for v in e if "latest" in v.get("aliases", [])), ""))' \
+              || true)"
+            if [ -n "$current" ] && [ "$current" != "$VERSION" ]; then
+              newest="$(printf '%s\n%s\n' "$current" "$VERSION" \
+                | sort -V | tail -1)"
+              if [ "$newest" = "$current" ]; then
+                echo "published latest $current is newer than $VERSION;" \
+                  "publishing the tree without moving the alias"
+                ALIAS=""
+              fi
+            fi
+          fi
+
           # --alias-type copy, not the default symlink: GitHub Pages does not
           # serve symlinked directories, and every documented deep link now
           # points through /latest/. --update-aliases lets a new release take
@@ -393,6 +440,9 @@ jobs:
           git worktree add build/pages FETCH_HEAD
           # Jekyll would otherwise drop Doxygen's underscore-prefixed assets.
           touch build/pages/.nojekyll
+          # Crawlers read robots.txt only at the site root; the versioned
+          # trees each carry a copy that nothing ever requests.
+          cp docs/robots.txt build/pages/robots.txt
           git config --local --unset "http.extraheader"
 
       - name: Configure Pages

@@ -40,7 +40,8 @@ Per-scenario geometric means (same per-cell ratios):
 | four-gates | 0.9031 |
 | goal-wall | 1.4934 |
 
-Extremes: best cells two-gates N in {880, 960, 992} at 0.11x;
+Extremes: best cells browser-incremental N in {960, 1008, 1024} at
+0.099x (best six-scenario cells: two-gates around N=960 at 0.11x);
 worst cells goal-wall N in {432, 496, 512} at 1.89x (+89%).
 Canonical fails to complete 41 cells (tip, every N >= 384, stranded at
 the 5000-tick cap); the priced arm completes all 448 cells with zero

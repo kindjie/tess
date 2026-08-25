@@ -17,7 +17,9 @@ the optimization-log fragment can be regenerated rather than taken on trust.
   classification regressions and improvements, seed exclusion counts against
   the pre-registered 20% cap, and the pooled paired geometric mean of
   ticks-to-settle over comparable seeds.
-- `engagement` / `engagement.txt` — the check that the null is not vacuous.
+- `engagement` / `engagement.txt` — engagement counter, retained
+  because it was run but NON-DECIDING (see the caveat below: nonzero
+  hindrance terms cannot show discrimination among tied candidates).
   Counts ranking calls whose hindrance term is nonzero, per family. A
   tie-break that never fires would produce the same flat result while testing
   nothing.
@@ -51,6 +53,17 @@ which is the only place the composition can change a decision.
 ## Limits of these artifacts
 
 The programs record aggregate counts, not per-seed tables, so a reader
-checking an individual seed must rerun rather than re-analyse. Both arms are
-deterministic per seed — pinned by `BothArmsReplayIdentically` in the test
-target — so rerunning reproduces exactly.
+checking an individual seed must rerun rather than re-analyse. The
+determinism evidence retained here is narrower than a full per-arm
+replay matrix (a pre-RC audit correction): the retained prototype's
+`BothArmsReplayIdentically` test -- prototype source only, never a
+registered target -- replayed the CANDIDATE arm on two sampled seeds
+(warehouse and colony trial 0), and the decision program ran each arm
+once. The canonical arm's determinism rests on the substrate's own
+rebuild-reproducibility pinning, not on a C1 artifact. A reader
+requiring per-seed determinism evidence cannot get it by rerunning
+these programs and comparing output -- they emit aggregates, and
+identical aggregates can mask offsetting per-seed differences -- so
+the check would need the programs extended to emit per-seed outcome
+digests for both arms, compared across two runs (the shape the C4 and
+C5 records later adopted).

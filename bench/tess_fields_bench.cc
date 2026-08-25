@@ -92,7 +92,7 @@ void fill_goals_block(tess::GoalSet& goals, std::size_t count,
   }
 }
 
-// Reverse flood from N goals over the open 64x64 world.
+// Reverse flood from N goals over the fully passable 64x64 world.
 //
 // NOT a goal-count scaling curve, despite the family naming. The flood
 // visits every one of the 4096 tiles whatever the seed count, so cost is
@@ -128,7 +128,7 @@ void run_goalset_build_bench(benchmark::State& state, std::size_t goal_count) {
   state.counters["reached_nodes"] = static_cast<double>(reached);
   state.counters["goal_count"] = static_cast<double>(goal_count);
   fields_bench_check(reached == kTileCount,
-                     "open-world flood did not reach every tile");
+                     "full-world flood did not reach every tile");
 }
 
 void BM_fields_goalset_build_1(benchmark::State& state) {
@@ -176,7 +176,7 @@ void BM_fields_goalset_build_large(benchmark::State& state) {
   state.counters["reached_nodes"] = static_cast<double>(reached);
   state.counters["goal_count"] = static_cast<double>(goal_count);
   fields_bench_check(reached == kLargeTileCount,
-                     "open-world flood did not reach every tile");
+                     "full-world flood did not reach every tile");
 }
 
 // Gradient descent over a built product: the per-agent query cost.
@@ -204,7 +204,7 @@ void BM_fields_nearest_target(benchmark::State& state) {
     benchmark::DoNotOptimize(status);
   }
   fields_bench_check(status == tess::PathStatus::Found,
-                     "nearest_target failed on an open world");
+                     "nearest_target failed on a fully passable world");
 }
 
 // Cache hit: the steady-state shared-goal reuse path.

@@ -27,9 +27,10 @@ using Stairs = tess::StairTransitions<StairTag>;
 
 constexpr auto kStairFoot = tess::Coord3{2, 1, 0};
 
-// Ground floor open on rows y < 2; an upper platform over impassable
+// Ground floor passable on rows y < 2; an upper platform over impassable
 // ground (rows y in [2,4)) so no vertical face adjacency connects the
-// levels; the offset stair from the open ground row is the only link.
+// levels; the offset stair from the passable ground row is the only
+// link.
 void build_keep(World& world) {
   for (std::int64_t y = 0; y < 8; ++y) {
     for (std::int64_t x = 0; x < 8; ++x) {
@@ -42,7 +43,7 @@ void build_keep(World& world) {
       world.field<PassableTag>(tess::Coord3{x, y, 0}) = 0;
     }
   }
-  // Foot on the open ground row; the landing is one step +y and one
+  // Foot on the passable ground row; the landing is one step +y and one
   // step up: (2,2,1) on the platform.
   world.field<StairTag>(kStairFoot) =
       static_cast<std::uint8_t>(tess::StairDirection::PositiveY);

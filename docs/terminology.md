@@ -101,7 +101,47 @@ Keep these independent:
 - **compatibility:** stable, optional-stable, experimental, or
   implementation-only; and
 - **decision outcome:** accepted, rejected experiment, or not promoted.
+  The v1.0 prototype-queue synthesis refines accepted work by tier --
+  private optimization, supported behavior, public API, deferred
+  research, or rejected mechanism -- which maps onto these outcomes
+  (the first three refine "accepted"; deferred research refines "not
+  promoted"; rejected mechanism is "rejected experiment").
 
 The [roadmap](roadmap.md) owns availability. The [support policy](support.md)
 owns compatibility. Historical decisions and experiments explain outcomes but
 do not describe current implementation state.
+
+## Movement outcomes
+
+The movement measurement vocabulary, coined by the v1.0 experiment
+stream and now used by maintained architecture pages and permanent test
+suites:
+
+- A **settle** runs the movement tier until a **no-progress fixpoint**:
+  every agent has reached its goal (immediately), or no agent position
+  has changed for a configured window of consecutive ticks
+  (`wedge_ticks`, 16 by default in the pinned harness); a tick cap can
+  end the run before either (**censored**). Classification happens
+  after termination, not during it. **Settle ticks** count that run's
+  simulation ticks.
+- **Terminal classification** assigns every agent one of five
+  categories at the fixpoint: **arrived** (on its goal),
+  **goal-occupied** (its goal is permanently held by another settled
+  agent), **sealed** (its goal is unreachable under the terrain and
+  the terminal-agent set together -- the harness separately counts
+  **structural seals**, goals bare terrain already disconnects, so
+  experiments subtract those rather than credit a movement arm for
+  them; distinct from the *sealed schedule* of the simulation-tick
+  vocabulary above), **wedged** (live but permanently unable to make
+  progress), or **censored** (the tick cap ended the settle before a fixpoint;
+  applies to agents still holding a goal -- already-arrived agents
+  classify arrived even in a censored run).
+- The web-colony demo's own recovery classifier uses a distinct
+  three-way vocabulary -- **arrived**, **crowd-blocked**, **durably
+  unreachable** -- which stays distinct; do not translate between the
+  two informally.
+- **Arming** a mechanism or recipe means enabling it for a run (an
+  armed arm vs the canonical arm); this is unrelated to *goal arming*
+  in the ECS adapter vocabulary.
+- For terrain, prefer **passable / impassable** here as everywhere;
+  "open" remains reserved for search frontiers.

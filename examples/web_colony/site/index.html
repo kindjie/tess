@@ -24,7 +24,7 @@
           is a shadow state fed by versioned DeltaFrames. Agent movement is
           interpolated only for presentation; the simulation itself stays on
           fixed integer-tile ticks. Walls survive resets, and the bands near
-          each edge stay open so the colony always has somewhere to stand.
+          each edge stay passable so the colony always has somewhere to stand.
           The timing readout covers the C++ update, not canvas rendering.
           Single-threaded WebAssembly — native numbers are faster; see
           <a href="https://tess.owx.dev/latest/performance/">performance</a>.
@@ -52,7 +52,7 @@
         <canvas id="world" width="768" height="768"
                 aria-label="Colony world grid"></canvas>
         <p class="edit-hint">
-          Drag open space to draw; drag from a wall to erase.
+          Drag empty space to draw; drag from a wall to erase.
         </p>
         <div class="status" aria-live="polite">
           <span id="message">Loading WebAssembly…</span>

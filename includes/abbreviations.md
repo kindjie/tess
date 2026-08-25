@@ -8,3 +8,6 @@
 *[movement class]: A compile-time definition of passability, entry cost, and allowed steps.
 *[distance field]: Retained shortest-distance data built from one or more goals for repeated path reads.
 *[route cache]: Capacity-bounded retained storage for reusable route results.
+*[settle]: A movement-tier run to a no-progress fixpoint, classified after termination.
+*[terminal classification]: The five-way per-agent outcome a settle assigns: arrived, goal-occupied, sealed, wedged, or censored.
+*[arming]: Enabling a mechanism or recipe for a run, as the armed arm against the canonical arm.

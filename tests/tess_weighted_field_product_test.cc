@@ -411,7 +411,7 @@ TEST(TessWeightedFieldProduct, ReplaceStoreThatEvictsReturnsTheStoredEntry) {
   const auto size_b_small = measure(goal_b);
   const auto size_c = measure(goal_c);
 
-  // Exactly enough for the three walled products; the larger open-world
+  // Exactly enough for the three walled products; the larger full-world
   // rebuild of goal_b must evict the LRU entry (goal_a, at index 0).
   tess::FieldProductCache cache(size_a + size_b_small + size_c);
   cache.reserve_entries(4);

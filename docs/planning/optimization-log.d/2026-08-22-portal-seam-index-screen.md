@@ -54,7 +54,6 @@
   material-**regression** criterion on the Deck primary cell, from an
   effective 8% to 9.6%. The outcome is unaffected — the observed 10.8%
   regression clears both — but the direction should be recorded both ways.
-  — but the direction should be recorded both ways.
 - **Result, primary cell**
   (`path/agent_tick_100_weighted_goal_churn_portal_512x512`): M3 improved
   18.4% (95% CI 16.2-19.2% faster); the Steam Deck **regressed 10.8%**
@@ -65,7 +64,7 @@
 - **Result, guardrails:** every edit and dirty cell was immaterial on both
   devices, but "immaterial" is not "inside noise": two Steam Deck intervals
   exclude zero — `unit_dirty_world_edit` at +0.5% (CI +0.19% to +0.57%) and
-  `weighted_shared_dirty`'s confirmation at +0.3% (CI +0.06% to +0.55%). Both
+  `weighted_shared_dirty`'s confirmation at +0.4% (CI +0.06% to +0.55%). Both
   sit far under any material threshold and change no conclusion.
 
   The guardrail reading is weak for a second and more important reason. The

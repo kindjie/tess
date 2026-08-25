@@ -40,10 +40,26 @@ write token, and it never touches `main`.
 ### Publishing a version
 
 - Pushing to `main` publishes `/dev/`.
-- Pushing a `v*` tag publishes `/<major>.<minor>/`, moves the `latest` alias,
-  and sets the site default.
-- Dispatching the workflow against a ref with `publish_version` set does the
-  same for that ref, which is how an existing tag is published retroactively.
+- Pushing a stable `v<major>.<minor>.<patch>` tag publishes
+  `/<major>.<minor>/`; the `latest` alias and site default move only
+  when the tag's version is at least the currently defaulted one, so a
+  patch on an older minor line refreshes its own tree without pointing
+  the site backward.
+- A prerelease tag (for example `v1.0.0-rc.1`) publishes nothing:
+  `/dev/` already tracks the candidate during its observation window,
+  and `latest` keeps pointing at the newest stable release.
+- Accepted residual: the alias guard compares versions numerically, so
+  a mistyped `publish_version` that is numerically newer than every
+  release (say `9.9`) would create a junk tree and take `latest`; no
+  guard can distinguish it from a legitimate retroactive publish of a
+  genuinely newer tag, so the dispatch input is the operator's
+  responsibility.
+- Dispatching the workflow against a ref with `publish_version` set
+  (validated as `<major>.<minor>`) does the same for that ref, which is
+  how an existing tag is published retroactively. Caveat: the run
+  stages that ref's `docs/robots.txt` at the site root, so a
+  retroactive publish of an older ref serves its stale copy until the
+  next `main` push restages the current one.
 
 Pull requests build and verify without publishing anything.
 

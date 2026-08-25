@@ -675,9 +675,9 @@ using TwoLevel = tess::Shape<tess::Extent3{8, 8, 2}, tess::Extent3{4, 4, 1}>;
 using LevelWorld = tess::AlwaysResidentWorld<TwoLevel, StairSchema>;
 using Stairs = tess::StairTransitions<StairTag>;
 
-// Ground floor open on rows y < 2; an upper platform over impassable ground
+// Ground floor passable on rows y < 2; an upper platform over impassable ground
 // (rows y in [2,4)) so no vertical face adjacency connects the levels; the
-// offset stair from the open ground row is the only link.
+// offset stair from the passable ground row is the only link.
 void build_two_levels(LevelWorld& world) {
   for (std::int64_t y = 0; y < 8; ++y) {
     for (std::int64_t x = 0; x < 8; ++x) {
@@ -690,7 +690,7 @@ void build_two_levels(LevelWorld& world) {
       world.field<PassableTag>(tess::Coord3{x, y, 0}) = 0;
     }
   }
-  // Foot on the open ground row; landing (2,2,1) on the platform.
+  // Foot on the passable ground row; landing (2,2,1) on the platform.
   world.field<StairTag>(tess::Coord3{2, 1, 0}) =
       static_cast<std::uint8_t>(tess::StairDirection::PositiveY);
 }
@@ -844,7 +844,7 @@ TEST(TessTopologyMovement, SidewaysCrossingStairConnectsBothDirections) {
   using TwoWide = tess::Shape<tess::Extent3{8, 4, 2}, tess::Extent3{4, 4, 2}>;
   using WideWorld = tess::AlwaysResidentWorld<TwoWide, StairSchema>;
   WideWorld world;
-  // Ground floor open everywhere on the west chunk and the east chunk's
+  // Ground floor passable everywhere on the west chunk and the east chunk's
   // ground is impassable under an east platform at z=1.
   for (std::int64_t y = 0; y < 4; ++y) {
     for (std::int64_t x = 0; x < 4; ++x) {

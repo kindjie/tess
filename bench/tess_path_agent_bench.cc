@@ -608,7 +608,7 @@ void portal_first_goal_churn_tick(benchmark::State& state) {
     world.template field<PassableTag>(goal) = 1;
     world.template field<CostTag>(goal) = 1;
   }
-  // Open ground between the x=439 and x=476 barrier columns, away from
+  // Passable ground between the x=439 and x=476 barrier columns, away from
   // every agent start and goal, so sealing it perturbs nothing else.
   const auto sealed_goal = tess::Coord3{450, 450, 0};
   if (Mode == ChurnGoalMode::Sealed) {
