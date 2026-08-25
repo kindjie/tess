@@ -2192,8 +2192,8 @@ and the right default for small or dense worlds. <code>SparseResidentWorld</code
 a byte-budgeted residency manager for large or mostly-empty worlds.
 Construct the world inside the application lifecycle so allocation failures
 can be reported at its error boundary. Zero-initialized fields mean a fresh
-world is fully blocked for the identity <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> below: open tiles
-before pathing.</p>
+world is fully impassable for the identity <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> below: mark
+tiles passable before pathing.</p>
 <ul>
 <li>Architecture: <a href="../architecture/storage/"><code>architecture/storage.md</code></a></li>
 <li>Example: <code>examples/sparse_stream.cc</code> (budget-bounded residency and the

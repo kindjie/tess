@@ -3054,7 +3054,7 @@ accounting: <code>PathAgentTickState</code> carries an optional caller-owned
 <code>FlowAccounting</code>, and every transition is counted where it happens.
 Arming a goal through the tick-state <code>set_path_agent_goal</code> is an
 admission; replacing a goal that <code>path_agent_goal_outstanding</code> still
-reports as live terminalizes it as superseded, while re-arming after a
+reports as live terminalizes it as superseded, while re-<abbr title="Enabling a mechanism or recipe for a run, as the armed arm against the canonical arm.">arming</abbr> after a
 terminal outcome is a fresh admission. The tick-state
 <code>clear_path_agent_goal</code> cancels a live goal. <code>arrive_path_agent</code>
 completes the lifecycle at the arrival transition inside the advance

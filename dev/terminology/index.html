@@ -1192,6 +1192,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#movement-outcomes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Movement outcomes
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2062,6 +2073,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#movement-outcomes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Movement outcomes
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2372,11 +2394,50 @@ a useful contract on their own. State the property instead: for example,
   of scope;</li>
 <li><strong>compatibility:</strong> stable, optional-stable, experimental, or
   implementation-only; and</li>
-<li><strong>decision outcome:</strong> accepted, rejected experiment, or not promoted.</li>
+<li><strong>decision outcome:</strong> accepted, rejected experiment, or not promoted.
+  The v1.0 prototype-queue synthesis refines accepted work by tier --
+  private optimization, supported behavior, public API, deferred
+  research, or rejected mechanism -- which maps onto these outcomes
+  (the first three refine "accepted"; deferred research refines "not
+  promoted"; rejected mechanism is "rejected experiment").</li>
 </ul>
 <p>The <a href="../roadmap/">roadmap</a> owns availability. The <a href="../support/">support policy</a>
 owns compatibility. Historical decisions and experiments explain outcomes but
 do not describe current implementation state.</p>
+<h2 id="movement-outcomes">Movement outcomes</h2>
+<p>The movement measurement vocabulary, coined by the v1.0 experiment
+stream and now used by maintained architecture pages and permanent test
+suites:</p>
+<ul>
+<li>A <strong><abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr></strong> runs the movement tier until a <strong>no-progress fixpoint</strong>:
+  every agent has reached its goal (immediately), or no agent position
+  has changed for a configured window of consecutive ticks
+  (<code>wedge_ticks</code>, 16 by default in the pinned harness); a tick cap can
+  end the run before either (<strong>censored</strong>). Classification happens
+  after termination, not during it. <strong>Settle ticks</strong> count that run's
+  simulation ticks.</li>
+<li><strong>Terminal classification</strong> assigns every agent one of five
+  categories at the fixpoint: <strong>arrived</strong> (on its goal),
+  <strong>goal-occupied</strong> (its goal is permanently held by another settled
+  agent), <strong>sealed</strong> (its goal is unreachable under the terrain and
+  the terminal-agent set together -- the harness separately counts
+  <strong>structural seals</strong>, goals bare terrain already disconnects, so
+  experiments subtract those rather than credit a movement arm for
+  them; distinct from the <em>sealed schedule</em> of the simulation-tick
+  vocabulary above), <strong>wedged</strong> (live but permanently unable to make
+  progress), or <strong>censored</strong> (the tick cap ended the <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr> before a fixpoint;
+  applies to agents still holding a goal -- already-arrived agents
+  classify arrived even in a censored run).</li>
+<li>The web-colony demo's own recovery classifier uses a distinct
+  three-way vocabulary -- <strong>arrived</strong>, <strong>crowd-blocked</strong>, <strong>durably
+  unreachable</strong> -- which stays distinct; do not translate between the
+  two informally.</li>
+<li><strong>Arming</strong> a mechanism or recipe means enabling it for a run (an
+  armed arm vs the canonical arm); this is unrelated to <em>goal <abbr title="Enabling a mechanism or recipe for a run, as the armed arm against the canonical arm.">arming</abbr></em>
+  in the ECS adapter vocabulary.</li>
+<li>For terrain, prefer <strong>passable / impassable</strong> here as everywhere;
+  "open" remains reserved for search frontiers.</li>
+</ul>
 
 
 

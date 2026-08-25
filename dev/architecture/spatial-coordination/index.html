@@ -2106,18 +2106,18 @@ planner and cache sees a legitimate edit. One bounded policy of this
 shape -- cost <code>1 + min(3, live agents within Manhattan distance 1)</code>,
 repriced every 4 ticks -- was validated against the web_colony demo's
 recovery classifier over all seven scenario geometries and all 64
-supported populations: terminal classification retained or improved on
-every cell on both tested platforms, and settle ticks improved on six
+supported populations: <abbr title="The five-way per-agent outcome a settle assigns: arrived, goal-occupied, sealed, wedged, or censored.">terminal classification</abbr> retained or improved on
+every cell on both tested platforms, and <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr> ticks improved on six
 of the seven geometries
 (per-scenario geometric means 0.20-0.90, including the demo's
 progressive wall-admission flow at 0.21; the canonical tier's 41
 arrival-incomplete tip cells all complete under pricing). The measured
 boundary: on the goal-wall geometry -- detour-shaped, walls never
-contended -- pricing REGRESSES settle time (geometric mean 1.49x, up
+contended -- pricing REGRESSES <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr> time (geometric mean 1.49x, up
 to +89%) while classification holds, and on the C0 fixpoint substrate
 17 of 132 marginal seeds reclassify chaotically, so callers needing
-seed-stable per-agent terminal classification under a fixpoint-style
-settle should not arm it. These are outcome-level measurements on the
+seed-stable per-agent <abbr title="The five-way per-agent outcome a settle assigns: arrived, goal-occupied, sealed, wedged, or censored.">terminal classification</abbr> under a fixpoint-style
+<abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr> should not arm it. These are outcome-level measurements on the
 tested geometries and populations; contention mechanics were not
 instrumented. Evidence and programs:
 <code>docs/planning/evidence/v1.0/c5-congestion/</code>.</p>
