@@ -1,13 +1,16 @@
 # C5x screen program: recorded source
 
-Drives the demo model's public pricing mode; compile from the
-repository root:
+Drives the demo model's public pricing mode and spread toggle;
+compile from the repository root:
 
 ```
 c++ -std=c++23 -O2 -DNDEBUG -Iinclude -Ibuild/dev/generated/include \
   -Iexamples/web_colony c5x_screen.cc \
   examples/web_colony/colony_model.cc -o c5x_screen
 ```
+
+The amendment-2 through amendment-5 arm tables are recoverable from
+this file's git history; the current source runs the amendment-6 set.
 
 ```cpp
 // C5x accounting screen (issue #269, amendments 1-2): canonical vs the
@@ -40,13 +43,6 @@ int failures = 0;
     }                                                                 \
   } while (0)
 
-constexpr std::array<const char*, 23> kArmNames = {
-    "canonical", "prox1",     "prox2",     "self",
-    "decay",     "stalled",   "demand",    "queue",
-    "peak1",     "cool",      "queue2",    "stallpeak",
-    "stallcool", "peakcool",  "stallpeakcool", "prox1q",
-    "peak1q",    "coolq",     "peakcoolq", "stalledq",
-    "stallpeakq", "stallcoolq", "stallpeakcoolq"};
 
 std::pair<std::size_t, std::size_t> queue_walls(wc::ColonyModel& model,
                                                 std::string_view scenario) {
@@ -93,9 +89,10 @@ struct Terminal {
   long long planning_load = 0;
 };
 
-Terminal run(std::string_view scenario, int agents, int policy) {
+Terminal run(std::string_view scenario, int agents, int policy,
+             bool spread = false) {
   wc::ColonyModel model{agents};
-  model.set_spread_congested_routes(false);
+  model.set_spread_congested_routes(spread);
   model.set_congestion_pricing(policy);
   Terminal out;
   const bool incremental = scenario == "browser-incremental";
@@ -167,16 +164,32 @@ int main(int argc, char** argv) {
                   canonical.unreachable, canonical.ticks,
                   canonical.turnaround ? 1 : 0, canonical.planning_load);
       std::fflush(stdout);
-      for (int policy = 1; policy <= 22; ++policy) {
-        const auto priced = run(scenario, agents, policy);
-        const auto replay = run(scenario, agents, policy);
+      struct Arm {
+        const char* name;
+        int policy;
+        bool spread;
+      };
+      // Amendment-6 round: the three optima + canonical as in-binary
+      // anchors, spread interaction, period, and cap arms.
+      static constexpr Arm kArms[] = {
+          {"cool", 9, false},          {"stallcool", 12, false},
+          {"queue2", 10, false},       {"spreadonly", 0, true},
+          {"coolS", 9, true},          {"stallcoolS", 12, true},
+          {"queue2S", 10, true},       {"cool8", 23, false},
+          {"cool16", 24, false},       {"stallcool8", 25, false},
+          {"stallcool16", 26, false},  {"cool7", 27, false},
+          {"stallcool7", 28, false},
+      };
+      for (const auto& arm : kArms) {
+        const auto priced = run(scenario, agents, arm.policy, arm.spread);
+        const auto replay = run(scenario, agents, arm.policy, arm.spread);
         CHECK(priced.arrived == replay.arrived &&
                   priced.crowd_blocked == replay.crowd_blocked &&
                   priced.unreachable == replay.unreachable &&
                   priced.ticks == replay.ticks &&
                   priced.turnaround == replay.turnaround,
               "%.*s N=%d %s replay", (int)scenario.size(), scenario.data(),
-              agents, kArmNames[static_cast<std::size_t>(policy)]);
+              agents, arm.name);
         const bool priced_complete =
             priced.turnaround && priced.arrived == agents;
         const char* gate = "pass";
@@ -194,7 +207,7 @@ int main(int argc, char** argv) {
         }
         std::printf("cell,%.*s,%d,%s,%d,%d,%d,%d,%d,%s,%lld\n",
                     (int)scenario.size(), scenario.data(), agents,
-                    kArmNames[static_cast<std::size_t>(policy)],
+                    arm.name,
                     priced.arrived, priced.crowd_blocked, priced.unreachable,
                     priced.ticks, priced.turnaround ? 1 : 0, gate,
                     priced.planning_load);

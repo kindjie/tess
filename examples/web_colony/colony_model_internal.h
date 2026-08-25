@@ -91,11 +91,12 @@ using Traveler = tess::movement::MovementClass<
         tess::movement::Not<tess::movement::Field<ConstructionTag>>,
         tess::movement::Not<tess::movement::Field<SettledTag>>>,
     tess::movement::FieldCost<CostTag>>;
-// 4, not 1, so congestion prices (1 + min(3, signal)) stay on the
+// 8, not 1, so congestion prices (1 + min(cap, signal), cap <= 7)
+// stay on the
 // bounded fast path; costs above this ceiling fall back to the exact
 // unbounded search, so the bound affects performance only, never
 // results.
-constexpr std::uint32_t kMaxCost = 4;
+constexpr std::uint32_t kMaxCost = 8;
 constexpr auto kTerrainDirty = tess::DirtyMask{1U << 0U};
 
 struct BuildAck {
@@ -185,6 +186,10 @@ struct ColonyModel::Impl {
   // ordinary CostTag writes through the versioned edit channel; the
   // planner already composes FieldCost, so no search code changes.
   int congestion_policy = 0;
+  // Amendment-6 configuration axes: ids 23-28 select a base policy with
+  // a non-default repricing period or price cap.
+  int reprice_period = 4;
+  std::uint16_t price_cap = 3;
   std::vector<std::uint16_t> congestion_heat;
   std::vector<tess::Coord3> reprice_positions;
   std::size_t max_recovery_probes = 0;
@@ -377,10 +382,45 @@ struct ColonyModel::Impl {
       return;
     }
     congestion_policy = policy;
+    // Ids 23-28 (amendment 6): {base, period, cap} configurations.
+    reprice_period = 4;
+    price_cap = 3;
+    switch (policy) {
+      case 23:
+      case 25:
+        reprice_period = 8;
+        break;
+      case 24:
+      case 26:
+        reprice_period = 16;
+        break;
+      case 27:
+      case 28:
+        price_cap = 7;
+        break;
+      default:
+        break;
+    }
     congestion_heat.assign(static_cast<std::size_t>(kWidth) * kHeight, 0);
     reprice_positions.clear();
     if (policy == 0) {
       restore_unit_costs();
+    }
+  }
+
+  // The effective mechanism for a configuration id.
+  [[nodiscard]] int base_policy() const {
+    switch (congestion_policy) {
+      case 23:
+      case 24:
+      case 27:
+        return 9;  // cool
+      case 25:
+      case 26:
+      case 28:
+        return 12;  // stallcool
+      default:
+        return congestion_policy;
     }
   }
 
@@ -593,10 +633,9 @@ struct ColonyModel::Impl {
     // Stall set for the policies that need it: position unchanged since
     // the previous repricing. Policies 5, 10, 11, and 12 consume it and
     // refresh the reference positions afterwards.
-    const bool needs_stall = congestion_policy == 5 ||
-                             congestion_policy == 10 ||
-                             congestion_policy == 11 ||
-                             congestion_policy == 12 || congestion_policy >= 14;
+    const bool needs_stall = base_policy() == 5 || base_policy() == 10 ||
+                             base_policy() == 11 || base_policy() == 12 ||
+                             base_policy() >= 14;
     std::vector<std::uint8_t> stalled_now;
     if (needs_stall) {
       stalled_now.assign(agents.size(), 0);
@@ -613,7 +652,7 @@ struct ColonyModel::Impl {
       }
     }
 
-    switch (congestion_policy) {
+    switch (base_policy()) {
       case 1: {  // prox1: live agents, Manhattan-1 halo.
         for (const auto& agent : agents) {
           if (!agent.has_goal) continue;
@@ -917,7 +956,7 @@ struct ColonyModel::Impl {
       for (int x = 0; x < kWidth; ++x) {
         const tess::Coord3 c{x, y, 0};
         const auto capped =
-            signal[index(x, y)] > 3 ? std::uint16_t{3} : signal[index(x, y)];
+            signal[index(x, y)] > price_cap ? price_cap : signal[index(x, y)];
         const auto price = static_cast<std::uint32_t>(1 + capped);
         auto& cost = world.field<CostTag>(c);
         if (cost != price) {
@@ -1154,7 +1193,10 @@ struct ColonyModel::Impl {
       // last pair, which is the pair rendered with the accumulator remainder.
       demo->snapshot_before_movement();
       demo->sync_settled_obstacles();
-      if (demo->congestion_policy != 0 && context.clock.tick % 4 == 0) {
+      if (demo->congestion_policy != 0 &&
+          context.clock.tick %
+                  static_cast<std::uint64_t>(demo->reprice_period) ==
+              0) {
         demo->apply_congestion_pricing();
       }
       demo->update_route_diversity(context.clock.tick);

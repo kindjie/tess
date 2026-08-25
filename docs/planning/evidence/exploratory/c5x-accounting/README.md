@@ -86,6 +86,51 @@ the six legacy arms ran under one roof.
    flat; stall-gating makes queue detection convoy-safe; demand
    pricing is structurally unsafe.
 
+## Amendment-6 round: the deferred axes (captures `a6-*.txt`)
+
+Spread interaction, repricing period, and price-cap depth, applied to
+the three optima with in-binary anchors. All recorded hypotheses were
+again partially or fully refuted -- the round's value:
+
+| arm | tick gm | load | safe |
+|---|---|---|---|
+| **coolS** (cool + spread) | **0.3876** | 5.5x | 14/14 |
+| cool | 0.3947 | 5.3x | 14/14 |
+| **stallcoolS** | 0.4013 | 2.3x | 14/14 |
+| cool7 (cap 7) | 0.4036 | 5.4x | 14/14 |
+| **queue2S** (queue2 + spread) | **0.4091** | **1.32x** | **14/14** |
+| stallcool | 0.4209 | 2.0x | 14/14 |
+| cool8 (period 8) | 0.4220 | 5.1x | 14/14 |
+| stallcool7 | 0.4377 | 2.0x | 14/14 |
+| cool16 | 0.4445 | 4.6x | 14/14 |
+| spreadonly | 0.4543 | 1.29x | 14/14 |
+| stallcool8 | 0.4671 | 1.9x | 14/14 |
+| stallcool16 | 0.6497 | 1.7x | 14/14 |
+| queue2 (anchor) | 0.6906 | 1.09x | 13/14 |
+
+1. **Spread composes with pricing everywhere** (hypothesis of
+   tie-fighting: refuted). It improves all three optima -- and it
+   REPAIRS queue2's sole safety miss: tip/1024 goes from 503 arrivals
+   at the cap to all 1024 in 1,043 ticks, and two-gates/1024 from
+   3,802 ticks to 612. Mechanistically coherent: queue2 prices only
+   real jams and touches nothing else; spread diversifies the
+   equal-cost ties everywhere pricing is silent -- each covers the
+   other's blind spot. queue2S is a new frontier point: near-champion
+   value at 1.32x planning load, fully safe.
+2. **Faster repricing wins; the period hypothesis inverted for
+   stallcool.** Value degrades monotonically with period (cool 0.395
+   -> 0.422 -> 0.445; stallcool 0.421 -> 0.467 -> 0.650) for modest
+   load savings; stallcool degrades FASTEST, not least -- stall
+   detection loses meaning when the window stretches.
+3. **Deeper prices do not help** (cap 7 slightly worse for both
+   bases): cap 3's clipped gradient is apparently already enough, and
+   deeper wells overshoot into detours.
+4. The overall leaderboard after six amendments: coolS for value
+   (0.388), queue2S for value-per-cost (0.409 at 1.32x), stallcoolS
+   between (0.401 at 2.3x). Every top arm now includes the demo's
+   shipped spread mechanism -- the two congestion answers are better
+   together than either alone.
+
 ## Files
 
 - `<scenario>.txt` -- per-cell captures (arm rows: arrived,
