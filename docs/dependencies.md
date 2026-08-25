@@ -115,8 +115,11 @@ artifact.
 
 - MkDocs version: `1.6.1`
 - Material for MkDocs version: `9.7.7`
+- mike version: `2.2.0` (versioned deployment: one tree per documented
+  version plus the `latest` alias)
 - MkDocs documentation: https://www.mkdocs.org/
 - Material documentation: https://squidfunk.github.io/mkdocs-material/
+- mike documentation: https://github.com/jimporter/mike
 - Package releases: https://pypi.org/project/mkdocs-material/
 
 The authored public site is built from `mkdocs.yml` and deployed as a static

@@ -80,7 +80,9 @@ vertical probes; the probe reads swamp the halved heap work at 256x256
 (at 64x64 the same trade still nets -27%). This is the known weakness of
 scan-based JPS on high-density maps; the literature's remedy is
 block-based bitboard scanning, which is a different prototype with its
-own screen.
+own screen. The record's other reopening condition: a future
+8-connected (DiagonalSteps) movement addition also reopens the
+question.
 
 ## What follows from the rejection
 

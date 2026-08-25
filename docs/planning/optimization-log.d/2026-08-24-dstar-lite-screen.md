@@ -21,7 +21,7 @@ abstract work as searching fresh, and the registration's stop
 condition rejects without a hardware campaign. The retained M3
 wall-time capture corroborates as context: its 12 uniform-locality
 cells (which the trace defects do not touch) hold 11 confirmed
-material regressions, up to +1,846% relative.
+material regressions, up to +1,788% relative.
 
 **The durable lessons.** (1) Count both arms with the same ruler:
 asymmetric counters manufactured a feasibility pass that two further

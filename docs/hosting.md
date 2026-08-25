@@ -48,6 +48,12 @@ write token, and it never touches `main`.
 - A prerelease tag (for example `v1.0.0-rc.1`) publishes nothing:
   `/dev/` already tracks the candidate during its observation window,
   and `latest` keeps pointing at the newest stable release.
+- Accepted residual: the alias guard compares versions numerically, so
+  a mistyped `publish_version` that is numerically newer than every
+  release (say `9.9`) would create a junk tree and take `latest`; no
+  guard can distinguish it from a legitimate retroactive publish of a
+  genuinely newer tag, so the dispatch input is the operator's
+  responsibility.
 - Dispatching the workflow against a ref with `publish_version` set
   (validated as `<major>.<minor>`) does the same for that ref, which is
   how an existing tag is published retroactively. Caveat: the run
