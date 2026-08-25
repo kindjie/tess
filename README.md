@@ -139,7 +139,8 @@ fits your project.
 The [installation guide](https://tess.owx.dev/latest/packaging/) has the exact
 commands and archive verification steps.
 
-The latest release is `v0.13.0`. This checkout documents the `v0.13.0` release,
+The latest release is `v0.13.0`. This checkout documents the unreleased
+`v1.0.0` development API (release candidate `v1.0.0-rc.1`),
 including its portable `.zip` and `.tar.gz` header archives. Before 1.0, public
 APIs may change between minor versions. See
 [support and compatibility](https://tess.owx.dev/latest/support/) and the

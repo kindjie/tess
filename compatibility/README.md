@@ -10,7 +10,8 @@ and at every stable minor release. Each directory contains:
 - a CMake consumer project that uses stable headers only, discovers the
   candidate installation with `find_package(tess CONFIG REQUIRED)`, links
   `tess::tess`, and registers both source and archive consumers as tests; and
-- canonical archive-v1 fixtures with producer version and fixed-schema
+- canonical archive fixtures recording their actual wire-format
+  version (`world_archive_format_version`), producer version, and fixed-schema
   metadata, plus one `archive_consumer` source that loads every listed fixture
   when passed the snapshot directory.
 
