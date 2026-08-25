@@ -76,7 +76,7 @@ namespace tess { void optional_route(int value); }
       "archives": [
           {
               "path": "archives/one.bin",
-              "format": 1,
+              "format": 2,
               "producer_version": "1.0.0-rc.1",
               "schema": "fixed-test-schema-v1",
           }
