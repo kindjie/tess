@@ -2091,9 +2091,14 @@ by <code>cmake --install build --prefix ...</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.local&quot;</span>
 </code></pre></div>
 <p>Then consume the exported target:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">find_package</span><span class="p">(</span><span class="s">tess</span><span class="w"> </span><span class="s">0.13</span><span class="w"> </span><span class="s">CONFIG</span><span class="w"> </span><span class="s">REQUIRED</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">find_package</span><span class="p">(</span><span class="s">tess</span><span class="w"> </span><span class="s">CONFIG</span><span class="w"> </span><span class="s">REQUIRED</span><span class="p">)</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">my_target</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="s">tess::tess</span><span class="p">)</span>
 </code></pre></div>
+<p>During the <code>v1.0.0-rc.1</code> prerelease, request the package unversioned:
+the package's version file deliberately rejects every versioned
+request until GA, so a versioned discovery fails against this
+checkout. From <code>v1.0.0</code>, request <code>find_package(tess 1.0 CONFIG
+REQUIRED)</code>.</p>
 <h2 id="choose-an-include-surface">Choose an include surface</h2>
 <p>The public CMake target is <code>tess::tess</code>. For a focused include surface, use
 <code>&lt;tess/pathfinding.h&gt;</code> for worlds and routing, <code>&lt;tess/simulation.h&gt;</code> for the
