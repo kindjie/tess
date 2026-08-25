@@ -17,7 +17,9 @@ the optimization-log fragment can be regenerated rather than taken on trust.
   classification regressions and improvements, seed exclusion counts against
   the pre-registered 20% cap, and the pooled paired geometric mean of
   ticks-to-settle over comparable seeds.
-- `engagement` / `engagement.txt` — the check that the null is not vacuous.
+- `engagement` / `engagement.txt` — engagement counter, retained
+  because it was run but NON-DECIDING (see the caveat below: nonzero
+  hindrance terms cannot show discrimination among tied candidates).
   Counts ranking calls whose hindrance term is nonzero, per family. A
   tie-break that never fires would produce the same flat result while testing
   nothing.

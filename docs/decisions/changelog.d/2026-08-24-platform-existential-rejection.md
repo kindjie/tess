@@ -8,7 +8,8 @@ the second leg cannot change the verdict. The P4 and P5
 pre-registrations declared this refinement before their data
 ("platform-existential rule"), their reviews accepted it, and the
 screens applied it; P3 applied it as a recorded post-data deviation
-derived from its pre-registered accept bar, noted on its issue. A pre-RC audit flagged the surviving contradiction
+derived from its pre-registered accept bar, noted on its issue. A
+pre-RC audit flagged the surviving contradiction
 in the plan text; this decision records the reconciliation instead of
 leaving the letter and the practice in conflict: acceptance always
 requires both platforms; a rejection is settled by one CONFIRMED

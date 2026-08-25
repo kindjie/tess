@@ -49,6 +49,16 @@ jobs:
           version=""
           alias=""
           if [ -n "$REQUESTED" ]; then
+            # Only a major.minor release tree may be requested: anything
+            # else -- "dev" especially, which sort -V ranks above every
+            # number and would sail through the deploy-step alias guard --
+            # must fail loudly rather than re-point the site default.
+            if ! printf '%s' "$REQUESTED" | grep -Eq '^[0-9]+\.[0-9]+$'
+            then
+              echo "publish_version must be <major>.<minor>," \
+                "got '$REQUESTED'" >&2
+              exit 1
+            fi
             version="$REQUESTED"
             alias="latest"
           elif [ "$REF" = "refs/heads/main" ]; then

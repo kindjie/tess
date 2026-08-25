@@ -48,8 +48,12 @@ write token, and it never touches `main`.
 - A prerelease tag (for example `v1.0.0-rc.1`) publishes nothing:
   `/dev/` already tracks the candidate during its observation window,
   and `latest` keeps pointing at the newest stable release.
-- Dispatching the workflow against a ref with `publish_version` set does the
-  same for that ref, which is how an existing tag is published retroactively.
+- Dispatching the workflow against a ref with `publish_version` set
+  (validated as `<major>.<minor>`) does the same for that ref, which is
+  how an existing tag is published retroactively. Caveat: the run
+  stages that ref's `docs/robots.txt` at the site root, so a
+  retroactive publish of an older ref serves its stale copy until the
+  next `main` push restages the current one.
 
 Pull requests build and verify without publishing anything.
 
