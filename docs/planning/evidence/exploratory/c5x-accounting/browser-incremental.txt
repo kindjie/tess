@@ -6,6 +6,12 @@ cell,browser-incremental,256,decay,256,0,0,257,1,pass,42051
 cell,browser-incremental,256,stalled,256,0,0,317,1,pass,24496
 cell,browser-incremental,256,demand,256,0,0,258,1,pass,41155
 cell,browser-incremental,256,queue,256,0,0,355,1,pass,30882
+cell,browser-incremental,256,peak1,256,0,0,306,1,pass,41146
+cell,browser-incremental,256,cool,256,0,0,258,1,pass,41190
+cell,browser-incremental,256,queue2,256,0,0,322,1,pass,23677
+cell,browser-incremental,256,stallpeak,256,0,0,317,1,pass,24494
+cell,browser-incremental,256,stallcool,256,0,0,317,1,pass,24193
+cell,browser-incremental,256,peakcool,256,0,0,262,1,pass,41441
 cell,browser-incremental,1024,canonical,1024,0,0,3172,1,-,143031
 cell,browser-incremental,1024,prox1,1024,0,0,694,1,pass,387983
 cell,browser-incremental,1024,prox2,1024,0,0,748,1,pass,387975
@@ -14,5 +20,11 @@ cell,browser-incremental,1024,decay,1024,0,0,734,1,pass,391111
 cell,browser-incremental,1024,stalled,1024,0,0,758,1,pass,375499
 cell,browser-incremental,1024,demand,1019,0,0,5000,0,SAFETY-FAIL,378900
 cell,browser-incremental,1024,queue,1024,0,0,1243,1,pass,299884
+cell,browser-incremental,1024,peak1,1024,0,0,880,1,pass,401924
+cell,browser-incremental,1024,cool,1024,0,0,754,1,pass,393735
+cell,browser-incremental,1024,queue2,1024,0,0,1820,1,pass,148053
+cell,browser-incremental,1024,stallpeak,1024,0,0,716,1,pass,372968
+cell,browser-incremental,1024,stallcool,1024,0,0,756,1,pass,366103
+cell,browser-incremental,1024,peakcool,1024,0,0,705,1,pass,392273
 mechanical checks: clean (0)
 safety gates: DISQUALIFICATIONS (see cells)

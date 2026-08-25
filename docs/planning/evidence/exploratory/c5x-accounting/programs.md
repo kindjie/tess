@@ -40,9 +40,10 @@ int failures = 0;
     }                                                                 \
   } while (0)
 
-constexpr std::array<const char*, 8> kArmNames = {
-    "canonical", "prox1", "prox2", "self", "decay",
-    "stalled",   "demand", "queue"};
+constexpr std::array<const char*, 14> kArmNames = {
+    "canonical", "prox1",   "prox2",  "self",      "decay",
+    "stalled",   "demand",  "queue",  "peak1",     "cool",
+    "queue2",    "stallpeak", "stallcool", "peakcool"};
 
 std::pair<std::size_t, std::size_t> queue_walls(wc::ColonyModel& model,
                                                 std::string_view scenario) {
@@ -163,7 +164,7 @@ int main(int argc, char** argv) {
                   canonical.unreachable, canonical.ticks,
                   canonical.turnaround ? 1 : 0, canonical.planning_load);
       std::fflush(stdout);
-      for (int policy = 1; policy <= 7; ++policy) {
+      for (int policy = 1; policy <= 13; ++policy) {
         const auto priced = run(scenario, agents, policy);
         const auto replay = run(scenario, agents, policy);
         CHECK(priced.arrived == replay.arrived &&

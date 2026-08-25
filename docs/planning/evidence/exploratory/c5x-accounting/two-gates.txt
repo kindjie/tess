@@ -6,6 +6,12 @@ cell,two-gates,256,decay,256,0,0,232,1,pass,38626
 cell,two-gates,256,stalled,256,0,0,232,1,pass,5896
 cell,two-gates,256,demand,256,0,0,225,1,pass,38218
 cell,two-gates,256,queue,256,0,0,293,1,pass,24005
+cell,two-gates,256,peak1,256,0,0,228,1,pass,38170
+cell,two-gates,256,cool,256,0,0,220,1,pass,37912
+cell,two-gates,256,queue2,256,0,0,367,1,pass,5596
+cell,two-gates,256,stallpeak,256,0,0,232,1,pass,5890
+cell,two-gates,256,stallcool,256,0,0,235,1,pass,5777
+cell,two-gates,256,peakcool,256,0,0,230,1,pass,38355
 cell,two-gates,1024,canonical,1024,0,0,4431,1,-,69455
 cell,two-gates,1024,prox1,1024,0,0,628,1,pass,296555
 cell,two-gates,1024,prox2,1024,0,0,652,1,pass,301865
@@ -14,5 +20,11 @@ cell,two-gates,1024,decay,1024,0,0,630,1,pass,305333
 cell,two-gates,1024,stalled,1024,0,0,842,1,pass,228659
 cell,two-gates,1024,demand,1022,0,0,5000,0,SAFETY-FAIL,301987
 cell,two-gates,1024,queue,1024,0,0,1296,1,pass,248631
+cell,two-gates,1024,peak1,1024,0,0,511,1,pass,290523
+cell,two-gates,1024,cool,1024,0,0,546,1,pass,292024
+cell,two-gates,1024,queue2,1024,0,0,3802,1,pass,78362
+cell,two-gates,1024,stallpeak,1024,0,0,800,1,pass,226966
+cell,two-gates,1024,stallcool,1024,0,0,828,1,pass,226325
+cell,two-gates,1024,peakcool,1024,0,0,811,1,pass,306950
 mechanical checks: clean (0)
 safety gates: DISQUALIFICATIONS (see cells)

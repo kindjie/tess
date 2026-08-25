@@ -6,6 +6,12 @@ cell,goal-wall,256,decay,256,0,0,388,1,pass,52007
 cell,goal-wall,256,stalled,256,0,0,410,1,pass,12553
 cell,goal-wall,256,demand,256,0,0,524,1,pass,51294
 cell,goal-wall,256,queue,256,0,0,650,1,pass,35532
+cell,goal-wall,256,peak1,256,0,0,385,1,pass,53310
+cell,goal-wall,256,cool,256,0,0,402,1,pass,53819
+cell,goal-wall,256,queue2,256,0,0,408,1,pass,4912
+cell,goal-wall,256,stallpeak,256,0,0,534,1,pass,12735
+cell,goal-wall,256,stallcool,256,0,0,540,1,pass,11951
+cell,goal-wall,256,peakcool,256,0,0,405,1,pass,53143
 cell,goal-wall,1024,canonical,1024,0,0,1004,1,-,69048
 cell,goal-wall,1024,prox1,1024,0,0,1416,1,pass,633690
 cell,goal-wall,1024,prox2,1024,0,0,1225,1,pass,565197
@@ -14,5 +20,11 @@ cell,goal-wall,1024,decay,1024,0,0,1297,1,pass,542976
 cell,goal-wall,1024,stalled,1024,0,0,1474,1,pass,499057
 cell,goal-wall,1024,demand,1024,0,0,1125,1,pass,509079
 cell,goal-wall,1024,queue,1024,0,0,3006,1,pass,395046
+cell,goal-wall,1024,peak1,1024,0,0,1320,1,pass,601644
+cell,goal-wall,1024,cool,1024,0,0,1310,1,pass,562802
+cell,goal-wall,1024,queue2,1024,0,0,1269,1,pass,77689
+cell,goal-wall,1024,stallpeak,1024,0,0,1651,1,pass,557126
+cell,goal-wall,1024,stallcool,1024,0,0,1412,1,pass,475390
+cell,goal-wall,1024,peakcool,1024,0,0,1436,1,pass,647452
 mechanical checks: clean (0)
 safety gates: ALL PASS

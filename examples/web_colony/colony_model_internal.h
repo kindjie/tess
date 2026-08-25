@@ -416,7 +416,149 @@ struct ColonyModel::Impl {
     }
   }
 
-  // The pre-registered accounting policies (issue #269, amendments 1-2).
+  // queue2 (amendment 4): stall-gated chain detection with a graded
+  // response. A chain qualifies only if at least half its members are
+  // stalled, so flowing convoys are left alone; open-geometry chains
+  // price their own tiles +3 and each member's passable free lateral
+  // neighbours +1 (escape lanes differentiate instead of herding);
+  // corridor chains price +3 plus Manhattan-2 end regions +2.
+  void apply_queue2_pricing(std::vector<std::uint16_t>& signal,
+                            const std::vector<std::uint8_t>& stalled_now) {
+    const auto tiles = static_cast<std::size_t>(kWidth) * kHeight;
+    const auto index = [](int x, int y) {
+      return static_cast<std::size_t>(y) * kWidth + static_cast<std::size_t>(x);
+    };
+    const auto bump = [&](int x, int y, std::uint16_t amount) {
+      if (x < 0 || y < 0 || x >= kWidth || y >= kHeight) {
+        return;
+      }
+      signal[index(x, y)] =
+          static_cast<std::uint16_t>(signal[index(x, y)] + amount);
+    };
+    constexpr int kQueueLength = 4;
+    std::vector<std::uint8_t> occupied(tiles, 0);
+    std::vector<std::uint8_t> tile_stalled(tiles, 0);
+    for (std::size_t i = 0; i < agents.size(); ++i) {
+      if (!agents[i].has_goal) continue;
+      const auto at = index(static_cast<int>(agents[i].position.x),
+                            static_cast<int>(agents[i].position.y));
+      occupied[at] = 1;
+      if (stalled_now[i] != 0) {
+        tile_stalled[at] = 1;
+      }
+    }
+    const auto occupied_at = [&](int x, int y) {
+      return x >= 0 && y >= 0 && x < kWidth && y < kHeight &&
+             occupied[index(x, y)] != 0;
+    };
+    const auto passable_free = [&](int x, int y) {
+      if (x < 0 || y < 0 || x >= kWidth || y >= kHeight) {
+        return false;
+      }
+      return world.field<PassableTag>(tess::Coord3{x, y, 0}) &&
+             occupied[index(x, y)] == 0;
+    };
+    std::vector<std::uint8_t> visited(tiles, 0);
+    std::vector<std::size_t> component;
+    for (int sy = 0; sy < kHeight; ++sy) {
+      for (int sx = 0; sx < kWidth; ++sx) {
+        if (!occupied_at(sx, sy) || visited[index(sx, sy)] != 0) {
+          continue;
+        }
+        component.clear();
+        component.push_back(index(sx, sy));
+        visited[index(sx, sy)] = 1;
+        bool chain = true;
+        for (std::size_t head = 0; head < component.size(); ++head) {
+          const auto cx = static_cast<int>(component[head] % kWidth);
+          const auto cy = static_cast<int>(component[head] / kWidth);
+          int neighbours = 0;
+          const int steps[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+          for (const auto& st : steps) {
+            const auto nx = cx + st[0];
+            const auto ny = cy + st[1];
+            if (!occupied_at(nx, ny)) continue;
+            ++neighbours;
+            if (visited[index(nx, ny)] == 0) {
+              visited[index(nx, ny)] = 1;
+              component.push_back(index(nx, ny));
+            }
+          }
+          if (neighbours > 2) {
+            chain = false;
+          }
+        }
+        if (!chain ||
+            component.size() <= static_cast<std::size_t>(kQueueLength)) {
+          continue;
+        }
+        // Stall gate: at least half the members must not have moved
+        // since the previous repricing, or it is a convoy, not a jam.
+        std::size_t stalled_members = 0;
+        for (const auto tile : component) {
+          stalled_members += tile_stalled[tile];
+        }
+        if (2 * stalled_members < component.size()) {
+          continue;
+        }
+        std::size_t with_lane = 0;
+        for (const auto tile : component) {
+          const auto cx = static_cast<int>(tile % kWidth);
+          const auto cy = static_cast<int>(tile / kWidth);
+          if (passable_free(cx + 1, cy) || passable_free(cx - 1, cy) ||
+              passable_free(cx, cy + 1) || passable_free(cx, cy - 1)) {
+            ++with_lane;
+          }
+        }
+        const bool open_geometry = 2 * with_lane >= component.size();
+        if (open_geometry) {
+          for (const auto tile : component) {
+            signal[tile] = static_cast<std::uint16_t>(signal[tile] + 3);
+            const auto cx = static_cast<int>(tile % kWidth);
+            const auto cy = static_cast<int>(tile / kWidth);
+            const int steps[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+            for (const auto& st : steps) {
+              if (passable_free(cx + st[0], cy + st[1])) {
+                bump(cx + st[0], cy + st[1], 1);
+              }
+            }
+          }
+        } else {
+          for (const auto tile : component) {
+            signal[tile] = static_cast<std::uint16_t>(signal[tile] + 3);
+          }
+          std::size_t end_a = component[0];
+          std::size_t end_b = component[0];
+          for (const auto tile : component) {
+            const auto cx = static_cast<int>(tile % kWidth);
+            const auto cy = static_cast<int>(tile / kWidth);
+            int neighbours = 0;
+            const int steps[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+            for (const auto& st : steps) {
+              if (occupied_at(cx + st[0], cy + st[1])) ++neighbours;
+            }
+            if (neighbours <= 1) {
+              end_b = end_a;
+              end_a = tile;
+            }
+          }
+          for (const auto tile : {end_a, end_b}) {
+            const auto cx = static_cast<int>(tile % kWidth);
+            const auto cy = static_cast<int>(tile / kWidth);
+            for (int dy = -2; dy <= 2; ++dy) {
+              for (int dx = -2; dx <= 2; ++dx) {
+                if (std::abs(dx) + std::abs(dy) <= 2) {
+                  bump(cx + dx, cy + dy, 2);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // The pre-registered accounting policies (issue #269, amendments 1-4).
   // Every policy prices 1 + min(3, signal) over its own signal;
   // deterministic fixed-order scans only.
   void apply_congestion_pricing() {
@@ -439,6 +581,36 @@ struct ColonyModel::Impl {
       bump(x, y + 1, amount);
       bump(x, y - 1, amount);
     };
+    // Peaked kernel (amendment 4): every agent is a small peak, not a
+    // plateau -- own tile +2, orthogonal ring +1.
+    const auto peak1 = [&](int x, int y) {
+      bump(x, y, 2);
+      bump(x + 1, y, 1);
+      bump(x - 1, y, 1);
+      bump(x, y + 1, 1);
+      bump(x, y - 1, 1);
+    };
+    // Stall set for the policies that need it: position unchanged since
+    // the previous repricing. Policies 5, 10, 11, and 12 consume it and
+    // refresh the reference positions afterwards.
+    const bool needs_stall = congestion_policy == 5 ||
+                             congestion_policy == 10 ||
+                             congestion_policy == 11 || congestion_policy == 12;
+    std::vector<std::uint8_t> stalled_now;
+    if (needs_stall) {
+      stalled_now.assign(agents.size(), 0);
+      const bool have_previous = reprice_positions.size() == agents.size();
+      for (std::size_t i = 0; i < agents.size(); ++i) {
+        if (agents[i].has_goal && have_previous &&
+            agents[i].position == reprice_positions[i]) {
+          stalled_now[i] = 1;
+        }
+      }
+      reprice_positions.assign(agents.size(), tess::Coord3{});
+      for (std::size_t i = 0; i < agents.size(); ++i) {
+        reprice_positions[i] = agents[i].position;
+      }
+    }
 
     switch (congestion_policy) {
       case 1: {  // prox1: live agents, Manhattan-1 halo.
@@ -486,17 +658,11 @@ struct ColonyModel::Impl {
         break;
       }
       case 5: {  // stalled: unchanged position since the last repricing.
-        const bool have_previous = reprice_positions.size() == agents.size();
         for (std::size_t i = 0; i < agents.size(); ++i) {
-          if (!agents[i].has_goal) continue;
-          if (have_previous && agents[i].position == reprice_positions[i]) {
+          if (stalled_now[i] != 0) {
             halo1(static_cast<int>(agents[i].position.x),
                   static_cast<int>(agents[i].position.y), 1);
           }
-        }
-        reprice_positions.assign(agents.size(), tess::Coord3{});
-        for (std::size_t i = 0; i < agents.size(); ++i) {
-          reprice_positions[i] = agents[i].position;
         }
         break;
       }
@@ -619,6 +785,67 @@ struct ColonyModel::Impl {
               }
             }
           }
+        }
+        break;
+      }
+      case 8: {  // peak1: weighted kernel over all live agents.
+        for (const auto& agent : agents) {
+          if (!agent.has_goal) continue;
+          peak1(static_cast<int>(agent.position.x),
+                static_cast<int>(agent.position.y));
+        }
+        break;
+      }
+      case 9: {  // cool: true-cooling memory over the flat prox1 halo.
+        for (const auto& agent : agents) {
+          if (!agent.has_goal) continue;
+          halo1(static_cast<int>(agent.position.x),
+                static_cast<int>(agent.position.y), 1);
+        }
+        for (std::size_t i = 0; i < tiles; ++i) {
+          congestion_heat[i] =
+              static_cast<std::uint16_t>(congestion_heat[i] / 2 + signal[i]);
+          signal[i] = congestion_heat[i];
+        }
+        break;
+      }
+      case 10: {  // queue2: stall-gated chains, graded response.
+        apply_queue2_pricing(signal, stalled_now);
+        break;
+      }
+      case 11: {  // stallpeak: stalled agents, peaked kernel.
+        for (std::size_t i = 0; i < agents.size(); ++i) {
+          if (stalled_now[i] != 0) {
+            peak1(static_cast<int>(agents[i].position.x),
+                  static_cast<int>(agents[i].position.y));
+          }
+        }
+        break;
+      }
+      case 12: {  // stallcool: true-cooling memory of stalled-agent halos.
+        for (std::size_t i = 0; i < agents.size(); ++i) {
+          if (stalled_now[i] != 0) {
+            halo1(static_cast<int>(agents[i].position.x),
+                  static_cast<int>(agents[i].position.y), 1);
+          }
+        }
+        for (std::size_t i = 0; i < tiles; ++i) {
+          congestion_heat[i] =
+              static_cast<std::uint16_t>(congestion_heat[i] / 2 + signal[i]);
+          signal[i] = congestion_heat[i];
+        }
+        break;
+      }
+      case 13: {  // peakcool: true-cooling memory of peaked-kernel pressure.
+        for (const auto& agent : agents) {
+          if (!agent.has_goal) continue;
+          peak1(static_cast<int>(agent.position.x),
+                static_cast<int>(agent.position.y));
+        }
+        for (std::size_t i = 0; i < tiles; ++i) {
+          congestion_heat[i] =
+              static_cast<std::uint16_t>(congestion_heat[i] / 2 + signal[i]);
+          signal[i] = congestion_heat[i];
         }
         break;
       }
