@@ -51,8 +51,8 @@ using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
 auto run_example() -> int {
   // 2. Create the world and mark the tiles that can be crossed.
-  World world;  // Zero-initialized: every tile starts blocked.
-  world.fill_field<PassableTag>(1);  // Open every tile for this example.
+  World world;  // Zero-initialized: every tile starts impassable.
+  world.fill_field<PassableTag>(1);  // All tiles passable for this example.
 
   // 3. Reuse this scratch storage for repeated path queries.
   tess::PathScratch scratch;

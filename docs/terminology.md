@@ -134,8 +134,8 @@ suites:
   them; distinct from the *sealed schedule* of the simulation-tick
   vocabulary above), **wedged** (live but permanently unable to make
   progress), or **censored** (the tick cap ended the settle before a fixpoint;
-  applies to still-live agents -- already-arrived agents classify
-  arrived even in a censored run).
+  applies to agents still holding a goal -- already-arrived agents
+  classify arrived even in a censored run).
 - The web-colony demo's own recovery classifier uses a distinct
   three-way vocabulary -- **arrived**, **crowd-blocked**, **durably
   unreachable** -- which stays distinct; do not translate between the

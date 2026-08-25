@@ -9,7 +9,9 @@
 //
 // Every parameter here is the pre-registered number, not a tunable:
 // trigger K = 8 no-progress ticks, A_max = 6 agents, T_max = 32 region
-// tiles, solver cap = 2,000,000 joint states. Exceeding any bound is
+// tiles, solver cap = 250,000 joint states (amendment 2 on the
+// pre-registration reduced the original 2,000,000, verified
+// outcome-identical on the full sweep). Exceeding any bound is
 // `skipped`, a counted first-class outcome, never a truncated plan --
 // partial or horizon-bounded planning is the pre-named WHCA failure
 // mode and is structurally absent.

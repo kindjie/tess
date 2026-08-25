@@ -441,9 +441,10 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert "evidence/v1.0/p5-dstar/README.md" in article
   assert "[execution plan][execution-plan]" in article
   assert "Theta\\* remains deferred" in article
-  assert "2026-08-10-quad-heap-rejected.md" in article
-  assert "2026-08-17-colony-balanced-waypoints-rejected.md" in article
-  assert "2026-08-17-colony-wide-merge-second-wave.md" in article
+  assert "optimization-log-archive-2026-08-14.md" in article
+  assert "optimization-log-archive-2026-08-17.md" in article
+  # The congestion and waypoint rejections both live in the 08-17
+  # archive; the assertion above covers that link target once.
   assert "planning/local-movement-resolution.md" in article
 
   assert "demo/strategies/" in pages
