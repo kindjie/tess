@@ -1,0 +1,18 @@
+cell,browser-guard,256,canonical,256,0,0,812,1,-,4989
+cell,browser-guard,256,prox1,256,0,0,276,1,pass,40344
+cell,browser-guard,256,prox2,256,0,0,275,1,pass,40892
+cell,browser-guard,256,self,256,0,0,246,1,pass,39920
+cell,browser-guard,256,decay,256,0,0,277,1,pass,41300
+cell,browser-guard,256,stalled,256,0,0,237,1,pass,5850
+cell,browser-guard,256,demand,256,0,0,245,1,pass,40327
+cell,browser-guard,256,queue,256,0,0,392,1,pass,25238
+cell,browser-guard,1024,canonical,1024,0,0,3247,1,-,69389
+cell,browser-guard,1024,prox1,1024,0,0,585,1,pass,300013
+cell,browser-guard,1024,prox2,1024,0,0,623,1,pass,314575
+cell,browser-guard,1024,self,1024,0,0,525,1,pass,297892
+cell,browser-guard,1024,decay,1024,0,0,595,1,pass,306268
+cell,browser-guard,1024,stalled,1024,0,0,620,1,pass,222845
+cell,browser-guard,1024,demand,1024,0,0,620,1,pass,298921
+cell,browser-guard,1024,queue,1024,0,0,1321,1,pass,259231
+mechanical checks: clean (0)
+safety gates: ALL PASS

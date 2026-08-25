@@ -1,0 +1,18 @@
+cell,four-gates,256,canonical,256,0,0,252,1,-,4950
+cell,four-gates,256,prox1,256,0,0,167,1,pass,32812
+cell,four-gates,256,prox2,256,0,0,180,1,pass,33586
+cell,four-gates,256,self,256,0,0,171,1,pass,33142
+cell,four-gates,256,decay,256,0,0,173,1,pass,33348
+cell,four-gates,256,stalled,256,0,0,163,1,pass,4950
+cell,four-gates,256,demand,256,0,0,181,1,pass,33514
+cell,four-gates,256,queue,256,0,0,167,1,pass,25055
+cell,four-gates,1024,canonical,1024,0,0,600,1,-,69180
+cell,four-gates,1024,prox1,1024,0,0,567,1,pass,231640
+cell,four-gates,1024,prox2,1024,0,0,535,1,pass,250083
+cell,four-gates,1024,self,1024,0,0,560,1,pass,233115
+cell,four-gates,1024,decay,1024,0,0,471,1,pass,248240
+cell,four-gates,1024,stalled,1024,0,0,455,1,pass,96721
+cell,four-gates,1024,demand,1024,0,0,543,1,pass,237166
+cell,four-gates,1024,queue,1024,0,0,495,1,pass,191697
+mechanical checks: clean (0)
+safety gates: ALL PASS

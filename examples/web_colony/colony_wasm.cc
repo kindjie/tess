@@ -44,6 +44,12 @@ TESS_COLONY_EXPORT void tess_colony_set_spread(int enabled) {
   }
 }
 
+TESS_COLONY_EXPORT void tess_colony_set_pricing(int policy) {
+  if (model) {
+    model->set_congestion_pricing(policy);
+  }
+}
+
 TESS_COLONY_EXPORT double tess_colony_tick(double dt_seconds) {
   return model ? model->tick(dt_seconds) : -1.0;
 }

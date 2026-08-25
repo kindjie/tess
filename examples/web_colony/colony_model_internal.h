@@ -91,7 +91,11 @@ using Traveler = tess::movement::MovementClass<
         tess::movement::Not<tess::movement::Field<ConstructionTag>>,
         tess::movement::Not<tess::movement::Field<SettledTag>>>,
     tess::movement::FieldCost<CostTag>>;
-constexpr std::uint32_t kMaxCost = 1;
+// 4, not 1, so congestion prices (1 + min(3, signal)) stay on the
+// bounded fast path; costs above this ceiling fall back to the exact
+// unbounded search, so the bound affects performance only, never
+// results.
+constexpr std::uint32_t kMaxCost = 4;
 constexpr auto kTerrainDirty = tess::DirtyMask{1U << 0U};
 
 struct BuildAck {
@@ -176,6 +180,13 @@ struct ColonyModel::Impl {
   std::size_t stalled_ticks = 0;
   std::size_t last_advanced = 0;
   std::size_t last_movement_waits = 0;
+  // Congestion-pricing accounting (issue #269): 0 = off; 1 prox1,
+  // 2 prox2, 3 self, 4 decay, 5 stalled, 6 demand, 7 queue. Prices are
+  // ordinary CostTag writes through the versioned edit channel; the
+  // planner already composes FieldCost, so no search code changes.
+  int congestion_policy = 0;
+  std::vector<std::uint16_t> congestion_heat;
+  std::vector<tess::Coord3> reprice_positions;
   std::size_t max_recovery_probes = 0;
   std::size_t max_planning_queries = 0;
   std::size_t topology_rebuilds = 0;
@@ -359,6 +370,307 @@ struct ColonyModel::Impl {
       in_run = open;
     }
     return runs;
+  }
+
+  void set_congestion_pricing(int policy) {
+    if (policy == congestion_policy) {
+      return;
+    }
+    congestion_policy = policy;
+    congestion_heat.assign(static_cast<std::size_t>(kWidth) * kHeight, 0);
+    reprice_positions.clear();
+    if (policy == 0) {
+      restore_unit_costs();
+    }
+  }
+
+  void restore_unit_costs() {
+    std::vector<bool> changed(tess::ShapeTraits<Shape>::chunk_count, false);
+    for (int y = 0; y < kHeight; ++y) {
+      for (int x = 0; x < kWidth; ++x) {
+        const tess::Coord3 c{x, y, 0};
+        auto& cost = world.field<CostTag>(c);
+        if (cost != 1) {
+          cost = 1;
+          changed[static_cast<std::size_t>(
+              tess::chunk_key<Shape>(tess::chunk_coord<Shape>(c)).value)] =
+              true;
+        }
+      }
+    }
+    publish_price_marks(changed);
+    // Leaving pricing mode is a one-time global event: every retained
+    // route was planned against prices, so one full replan is correct
+    // here (and only here).
+    tess::mark_pathing_dirty(tick_state);
+  }
+
+  // Content marks only: the versioned edit is published, but no global
+  // replan is forced -- amendment 3 scopes replanning to the agents a
+  // price increase actually touches.
+  void publish_price_marks(const std::vector<bool>& changed) {
+    for (std::uint64_t k = 0; k < tess::ShapeTraits<Shape>::chunk_count; ++k) {
+      if (changed[static_cast<std::size_t>(k)]) {
+        world.mark_content_changed(tess::ChunkKey{k});
+      }
+    }
+  }
+
+  // The pre-registered accounting policies (issue #269, amendments 1-2).
+  // Every policy prices 1 + min(3, signal) over its own signal;
+  // deterministic fixed-order scans only.
+  void apply_congestion_pricing() {
+    const auto tiles = static_cast<std::size_t>(kWidth) * kHeight;
+    std::vector<std::uint16_t> signal(tiles, 0);
+    const auto index = [](int x, int y) {
+      return static_cast<std::size_t>(y) * kWidth + static_cast<std::size_t>(x);
+    };
+    const auto bump = [&](int x, int y, std::uint16_t amount) {
+      if (x < 0 || y < 0 || x >= kWidth || y >= kHeight) {
+        return;
+      }
+      signal[index(x, y)] =
+          static_cast<std::uint16_t>(signal[index(x, y)] + amount);
+    };
+    const auto halo1 = [&](int x, int y, std::uint16_t amount) {
+      bump(x, y, amount);
+      bump(x + 1, y, amount);
+      bump(x - 1, y, amount);
+      bump(x, y + 1, amount);
+      bump(x, y - 1, amount);
+    };
+
+    switch (congestion_policy) {
+      case 1: {  // prox1: live agents, Manhattan-1 halo.
+        for (const auto& agent : agents) {
+          if (!agent.has_goal) continue;
+          halo1(static_cast<int>(agent.position.x),
+                static_cast<int>(agent.position.y), 1);
+        }
+        break;
+      }
+      case 2: {  // prox2: Manhattan-2 halo (13 tiles).
+        for (const auto& agent : agents) {
+          if (!agent.has_goal) continue;
+          const auto ax = static_cast<int>(agent.position.x);
+          const auto ay = static_cast<int>(agent.position.y);
+          for (int dy = -2; dy <= 2; ++dy) {
+            for (int dx = -2; dx <= 2; ++dx) {
+              if (std::abs(dx) + std::abs(dy) <= 2) {
+                bump(ax + dx, ay + dy, 1);
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 3: {  // self: own tile only, rescaled to the shared range.
+        for (const auto& agent : agents) {
+          if (!agent.has_goal) continue;
+          bump(static_cast<int>(agent.position.x),
+               static_cast<int>(agent.position.y), 3);
+        }
+        break;
+      }
+      case 4: {  // decay: prox1 pressure with exponential memory.
+        for (const auto& agent : agents) {
+          if (!agent.has_goal) continue;
+          halo1(static_cast<int>(agent.position.x),
+                static_cast<int>(agent.position.y), 1);
+        }
+        for (std::size_t i = 0; i < tiles; ++i) {
+          congestion_heat[i] = static_cast<std::uint16_t>(
+              (congestion_heat[i] + 1) / 2 + signal[i]);
+          signal[i] = congestion_heat[i];
+        }
+        break;
+      }
+      case 5: {  // stalled: unchanged position since the last repricing.
+        const bool have_previous = reprice_positions.size() == agents.size();
+        for (std::size_t i = 0; i < agents.size(); ++i) {
+          if (!agents[i].has_goal) continue;
+          if (have_previous && agents[i].position == reprice_positions[i]) {
+            halo1(static_cast<int>(agents[i].position.x),
+                  static_cast<int>(agents[i].position.y), 1);
+          }
+        }
+        reprice_positions.assign(agents.size(), tess::Coord3{});
+        for (std::size_t i = 0; i < agents.size(); ++i) {
+          reprice_positions[i] = agents[i].position;
+        }
+        break;
+      }
+      case 6: {  // demand: the next 8 planned route tiles per live agent.
+        for (std::size_t i = 0; i < agents.size(); ++i) {
+          if (!agents[i].has_goal || i >= tick_state.routes.routes.size()) {
+            continue;
+          }
+          const auto& route = tick_state.routes.routes[i];
+          const auto begin = agents[i].path_index;
+          const auto end = std::min(route.size(), begin + 8);
+          for (auto step = begin; step < end; ++step) {
+            bump(static_cast<int>(route[step].x),
+                 static_cast<int>(route[step].y), 1);
+          }
+        }
+        break;
+      }
+      case 7: {  // queue: single-file chains longer than k, geometry-aware.
+        constexpr int kQueueLength = 4;
+        std::vector<std::uint8_t> occupied(tiles, 0);
+        for (const auto& agent : agents) {
+          if (!agent.has_goal) continue;
+          occupied[index(static_cast<int>(agent.position.x),
+                         static_cast<int>(agent.position.y))] = 1;
+        }
+        const auto occupied_at = [&](int x, int y) {
+          return x >= 0 && y >= 0 && x < kWidth && y < kHeight &&
+                 occupied[index(x, y)] != 0;
+        };
+        const auto passable_free = [&](int x, int y) {
+          if (x < 0 || y < 0 || x >= kWidth || y >= kHeight) {
+            return false;
+          }
+          return world.field<PassableTag>(tess::Coord3{x, y, 0}) &&
+                 occupied[index(x, y)] == 0;
+        };
+        std::vector<std::uint8_t> visited(tiles, 0);
+        std::vector<std::size_t> component;
+        for (int sy = 0; sy < kHeight; ++sy) {
+          for (int sx = 0; sx < kWidth; ++sx) {
+            if (!occupied_at(sx, sy) || visited[index(sx, sy)] != 0) {
+              continue;
+            }
+            component.clear();
+            component.push_back(index(sx, sy));
+            visited[index(sx, sy)] = 1;
+            bool chain = true;
+            for (std::size_t head = 0; head < component.size(); ++head) {
+              const auto cx = static_cast<int>(component[head] % kWidth);
+              const auto cy = static_cast<int>(component[head] / kWidth);
+              int neighbours = 0;
+              const int steps[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+              for (const auto& st : steps) {
+                const auto nx = cx + st[0];
+                const auto ny = cy + st[1];
+                if (!occupied_at(nx, ny)) continue;
+                ++neighbours;
+                if (visited[index(nx, ny)] == 0) {
+                  visited[index(nx, ny)] = 1;
+                  component.push_back(index(nx, ny));
+                }
+              }
+              if (neighbours > 2) {
+                chain = false;
+              }
+            }
+            if (!chain ||
+                component.size() <= static_cast<std::size_t>(kQueueLength)) {
+              continue;
+            }
+            // Geometry: what fraction of the chain has a free lane beside it?
+            std::size_t with_lane = 0;
+            for (const auto tile : component) {
+              const auto cx = static_cast<int>(tile % kWidth);
+              const auto cy = static_cast<int>(tile / kWidth);
+              if (passable_free(cx + 1, cy) || passable_free(cx - 1, cy) ||
+                  passable_free(cx, cy + 1) || passable_free(cx, cy - 1)) {
+                ++with_lane;
+              }
+            }
+            const bool open_geometry = 2 * with_lane >= component.size();
+            if (open_geometry) {
+              // Parallel capacity exists: price the line itself so routes
+              // prefer the lanes beside it.
+              for (const auto tile : component) {
+                signal[tile] = static_cast<std::uint16_t>(signal[tile] + 2);
+              }
+            } else {
+              // Walled corridor: price the line and a Manhattan-2 region
+              // around both chain ends so newcomers detour before entering.
+              for (const auto tile : component) {
+                signal[tile] = static_cast<std::uint16_t>(signal[tile] + 3);
+              }
+              std::size_t end_a = component[0];
+              std::size_t end_b = component[0];
+              for (const auto tile : component) {
+                const auto cx = static_cast<int>(tile % kWidth);
+                const auto cy = static_cast<int>(tile / kWidth);
+                int neighbours = 0;
+                const int steps[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+                for (const auto& st : steps) {
+                  if (occupied_at(cx + st[0], cy + st[1])) ++neighbours;
+                }
+                if (neighbours <= 1) {
+                  end_b = end_a;
+                  end_a = tile;
+                }
+              }
+              for (const auto tile : {end_a, end_b}) {
+                const auto cx = static_cast<int>(tile % kWidth);
+                const auto cy = static_cast<int>(tile / kWidth);
+                for (int dy = -2; dy <= 2; ++dy) {
+                  for (int dx = -2; dx <= 2; ++dx) {
+                    if (std::abs(dx) + std::abs(dy) <= 2) {
+                      bump(cx + dx, cy + dy, 3);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        break;
+      }
+      default:
+        return;
+    }
+
+    std::vector<bool> changed(tess::ShapeTraits<Shape>::chunk_count, false);
+    std::vector<std::uint8_t> increased(tiles, 0);
+    bool any_increase = false;
+    for (int y = 0; y < kHeight; ++y) {
+      for (int x = 0; x < kWidth; ++x) {
+        const tess::Coord3 c{x, y, 0};
+        const auto capped =
+            signal[index(x, y)] > 3 ? std::uint16_t{3} : signal[index(x, y)];
+        const auto price = static_cast<std::uint32_t>(1 + capped);
+        auto& cost = world.field<CostTag>(c);
+        if (cost != price) {
+          if (price > cost) {
+            increased[index(x, y)] = 1;
+            any_increase = true;
+          }
+          cost = price;
+          changed[static_cast<std::size_t>(
+              tess::chunk_key<Shape>(tess::chunk_coord<Shape>(c)).value)] =
+              true;
+        }
+      }
+    }
+    publish_price_marks(changed);
+    // Scoped replanning (issue #269 amendment 3): a price change never
+    // invalidates a retained route -- cost affects optimality, not
+    // validity -- so only agents whose remaining route crosses a tile
+    // whose price INCREASED this repricing are asked to replan. Price
+    // decreases elsewhere deliberately trigger nothing: chasing newly
+    // cheap tiles is the far-field oscillation this scoping removes.
+    if (!any_increase) {
+      return;
+    }
+    for (std::size_t i = 0; i < agents.size(); ++i) {
+      if (!agents[i].has_goal || i >= tick_state.routes.routes.size()) {
+        continue;
+      }
+      const auto& route = tick_state.routes.routes[i];
+      for (auto step = agents[i].path_index; step < route.size(); ++step) {
+        if (increased[index(static_cast<int>(route[step].x),
+                            static_cast<int>(route[step].y))] != 0) {
+          (void)replan_queue.request(i, agents[i]);
+          break;
+        }
+      }
+    }
   }
 
   void update_route_diversity(std::uint64_t tick) {
@@ -558,6 +870,9 @@ struct ColonyModel::Impl {
       // last pair, which is the pair rendered with the accumulator remainder.
       demo->snapshot_before_movement();
       demo->sync_settled_obstacles();
+      if (demo->congestion_policy != 0 && context.clock.tick % 4 == 0) {
+        demo->apply_congestion_pricing();
+      }
       demo->update_route_diversity(context.clock.tick);
       demo->update_wide_merge_routes();
       // Example: run bounded pathing before movement. The earlier Pathing

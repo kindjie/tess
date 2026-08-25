@@ -1,0 +1,18 @@
+cell,open,256,canonical,256,0,0,140,1,-,3968
+cell,open,256,prox1,256,0,0,140,1,pass,30726
+cell,open,256,prox2,256,0,0,140,1,pass,30726
+cell,open,256,self,256,0,0,144,1,pass,30725
+cell,open,256,decay,256,0,0,156,1,pass,30775
+cell,open,256,stalled,256,0,0,140,1,pass,3993
+cell,open,256,demand,256,0,0,161,1,pass,30862
+cell,open,256,queue,256,0,0,140,1,pass,29438
+cell,open,1024,canonical,1024,0,0,236,1,-,65024
+cell,open,1024,prox1,1024,0,0,258,1,pass,180758
+cell,open,1024,prox2,1024,0,0,391,1,pass,194080
+cell,open,1024,self,1024,0,0,275,1,pass,178990
+cell,open,1024,decay,1024,0,0,363,1,pass,196961
+cell,open,1024,stalled,1024,0,0,236,1,pass,65716
+cell,open,1024,demand,1024,0,0,324,1,pass,184381
+cell,open,1024,queue,1024,0,0,259,1,pass,192907
+mechanical checks: clean (0)
+safety gates: ALL PASS

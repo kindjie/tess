@@ -46,6 +46,19 @@
             <input id="spread" type="checkbox" checked>
             Spread congested equal-cost routes
           </label>
+          <label>
+            Congestion pricing
+            <select id="pricing">
+              <option value="0" selected>Off</option>
+              <option value="1">Nearby agents (validated recipe)</option>
+              <option value="2">Nearby agents, wide halo</option>
+              <option value="3">Occupied tiles only</option>
+              <option value="4">Nearby agents with memory</option>
+              <option value="5">Stalled agents</option>
+              <option value="6">Planned-route demand</option>
+              <option value="7">Detected queues (geometry-aware)</option>
+            </select>
+          </label>
           <button id="reset">Reset</button>
           <button id="clear-walls">Clear walls</button>
         </div>

@@ -8,6 +8,7 @@ const slider = document.getElementById('agents');
 const agentCount = document.getElementById('agent-count');
 const replan = document.getElementById('replan');
 const spread = document.getElementById('spread');
+const pricing = document.getElementById('pricing');
 const resetButton = document.getElementById('reset');
 const clearButton = document.getElementById('clear-walls');
 const browserTestMode =
@@ -86,6 +87,7 @@ function reset() {
   agentCount.textContent = String(actual);
   api.setStrategy(replan.checked ? 1 : 0);
   api.setSpread(spread.checked ? 1 : 0);
+  api.setPricing(Number(pricing.value));
   const rememberedWalls = Array.from(walls);
   walls.clear();
   for (const key of rememberedWalls) {
@@ -248,6 +250,8 @@ createTessColony()
             ]),
         setSpread: instance.cwrap(
             'tess_colony_set_spread', null, ['number']),
+        setPricing: instance.cwrap(
+            'tess_colony_set_pricing', null, ['number']),
         tick: instance.cwrap('tess_colony_tick', 'number', ['number']),
         relaunch: instance.cwrap('tess_colony_relaunch', 'number', []),
         leg: instance.cwrap('tess_colony_leg', 'number', []),
@@ -293,6 +297,10 @@ createTessColony()
       });
       spread.addEventListener('change', () => {
         api.setSpread(spread.checked ? 1 : 0);
+        emaUs = 0;
+      });
+      pricing.addEventListener('change', () => {
+        api.setPricing(Number(pricing.value));
         emaUs = 0;
       });
       resetButton.addEventListener('click', reset);
