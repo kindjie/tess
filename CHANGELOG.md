@@ -9,6 +9,29 @@ and their rationale are recorded separately in
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-08-25
+
+### Documentation
+
+- Documented the measured anonymous-goal dispatch recipe in the spatial
+  coordination architecture notes: spend exact assignment once at
+  dispatch (greedy dispatch settled 47% slower on the same pools);
+  continuous post-dispatch reassignment measured ~2% and is not worth
+  library authority.
+- Documented the validated dynamic congestion pricing caller recipe
+  (bounded demand-driven cost-field pricing through versioned edits) and
+  its measured boundary in the spatial coordination architecture notes.
+- Documented the caller-side refresh obligation on the
+  `cached_astar_path` declarations: direct adopters must run
+  `UnitRouteCache::refresh_if_world_changed` after world edits, or a
+  cache hit can serve the pre-edit route (found by the RC-1 downstream
+  evaluation).
+- The documentation site now publishes one tree per version. Released
+  documentation lives at `/latest/` with a per-release archive at
+  `/<major>.<minor>/`, `main` publishes to `/dev/`, and a version selector
+  moves between them. Every documented link now points at `/latest/`, and
+  the site root redirects there.
+
 ## [0.13.0] - 2026-08-20
 
 ### Added

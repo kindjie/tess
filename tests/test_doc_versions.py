@@ -258,5 +258,5 @@ def test_repository_targets_v013_release():
     encoding="utf-8"
   )
 
-  assert "set(TESS_VERSION 0.13.0)" in source
+  assert "set(TESS_VERSION 1.0.0)" in source
   assert cdv.check_repository() == []

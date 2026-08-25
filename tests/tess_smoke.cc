@@ -8,7 +8,7 @@ TEST(TessSmoke, ExposesLibraryVersion) {
   static_assert(tess::library_version.minor == TESS_VERSION_MINOR);
   static_assert(tess::library_version.patch == TESS_VERSION_PATCH);
   static_assert(tess::library_version.prerelease == TESS_VERSION_PRERELEASE);
-  static_assert(std::string_view{TESS_VERSION_STRING}.starts_with("0.13.0"));
+  static_assert(std::string_view{TESS_VERSION_STRING}.starts_with("1.0.0"));
 
   static_assert(TESS_VERSION_MAJOR == TESS_EXPECTED_VERSION_MAJOR);
   static_assert(TESS_VERSION_MINOR == TESS_EXPECTED_VERSION_MINOR);
