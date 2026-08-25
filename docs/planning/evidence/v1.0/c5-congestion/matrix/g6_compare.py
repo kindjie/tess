@@ -18,13 +18,21 @@ def load(prefix, d):
             cells[key] = (cls, ticks)
     return cells
 
+SCENARIOS = (
+    "open", "tip", "two-gates", "four-gates", "goal-wall",
+    "browser-guard", "browser-incremental",
+)
+EXPECTED = {(s, n) for s in SCENARIOS for n in range(16, 1025, 16)}
+
 m3 = load('m3-', sys.argv[1])
 deck = load('deck-', sys.argv[2])
-assert len(m3) == 384 and len(deck) == 384, (len(m3), len(deck))
+assert set(m3) == EXPECTED and set(deck) == EXPECTED, (
+    len(m3), len(deck), len(EXPECTED))
 cls_diff = [k for k in m3 if m3[k][0] != deck[k][0]]
 tick_diff = [k for k in m3 if m3[k][1] != deck[k][1]]
-print(f"G6 classification identity over 384 cells: "
+total = len(EXPECTED)
+print(f"G6 classification identity over {total} cells: "
       f"{'PASS' if not cls_diff else 'FAIL ' + str(cls_diff[:10])}")
 print(f"tick equality (reported, non-gating): "
-      f"{'identical on all 384 cells' if not tick_diff else str(len(tick_diff)) + ' cells differ: ' + str(tick_diff[:10])}")
+      f"{'identical on all ' + str(total) + ' cells' if not tick_diff else str(len(tick_diff)) + ' cells differ: ' + str(tick_diff[:10])}")
 sys.exit(0 if not cls_diff else 1)

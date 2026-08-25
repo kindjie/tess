@@ -2,8 +2,12 @@
 
 Same source, two builds: M3 (clang, ARM64, macOS; `m3-*.txt`) and
 Steam Deck (gcc 14, x86-64 Linux, -static; `deck-*.txt`), compared by
-`g6_compare.py`. The registered gate is classification-table identity;
-tick equality is reported separately and does not gate.
+`g6_compare.py`, which validates the complete seven-scenario x
+64-population cell manifest before comparing (an earlier committed
+version asserted the six-scenario count and could not reproduce this
+result; corrected and rerun in the pre-RC audit). The registered gate
+is classification-table identity; tick equality is reported separately
+and does not gate.
 
 ```
 G6 classification identity over 448 cells: PASS

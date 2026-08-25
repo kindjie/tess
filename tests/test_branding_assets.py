@@ -435,8 +435,10 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert '<details class="strategy-alternatives" markdown="1">' in article
   assert "<summary>Why some alternatives were not promoted</summary>" in article
   assert ".strategy-alternatives" in site_css
-  assert "JPS, bidirectional A\\*, and D\\* Lite" in article
-  assert "no acceptance or rejection decision" in article
+  assert "rejected all" in article
+  assert "evidence/v1.0/p3-jps/README.md" in article
+  assert "evidence/v1.0/p4-bidir/README.md" in article
+  assert "evidence/v1.0/p5-dstar/README.md" in article
   assert "[execution plan][execution-plan]" in article
   assert "Theta\\* remains deferred" in article
   assert "2026-08-10-quad-heap-rejected.md" in article

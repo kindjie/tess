@@ -27,7 +27,7 @@ struct AgentSpec {
   tess::Coord3 goal{};
 };
 
-// '.' is open terrain; anything else is blocked. Row y is rows[y], so
+// '.' is passable terrain; anything else is impassable. Row y is rows[y], so
 // the maps below read exactly as drawn.
 struct Fixture {
   const char* name = "";

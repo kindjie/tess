@@ -56,9 +56,18 @@ jobs:
           elif [ "${REF#refs/tags/v}" != "$REF" ]; then
             tag="${REF#refs/tags/}"
             numbers="${tag#v}"
-            # A release publishes a major.minor tree; patches replace it.
-            version="${numbers%.*}"
-            alias="latest"
+            # A stable release publishes a major.minor tree and moves the
+            # latest alias; patches replace the tree. Prerelease tags
+            # (v1.0.0-rc.1) publish nothing: /dev/ already tracks the
+            # candidate during observation, and latest must keep pointing
+            # at the newest stable release.
+            if printf '%s' "$numbers" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+            then
+              version="${numbers%.*}"
+              alias="latest"
+            else
+              echo "prerelease or malformed tag $tag: skipping publish"
+            fi
           fi
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "alias=$alias" >>"$GITHUB_OUTPUT"

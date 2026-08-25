@@ -51,6 +51,13 @@ which is the only place the composition can change a decision.
 ## Limits of these artifacts
 
 The programs record aggregate counts, not per-seed tables, so a reader
-checking an individual seed must rerun rather than re-analyse. Both arms are
-deterministic per seed — pinned by `BothArmsReplayIdentically` in the test
-target — so rerunning reproduces exactly.
+checking an individual seed must rerun rather than re-analyse. The
+determinism evidence retained here is narrower than a full per-arm
+replay matrix (a pre-RC audit correction): the retained prototype's
+`BothArmsReplayIdentically` test -- prototype source only, never a
+registered target -- replayed the CANDIDATE arm on two sampled seeds
+(warehouse and colony trial 0), and the decision program ran each arm
+once. The canonical arm's determinism rests on the substrate's own
+rebuild-reproducibility pinning, not on a C1 artifact; a reader
+requiring stronger per-seed determinism evidence should rerun the
+recorded programs twice and compare.

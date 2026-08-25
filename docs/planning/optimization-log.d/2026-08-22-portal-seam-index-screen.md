@@ -54,7 +54,6 @@
   material-**regression** criterion on the Deck primary cell, from an
   effective 8% to 9.6%. The outcome is unaffected — the observed 10.8%
   regression clears both — but the direction should be recorded both ways.
-  — but the direction should be recorded both ways.
 - **Result, primary cell**
   (`path/agent_tick_100_weighted_goal_churn_portal_512x512`): M3 improved
   18.4% (95% CI 16.2-19.2% faster); the Steam Deck **regressed 10.8%**

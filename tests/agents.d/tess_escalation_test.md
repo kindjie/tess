@@ -33,9 +33,12 @@
   runs are not re-executed by the merged suite (their digests are the
   pins), trials >= 2 of non-divergent seeds are covered by the evidence
   sweep ONLY, and the aggregate (+3/-2/-1) and the 71/61 clean/residual
-  split are asserted nowhere in the merged suite; the recorded sweep
-  program is their check. the full 132-seed sweep is evidence, captured with its
-  program in `docs/planning/evidence/v1.0/c4-escalation/`. Solver cost
+  split are asserted nowhere in the merged suite -- the recorded sweep
+  program is their check, and since the pre-RC audit that program
+  ASSERTS the recorded aggregates and replays both arms with digest
+  comparison, exiting nonzero on drift. The full 132-seed sweep is
+  evidence, captured with its program in
+  `docs/planning/evidence/v1.0/c4-escalation/`. Solver cost
   needed three layers (packed nodes, a futility memo, and the
   amendment-2 cap verified outcome-identical) before the armed sweep
   was affordable at all -- the recorded promotion blockers include that

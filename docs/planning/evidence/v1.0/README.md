@@ -5,8 +5,9 @@ prototype queue. Every row names its evidence record, outcome,
 limitations, and reconsideration condition; the classification column
 uses the plan's vocabulary (private optimization / supported behavior /
 public API / deferred research / rejected mechanism). Pre-registration
-issues: #240 (P2), #241 (C2), #247 (C3), #249 (P3), #251 (P4), #253
-(C4), #255 (P5), #256 (C5), plus #242 (X1 no-run).
+issues: #234 (P1), #238 (C1), #240 (P2), #241 (C2), #247 (C3), #249
+(P3), #251 (P4), #253 (C4), #255 (P5), #256 (C5); X1's no-run
+disposition is PR #242.
 
 ## Headline
 
@@ -26,10 +27,10 @@ accepted behavior without new authority.
 | P1 portal seam index | `p1-portal-seam/` | REJECTED (rejected mechanism): measured ceiling -- the seam-index stand-in bounded the win below the bar on both platforms (A/A-calibrated, counter-identity verified). | Bounds only the measured heap-allocated table representation, against the post-#213 memo baseline; both workloads hold topology static, so invalidation cost is unmeasured. | Materially wider or denser seam scans (larger chunks, denser passability, an expensive movement-class predicate) reopen the ceiling; merely lowering call count does not (the memo owns call count); a materially different representation (e.g. packed bitset) screens separately against the same two-device bar. |
 | P2 resumable A* | `p2-resumable/` | REJECTED (rejected mechanism): +28.4% best-case added work vs a 10% bar; semantics fully proven (identity, cancellation, chunk-granular staleness, residency-corruption refusal). | Scheduling value only; semantics were never the failure. | An accepted incremental-replanning shape supplies a resume-friendly state layout (P5 did not). |
 | P3 gated JPS | `p3-jps/` | REJECTED (rejected mechanism): rubble_256 +109% wall time despite -90% structured-map wins; platform-existential rule applied. | 4-connected, unit-cost domain only. | A gate that excludes rubble-like density reliably at negligible cost. |
-| P4 bidirectional A* | `p4-bidir/` | REJECTED (rejected mechanism) at timing: correctness gates all green (including empirical validation of the termination bound on every instance), then five of eight cells confirmed material regressions on M3 (worst +259.9% on wall_gap_256; sole win rubble_64 at -15.8%); the Deck leg was omitted under the platform-existential rule. | Where the heuristic works the incumbent is near-minimal; where it fails, it fails both directions symmetrically. | A weak-heuristic or heuristic-free search surface. |
+| P4 bidirectional A* | `p4-bidir/` | REJECTED (rejected mechanism) at timing: correctness gates all green (including empirical validation of the termination bound on every instance), then five of eight cells confirmed material regressions on M3 (worst +265.3% on rubble_256, wall_gap_256 +259.9%; sole win rubble_64 at -15.8%); the Deck leg was omitted under the platform-existential rule. | Where the heuristic works the incumbent is near-minimal; where it fails, it fails both directions symmetrically. | A weak-heuristic or heuristic-free search surface. |
 | P5 D* Lite | `p5-dstar/` | REJECTED at stage 1 (rejected mechanism): symmetric per-neighbor accounting gives work ratio 1.012 vs the 1.5 bar (the first capture's 1.913 "pass" was a counter artifact caught in review; amendment 1 on #255 registered the correction before the rerun). M3 wall-time capture retained as context: 11 of its 12 defect-free uniform cells are confirmed material regressions. | Goal-keyed, unit-cost, dense 2D domain; stage 2 not rerun per the stop condition. | A successor that clears the registered 1.5 symmetric-work bar, or demonstrates favorable per-op-cost-weighted work against this incumbent. |
 | P6 priority-queue retry | -- | NOT OPENED: P2-P5 merged no new open-set structure; the prior four-ary-heap rejection stands. | -- | A structurally different open set merging. |
-| C0 movement substrate | merged #245 | MERGED (supported behavior, test-tier): pool-mode fixtures, closed-formula seeds, digest pinning -- the stream's measurement bed. | Test support, not public API. | -- |
+| C0 movement substrate | merged #237 (substrate) + #245 (anonymous pool mode) | MERGED (supported behavior, test-tier): scenario fixtures, closed-formula seeds, settle classification, digest pinning, plus the pool mode -- the stream's measurement bed. | Test support, not public API. | -- |
 | C1 hindrance tie-break | `c1-hindrance/` | REJECTED (rejected mechanism): 22 agent-level classification regressions vs 13 improvements; the pre-registered stop condition fired before timing. | Colony's 60% seed-exclusion rate made its tick metric uninterpretable by the declared rule. | A tie-break provably classification-neutral on the pinned substrate. |
 | C2 fungible goals | `c2-fungible/` | REJECTED as library authority (rejected mechanism): continuous post-dispatch reassignment measured gm 0.9797 pooled (~2%, a quarter of its declared bar) and trended harmful with no goal surplus. The retained caller recipe (supported behavior, documentation-tier, now in `architecture/spatial-coordination.md`) is exact one-shot assignment at dispatch: greedy dispatch settled 47% slower (gm 1.4739) on the same pools. | Recipe requires caller-side anonymous goal pools; reassignment value was measured on the C0 substrate only. | Evidence that post-dispatch reassignment materially helps a real consumer beyond the one-shot dispatch recipe. |
 | C3 reciprocal conflicts | merged #248 | MERGED (supported behavior, test-tier): joint-space BFS oracle + fixtures; the production tier provably fails three conflict classes; opened C4. | Oracle bounded to small components. | -- |
@@ -41,7 +42,7 @@ accepted behavior without new authority.
 
 ## Confirmations (plan checklist)
 
-- Accepted implementations and maintained-doc updates landed: C0 (#245),
+- Accepted implementations and maintained-doc updates landed: C0 (#237/#245),
   C3 (#248), C4 (#254), C5 recipe documentation
   (`architecture/spatial-coordination.md`, #257/#264), C2 dispatch
   recipe documentation (`architecture/spatial-coordination.md`, this

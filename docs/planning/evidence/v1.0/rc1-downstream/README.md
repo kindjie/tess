@@ -139,7 +139,13 @@ search-policy verdicts (`ReportIndeterminate` default vs explicit
   measurement rather than silently.
 - **F5 (deferred docs):** the three guide recipe gaps above.
 - **F6 (open):** the outside cold-read supplement, deliberately left
-  to a human outside reader.
+  to a human outside reader. Status against the plan, stated
+  precisely: the plan names this a "cheap supplement" to the gate, not
+  a gate condition -- coverage decides the gate, and the coverage legs
+  above are recorded -- so F6 open does not block the RC by the plan's
+  letter. It remains listed because the harness retirement (above)
+  made it the only external signal left before GA; the maintainer
+  weighs that at tag time.
 
 ## Deferrals
 

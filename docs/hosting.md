@@ -40,8 +40,12 @@ write token, and it never touches `main`.
 ### Publishing a version
 
 - Pushing to `main` publishes `/dev/`.
-- Pushing a `v*` tag publishes `/<major>.<minor>/`, moves the `latest` alias,
-  and sets the site default.
+- Pushing a stable `v<major>.<minor>.<patch>` tag publishes
+  `/<major>.<minor>/`, moves the `latest` alias, and sets the site
+  default.
+- A prerelease tag (for example `v1.0.0-rc.1`) publishes nothing:
+  `/dev/` already tracks the candidate during its observation window,
+  and `latest` keeps pointing at the newest stable release.
 - Dispatching the workflow against a ref with `publish_version` set does the
   same for that ref, which is how an existing tag is published retroactively.
 

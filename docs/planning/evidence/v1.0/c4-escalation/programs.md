@@ -6,10 +6,38 @@ per-seed diagnostics, with captured output alongside.
 
 ## c4_sweep.cc (full 132-seed plain-vs-armed sweep)
 
+Strengthened in the pre-RC audit: the original version printed
+observations and always exited zero, so the record's determinism and
+aggregate claims were captured but unenforced. Each arm now settles
+twice with per-seed outcome-digest comparison, the recorded aggregates
+are asserted exactly, and the exit status reflects every check.
+
 ```cpp
+// Strengthened per the pre-RC audit: each arm now settles TWICE with a
+// per-seed outcome-digest comparison (the determinism the record
+// claims), the recorded aggregates are asserted as exact expectations,
+// and the exit status reflects every check -- the original version
+// printed observations and always succeeded.
 #include <cstdio>
 #include "escalation_harness.h"
 namespace mv = tess_test::movement;
+namespace {
+int failures = 0;
+#define CHECK(cond, ...) do { if (!(cond)) { ++failures;   std::printf("CHECK FAIL line %d: %s ", __LINE__, #cond);   std::printf(__VA_ARGS__); std::printf("\n"); } } while (0)
+[[nodiscard]] std::uint64_t outcome_digest(const mv::Scenario& s,
+                                           const mv::Outcome& o) {
+  std::uint64_t h = 0xCBF29CE484222325ULL;
+  const auto mix = [&h](std::uint64_t v) {
+    h ^= v + 0x9E3779B97F4A7C15ULL + (h << 6U) + (h >> 2U);
+  };
+  for (const auto& a : s.agents) {
+    mix((std::uint64_t)a.position.x); mix((std::uint64_t)a.position.y);
+  }
+  for (const auto c : o.categories) mix((std::uint64_t)c);
+  mix((std::uint64_t)o.ticks);
+  return h;
+}
+}  // namespace
 int main() {
   constexpr std::array<mv::Family, 7> kFamilies = {
       mv::Family::Warehouse, mv::Family::Ring, mv::Family::Colony,
@@ -24,10 +52,24 @@ int main() {
       auto ps = mv::build_scenario(family, trial);
       const auto pr = mv::route_attachment_ranking(*ps);
       const auto p = mv::settle_with_pibt(*ps, pr);
+      auto ps2 = mv::build_scenario(family, trial);
+      const auto pr2 = mv::route_attachment_ranking(*ps2);
+      const auto p2 = mv::settle_with_pibt(*ps2, pr2);
+      CHECK(outcome_digest(*ps, p) == outcome_digest(*ps2, p2),
+            "%s t%u plain replay",
+            std::string(mv::family_name(family)).c_str(), trial);
       auto as = mv::build_scenario(family, trial);
       const auto ar = mv::route_attachment_ranking(*as);
       mv::EscalationStats st;
       const auto a = mv::settle_with_pibt_escalation(*as, ar, &st);
+      auto as2 = mv::build_scenario(family, trial);
+      const auto ar2 = mv::route_attachment_ranking(*as2);
+      mv::EscalationStats st2;
+      const auto a2 = mv::settle_with_pibt_escalation(*as2, ar2, &st2);
+      CHECK(outcome_digest(*as, a) == outcome_digest(*as2, a2) &&
+                st.fired == st2.fired,
+            "%s t%u armed replay",
+            std::string(mv::family_name(family)).c_str(), trial);
       const bool pclean = p.count(mv::Category::Arrived)==p.categories.size();
       if (pclean) { ++clean; if (st.fired) ++clean_dirty; continue; }
       ++res; fires += st.fired;
@@ -48,6 +90,17 @@ int main() {
     clean, clean_dirty, res, res_same, res_better, res_worse, res_mixed);
   std::printf("residual totals: dArrived=%+lld dWedged=%+lld dSealed=%+lld fires=%llu\n",
     d_arr, d_wed, d_seal, fires);
+  // The recorded aggregates, asserted: any drift from the retained
+  // evidence fails the program instead of silently printing new truth.
+  CHECK(clean == 71 && clean_dirty == 0, "clean population");
+  CHECK(res == 61 && res_same == 56 && res_better == 3 &&
+            res_worse == 1 && res_mixed == 1,
+        "residual classification");
+  CHECK(d_arr == 3 && d_wed == -2 && d_seal == -1 && fires == 91,
+        "residual aggregate deltas");
+  std::printf("sweep checks: %s (%d)\n",
+              failures == 0 ? "ALL ASSERTED" : "FAILED", failures);
+  return failures == 0 ? 0 : 1;
 }
 ```
 
