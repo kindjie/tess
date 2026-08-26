@@ -37,6 +37,23 @@ std::pair<std::size_t, std::size_t> queue_walls(wcg::CongestionModel& model,
     }
     return {accepted, attempted};
   }
+  if (scenario == "maze") {
+    // Registered forward scenario for the supported-population matrix:
+    // every fourth column in the wall band, fully walled except a
+    // two-tile gap at y = (x * 7) mod 120. Single-file capacity almost
+    // everywhere; deterministic and connected by construction.
+    for (int x = 20; x <= 108; x += 4) {
+      const int gap = (x * 7) % 120;
+      for (int y = 0; y < wc::height; ++y) {
+        if (y == gap || y == gap + 1) {
+          continue;
+        }
+        ++attempted;
+        accepted += model.queue_wall(x, y) ? 1U : 0U;
+      }
+    }
+    return {accepted, attempted};
+  }
   if (scenario == "goal-wall") {
     for (auto y = 0; y < 96; ++y) {
       ++attempted;
@@ -86,7 +103,7 @@ int main(int argc, char** argv) {
     } else if (arg == "--help") {
       std::printf(
           "usage: tess_web_congestion_model --scenario "
-          "<open|tip|two-gates|four-gates|goal-wall|browser-guard|"
+          "<open|tip|two-gates|four-gates|goal-wall|browser-guard|maze|"
           "browser-incremental> [--agents N] [--policy 0..28] [--spread] "
           "[--max-ticks N]\n");
       return 0;
@@ -108,7 +125,8 @@ int main(int argc, char** argv) {
   for (; ticks < max_ticks &&
          (!model.turnaround_ready() || incremental_pending());
        ++ticks) {
-    if (ticks == 4 && !incremental) {
+    const int batch_tick = scenario == "maze" ? 0 : 4;
+    if (ticks == batch_tick && !incremental) {
       const auto [accepted, attempted] = queue_walls(model, scenario);
       walls_ok = walls_ok && accepted == attempted;
     }

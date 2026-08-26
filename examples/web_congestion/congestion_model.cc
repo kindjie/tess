@@ -22,6 +22,10 @@ struct CongestionModel::Impl {
   std::vector<std::uint16_t> congestion_heat;
   std::vector<tess::Coord3> reprice_positions;
   std::vector<std::uint8_t> price_view;
+  // Amendment-7 escalation family: per-agent stall duration in fixed
+  // ticks, +1 per tick without movement, reset on any move.
+  std::vector<std::uint32_t> stall_duration;
+  std::vector<tess::Coord3> last_positions;
 
   explicit Impl(int agent_count)
       : colony(agent_count),
@@ -50,6 +54,28 @@ struct CongestionModel::Impl {
     }
   }
 
+  void update_stall_durations() {
+    auto& d = seam();
+    if (last_positions.size() != d.agents.size()) {
+      last_positions.assign(d.agents.size(), tess::Coord3{});
+      stall_duration.assign(d.agents.size(), 0);
+      for (std::size_t i = 0; i < d.agents.size(); ++i) {
+        last_positions[i] = d.agents[i].position;
+      }
+      return;
+    }
+    for (std::size_t i = 0; i < d.agents.size(); ++i) {
+      if (!d.agents[i].has_goal) {
+        stall_duration[i] = 0;
+      } else if (d.agents[i].position == last_positions[i]) {
+        ++stall_duration[i];
+      } else {
+        stall_duration[i] = 0;
+      }
+      last_positions[i] = d.agents[i].position;
+    }
+  }
+
   void set_policy(int next) {
     if (next == policy) {
       return;
@@ -75,6 +101,8 @@ struct CongestionModel::Impl {
     }
     congestion_heat.assign(congestion_heat.size(), 0);
     reprice_positions.clear();
+    stall_duration.clear();
+    last_positions.clear();
     next_reprice = 0;
     if (next == 0) {
       restore_unit_costs();
@@ -120,6 +148,9 @@ struct CongestionModel::Impl {
     // (the screens and any future matrix); between-frame under a
     // variable browser clock, which is the documented approximation.
     auto& d = seam();
+    if (policy == 29 || policy == 30) {
+      update_stall_durations();
+    }
     if (policy != 0 && d.sim_clock.tick >= next_reprice) {
       apply_pricing();
       next_reprice =
@@ -617,6 +648,42 @@ struct CongestionModel::Impl {
         }
         if (axes.overlay) {
           apply_queue2_pricing(signal, stalled_now);
+        }
+        break;
+      }
+      case 29: {  // escal: magnitude grows with stall duration.
+        for (std::size_t i = 0; i < d.agents.size(); ++i) {
+          if (!d.agents[i].has_goal || i >= stall_duration.size() ||
+              stall_duration[i] == 0) {
+            continue;
+          }
+          const auto amount = static_cast<std::uint16_t>(
+              std::min<std::uint32_t>(3, 1 + stall_duration[i] / 8));
+          halo1(static_cast<int>(d.agents[i].position.x),
+                static_cast<int>(d.agents[i].position.y), amount);
+        }
+        break;
+      }
+      case 30: {  // radiate: radius and magnitude grow with duration.
+        for (std::size_t i = 0; i < d.agents.size(); ++i) {
+          if (!d.agents[i].has_goal || i >= stall_duration.size() ||
+              stall_duration[i] == 0) {
+            continue;
+          }
+          const auto peak = static_cast<int>(
+              std::min<std::uint32_t>(3, 1 + stall_duration[i] / 8));
+          const auto radius = peak;  // cone slopes to zero at the rim
+          const auto ax = static_cast<int>(d.agents[i].position.x);
+          const auto ay = static_cast<int>(d.agents[i].position.y);
+          for (int dy = -radius; dy <= radius; ++dy) {
+            for (int dx = -radius; dx <= radius; ++dx) {
+              const auto dist = std::abs(dx) + std::abs(dy);
+              if (dist > radius) {
+                continue;
+              }
+              bump(ax + dx, ay + dy, static_cast<std::uint16_t>(peak - dist));
+            }
+          }
         }
         break;
       }

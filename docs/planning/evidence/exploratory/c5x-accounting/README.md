@@ -146,6 +146,36 @@ again partially or fully refuted -- the round's value:
    shipped spread mechanism -- the two congestion answers are better
    together than either alone.
 
+## Amendment-7 round: the escalation family on the relocated lab
+(captures `a7-*.txt`)
+
+Run through the congestion lab's native runner (the relocated code
+path) across the seven standard scenarios plus the corrected `maze`
+scenario, 16 cells, canonical + cool + stallcool + queue2 + the two
+new arms, per-arm replays bit-identical, every wall admission ok.
+
+| arm | pooled gm (16 cells) | safe | maze/1024 |
+|---|---|---|---|
+| cool | 0.4119 | 16/16 | 2,828 ticks, all arrive |
+| **escal** (duration-escalating stall price) | 0.4220 | 16/16 | **2,471 ticks, all arrive -- best recorded** |
+| radiate (duration-escalating, radiating cone) | 0.4349 | 16/16 | 2,627 ticks, all arrive (best at 256: 1,375) |
+| stallcool | 0.4585 | 16/16 | 2,758 ticks, all arrive |
+| queue2 | 0.6753 | 16/16 | 5,000 ticks, 297 arrive -- no better than canonical |
+
+Findings: (1) the maze separates policies as its forward registration
+predicted -- canonical strands 727 of 1,024 at the cap, and the
+stall-gated queue policy helps not at all there, confirming its
+chain-not-blob blind spot live; (2) the maintainer-proposed
+duration-escalation family wins the capacity-bound geometry outright,
+with plain magnitude escalation (escal) beating the radiating cone at
+1,024 agents and the cone winning at 256 -- the registered hypothesis
+(radiate best on capacity-bound maps) held for the family, not for
+the specific variant; (3) pooled across all 16 cells the escalation
+family lands second and third behind cooling memory, ahead of every
+other fixed-radius policy. Note the anchors' pooled values shift
+slightly from earlier rounds: this round ran on the relocated lab
+path and includes the maze cells; comparisons are within-round.
+
 ## Files
 
 - `<scenario>.txt` -- per-cell captures (arm rows: arrived,

@@ -93,6 +93,8 @@ better; 1.0 = no effect), with planning load relative to canonical.
 | Nearby agents (base recipe) | each live agent +1 on its tile and four neighbours | 0.41 | ~5x | screening ratio shown here; separately validated at supported-population coverage |
 | Stalled agents | stalled tiles and neighbours, snapshot | 0.43 | ~2x | superseded by stalled + cooling |
 | Peaked (own tile +2, ring +1) | each agent a small gradient rather than a plateau | 0.41 | ~5x | lower aggregate ratio than the flat nearby-agent signal in this screen |
+| Escalating stall price | each stalled agent's contribution grows with how long it has been stuck (+1 magnitude per 8 stalled ticks, capped) | 0.42 | ~2x | best recorded result on the capacity-bound maze scenario; screened on the relocated lab path |
+| Radiating stall price | same, and the priced region widens with stall duration (a cone sloping from the agent outward) | 0.43 | ~2x | best maze result at 256 agents; the wider cone did not add value at 1,024 |
 
 **Experiment rejected — ungated queue detection.** In the screen it
 disrupted flowing convoys and created adjacent single-file queues.
@@ -136,8 +138,15 @@ library behaviour.
   terminal classification in both directions under pricing. Consumers
   requiring stable per-seed classification under that settle rule
   should leave pricing disabled.
+- On a dense-maze scenario (single-file corridors nearly everywhere),
+  the stall-gated queue policy does not help at all: large waiting
+  blocks fail its single-file chain test by design, and by the time an
+  agent is inside a corridor no alternative remains to price toward.
+  The duration-escalating policies were proposed for exactly that
+  case and hold the best maze results.
 - **Screened, not promoted.** No supported-population, two-platform
-  result exists for the cooling, stalled-agent, or queue policies.
+  result exists for the cooling, stalled-agent, queue, or escalation
+  policies.
 
 ## Lab and example
 
