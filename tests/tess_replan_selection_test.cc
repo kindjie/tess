@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include <tess/experimental/path_agent_replan_selection.h>
 
+#include <optional>
 #include <vector>
 
 namespace {
@@ -59,9 +60,9 @@ TEST(ReplanSelection, RequestsOnlyAgentsWhoseRemainingRouteCrosses) {
   (void)f.add(agent_at(0, 1), line_route(1, 0, 5));
   const auto count = f.run([](Coord3 c) { return c.y == 0 && c.x == 3; });
   EXPECT_EQ(count, 1U);
-  const auto first = f.queue.front();
-  ASSERT_TRUE(first.has_value());
-  EXPECT_EQ(*first, hit);
+  // Compare optionals rather than dereferencing: gtest's ASSERT_TRUE is
+  // not a flow guard the unchecked-optional-access check can follow.
+  EXPECT_EQ(f.queue.front(), std::optional<std::size_t>{hit});
   f.queue.pop_front();
   EXPECT_TRUE(f.queue.empty());
 }
@@ -122,13 +123,9 @@ TEST(ReplanSelection, AscendingAgentIndexOrder) {
   const auto a = f.add(agent_at(0, 0), line_route(0, 0, 2));
   const auto b = f.add(agent_at(0, 1), line_route(1, 0, 2));
   EXPECT_EQ(f.run([](Coord3) { return true; }), 2U);
-  const auto first = f.queue.front();
-  ASSERT_TRUE(first.has_value());
-  EXPECT_EQ(*first, a);
+  EXPECT_EQ(f.queue.front(), std::optional<std::size_t>{a});
   f.queue.pop_front();
-  const auto second = f.queue.front();
-  ASSERT_TRUE(second.has_value());
-  EXPECT_EQ(*second, b);
+  EXPECT_EQ(f.queue.front(), std::optional<std::size_t>{b});
 }
 
 }  // namespace

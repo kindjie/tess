@@ -32,12 +32,33 @@ which is the successor measurement surface.
    every chunk you touched. Do **not** raise the global pathing-dirty
    flag; request replans only for affected retained routes, as
    described below.
-4. When pricing turns off, restore every tile to unit cost and only
-   then force one full replan: every retained route was planned
-   against prices, so this single global replan is correct.
+4. When pricing turns off, restore the field to its unpriced values
+   and only then force one full replan: every retained route was
+   planned against prices, so this single global replan is correct.
 
 Pricing changes route cost, not passability. An existing route
 remains valid, although it may no longer be the lowest-cost route.
+
+**If your world has terrain costs, do not follow step 2 literally.**
+The recipe below writes the price into the same field the movement
+class reads, and restores it by writing 1 everywhere. That is correct
+only because the demo's terrain is uniformly 1
+(`world.fill_field<CostTag>(1)`), and every experiment in this stream
+was screened on such a world. A caller whose field already carries
+terrain weight would overwrite it when pricing turns on and erase it
+when pricing turns off. Give congestion its own field instead and have
+the movement class read the sum, so terrain and price stay separable
+and restoring means clearing the price field alone. Two consequences
+follow: the maximum cost your planner is configured for must cover
+terrain plus the price cap, and the passability term must keep reading
+terrain only — a price must never be able to make impassable ground
+passable.
+
+Note also that the cap and the price magnitudes are expressed in your
+cost units. All the measured results here come from unit terrain, so
+`min(3, signal)` was a detour budget of three unit steps. On a map
+whose terrain spans a wider range, the same cap buys a different
+amount of detour, and no experiment in this stream has measured that.
 
 ## Scoped replanning
 
@@ -126,18 +147,26 @@ instrument the cause.
 Two costs scale with problem size rather than with crowding, and a
 caller should size both before adopting any policy here.
 
-**Applying prices is proportional to the tiles you write, not to the
-number of agents.** The recipe below writes every tile every repricing,
-which is fine for a demo-sized world and wrong for a large one: on a
-128x128 grid it measures ~80-90 us per repricing, and a 1024x1024 world
-would imply several milliseconds — more than a 60 Hz frame — for a
-signal that is usually local to a few congested regions. On an
-uncongested map this is the dominant cost of pricing (measured at
-roughly a fifth of total run time at 1,024 agents, and about half at
-256). Write only the tiles whose price changed, tracking the union of
-the previous and current footprints so prices left behind still decay.
-Cooling memory can legitimately spread across most of the map; that is
-a reason to bound it, not to sweep unconditionally.
+**Applying prices scales with the tiles you write, not with the number
+of agents.** The recipe below writes every tile every repricing. That
+is fine for a demo-sized world and wrong for a large one: the sweep is
+O(tiles) regardless of how many agents exist or how crowded they are,
+so a world with sixty-four times the area costs sixty-four times as
+much to reprice, for a signal that is usually local to a few congested
+regions. Write only the tiles whose price changed, tracking the union
+of the previous and current footprints so prices left behind still
+decay. Cooling memory can legitimately spread across most of the map;
+that is a reason to bound it, not to sweep unconditionally.
+
+Turning pricing on cost roughly a fifth of total run time on an
+uncongested 1,024-agent run of the escalating-stall policy, and about
+half at 256 agents. Read that as the price of the **whole mechanism**,
+not of the sweep alone: it also contains the policy's own per-tick
+bookkeeping, the replan selection, and the extra searching that
+repricing provokes. Those shares move with policy and geometry — a
+policy that prices every live agent every repricing costs
+substantially more than one that prices only stalled agents — so size
+your own configuration rather than transferring these numbers.
 
 **Selecting who replans is proportional to total remaining route
 length.** `request_replans_for_route_crossings` walks each eligible

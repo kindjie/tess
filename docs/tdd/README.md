@@ -17,6 +17,8 @@ When implementation diverges from a TDD:
 
 ## Documents
 
+- [Congestion pricing as library API](congestion-pricing-api.md)
+  (proposed — evaluated and declined at current evidence)
 - [Canonical terminology and pre-1.0 contract cleanup](terminology-contracts.md)
   (proposed)
 - [Pathfinding strategy comparison demo](pathfinding-strategy-demo.md)
