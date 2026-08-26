@@ -161,7 +161,12 @@ int main(int argc, char** argv) {
       const auto [accepted, attempted] = queue_walls(model, scenario);
       walls_ok = walls_ok && accepted == attempted;
     }
-    if (incremental_pending()) {
+    // The progressive scenario's registered contract starts admission at
+    // tick 4 and is replicated verbatim from the c5-congestion evidence;
+    // starting earlier would change its early paths and refusals and
+    // break comparability with that record. Only the batch scenarios
+    // moved to tick 0.
+    if (ticks >= 4 && incremental_pending()) {
       constexpr std::size_t kWallsPerTick = 4;
       std::size_t accepted_this_tick = 0;
       while (accepted_this_tick < kWallsPerTick && incremental_pending()) {

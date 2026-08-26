@@ -151,10 +151,15 @@ function draw() {
           open ? 'rgba(110, 168, 254, 0.30)' : 'rgba(240, 160, 90, 0.34)');
     }
 
-    // Agents on this floor, interpolated between fixed ticks.
+    // Agents on this floor, interpolated between fixed ticks. An agent
+    // inside a stairwell sits on an odd slab level; drawing only even
+    // levels would make it vanish for exactly the ticks this demo
+    // exists to show, so an odd level is drawn against the floor below
+    // it and lifted halfway to the next.
     for (let i = 0; i < agentCount; i += 1) {
       const cz = current[i * 3 + 2];
-      if (cz !== level) {
+      const onSlab = (cz & 1) === 1;
+      if (cz !== level && !(onSlab && cz - 1 === level)) {
         continue;
       }
       const cx = current[i * 3];
@@ -166,7 +171,11 @@ function draw() {
       // otherwise slide the marker through the slab.
       const ix = pz === cz ? px + (cx - px) * alpha : cx;
       const iy = pz === cz ? py + (cy - py) * alpha : cy;
-      diamond(ix + 0.5, iy + 0.5, floor, 0.8, 0.8, '#6ea8fe');
+      // Half a storey up for a slab level, so a climbing agent reads as
+      // between the two floors rather than standing on the lower one.
+      diamond(
+          ix + 0.5, iy + 0.5, onSlab ? floor + 0.5 : floor, 0.8, 0.8,
+          onSlab ? '#9ec5ff' : '#6ea8fe');
     }
   }
 }

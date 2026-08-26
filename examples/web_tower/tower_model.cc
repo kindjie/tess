@@ -137,7 +137,8 @@ struct TowerModel::Impl {
     build_world();
     place_agents();
     publish_tiles();
-    snapshot_agents();
+    publish_positions();
+    remember_positions();
   }
 
   void build_world() {
@@ -203,6 +204,23 @@ struct TowerModel::Impl {
   // therefore kept permanently clear as an access aisle crossing every
   // row. (A checkerboard instead of rows fails harder: on a 4-connected
   // lattice its free tiles share no orthogonal edge at all.)
+  // Rewrites one stairwell's entry costs across every level, leaving
+  // passability, occupancy, and sealed tiles untouched.
+  void reprice_stairwell(int index) {
+    const auto& s = kStairwells[index];
+    const std::uint32_t cost = stair_open[index] ? 1U : kClosedStairCost;
+    for (int z = 0; z < kLevels; ++z) {
+      for (int y = s.y; y < s.y + 3; ++y) {
+        for (int x = s.x; x < s.x + 3; ++x) {
+          const tess::Coord3 c{x, y, z};
+          world.template field<CostTag>(c) = cost;
+          world.mark_content_changed(
+              tess::chunk_key<Shape>(tess::chunk_coord<Shape>(c)));
+        }
+      }
+    }
+  }
+
   [[nodiscard]] static auto endpoint_offset(std::size_t i)
       -> std::pair<int, int> {
     const auto lane = static_cast<int>(i) % kEndpointCount;
@@ -248,8 +266,9 @@ struct TowerModel::Impl {
     }
   }
 
-  void snapshot_agents() {
-    previous_agent_xyz = agent_xyz;
+  void remember_positions() { previous_agent_xyz = agent_xyz; }
+
+  void publish_positions() {
     for (std::size_t i = 0; i < agents.size(); ++i) {
       agent_xyz[i * 3 + 0] = static_cast<std::int16_t>(agents[i].position.x);
       agent_xyz[i * 3 + 1] = static_cast<std::int16_t>(agents[i].position.y);
@@ -266,7 +285,12 @@ struct TowerModel::Impl {
     }
 
     stair_open[index] = open;
-    build_world();
+    // Only the stairwell's costs change. Rebuilding the world would
+    // refill every field, which clears live OccupancyTag and reopens
+    // the tiles that arrived agents have sealed -- joint movement
+    // trusts both during admission, so two agents could then be
+    // admitted onto one tile.
+    reprice_stairwell(index);
     publish_tiles();
     // A sealed stairwell can invalidate any retained route, so this is
     // the one edit that legitimately replans everything.
@@ -274,18 +298,15 @@ struct TowerModel::Impl {
     return true;
   }
 
+  // Agents standing in a stairwell right now. Counting every route that
+  // still changes height would report almost the whole fleet, since any
+  // ground-to-top route crosses a floor eventually.
   [[nodiscard]] auto climbing() const -> int {
     int count = 0;
-    for (std::size_t i = 0; i < agents.size(); ++i) {
-      if (i >= tick_state.routes.routes.size()) {
-        break;
-      }
-      const auto& route = tick_state.routes.routes[i];
-      for (auto step = agents[i].path_index; step + 1 < route.size(); ++step) {
-        if (route[step].z != route[step + 1].z) {
-          ++count;
-          break;
-        }
+    for (const auto& agent : agents) {
+      if (any_stairwell(static_cast<int>(agent.position.x),
+                        static_cast<int>(agent.position.y)) >= 0) {
+        ++count;
       }
     }
     return count;
@@ -344,7 +365,10 @@ struct TowerModel::Impl {
   auto tick(double dt_seconds) -> double {
     const auto frame = accumulator.consume(dt_seconds, tess::SimTimeControl{});
     for (std::size_t step = 0; step < frame.ticks; ++step) {
-      snapshot_agents();
+      // Record where agents were BEFORE this tick, then publish where
+      // they are after it. Snapshotting only before movement would
+      // leave `current_agents()` a whole tick behind the counters.
+      remember_positions();
       auto options = tess::PathAgentTickOptions{};
       // Retry an occupancy-blocked step rather than sleeping on it:
       // this tower's only routes between floors are stairwells, so a
@@ -364,6 +388,7 @@ struct TowerModel::Impl {
       // them on a GLOBAL stall is not enough: while any other agent
       // still moves, a wedged one would never be revisited. Sweep on a
       // fixed period instead, whenever anyone is blocked.
+      publish_positions();
       seal_arrived_tiles();
       ++recovery_countdown;
       if (recovery_countdown >= kRecoveryPeriodTicks) {

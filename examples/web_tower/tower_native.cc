@@ -72,5 +72,11 @@ int main(int argc, char** argv) {
       model.agent_count(), wt::floors, ticks, model.arrived(),
       model.crowd_blocked(), model.unreachable(),
       model.turnaround_ready() ? 1 : 0, seal, seal_ok ? "ok" : "refused");
-  return model.turnaround_ready() ? 0 : 1;
+  // turnaround_ready() counts Unreachable agents as settled, so it
+  // alone would report success even if a pathing regression stranded
+  // the whole fleet. Require actual completion.
+  const bool completed = model.turnaround_ready() &&
+                         model.arrived() == model.agent_count() &&
+                         model.unreachable() == 0 && model.crowd_blocked() == 0;
+  return completed ? 0 : 1;
 }
