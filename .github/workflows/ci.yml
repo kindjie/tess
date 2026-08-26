@@ -544,6 +544,7 @@ jobs:
           tests/test_portable_headers.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
+          tests/test_publish_docs_root.py
           tests/test_measure_traffic_lab.py
           tests/test_browser_demo_resources.py
           tests/test_compatibility_snapshots.py

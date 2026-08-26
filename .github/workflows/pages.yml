@@ -10,7 +10,8 @@ on:
       publish_version:
         description: >-
           Version directory to publish from the selected ref, such as "0.13".
-          Supplying it also moves the "latest" alias and the site default,
+          Supplying it also moves the stable root and "latest" compatibility
+          tree,
           unless the currently published latest is numerically newer
           (the deploy-step guard then publishes the tree only).
           Leave empty for an ordinary verification run.
@@ -20,13 +21,14 @@ on:
 permissions:
   contents: read
 
-# Cancel superseded pull-request builds, but never an in-flight main-branch
-# deployment.
+# Pull requests cancel only their own superseded verification. Every event
+# capable of publishing shares one queue, so main, tag, and dispatch runs
+# cannot race while replacing the Pages artifact or updating gh-pages.
 concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: >-
-    ${{ github.ref != 'refs/heads/main'
-        && !startsWith(github.ref, 'refs/tags/') }}
+  group: >-
+    pages-${{ github.event_name == 'pull_request'
+      && github.ref || 'publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # One place decides what, if anything, this run publishes. Pull requests and
@@ -53,7 +55,7 @@ jobs:
             # Only a major.minor release tree may be requested: anything
             # else -- "dev" especially, which sort -V ranks above every
             # number and would sail through the deploy-step alias guard --
-            # must fail loudly rather than re-point the site default.
+            # must fail loudly rather than re-point the stable publication.
             if ! printf '%s' "$REQUESTED" | grep -Eq '^[0-9]+\.[0-9]+$'
             then
               echo "publish_version must be <major>.<minor>," \
@@ -70,7 +72,7 @@ jobs:
             :
           elif [ "$REF" = "refs/heads/main" ]; then
             # Development snapshot. It never takes the "latest" alias, so the
-            # site default keeps pointing at the newest release.
+            # stable root keeps serving the newest release.
             version="dev"
           elif [ "${REF#refs/tags/v}" != "$REF" ]; then
             tag="${REF#refs/tags/}"
@@ -308,18 +310,15 @@ jobs:
             --use-angle=swiftshader \
             --enable-unsafe-swiftshader
 
-      # mike runs mkdocs itself and has no prebuilt-directory mode, so the
-      # generated API reference and WebAssembly demos travel to the publish
-      # job and are staged inside docs/ there. Everything above this point
-      # already verified them in build/site.
-      - name: Upload generated documentation trees
+      # The complete verified site is authoritative for a stable root
+      # publication. The publish job also stages its generated API and demos
+      # into mike's source tree because mike has no prebuilt-directory mode.
+      - name: Upload built documentation
         if: needs.select.outputs.version != ''
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: generated-doc-trees
-          path: |
-            build/docs-api/docs/html
-            build/site/demo
+          name: built-documentation
+          path: build/site
           retention-days: 1
 
   publish:
@@ -357,10 +356,10 @@ jobs:
       - name: Fetch pinned Mermaid runtime
         run: python3 tools/fetch_mermaid.py
 
-      - name: Download generated documentation trees
+      - name: Download built documentation
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
-          name: generated-doc-trees
+          name: built-documentation
           path: build/generated
 
       - name: Stage generated trees inside the documentation source
@@ -368,10 +367,8 @@ jobs:
           # mkdocs copies non-Markdown files in docs/ verbatim, which is how
           # the API reference and demos reach mike's build. Both are generated
           # and gitignored, matching the fetched Mermaid runtime.
-          # upload-artifact strips the paths' common ancestor, so the
-          # downloaded tree starts below build/.
-          cp -R build/generated/docs-api/docs/html docs/api
-          cp -R build/generated/site/demo docs/demo
+          cp -R build/generated/api docs/api
+          cp -R build/generated/demo docs/demo
           test -f docs/api/index.html
           test -d docs/demo/colony
 
@@ -404,8 +401,8 @@ jobs:
           export PATH="$PWD/.venv-docs/bin:$PATH"
 
           # A patch tag on an older minor line must not re-point `latest`
-          # or the site default backward. Keep the tree publish, but drop
-          # the alias when the currently defaulted version is numerically
+          # or the stable root backward. Keep the tree publish, but drop
+          # the alias when the currently aliased version is numerically
           # newer than this one.
           if [ -n "$ALIAS" ]; then
             current="$(git show FETCH_HEAD:versions.json 2>/dev/null \
@@ -422,27 +419,40 @@ jobs:
             fi
           fi
 
-          # --alias-type copy, not the default symlink: GitHub Pages does not
-          # serve symlinked directories, and every documented deep link now
-          # points through /latest/. --update-aliases lets a new release take
-          # that alias from the previous one.
+          # Keep a copy alias so old non-HTML /latest/ resources remain
+          # available. The publication helper replaces alias HTML with exact
+          # root redirects after making the root tree authoritative.
           mike deploy --push --update-aliases \
             --alias-type copy \
             --branch gh-pages \
             --title "$VERSION" \
             "$VERSION" $ALIAS
-          if [ -n "$ALIAS" ]; then
-            mike set-default --push --branch gh-pages "$ALIAS"
-          fi
 
           rm -rf build/pages
           git fetch --no-tags --depth=1 origin gh-pages
           git worktree add build/pages FETCH_HEAD
+
+          root_args=()
+          if [ -n "$ALIAS" ]; then
+            root_args=(--root-source build/generated)
+          fi
+          python3 tools/publish_docs_root.py sync \
+            build/pages "${root_args[@]}"
           # Jekyll would otherwise drop Doxygen's underscore-prefixed assets.
           touch build/pages/.nojekyll
-          # Crawlers read robots.txt only at the site root; the versioned
-          # trees each carry a copy that nothing ever requests.
           cp docs/robots.txt build/pages/robots.txt
+
+          # Root-current content and compatibility redirects are persistent
+          # publication state. Commit them to storage before applying
+          # artifact-only indexing metadata to immutable version trees.
+          git -C build/pages add --all
+          if ! git -C build/pages diff --cached --quiet; then
+            git -C build/pages commit -m \
+              "docs: assemble stable root publication"
+            git -C build/pages push origin HEAD:gh-pages
+          fi
+          python3 tools/publish_docs_root.py prepare-artifact build/pages
+          python3 tools/publish_docs_root.py check build/pages
           git config --local --unset "http.extraheader"
 
       - name: Configure Pages

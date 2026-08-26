@@ -19,19 +19,19 @@ cmake --build --preset examples
 
 ## Start here
 
-- [Live pathfinder](https://tess.owx.dev/latest/demo/) — the interactive
+- [Live pathfinder](https://tess.owx.dev/demo/) — the interactive
   WebAssembly demo, built from the same C++20 headers as the library and
   published with this site.
-- [Live strategy comparison](https://tess.owx.dev/latest/demo/strategies/) — the
+- [Live strategy comparison](https://tess.owx.dev/demo/strategies/) — the
   native pathfinding-strategy model compiled to WebAssembly: four call shapes,
   a shared obstacle course, C++-reported paths and reuse counters, and distinct
   route, batch, and map-wide field data products without browser timing claims.
-- [Live colony](https://tess.owx.dev/latest/demo/colony/) — the scale demo:
+- [Live colony](https://tess.owx.dev/demo/colony/) — the scale demo:
   up to 1,024 agents shuttling between the edges and replanning around
   walls you draw (walls survive resets), with completed and crowd-turnaround
   leg counters, smooth presentation-only movement, a C++-update cost readout,
   and a retained-routes vs replan-every-tick toggle.
-- [Congestion lab](https://tess.owx.dev/latest/demo/congestion/) — the
+- [Congestion lab](https://tess.owx.dev/demo/congestion/) — the
   colony simulation with the supported-coverage nearby-agent recipe,
   five additional screened policies, two rejected controls, and three
   period or price-cap variants selectable live, with a price overlay,
@@ -39,14 +39,14 @@ cmake --build --preset examples
   The [congestion pricing guide](guide/congestion.md) states the
   evidence tier and boundary for each result; the native runner
   executes the same model without browser presentation.
-- [Tower](https://tess.owx.dev/latest/demo/tower/) — a six-floor world
+- [Tower](https://tess.owx.dev/demo/tower/) — a six-floor world
   where solid slabs separate the floors and stairwell columns are the only
   tiles joining them, so an agent crossing floors follows one route
   through three dimensions rather than switching between stacked maps.
   Closing a stairwell prices it instead of sealing it, so routes divert
   while anyone on the stairs can still walk out. Isometric 2D canvas with
   touch controls; an early version whose geometry is deliberately simple.
-- [Live diagnostics](https://tess.owx.dev/latest/demo/diagnostics/) — real Dear ImGui
+- [Live diagnostics](https://tess.owx.dev/demo/diagnostics/) — real Dear ImGui
   panels over path, queued-phase, timing, trace, and consumer-instrumented
   allocation snapshots. Mirrored HTML controls keep the demo keyboard
   operable and make its runtime state visible to browser automation.
@@ -80,7 +80,7 @@ cmake --build --preset examples
   through the byte-budgeted `FieldProductCache` instead of searching
   independently.
 - [`web_colony`][web_colony_src] — the source of the
-  [live colony demo](https://tess.owx.dev/latest/demo/colony/): the colony_2d
+  [live colony demo](https://tess.owx.dev/demo/colony/): the colony_2d
   composition compiled to WebAssembly. Its model, Wasm adapter, native
   self-check, browser controller, and page are separate so the library
   patterns are visible without platform glue interrupting them.
@@ -91,11 +91,11 @@ cmake --build --preset examples
   restores unit costs when disabled. Snippet-synced into the
   [congestion pricing guide](guide/congestion.md).
 - [`web_congestion`][web_congestion_src] — the source of the
-  [congestion lab](https://tess.owx.dev/latest/demo/congestion/): wraps
+  [congestion lab](https://tess.owx.dev/demo/congestion/): wraps
   the colony model through its native seam so the tutorial stays clean
   while every pricing experiment lives here.
 - [`web_traffic`][web_traffic_src] — the source of the
-  [Traffic Lab](https://tess.owx.dev/latest/demo/traffic/): a deterministic
+  [Traffic Lab](https://tess.owx.dev/demo/traffic/): a deterministic
   1024×512 congestion overview with static terrain caching, separately
   rendered agents, and an eight-search planning budget. Static barrier
   scenarios supply their known gate crossings to exact weighted segments;
@@ -181,7 +181,7 @@ The fractional coordinates never return to simulation state.
   a single-threaded WebAssembly build with a small JavaScript shell.
 - [`web_diagnostics`][web_diagnostics] — a dependency-free native model
   self-check plus the Dear ImGui GLFW/WebGL2 browser host used by the
-  [live diagnostics demo](https://tess.owx.dev/latest/demo/diagnostics/).
+  [live diagnostics demo](https://tess.owx.dev/demo/diagnostics/).
 
 [quickstart]: https://github.com/kindjie/tess/blob/main/examples/quickstart.cc
 [colony_2d]: https://github.com/kindjie/tess/blob/main/examples/colony_2d.cc

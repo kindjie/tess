@@ -28,7 +28,7 @@ candidate `v1.0.0-rc.1`) and the path to 1.0 in the
 [Watch a colony scale](demo/colony/){ .md-button }
 [Climb a tower](demo/tower/){ .md-button }
 [Inspect live diagnostics](demo/diagnostics/){ .md-button }
-[API reference](https://tess.owx.dev/latest/api/){ .md-button }
+[API reference](https://tess.owx.dev/api/){ .md-button }
 
 </div>
 
