@@ -396,6 +396,7 @@ def pre_commit() -> int:
     check_conflict_markers,
     check_public_safety,
     check_cpp_format,
+    check_inventory_counts,
     check_token_limits,
     check_user_email,
   )
@@ -523,6 +524,44 @@ def check_tracked_public_safety() -> int:
   if offenders:
     print_paths(offenders)
     return fail("tracked files match public-safety deny patterns")
+  return 0
+
+
+# Files whose edits can move a declared inventory count. The repository
+# already carries tests that check those counts; the cost of forgetting
+# to run them is a red pull request, which has happened twice.
+INVENTORY_TRIGGERS = (
+  "examples/CMakeLists.txt",
+  ".github/workflows/ci.yml",
+  "tests/CMakeLists.txt",
+)
+INVENTORY_TESTS = (
+  "tests/test_git_hooks.py",
+  "tests/test_ci_reliability.py",
+)
+
+
+def check_inventory_counts() -> int:
+  """Runs the inventory tests when a change can move a declared count.
+
+  These assert exact example and smoke counts against the CMake
+  declarations. They are cheap (a few seconds) and only run when a
+  triggering file is staged, so ordinary commits pay nothing.
+  """
+  try:
+    paths = staged_files()
+  except RepositoryReadError as error:
+    return fail(str(error))
+  if not any(path in INVENTORY_TRIGGERS for path in paths):
+    return 0
+  python = venv_tool("python3") or sys.executable
+  command = [python, "-m", "pytest", "-q", *INVENTORY_TESTS]
+  completed = run(command, capture=True)
+  if completed.returncode != 0:
+    tail = "\n".join((completed.stdout or "").strip().splitlines()[-12:])
+    return fail(
+      "inventory counts do not match the declarations:\n" + tail
+    )
   return 0
 
 

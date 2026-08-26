@@ -62,6 +62,14 @@ endif()
 # Compile the browser adapter under native warnings and diff clang-tidy
 # without coupling it to the native verification executable.
 add_library(
+  tess_web_tower_wasm_adapter OBJECT
+  web_tower/tower_wasm.cc
+  web_tower/tower_model.cc
+)
+target_link_libraries(tess_web_tower_wasm_adapter PRIVATE tess::tess)
+tess_apply_project_options(tess_web_tower_wasm_adapter)
+
+add_library(
   tess_web_congestion_wasm_adapter OBJECT
   web_congestion/congestion_wasm.cc
   web_congestion/congestion_model.cc
