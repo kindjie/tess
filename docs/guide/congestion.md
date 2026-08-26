@@ -149,24 +149,26 @@ caller should size both before adopting any policy here.
 
 **Applying prices scales with the tiles you write, not with the number
 of agents.** The recipe below writes every tile every repricing. That
-is fine for a demo-sized world and wrong for a large one: the sweep is
-O(tiles) regardless of how many agents exist or how crowded they are,
-so a world with sixty-four times the area costs sixty-four times as
-much to reprice, for a signal that is usually local to a few congested
-regions. Write only the tiles whose price changed, tracking the union
+is fine for a demo-sized world and wrong for a large one: the sweep
+visits every tile regardless of how many agents exist or how crowded
+they are, so a world with sixty-four times the area writes sixty-four
+times as many tiles per repricing, for a signal that is usually local
+to a few congested regions. That is a statement about work, not a
+measured elapsed time on any particular world. Write only the tiles whose price changed, tracking the union
 of the previous and current footprints so prices left behind still
-decay. Cooling memory can legitimately spread across most of the map;
-that is a reason to bound it, not to sweep unconditionally.
+decay. Cooling memory — the halving variant, whose heat reaches zero
+once crowds move on — can still legitimately spread across most of the
+map; that is a reason to bound its extent, not to sweep the world
+unconditionally.
 
 Turning pricing on cost roughly a fifth of total run time on an
 uncongested 1,024-agent run of the escalating-stall policy, and about
 half at 256 agents. Read that as the price of the **whole mechanism**,
 not of the sweep alone: it also contains the policy's own per-tick
 bookkeeping, the replan selection, and the extra searching that
-repricing provokes. Those shares move with policy and geometry — a
-policy that prices every live agent every repricing costs
-substantially more than one that prices only stalled agents — so size
-your own configuration rather than transferring these numbers.
+repricing provokes. Those shares move with policy and geometry, and the measurements here
+do not separate the parts, so size your own configuration rather than
+transferring these numbers.
 
 **Selecting who replans is proportional to total remaining route
 length.** `request_replans_for_route_crossings` walks each eligible
@@ -198,7 +200,10 @@ different machines.
 | Fit a search-work target | 0.78 | 0.98 | 2.30 | 1.20 |
 
 Ratios are against a fixed budget of 8 per tick, at 1,024 agents,
-geometric means over eight screened scenarios; lower is better.
+geometric means over the screened scenarios; lower is better. Every row
+covers eight scenarios except *drain the backlog*, which covers seven:
+it changes trajectories before the scripted walls land in one scenario,
+so that scenario is not comparable for that rule and is excluded.
 
 **No rule dominates, so choose by the constraint you actually have.**
 
@@ -209,8 +214,10 @@ geometric means over eight screened scenarios; lower is better.
   backlog settles fastest. Under congestion it is very expensive —
   four times the search overall, and on a dense-maze scenario 1.82
   billion node expansions against 113 million for the fixed budget of
-  8 — because agents repeatedly replan against a price field that is
-  still moving. On uncongested maps that effect does not appear.
+  8. The likely mechanism is agents repeatedly replanning against a
+  price field that is still moving, though the runs did not isolate it.
+  On the open-geometry cells measured, expansions stayed flat across
+  every budget rule.
 - **General use**: fitting the request count to a search-work target
   (a fixed expanded-node budget per tick, divided by the previous
   tick's measured cost per search) settles about as fast as scaling

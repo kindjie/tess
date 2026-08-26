@@ -395,8 +395,13 @@ stateDiagram-v2
 - `PathAgentFrameStats` counts submitted and completed work; every
   `PathStatus` outcome (`found`, `invalid_start`, `invalid_goal`, `no_path`,
   `indeterminate`, `cost_overflow`, `not_computed`, and `no_candidate`);
-  `precheck_ruled_out`; advanced steps; arrivals; blocked waits; and a
-  `MovementFailureCounts`.
+  `precheck_ruled_out`; `expanded_nodes`; advanced steps; arrivals; blocked
+  waits; and a `MovementFailureCounts`.
+  `expanded_nodes` totals the search nodes expanded by the completed results a
+  call applied. A replan budget still bounds the number of searches rather than
+  the work inside one, so this counter is what a caller reads to bound planning
+  by search effort instead: it is deterministic, so a budget derived from it
+  replays exactly, which a wall-clock budget would not.
   `precheck_ruled_out` is the number of agents whose goal an optional topology
   precheck proved unreachable before A* (a subset of `no_path`; see the path
   runtime's `precheck_ruled_out`). `add_path_agent_stats(lhs, rhs)` accumulates
