@@ -1,0 +1,30 @@
+cell,two-gates,256,canonical,256,0,0,1099,1,-,5015
+cell,two-gates,256,cool,256,0,0,220,1,pass,37912
+cell,two-gates,256,stallcool,256,0,0,235,1,pass,5777
+cell,two-gates,256,queue2,256,0,0,367,1,pass,5596
+cell,two-gates,256,spreadonly,256,0,0,213,1,pass,8902
+cell,two-gates,256,coolS,256,0,0,223,1,pass,42165
+cell,two-gates,256,stallcoolS,256,0,0,226,1,pass,11129
+cell,two-gates,256,queue2S,256,0,0,213,1,pass,8895
+cell,two-gates,256,cool8,256,0,0,226,1,pass,35587
+cell,two-gates,256,cool16,256,0,0,223,1,pass,30424
+cell,two-gates,256,stallcool8,256,0,0,353,1,pass,5566
+cell,two-gates,256,stallcool16,256,0,0,1099,1,pass,5016
+cell,two-gates,256,cool7,256,0,0,236,1,pass,38040
+cell,two-gates,256,stallcool7,256,0,0,235,1,pass,5773
+cell,two-gates,1024,canonical,1024,0,0,4431,1,-,69455
+cell,two-gates,1024,cool,1024,0,0,546,1,pass,292024
+cell,two-gates,1024,stallcool,1024,0,0,828,1,pass,226325
+cell,two-gates,1024,queue2,1024,0,0,3802,1,pass,78362
+cell,two-gates,1024,spreadonly,1024,0,0,792,1,pass,120067
+cell,two-gates,1024,coolS,1024,0,0,514,1,pass,310191
+cell,two-gates,1024,stallcoolS,1024,0,0,618,1,pass,242238
+cell,two-gates,1024,queue2S,1024,0,0,612,1,pass,132411
+cell,two-gates,1024,cool8,1024,0,0,667,1,pass,290271
+cell,two-gates,1024,cool16,1024,0,0,699,1,pass,281076
+cell,two-gates,1024,stallcool8,1024,0,0,830,1,pass,213747
+cell,two-gates,1024,stallcool16,1024,0,0,1148,1,pass,182911
+cell,two-gates,1024,cool7,1024,0,0,615,1,pass,293204
+cell,two-gates,1024,stallcool7,1024,0,0,890,1,pass,231876
+mechanical checks: clean (0)
+safety gates: ALL PASS

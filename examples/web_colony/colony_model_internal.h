@@ -176,6 +176,16 @@ struct ColonyModel::Impl {
   std::size_t stalled_ticks = 0;
   std::size_t last_advanced = 0;
   std::size_t last_movement_waits = 0;
+  // The per-tick planning budget. The tutorial always runs the demo
+  // constant; the congestion lab varies it through the native seam
+  // (issue #269 amendment 8), so this member exists instead of using
+  // the constant directly inside the tick task.
+  std::size_t planning_budget = kMaxPlanningQueriesPerTick;
+  // Last tick's exact-replan drain, in requests and expanded search
+  // nodes: the work meter a caller needs to budget planning by search
+  // effort rather than request count (issue #269 amendment 9).
+  std::size_t last_planning_queries = 0;
+  std::size_t last_planning_expansions = 0;
   std::size_t max_recovery_probes = 0;
   std::size_t max_planning_queries = 0;
   std::size_t topology_rebuilds = 0;
@@ -574,55 +584,56 @@ struct ColonyModel::Impl {
         demo->diversity_replan_queue.clear();
         demo->wide_merge_replan_queue.clear();
         (void)demo->recover_blocked_agents(context.clock.tick,
-                                           kMaxPlanningQueriesPerTick);
+                                           demo->planning_budget);
         // Found recovery results need no retained-route work because the
         // synchronous pass below immediately replaces every active route.
         demo->replan_queue.clear();
         tess::mark_pathing_dirty(demo->tick_state);
       } else {
         std::size_t planning_queries = 0;
-        if (planning_queries < kMaxPlanningQueriesPerTick &&
+        demo->last_planning_expansions = 0;
+        if (planning_queries < demo->planning_budget &&
             !demo->diversity_replan_queue.empty()) {
           const auto diversity_stats =
               tess::process_weighted_path_agent_replans<World, Traveler>(
                   demo->world, demo->agents, demo->tick_state.routes,
                   demo->diversity_replan_queue, demo->replan_scratch,
                   tess::PathAgentReplanOptions{
-                      .max_requests =
-                          kMaxPlanningQueriesPerTick - planning_queries,
+                      .max_requests = demo->planning_budget - planning_queries,
                       .equal_cost_tie_seed = 0x434f4c4f4e59ULL,
                   });
           planning_queries += diversity_stats.submitted;
+          demo->last_planning_expansions += diversity_stats.expanded_nodes;
         }
-        if (planning_queries < kMaxPlanningQueriesPerTick) {
+        if (planning_queries < demo->planning_budget) {
           const auto wide_merge_stats =
               tess::process_weighted_path_agent_replans<World, Traveler>(
                   demo->world, demo->agents, demo->tick_state.routes,
                   demo->wide_merge_replan_queue, demo->replan_scratch,
                   tess::PathAgentReplanOptions{
-                      .max_requests =
-                          kMaxPlanningQueriesPerTick - planning_queries,
+                      .max_requests = demo->planning_budget - planning_queries,
                       .equal_cost_tie_seed = 0x434f4e47455354ULL,
                   });
           planning_queries += wide_merge_stats.submitted;
+          demo->last_planning_expansions += wide_merge_stats.expanded_nodes;
         }
-        if (planning_queries < kMaxPlanningQueriesPerTick) {
+        if (planning_queries < demo->planning_budget) {
           const auto canonical_stats =
               tess::process_weighted_path_agent_replans<World, Traveler>(
                   demo->world, demo->agents, demo->tick_state.routes,
                   demo->replan_queue, demo->replan_scratch,
                   tess::PathAgentReplanOptions{
-                      .max_requests =
-                          kMaxPlanningQueriesPerTick - planning_queries,
+                      .max_requests = demo->planning_budget - planning_queries,
                   });
           planning_queries += canonical_stats.submitted;
+          demo->last_planning_expansions += canonical_stats.expanded_nodes;
         }
-        const auto remaining_queries =
-            kMaxPlanningQueriesPerTick - planning_queries;
+        const auto remaining_queries = demo->planning_budget - planning_queries;
         const auto recovery_queries =
             demo->recover_blocked_agents(context.clock.tick, remaining_queries);
-        demo->max_planning_queries = std::max(
-            demo->max_planning_queries, planning_queries + recovery_queries);
+        demo->last_planning_queries = planning_queries + recovery_queries;
+        demo->max_planning_queries =
+            std::max(demo->max_planning_queries, demo->last_planning_queries);
       }
       auto options = tess::PathAgentTickOptions{};
       // This demo's exact replans are owned by replan_queue. Zero keeps a

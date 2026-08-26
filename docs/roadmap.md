@@ -96,9 +96,11 @@ code that assumes they do.
   yet been evaluated against their separate promotion gates.
 - **Flow, congestion, and influence fields** ([TDD][tdd-flow]) — only
   distance fields, weighted persistent products, nearest-target queries, and
-  coarse chunk corridors are released. Today's fallback
+  coarse chunk corridors are released. Today's supported answer
   for congestion-aware routing: write congestion from your simulation
-  into a cost field and route through a weighted movement class.
+  into a cost field and route through a weighted movement class -- the
+  measured recipe, its policies, and a browser laboratory are in the
+  [congestion pricing guide](guide/congestion.md).
 - **Additional GPU algorithms** ([TDD][tdd-gpu]) — the descriptor/concept
   layer and optional stable-C-API WebGPU transport are released. Consumers
   still provide algorithm pipelines and bindings, and the CPU stays

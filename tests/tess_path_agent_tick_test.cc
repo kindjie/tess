@@ -828,6 +828,9 @@ TEST(TessPathAgentTick, ReplanQueueBoundsExactPlanningAcrossTicks) {
       world, agents, routes, queue, scratch, options);
   EXPECT_EQ(stats.submitted, 2u);
   EXPECT_EQ(stats.found, 2u);
+  // The drain meters search work: every Found result expanded at least
+  // its own route, so the two searches must report nonzero expansions.
+  EXPECT_GT(stats.expanded_nodes, 0u);
   EXPECT_EQ(queue.pending(), 1u);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Following);
   EXPECT_EQ(agents[1].phase, tess::PathAgentPhase::Following);

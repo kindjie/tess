@@ -1,0 +1,30 @@
+cell,browser-guard,256,canonical,256,0,0,812,1,-,4989
+cell,browser-guard,256,cool,256,0,0,265,1,pass,40213
+cell,browser-guard,256,stallcool,256,0,0,233,1,pass,5872
+cell,browser-guard,256,queue2,256,0,0,352,1,pass,5122
+cell,browser-guard,256,spreadonly,256,0,0,295,1,pass,8904
+cell,browser-guard,256,coolS,256,0,0,262,1,pass,44724
+cell,browser-guard,256,stallcoolS,256,0,0,302,1,pass,11055
+cell,browser-guard,256,queue2S,256,0,0,295,1,pass,8904
+cell,browser-guard,256,cool8,256,0,0,239,1,pass,36927
+cell,browser-guard,256,cool16,256,0,0,308,1,pass,31025
+cell,browser-guard,256,stallcool8,256,0,0,331,1,pass,5259
+cell,browser-guard,256,stallcool16,256,0,0,800,1,pass,4982
+cell,browser-guard,256,cool7,256,0,0,263,1,pass,40365
+cell,browser-guard,256,stallcool7,256,0,0,233,1,pass,5872
+cell,browser-guard,1024,canonical,1024,0,0,3247,1,-,69389
+cell,browser-guard,1024,cool,1024,0,0,561,1,pass,303642
+cell,browser-guard,1024,stallcool,1024,0,0,561,1,pass,217308
+cell,browser-guard,1024,queue2,1024,0,0,2735,1,pass,76821
+cell,browser-guard,1024,spreadonly,1024,0,0,471,1,pass,110175
+cell,browser-guard,1024,coolS,1024,0,0,494,1,pass,312598
+cell,browser-guard,1024,stallcoolS,1024,0,0,473,1,pass,204398
+cell,browser-guard,1024,queue2S,1024,0,0,516,1,pass,111272
+cell,browser-guard,1024,cool8,1024,0,0,590,1,pass,299340
+cell,browser-guard,1024,cool16,1024,0,0,630,1,pass,278891
+cell,browser-guard,1024,stallcool8,1024,0,0,665,1,pass,204111
+cell,browser-guard,1024,stallcool16,1024,0,0,864,1,pass,172867
+cell,browser-guard,1024,cool7,1024,0,0,524,1,pass,304547
+cell,browser-guard,1024,stallcool7,1024,0,0,598,1,pass,221217
+mechanical checks: clean (0)
+safety gates: ALL PASS

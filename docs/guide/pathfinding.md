@@ -147,20 +147,23 @@ const auto nearest = tess::nearest_target<World, PassableTag>(
 
 ## Horizon
 
-!!! note "Planned"
-    Congestion, flow, and influence fields are designed but not shipped
-    (see the [roadmap](../roadmap.md), which includes the interim
-    cost-field fallback). Do not build agent code that assumes a
-    congestion API.
+!!! note "Congestion boundary"
+    Flow and influence fields are designed but not shipped; see the
+    [roadmap](../roadmap.md). tess does not ship a congestion field or
+    a congestion-specific planner. Congestion-aware routing is instead
+    a validated caller recipe over the shipped cost-field surface; the
+    [congestion pricing guide](congestion.md) records its evidence and
+    the screened alternatives.
 
     Routing itself is optimal per agent — a route is planned without
     reference to where other agents are. Contention is resolved at *move*
     time instead, by two shipped tiers. Joint movement admits a tick's
-    moves together so agents never stack, and by default (`SwapPolicy::
-    Forbid`) a mutually blocked pair stays blocked rather than exchanging
+    moves together so agents never stack, and by default
+    (`SwapPolicy::Forbid`) a mutually blocked pair stays blocked rather than exchanging
     tiles; `Permit` and `PermitOnDeadlock` relax that deliberately. The
     opt-in PIBT tier additionally lets a blocked agent yield *off* its
     route, which resolves a head-on that `Forbid` alone leaves blocked.
-    Neither tier spreads a crowd across alternative routes, which is what
-    a congestion field would do. See
+    Neither movement tier spreads a crowd across alternative routes.
+    At planning time, callers can price congested tiles or set
+    `equal_cost_tie_seed` to distribute routes of equal cost. See
     [simulation](../architecture/simulation.md).

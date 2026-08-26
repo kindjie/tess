@@ -92,6 +92,7 @@ nav:
       - Residency: guide/residency.md
       - Writes: guide/writes.md
       - Pathfinding strategy: guide/pathfinding.md
+      - Congestion pricing: guide/congestion.md
       - Interactive comparison: pathfinding-strategy-comparison.md
       - Topology and precheck: guide/topology.md
       - Entities and ECS: guide/entities.md

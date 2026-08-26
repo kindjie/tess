@@ -31,6 +31,14 @@ cmake --build --preset examples
   walls you draw (walls survive resets), with completed and crowd-turnaround
   leg counters, smooth presentation-only movement, a C++-update cost readout,
   and a retained-routes vs replan-every-tick toggle.
+- [Congestion lab](https://tess.owx.dev/latest/demo/congestion/) — the
+  colony simulation with the supported-coverage nearby-agent recipe,
+  five additional screened policies, two rejected controls, and three
+  period or price-cap variants selectable live, with a price overlay,
+  wall painting, and the shipped equal-cost route-spreading toggle.
+  The [congestion pricing guide](guide/congestion.md) states the
+  evidence tier and boundary for each result; the native runner
+  executes the same model without browser presentation.
 - [Live diagnostics](https://tess.owx.dev/latest/demo/diagnostics/) — real Dear ImGui
   panels over path, queued-phase, timing, trace, and consumer-instrumented
   allocation snapshots. Mirrored HTML controls keep the demo keyboard
@@ -69,6 +77,16 @@ cmake --build --preset examples
   composition compiled to WebAssembly. Its model, Wasm adapter, native
   self-check, browser controller, and page are separate so the library
   patterns are visible without platform glue interrupting them.
+- [`congestion_pricing.cc`][congestion_pricing] — a compile-checked
+  congestion-pricing recipe against public APIs only: it computes tile
+  prices, marks the changed chunks, requests replans for affected
+  retained routes through the experimental route-crossing helper, and
+  restores unit costs when disabled. Snippet-synced into the
+  [congestion pricing guide](guide/congestion.md).
+- [`web_congestion`][web_congestion_src] — the source of the
+  [congestion lab](https://tess.owx.dev/latest/demo/congestion/): wraps
+  the colony model through its native seam so the tutorial stays clean
+  while every pricing experiment lives here.
 - [`web_traffic`][web_traffic_src] — the source of the
   [Traffic Lab](https://tess.owx.dev/latest/demo/traffic/): a deterministic
   1024×512 congestion overview with static terrain caching, separately
@@ -168,6 +186,8 @@ The fractional coordinates never return to simulation state.
 [sparse_stream]: https://github.com/kindjie/tess/blob/main/examples/sparse_stream.cc
 [chunk_maintenance]: https://github.com/kindjie/tess/blob/main/examples/chunk_maintenance.cc
 [web_colony_src]: https://github.com/kindjie/tess/tree/main/examples/web_colony
+[congestion_pricing]: https://github.com/kindjie/tess/blob/main/examples/congestion_pricing.cc
+[web_congestion_src]: https://github.com/kindjie/tess/tree/main/examples/web_congestion
 [web_traffic_src]: https://github.com/kindjie/tess/tree/main/examples/web_traffic
 [custom_ecs]: https://github.com/kindjie/tess/blob/main/examples/custom_ecs_min.cc
 [entt_pawns]: https://github.com/kindjie/tess/blob/main/examples/entt_pawns.cc

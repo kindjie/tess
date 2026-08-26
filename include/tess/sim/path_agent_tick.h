@@ -450,6 +450,7 @@ template <typename Search>
     const auto result = search(index, PathRequest{agent.position, agent.goal});
     ++stats.submitted;
     ++stats.completed;
+    stats.expanded_nodes += result.expanded_nodes;
     record_path_agent_status(stats, result.status);
     if (result.status == PathStatus::Found) {
       // Assign first: if allocation throws, the pending queue item and agent

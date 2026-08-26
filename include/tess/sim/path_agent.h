@@ -64,6 +64,10 @@ struct PathAgentFrameStats {
   // Agents whose goal an optional topology precheck proved unreachable before
   // A* (a subset of no_path). See PathRuntimeStats::precheck_ruled_out.
   std::size_t precheck_ruled_out = 0;
+  // Total search nodes expanded by the completed results this call applied.
+  // A deterministic work meter: callers can bound planning per tick by
+  // expansion count where a wall-clock budget would break replay.
+  std::size_t expanded_nodes = 0;
   std::size_t advanced = 0;
   std::size_t arrived = 0;
   std::size_t blocked_waits = 0;
@@ -325,6 +329,7 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
       }
     }
     ++stats.completed;
+    stats.expanded_nodes += result.expanded_nodes;
     record_path_agent_status(stats, result.status);
   }
 
@@ -692,6 +697,7 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
   lhs.indeterminate += rhs.indeterminate;
   lhs.cost_overflow += rhs.cost_overflow;
   lhs.precheck_ruled_out += rhs.precheck_ruled_out;
+  lhs.expanded_nodes += rhs.expanded_nodes;
   lhs.advanced += rhs.advanced;
   lhs.arrived += rhs.arrived;
   lhs.blocked_waits += rhs.blocked_waits;

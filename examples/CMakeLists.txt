@@ -10,9 +10,57 @@ add_executable(tess_chunk_maintenance chunk_maintenance.cc)
 target_link_libraries(tess_chunk_maintenance PRIVATE tess::tess)
 tess_apply_project_options(tess_chunk_maintenance)
 
+add_executable(tess_congestion_pricing congestion_pricing.cc)
+target_link_libraries(tess_congestion_pricing PRIVATE tess::tess)
+tess_apply_project_options(tess_congestion_pricing)
+if(BUILD_TESTING)
+  add_test(NAME tess_congestion_pricing_example
+           COMMAND tess_congestion_pricing)
+  set_tests_properties(
+    tess_congestion_pricing_example
+    PROPERTIES
+      LABELS "target:tess_congestion_pricing;subsystem:path;subsystem:sim"
+      PASS_REGULAR_EXPRESSION "congestion pricing example: OK"
+  )
+endif()
+
 add_executable(tess_documentation documentation.cc)
 target_link_libraries(tess_documentation PRIVATE tess::tess)
 tess_apply_project_options(tess_documentation)
+
+add_executable(
+  tess_web_congestion_model
+  web_congestion/congestion_model.cc
+  web_congestion/congestion_native.cc
+  web_colony/colony_model.cc
+)
+target_link_libraries(tess_web_congestion_model PRIVATE tess::tess)
+tess_apply_project_options(tess_web_congestion_model)
+
+# Compile the browser adapter under native warnings and diff clang-tidy
+# without coupling it to the native verification executable.
+add_library(
+  tess_web_congestion_wasm_adapter OBJECT
+  web_congestion/congestion_wasm.cc
+  web_congestion/congestion_model.cc
+  web_colony/colony_model.cc
+)
+target_link_libraries(tess_web_congestion_wasm_adapter PRIVATE tess::tess)
+tess_apply_project_options(tess_web_congestion_wasm_adapter)
+if(BUILD_TESTING)
+  add_test(
+    NAME tess_web_congestion_scenario_smoke
+    COMMAND tess_web_congestion_model --scenario two-gates --agents 128
+            --policy 9 --max-ticks 1000
+  )
+  set_tests_properties(
+    tess_web_congestion_scenario_smoke
+    PROPERTIES
+      LABELS "target:tess_web_congestion_model;subsystem:path;subsystem:sim"
+      PASS_REGULAR_EXPRESSION
+        "scenario=two-gates.*arrived=128 crowd_blocked=0 unreachable=0 turnaround=1 walls=ok"
+  )
+endif()
 
 add_executable(
   tess_web_colony_model
