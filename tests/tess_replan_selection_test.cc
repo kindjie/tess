@@ -72,9 +72,12 @@ TEST(ReplanSelection, ConsumedPrefixDoesNotCount) {
   // The increase sits behind the agent: path_index is already past it.
   (void)f.add(agent_at(3, 0), line_route(0, 0, 5), 3U);
   EXPECT_EQ(f.run([](Coord3 c) { return c.x == 1; }), 0U);
-  // The current tile (route[path_index]) DOES count -- the documented
-  // contract detail an eventual stable promotion must settle.
-  EXPECT_EQ(f.run([](Coord3 c) { return c.x == 3; }), 1U);
+  // The occupied tile (route[path_index]) does NOT count: its cost was
+  // paid on entering it, so a price rise there cannot change the cost
+  // of the route that remains.
+  EXPECT_EQ(f.run([](Coord3 c) { return c.x == 3; }), 0U);
+  // The next step does count.
+  EXPECT_EQ(f.run([](Coord3 c) { return c.x == 4; }), 1U);
 }
 
 TEST(ReplanSelection, SkipsGoallessUnreachableAndRouteless) {
@@ -114,8 +117,9 @@ TEST(ReplanSelection, StopsAtFirstCrossingPerAgent) {
     return c.x >= 1;
   });
   EXPECT_EQ(count, 1U);
-  // Consulted for x=0 (miss) and x=1 (hit), then stopped.
-  EXPECT_EQ(consultations, 2U);
+  // The scan begins at the next step, so x=1 is the first consultation
+  // and it hits; the occupied tile at x=0 is never consulted.
+  EXPECT_EQ(consultations, 1U);
 }
 
 TEST(ReplanSelection, AscendingAgentIndexOrder) {
