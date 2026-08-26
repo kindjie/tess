@@ -36,6 +36,17 @@ add_executable(
 )
 target_link_libraries(tess_web_congestion_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_congestion_model)
+
+# Compile the browser adapter under native warnings and diff clang-tidy
+# without coupling it to the native verification executable.
+add_library(
+  tess_web_congestion_wasm_adapter OBJECT
+  web_congestion/congestion_wasm.cc
+  web_congestion/congestion_model.cc
+  web_colony/colony_model.cc
+)
+target_link_libraries(tess_web_congestion_wasm_adapter PRIVATE tess::tess)
+tess_apply_project_options(tess_web_congestion_wasm_adapter)
 if(BUILD_TESTING)
   add_test(
     NAME tess_web_congestion_scenario_smoke

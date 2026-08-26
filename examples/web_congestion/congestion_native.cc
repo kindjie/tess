@@ -96,14 +96,19 @@ int main(int argc, char** argv) {
     };
     if (arg == "--scenario") {
       scenario = next();
-    } else if (arg == "--agents" && !parse_int(next(), agents)) {
-      return 2;
-    } else if (arg == "--policy" && !parse_int(next(), policy)) {
-      return 2;
-    } else if (arg == "--max-ticks" && !parse_int(next(), max_ticks)) {
-      return 2;
-    } else if (arg == "--budget" && !parse_int(next(), budget)) {
-      return 2;
+      continue;
+    }
+    // One branch for every integer-valued flag: repeating the parse and
+    // its failure exit per flag is what the clone check objects to.
+    int* const number = arg == "--agents"      ? &agents
+                        : arg == "--policy"    ? &policy
+                        : arg == "--max-ticks" ? &max_ticks
+                        : arg == "--budget"    ? &budget
+                                               : nullptr;
+    if (number != nullptr) {
+      if (!parse_int(next(), *number)) {
+        return 2;
+      }
     } else if (arg == "--spread") {
       spread = true;
     } else if (arg == "--measure-productivity") {
@@ -163,9 +168,12 @@ int main(int argc, char** argv) {
     // counts cannot see, so the runner records it directly.
     const auto begin = std::chrono::steady_clock::now();
     (void)model.tick(0.05);
-    const auto tick_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                             std::chrono::steady_clock::now() - begin)
-                             .count();
+    // `duration::count()` is `long` on LP64 Linux and `long long` on
+    // macOS; fix the type here so std::max has one argument type.
+    const auto tick_us = static_cast<long long>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - begin)
+            .count());
     wall_us_total += tick_us;
     wall_us_max = std::max(wall_us_max, tick_us);
     // Tick 0 plans the whole fleet under every mode, so the plain max
