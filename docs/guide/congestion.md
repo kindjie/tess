@@ -81,7 +81,18 @@ specifies the equivalent caller-owned scan.
 ## The signal menu
 
 All signals reprice every four ticks and share the price formula;
-they differ only in what they count. Ratios are policy/canonical
+they differ only in what they count.
+
+**Two different meanings of "stalled" appear below, and they are not
+interchangeable.** The snapshot family (stalled agents, stalled +
+cooling, stall-gated queues) counts an agent as stalled when it has not
+moved *since the last repricing* — a four-tick window, re-sampled each
+time prices are written. The escalation family (escalating, radiating
+and on-path stall prices) tracks *consecutive ticks unmoved*, updated
+every tick, and uses that duration as the magnitude. An agent stuck for
+one tick contributes to the second family and not the first. The
+measured results below belong to the definition each row names;
+substituting one for the other does not reproduce them. Ratios are policy/canonical
 settle ticks over the screen's safe cells (geometric mean; lower is
 better; 1.0 = no effect), with planning load relative to canonical.
 
@@ -93,7 +104,7 @@ better; 1.0 = no effect), with planning load relative to canonical.
 | Nearby agents (base recipe) | each live agent +1 on its tile and four neighbours | 0.41 | ~5x | screening ratio shown here; separately validated at supported-population coverage |
 | Stalled agents | stalled tiles and neighbours, snapshot | 0.43 | ~2x | superseded by stalled + cooling |
 | Peaked (own tile +2, ring +1) | each agent a small gradient rather than a plateau | 0.41 | ~5x | lower aggregate ratio than the flat nearby-agent signal in this screen |
-| Escalating stall price | each stalled agent's contribution grows with how long it has been stuck (+1 magnitude per 8 stalled ticks, capped) | 0.42 | ~2x | best recorded result on the capacity-bound maze scenario; screened on the relocated lab path |
+| Escalating stall price | contribution grows with consecutive ticks unmoved (+1 magnitude per 8 such ticks, capped) | 0.42 | ~2x | best recorded result on the capacity-bound maze scenario; screened on the relocated lab path |
 | Radiating stall price | same, and the priced region widens with stall duration (a cone sloping from the agent outward) | 0.43 | ~2x | best maze result at 256 agents; the wider cone did not add value at 1,024 |
 | On-path stall price | the escalating magnitude applied only along the stalled agent's own remaining route, fading with distance | 0.42 | ~2x | value-indistinguishable from plain escalation in the screen; restricting the footprint to the route neither helped nor hurt |
 
@@ -109,6 +120,34 @@ None of the nine combined-signal arms improved on its better
 component in the 14-cell screen. A shared cap clipping the combined
 signal is one plausible explanation; the experiment did not
 instrument the cause.
+
+## What pricing costs
+
+Two costs scale with problem size rather than with crowding, and a
+caller should size both before adopting any policy here.
+
+**Applying prices is proportional to the tiles you write, not to the
+number of agents.** The recipe below writes every tile every repricing,
+which is fine for a demo-sized world and wrong for a large one: on a
+128x128 grid it measures ~80-90 us per repricing, and a 1024x1024 world
+would imply several milliseconds — more than a 60 Hz frame — for a
+signal that is usually local to a few congested regions. On an
+uncongested map this is the dominant cost of pricing (measured at
+roughly a fifth of total run time at 1,024 agents, and about half at
+256). Write only the tiles whose price changed, tracking the union of
+the previous and current footprints so prices left behind still decay.
+Cooling memory can legitimately spread across most of the map; that is
+a reason to bound it, not to sweep unconditionally.
+
+**Selecting who replans is proportional to total remaining route
+length.** `request_replans_for_route_crossings` walks each eligible
+agent's remaining route until it finds a price increase. On a congested
+map this dominates: it accounted for 89% of pricing samples in a maze
+scenario at 1,024 agents. Its cost therefore grows with how long routes
+are, not just how many agents exist, and long routes with distant
+price changes are its worst case.
+
+Sparse price application addresses only the first of these.
 
 ## Choosing a planning budget
 

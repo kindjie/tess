@@ -59,8 +59,9 @@ TEST(ReplanSelection, RequestsOnlyAgentsWhoseRemainingRouteCrosses) {
   (void)f.add(agent_at(0, 1), line_route(1, 0, 5));
   const auto count = f.run([](Coord3 c) { return c.y == 0 && c.x == 3; });
   EXPECT_EQ(count, 1U);
-  ASSERT_TRUE(f.queue.front().has_value());
-  EXPECT_EQ(*f.queue.front(), hit);
+  const auto first = f.queue.front();
+  ASSERT_TRUE(first.has_value());
+  EXPECT_EQ(*first, hit);
   f.queue.pop_front();
   EXPECT_TRUE(f.queue.empty());
 }
@@ -121,11 +122,13 @@ TEST(ReplanSelection, AscendingAgentIndexOrder) {
   const auto a = f.add(agent_at(0, 0), line_route(0, 0, 2));
   const auto b = f.add(agent_at(0, 1), line_route(1, 0, 2));
   EXPECT_EQ(f.run([](Coord3) { return true; }), 2U);
-  ASSERT_TRUE(f.queue.front().has_value());
-  EXPECT_EQ(*f.queue.front(), a);
+  const auto first = f.queue.front();
+  ASSERT_TRUE(first.has_value());
+  EXPECT_EQ(*first, a);
   f.queue.pop_front();
-  ASSERT_TRUE(f.queue.front().has_value());
-  EXPECT_EQ(*f.queue.front(), b);
+  const auto second = f.queue.front();
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(*second, b);
 }
 
 }  // namespace
