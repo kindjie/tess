@@ -7,6 +7,7 @@
 #include <tess/storage/world.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -27,6 +28,9 @@ constexpr int kFloors = floors;
 // z+1 everywhere and the tower would have no floors at all -- agents
 // would drift vertically through open air.
 constexpr int kLevels = kFloors * 2;
+// Coordinates are 64-bit, so compute the top level in that width rather
+// than multiplying in int and widening the result.
+constexpr std::int64_t kTopLevel = std::int64_t{kFloors - 1} * 2;
 constexpr std::uint32_t kMaxCost = 64;
 // High enough that any open stairwell is preferred, low
 // enough to stay under kMaxCost for a single step.
@@ -84,7 +88,7 @@ constexpr int kStairwellCount =
   // endpoints, and a partition there would let arrived agents park
   // across a doorway and seal the floor behind them. The floors between
   // carry the room structure, which is where routing is interesting.
-  if (z == 0 || z == (kFloors - 1) * 2) {
+  if (z == 0 || z == kTopLevel) {
     return true;
   }
   const bool partition = (x % 16 == 0) || (y % 16 == 0);
@@ -214,7 +218,7 @@ struct TowerModel::Impl {
 
   [[nodiscard]] static auto goal_tile(std::size_t i) -> tess::Coord3 {
     const auto [dx, dy] = endpoint_offset(i);
-    return tess::Coord3{29 + dx, 33 + dy, (kFloors - 1) * 2};
+    return tess::Coord3{29 + dx, 33 + dy, kTopLevel};
   }
 
   void place_agents() {

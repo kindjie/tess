@@ -29,16 +29,14 @@ int main(int argc, char** argv) {
     const auto next = [&]() -> std::string_view {
       return i + 1 < argc ? argv[++i] : std::string_view{};
     };
-    if (arg == "--agents") {
-      if (!parse_int(next(), agents)) {
-        return 2;
-      }
-    } else if (arg == "--max-ticks") {
-      if (!parse_int(next(), max_ticks)) {
-        return 2;
-      }
-    } else if (arg == "--seal") {
-      if (!parse_int(next(), seal)) {
+    // One branch for every integer flag: repeating the parse and its
+    // failure exit per flag is what the clone check objects to.
+    int* const number = arg == "--agents"      ? &agents
+                        : arg == "--max-ticks" ? &max_ticks
+                        : arg == "--seal"      ? &seal
+                                               : nullptr;
+    if (number != nullptr) {
+      if (!parse_int(next(), *number)) {
         return 2;
       }
     } else if (arg == "--help") {
