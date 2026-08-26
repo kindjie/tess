@@ -52,8 +52,8 @@ struct PricingState {
   std::vector<bool> changed_chunks;
 
   explicit PricingState()
-      : heat(static_cast<std::size_t>(kWidth) * kHeight, 0),
-        increased(heat.size(), 0),
+      : heat(static_cast<std::size_t>(kWidth) * kHeight, std::uint16_t{0}),
+        increased(heat.size(), std::uint8_t{0}),
         changed_chunks(tess::ShapeTraits<Shape>::chunk_count, false) {}
 };
 // [congestion-state]
@@ -66,7 +66,7 @@ struct PricingState {
 // mistake.
 void reprice(World& world, std::span<const tess::PathAgentState> agents,
              PricingState& state) {
-  std::vector<std::uint16_t> signal(state.heat.size(), 0);
+  std::vector<std::uint16_t> signal(state.heat.size(), std::uint16_t{0});
   const auto bump = [&](int x, int y) {
     if (x < 0 || y < 0 || x >= kWidth || y >= kHeight) {
       return;
@@ -86,7 +86,7 @@ void reprice(World& world, std::span<const tess::PathAgentState> agents,
     bump(ax, ay + 1);
     bump(ax, ay - 1);
   }
-  std::fill(state.increased.begin(), state.increased.end(), 0);
+  std::fill(state.increased.begin(), state.increased.end(), std::uint8_t{0});
   std::fill(state.changed_chunks.begin(), state.changed_chunks.end(), false);
   for (int y = 0; y < kHeight; ++y) {
     for (int x = 0; x < kWidth; ++x) {
@@ -145,7 +145,7 @@ std::size_t scope_replans(std::span<const tess::PathAgentState> agents,
 // flag once -- every retained route was planned against prices.
 void disarm(World& world, tess::PathAgentTickState& tick_state,
             PricingState& state) {
-  std::fill(state.heat.begin(), state.heat.end(), 0);
+  std::fill(state.heat.begin(), state.heat.end(), std::uint16_t{0});
   std::fill(state.changed_chunks.begin(), state.changed_chunks.end(), false);
   for (int y = 0; y < kHeight; ++y) {
     for (int x = 0; x < kWidth; ++x) {
