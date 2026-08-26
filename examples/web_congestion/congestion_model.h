@@ -70,6 +70,12 @@ class CongestionModel {
   /// affordable for evidence runs but not free, so runs with it enabled
   /// must not be used for wall-time comparisons.
   void set_measure_productivity(bool enabled) noexcept;
+  /// Amendment 11: use one definition of "stalled" for every policy
+  /// family (consecutive ticks unmoved, with the snapshot families
+  /// thresholding that counter at the repricing period) and admit only
+  /// agents with an outstanding goal. Off by default so the
+  /// pre-amendment arms remain reproducible.
+  void set_settled_stall(bool enabled) noexcept;
   /// Searches the drain ran (denominator) and how many replaced an
   /// agent's route with a different one (numerator).
   [[nodiscard]] auto replans_drained() const noexcept -> long long;

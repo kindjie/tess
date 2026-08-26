@@ -89,6 +89,7 @@ int main(int argc, char** argv) {
   int budget = 0;
   bool spread = false;
   bool measure = false;
+  bool settled = false;
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg = argv[i];
     const auto next = [&]() -> std::string_view {
@@ -111,6 +112,9 @@ int main(int argc, char** argv) {
       }
     } else if (arg == "--spread") {
       spread = true;
+    } else if (arg == "--settled-stall") {
+      // Amendment 11: one stall definition across every policy family.
+      settled = true;
     } else if (arg == "--measure-productivity") {
       // Amendment-10 instrumentation. Adds per-tick route
       // fingerprinting, so runs using it are not wall-time comparable.
@@ -129,6 +133,7 @@ int main(int argc, char** argv) {
   model.set_pricing_policy(policy);
   model.set_planning_budget(budget);
   model.set_measure_productivity(measure);
+  model.set_settled_stall(settled);
 
   const bool incremental = scenario == "browser-incremental";
   std::size_t incremental_wall = 0;
@@ -191,13 +196,14 @@ int main(int argc, char** argv) {
       "arrived=%d crowd_blocked=%d unreachable=%d turnaround=%d walls=%s "
       "scoped_replans=%lld expansions=%lld pending_integral=%lld "
       "wall_ms=%lld wall_max_us=%lld wall_max_late_us=%lld "
-      "drained=%lld changed=%lld armed=%lld rescued=%lld\n",
+      "drained=%lld changed=%lld armed=%lld rescued=%lld settled=%d\n",
       static_cast<int>(scenario.size()), scenario.data(), agents, policy,
       budget, spread ? 1 : 0, ticks, model.arrived(), model.crowd_blocked(),
       model.unreachable(), model.turnaround_ready() ? 1 : 0,
       walls_ok ? "ok" : "REFUSED", model.scoped_replans(),
       model.expansions_total(), model.pending_integral(), wall_us_total / 1000,
       wall_us_max, wall_us_max_late, model.replans_drained(),
-      model.replans_changed(), model.rescue_armed(), model.rescue_success());
+      model.replans_changed(), model.rescue_armed(), model.rescue_success(),
+      settled ? 1 : 0);
   return walls_ok ? 0 : 1;
 }

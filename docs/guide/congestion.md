@@ -104,26 +104,33 @@ specifies the equivalent caller-owned scan.
 All signals reprice every four ticks and share the price formula;
 they differ only in what they count.
 
-**Two different meanings of "stalled" appear below, and they are not
-interchangeable.** The snapshot family (stalled agents, stalled +
-cooling, stall-gated queues) counts an agent as stalled when it has not
-moved *since the last repricing* — a four-tick window, re-sampled each
-time prices are written. The escalation family (escalating, radiating
-and on-path stall prices) tracks *consecutive ticks unmoved*, updated
-every tick, and uses that duration as the magnitude. An agent stuck for
-one tick contributes to the second family and not the first. The
-measured results below belong to the definition each row names;
-substituting one for the other does not reproduce them. Ratios are policy/canonical
+**Define "stalled" as consecutive ticks unmoved, and derive the rest
+from it.** Every policy below that reacts to stalling reads one
+per-agent counter: ticks since the agent last changed position, reset
+on any move. Policies wanting a window rather than a duration threshold
+that counter (`stall_duration >= reprice_period`) instead of comparing
+positions across repricings.
+
+Comparing positions only at repricing boundaries looks equivalent and
+is not: an agent oscillating between two tiles returns to where it
+started and reads as stalled, so the price lands on agents that are
+moving. Screening both definitions across sixteen cells left every
+duration-based policy bit-identical and improved the two
+window-based ones by 5-7%, without changing which policy ranks first.
+
+Admit only agents with an outstanding goal. An agent whose goal has
+become unreachable never moves, so its counter grows without bound and
+pins a permanent hotspot on a tile nothing can use. Ratios are policy/canonical
 settle ticks over the screen's safe cells (geometric mean; lower is
 better; 1.0 = no effect), with planning load relative to canonical.
 
 | policy | signal | settle-tick ratio | planning-load ratio | screening result and boundary |
 |---|---|---|---|---|
 | **Cooling memory** | each live agent's tile and four orthogonal neighbours; the stored signal halves during each idle repricing period | 0.39 | ~5x | lowest aggregate ratio among unspread pricing policies |
-| **Stalled + cooling** | same, but only agents that failed to move since the last repricing contribute | 0.42 | **~2x** | similar aggregate ratio at about 2x planning load rather than about 5x |
+| **Stalled + cooling** | same, but only agents whose stall duration reaches the repricing period contribute | 0.43 | **~2x** | similar aggregate ratio at about 2x planning load rather than about 5x |
 | **Stall-gated queues** | single-file chains of more than four agents, at least half stalled; prices the chain, graded into its free side lanes; corridor chains also price their approach ends | 0.69 | **~1.1x** | emits no signal without a qualifying stalled chain; safe in 13 of 14 cells without spreading |
 | Nearby agents (base recipe) | each live agent +1 on its tile and four neighbours | 0.41 | ~5x | screening ratio shown here; separately validated at supported-population coverage |
-| Stalled agents | stalled tiles and neighbours, snapshot | 0.43 | ~2x | superseded by stalled + cooling |
+| Stalled agents | stalled tiles and neighbours, no memory | 0.43 | ~2x | superseded by stalled + cooling |
 | Peaked (own tile +2, ring +1) | each agent a small gradient rather than a plateau | 0.41 | ~5x | lower aggregate ratio than the flat nearby-agent signal in this screen |
 | Escalating stall price | contribution grows with consecutive ticks unmoved (+1 magnitude per 8 such ticks, capped) | 0.42 | ~2x | best recorded result on the capacity-bound maze scenario; screened on the relocated lab path |
 | Radiating stall price | same, and the priced region widens with stall duration (a cone sloping from the agent outward) | 0.43 | ~2x | best maze result at 256 agents; the wider cone did not add value at 1,024 |

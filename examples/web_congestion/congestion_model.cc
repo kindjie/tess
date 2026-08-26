@@ -28,6 +28,15 @@ struct CongestionModel::Impl {
   // planning budget is worthwhile exactly when that happens. Per tick,
   // fingerprint every retained route and count how many changed; the
   // denominator is the number of searches the drain actually ran.
+  // Amendment 11: one definition of "stalled" for every family. The
+  // duration counter is the settled definition; the snapshot families
+  // re-express their predicate as `stall_duration >= reprice_period`
+  // on that same counter. Contributors are admitted by
+  // `path_agent_goal_outstanding`, which excludes Unreachable agents
+  // whose counter would otherwise grow without bound and pin a
+  // permanent hotspot. Off by default so the pre-amendment arms stay
+  // reproducible for comparison.
+  bool settled_stall = false;
   bool measure_productivity = false;
   long long replans_drained = 0;
   long long replans_changed = 0;
@@ -78,6 +87,22 @@ struct CongestionModel::Impl {
     }
   }
 
+  // Whether an agent contributes to a signal at all. Under the settled
+  // definition this excludes Unreachable goals; the pre-amendment arms
+  // admitted any agent holding a goal.
+  [[nodiscard]] auto contributes(const tess::PathAgentState& agent) const
+      -> bool {
+    return settled_stall ? tess::path_agent_goal_outstanding(agent)
+                         : agent.has_goal;
+  }
+
+  // The stall predicate both families share once settled: the snapshot
+  // window becomes a threshold on the duration counter.
+  [[nodiscard]] auto stalled_for_snapshot(std::size_t i) const -> bool {
+    return i < stall_duration.size() &&
+           stall_duration[i] >= static_cast<std::uint32_t>(reprice_period);
+  }
+
   void update_stall_durations() {
     auto& d = seam();
     if (last_positions.size() != d.agents.size()) {
@@ -89,7 +114,8 @@ struct CongestionModel::Impl {
       return;
     }
     for (std::size_t i = 0; i < d.agents.size(); ++i) {
-      if (d.agents[i].has_goal && d.agents[i].position == last_positions[i]) {
+      if (contributes(d.agents[i]) &&
+          d.agents[i].position == last_positions[i]) {
         ++stall_duration[i];
       } else {
         stall_duration[i] = 0;
@@ -199,7 +225,8 @@ struct CongestionModel::Impl {
       d.planning_budget = std::min<std::size_t>(
           64, std::max<std::size_t>(4, kNodeTarget / per_search));
     }
-    if (policy == 29 || policy == 30 || policy == 31 || measure_productivity) {
+    if (policy == 29 || policy == 30 || policy == 31 || measure_productivity ||
+        settled_stall) {
       update_stall_durations();
     }
     if (measure_productivity) {
@@ -411,6 +438,12 @@ struct CongestionModel::Impl {
       stalled_now.assign(d.agents.size(), 0);
       const bool have_previous = reprice_positions.size() == d.agents.size();
       for (std::size_t i = 0; i < d.agents.size(); ++i) {
+        if (settled_stall) {
+          if (contributes(d.agents[i]) && stalled_for_snapshot(i)) {
+            stalled_now[i] = 1;
+          }
+          continue;
+        }
         if (d.agents[i].has_goal && have_previous &&
             d.agents[i].position == reprice_positions[i]) {
           stalled_now[i] = 1;
@@ -716,7 +749,7 @@ struct CongestionModel::Impl {
       }
       case 29: {  // escal: magnitude grows with stall duration.
         for (std::size_t i = 0; i < d.agents.size(); ++i) {
-          if (!d.agents[i].has_goal || i >= stall_duration.size() ||
+          if (!contributes(d.agents[i]) || i >= stall_duration.size() ||
               stall_duration[i] == 0) {
             continue;
           }
@@ -729,7 +762,7 @@ struct CongestionModel::Impl {
       }
       case 30: {  // radiate: radius and magnitude grow with duration.
         for (std::size_t i = 0; i < d.agents.size(); ++i) {
-          if (!d.agents[i].has_goal || i >= stall_duration.size() ||
+          if (!contributes(d.agents[i]) || i >= stall_duration.size() ||
               stall_duration[i] == 0) {
             continue;
           }
@@ -752,7 +785,7 @@ struct CongestionModel::Impl {
       }
       case 31: {  // onpath: escalating price along the agent's own route.
         for (std::size_t i = 0; i < d.agents.size(); ++i) {
-          if (!d.agents[i].has_goal || i >= stall_duration.size() ||
+          if (!contributes(d.agents[i]) || i >= stall_duration.size() ||
               stall_duration[i] == 0 ||
               i >= d.tick_state.routes.routes.size()) {
             continue;
@@ -963,6 +996,9 @@ auto CongestionModel::pending_integral() const noexcept -> long long {
 }
 void CongestionModel::set_measure_productivity(bool enabled) noexcept {
   impl_->measure_productivity = enabled;
+}
+void CongestionModel::set_settled_stall(bool enabled) noexcept {
+  impl_->settled_stall = enabled;
 }
 auto CongestionModel::replans_drained() const noexcept -> long long {
   return impl_->replans_drained;

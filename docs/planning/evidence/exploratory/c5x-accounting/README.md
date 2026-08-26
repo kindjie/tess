@@ -291,6 +291,55 @@ The instrument is retained behind `--measure-productivity`, verified
 non-perturbing (identical ticks, arrivals and scoped replans with it
 on). Budget selection remains a documented caller choice.
 
+## Amendment-11 round: one stall definition (captures `a11-*.txt`)
+
+The design round found that the lab measured "stalled" two
+incompatible ways: the snapshot family compared position against the
+previous repricing (a four-tick window), while the escalation family
+counted consecutive ticks unmoved. Every cross-family comparison in
+this record was therefore between policies that disagreed about who
+contributes.
+
+The duration counter is now the single definition, declared before
+measuring and chosen for reasons independent of score: it is strictly
+more informative (the snapshot predicate is recoverable from it as
+`stall_duration >= reprice_period`, not the converse), it does not
+alias an agent oscillating between two tiles as stalled, and it is what
+an escalating magnitude requires. A correction rides along:
+contributors are admitted by `path_agent_goal_outstanding`, excluding
+`Unreachable` agents whose counter would otherwise grow without bound.
+
+Both predicates ran in the same round, 464 runs, release build,
+sequential. Pooled over 16 cells (not comparable with the 14-cell
+pools of amendments 5-6, which is why both arms ran here):
+
+| arm | old predicate | settled predicate | change |
+|---|---|---|---|
+| cool | 0.4119 | 0.4119 | 0.0% |
+| escal | 0.4220 | 0.4220 | 0.0% |
+| onpath | 0.4225 | 0.4225 | 0.0% |
+| radiate | 0.4349 | 0.4349 | 0.0% |
+| stallcool | 0.4585 | **0.4280** | -6.7% |
+| stalled | 0.4535 | **0.4317** | -4.8% |
+| queue2 | 0.6753 | 0.6753 | 0.0% |
+
+Findings: (1) **the ordering survives** -- cooling keeps the best
+pooled ratio and escal the best maze result (2,471 ticks), so the
+tiering in the guide stands; (2) the entire effect is on the two
+snapshot arms, every duration-counter arm being bit-identical,
+consistent with the registered aliasing explanation; stallcool moves
+from sixth to fourth and posts the best non-escalation maze result
+(2,560 vs 2,758); (3) the `Unreachable` exclusion changed **nothing**
+-- all eight scenarios stay connected by construction, so the hazard it
+addresses is real but unrealized here, and the correction is retained
+for maps where goals can be sealed off rather than for any measured
+gain.
+
+This meets the first of the two conditions in the
+[congestion API TDD](../../../tdd/congestion-pricing-api.md)'s gate.
+It promotes nothing: supported-population coverage on two platforms
+remains outstanding.
+
 ## Files
 
 - `<scenario>.txt` -- per-cell captures (arm rows: arrived,
