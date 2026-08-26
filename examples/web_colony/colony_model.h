@@ -32,11 +32,6 @@ class ColonyModel {
   }
   void set_replan_each_tick(bool enabled) noexcept;
   void set_spread_congested_routes(bool enabled) noexcept;
-  /// Selects the congestion-pricing accounting policy (0 disables; the
-  /// policy registry lives with the implementation). Prices are ordinary
-  /// cost-field writes through the versioned edit channel; disabling
-  /// restores every tile to unit cost.
-  void set_congestion_pricing(int policy) noexcept;
   [[nodiscard]] auto tick(double dt_seconds) -> double;
   [[nodiscard]] auto relaunch() -> int;
 

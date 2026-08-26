@@ -129,10 +129,6 @@ void ColonyModel::set_spread_congested_routes(bool enabled) noexcept {
   }
 }
 
-void ColonyModel::set_congestion_pricing(int policy) noexcept {
-  impl_->set_congestion_pricing(policy);
-}
-
 auto ColonyModel::tick(double dt_seconds) -> double {
   return impl_->tick(dt_seconds);
 }

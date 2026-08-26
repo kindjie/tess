@@ -234,11 +234,11 @@ jobs:
             echo "::endgroup::"
             ran=$((ran + 1))
           done
-          # EXACT, not a floor: the dev preset builds 19 examples, and a
+          # EXACT, not a floor: the dev preset builds 21 examples, and a
           # floor of 13 passed while one of them silently stopped building.
           # Bump this when adding an example -- a failure here means either
           # a new example or a missing one, and both want a human.
-          test "$ran" -eq 19
+          test "$ran" -eq 21
 
       # Documented example output is copied from real program runs; drift
       # between the docs and the compiled quickstart fails the build.
@@ -475,8 +475,8 @@ jobs:
             ran=$((ran + 1))
           done
           # This preset disables the two optional ECS integrations, so its
-          # controlled inventory is the other 17 example executables.
-          test "$ran" -eq 17
+          # controlled inventory is the other 19 example executables.
+          test "$ran" -eq 19
 
       - name: Exception-free installed consumer
         env:

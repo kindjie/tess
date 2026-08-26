@@ -8,6 +8,8 @@ const slider = document.getElementById('agents');
 const agentCount = document.getElementById('agent-count');
 const replan = document.getElementById('replan');
 const spread = document.getElementById('spread');
+const pricing = document.getElementById('pricing');
+const overlay = document.getElementById('overlay');
 const resetButton = document.getElementById('reset');
 const clearButton = document.getElementById('clear-walls');
 const browserTestMode =
@@ -86,6 +88,7 @@ function reset() {
   agentCount.textContent = String(actual);
   api.setStrategy(replan.checked ? 1 : 0);
   api.setSpread(spread.checked ? 1 : 0);
+  api.setPricing(Number(pricing.value));
   const rememberedWalls = Array.from(walls);
   walls.clear();
   for (const key of rememberedWalls) {
@@ -129,6 +132,25 @@ function draw() {
   ctx.fillRect(0, 0, bandWidth * tileSize, canvas.height);
   ctx.fillRect((width - bandWidth) * tileSize, 0, bandWidth * tileSize,
       canvas.height);
+  // Price heat: warm translucent tint scaled by price above unit cost,
+  // drawn under walls and agents so the field's shape reads directly.
+  if (overlay.checked && Number(pricing.value) !== 0) {
+    const pricesPtr = api.prices();
+    if (pricesPtr !== 0) {
+      const prices = module.HEAPU8.subarray(
+          pricesPtr, pricesPtr + width * height);
+      for (let y = 0; y < height; y += 1) {
+        const row = y * width;
+        for (let x = 0; x < width; x += 1) {
+          const above = prices[row + x] - 1;
+          if (above > 0) {
+            ctx.fillStyle = `rgb(255 130 80 / ${Math.min(0.55, above * 0.13)})`;
+            ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+          }
+        }
+      }
+    }
+  }
   ctx.fillStyle = '#54627e';
   for (let y = 0; y < height; y += 1) {
     const row = y * width;
@@ -231,52 +253,55 @@ createTessColony()
     .then((instance) => {
       module = instance;
       api = {
-        width: instance.cwrap('tess_colony_width', 'number', []),
-        height: instance.cwrap('tess_colony_height', 'number', []),
-        reset: instance.cwrap('tess_colony_reset', 'number', ['number']),
+        width: instance.cwrap('tess_congestion_width', 'number', []),
+        height: instance.cwrap('tess_congestion_height', 'number', []),
+        reset: instance.cwrap('tess_congestion_reset', 'number', ['number']),
         setWall: instance.cwrap(
-            'tess_colony_set_wall', 'number',
+            'tess_congestion_set_wall', 'number',
             [
               'number',
               'number',
               'number',
             ]),
         setStrategy: instance.cwrap(
-            'tess_colony_set_strategy', null,
+            'tess_congestion_set_strategy', null,
             [
               'number',
             ]),
         setSpread: instance.cwrap(
-            'tess_colony_set_spread', null, ['number']),
-        tick: instance.cwrap('tess_colony_tick', 'number', ['number']),
-        relaunch: instance.cwrap('tess_colony_relaunch', 'number', []),
-        leg: instance.cwrap('tess_colony_leg', 'number', []),
-        tiles: instance.cwrap('tess_colony_tiles', 'number', []),
-        agents: instance.cwrap('tess_colony_agents', 'number', []),
+            'tess_congestion_set_spread', null, ['number']),
+        setPricing: instance.cwrap(
+            'tess_congestion_set_pricing', null, ['number']),
+        prices: instance.cwrap('tess_congestion_prices', 'number', []),
+        tick: instance.cwrap('tess_congestion_tick', 'number', ['number']),
+        relaunch: instance.cwrap('tess_congestion_relaunch', 'number', []),
+        leg: instance.cwrap('tess_congestion_leg', 'number', []),
+        tiles: instance.cwrap('tess_congestion_tiles', 'number', []),
+        agents: instance.cwrap('tess_congestion_agents', 'number', []),
         previousAgents: instance.cwrap(
-            'tess_colony_previous_agents', 'number', []),
+            'tess_congestion_previous_agents', 'number', []),
         interpolationAlpha: instance.cwrap(
-            'tess_colony_interpolation_alpha', 'number', []),
-        agentCount: instance.cwrap('tess_colony_agent_count', 'number', []),
-        arrived: instance.cwrap('tess_colony_arrived', 'number', []),
+            'tess_congestion_interpolation_alpha', 'number', []),
+        agentCount: instance.cwrap('tess_congestion_agent_count', 'number', []),
+        arrived: instance.cwrap('tess_congestion_arrived', 'number', []),
         unreachable: instance.cwrap(
-            'tess_colony_unreachable', 'number', []),
+            'tess_congestion_unreachable', 'number', []),
         crowdBlocked: instance.cwrap(
-            'tess_colony_crowd_blocked', 'number', []),
+            'tess_congestion_crowd_blocked', 'number', []),
         turnaroundReady: instance.cwrap(
-            'tess_colony_turnaround_ready', 'number', []),
+            'tess_congestion_turnaround_ready', 'number', []),
         completedLegs: instance.cwrap(
-            'tess_colony_completed_legs', 'number', []),
+            'tess_congestion_completed_legs', 'number', []),
         abortedLegs: instance.cwrap(
-            'tess_colony_aborted_legs', 'number', []),
+            'tess_congestion_aborted_legs', 'number', []),
         stalledTicks: instance.cwrap(
-            'tess_colony_stalled_ticks', 'number', []),
+            'tess_congestion_stalled_ticks', 'number', []),
         planningPending: instance.cwrap(
-            'tess_colony_planning_pending', 'number', []),
+            'tess_congestion_planning_pending', 'number', []),
         advancedLastTick: instance.cwrap(
-            'tess_colony_advanced_last_tick', 'number', []),
+            'tess_congestion_advanced_last_tick', 'number', []),
         movementWaitsLastTick: instance.cwrap(
-            'tess_colony_movement_waits_last_tick', 'number', []),
+            'tess_congestion_movement_waits_last_tick', 'number', []),
       };
       width = api.width();
       height = api.height();
@@ -293,6 +318,10 @@ createTessColony()
       });
       spread.addEventListener('change', () => {
         api.setSpread(spread.checked ? 1 : 0);
+        emaUs = 0;
+      });
+      pricing.addEventListener('change', () => {
+        api.setPricing(Number(pricing.value));
         emaUs = 0;
       });
       resetButton.addEventListener('click', reset);

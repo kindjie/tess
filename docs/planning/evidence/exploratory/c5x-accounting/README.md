@@ -23,6 +23,19 @@ defect (replan-queue saturation, far-field oscillation, and per-tick
 compute inflated up to ~500x, e.g. the memory policy at ~84 ms/tick
 vs ~1.6 ms scoped).
 
+## Productization note (post-screen)
+
+The pricing engine measured here was subsequently relocated: the
+colony demo reverted to a clean tutorial, and the engine now lives in
+`examples/web_congestion/` (the congestion lab), wrapping the colony
+simulation through its native seam and scoping replans through
+`tess::experimental::request_replans_for_route_crossings`. The
+captures in this record describe the in-model code path as measured
+(recoverable from this branch's git history); the relocated path is a
+new measurement surface, and the planned supported-population matrix
+will drive it directly. Decision record:
+`docs/decisions/changelog.d/2026-08-26-congestion-productization.md`.
+
 ## Ranking (amendment-5 unified table: the full factorial, 22 arms,
 one protocol; safe cells; gm of policy/canonical ticks; planning load
 as gm of pending-plan integrals vs canonical)

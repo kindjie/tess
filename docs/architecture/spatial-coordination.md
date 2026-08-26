@@ -127,8 +127,18 @@ commit contract.
 Congestion pricing needs no library mechanism: give the movement class
 a `FieldCost` term over an ordinary cost field, then periodically write
 per-tile prices from observed local demand through the versioned edit
-channel (`mark_content_changed` plus a pathing-dirty mark), and every
-planner and cache sees a legitimate edit. One bounded policy of this
+channel (`mark_content_changed` on the touched chunks), and every
+planner and cache sees a legitimate edit. Replanning should be scoped,
+not global: a price change never invalidates a retained route, so ask
+only the agents whose remaining route crosses a price increase to
+replan (the supported-population evidence below used a global
+pathing-dirty mark, which is correct but was later measured -- at
+exploratory coverage -- to cost up to ~500x the per-tick compute of
+scoping; `docs/guide/congestion.md` carries the full protocol and the
+tier of each claim). The experimental
+`request_replans_for_route_crossings` encodes that scoping: it asks
+the replan queue for exactly the agents whose remaining retained route
+crosses a caller-nominated tile, and nothing else. One bounded policy of this
 shape -- cost `1 + min(3, live agents within Manhattan distance 1)`,
 repriced every 4 ticks -- was validated against the web_colony demo's
 recovery classifier over all seven scenario geometries and all 64

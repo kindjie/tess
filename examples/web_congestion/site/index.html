@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description"
           content="Interactive tess WebAssembly colony simulation at scale">
-    <title>tess colony demo</title>
+    <title>tess congestion lab</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="style.css">
   </head>
@@ -46,6 +46,27 @@
             <input id="spread" type="checkbox" checked>
             Spread congested equal-cost routes
           </label>
+          <label>
+            Congestion pricing
+            <select id="pricing">
+              <option value="0" selected>Off</option>
+              <option value="9">Cooling memory (value champion)</option>
+              <option value="12">Stalled + cooling (efficiency)</option>
+              <option value="10">Stall-gated queues (minimal)</option>
+              <option value="1">Nearby agents (validated recipe)</option>
+              <option value="5">Stalled agents</option>
+              <option value="8">Peaked kernel</option>
+              <option value="7">Ungated queues (teaching: makes queues)</option>
+              <option value="6">Route demand (teaching: unsafe feedback)</option>
+              <option value="23">Cooling, reprice every 8</option>
+              <option value="24">Cooling, reprice every 16</option>
+              <option value="27">Cooling, deep prices (cap 7)</option>
+            </select>
+          </label>
+          <label>
+            <input id="overlay" type="checkbox" checked>
+            Show price heat
+          </label>
           <button id="reset">Reset</button>
           <button id="clear-walls">Clear walls</button>
         </div>
@@ -67,7 +88,7 @@
         </a>
       </footer>
     </main>
-    <script src="tess-colony.js"></script>
+    <script src="tess-congestion.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
