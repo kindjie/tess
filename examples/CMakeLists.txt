@@ -37,6 +37,28 @@ add_executable(
 target_link_libraries(tess_web_congestion_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_congestion_model)
 
+add_executable(
+  tess_web_tower_model
+  web_tower/tower_model.cc
+  web_tower/tower_native.cc
+)
+target_link_libraries(tess_web_tower_model PRIVATE tess::tess)
+tess_apply_project_options(tess_web_tower_model)
+if(BUILD_TESTING)
+  add_test(NAME tess_web_tower_smoke COMMAND tess_web_tower_model --agents 48)
+  set_tests_properties(
+    tess_web_tower_smoke
+    PROPERTIES
+      LABELS "target:tess_web_tower_model;subsystem:path;subsystem:sim")
+  add_test(
+    NAME tess_web_tower_reroute
+    COMMAND tess_web_tower_model --agents 48 --seal 0)
+  set_tests_properties(
+    tess_web_tower_reroute
+    PROPERTIES
+      LABELS "target:tess_web_tower_model;subsystem:path;subsystem:sim")
+endif()
+
 # Compile the browser adapter under native warnings and diff clang-tidy
 # without coupling it to the native verification executable.
 add_library(

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Tower &mdash; tess</title>
+    <meta name="description"
+          content="Agents route through a six-floor tower, up and down
+                   stairwells, on a tess world that is genuinely three
+                   dimensional.">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="../" aria-label="Back to the tess demos">
+        <img src="logo.svg" alt="" width="28" height="28">
+      </a>
+      <h1>Tower</h1>
+    </header>
+
+    <main>
+      <div id="stage">
+        <canvas id="view" aria-label="Six-floor tower seen from above at an
+                                      angle, with agents moving between
+                                      floors"></canvas>
+        <p id="loading">Loading the simulation&hellip;</p>
+      </div>
+
+      <div id="readout" role="status" aria-live="polite">
+        <span><b id="arrived">0</b>/<span id="total">0</span> arrived</span>
+        <span><b id="climbing">0</b> on stairs</span>
+        <span><b id="blocked">0</b> waiting</span>
+        <span>leg <b id="leg">1</b></span>
+      </div>
+
+      <div id="controls">
+        <fieldset id="stairwells">
+          <legend>Stairwells &mdash; tap one to close it</legend>
+          <div class="stairbuttons">
+            <button type="button" class="stair" data-stair="0"
+                    aria-pressed="false">North</button>
+            <button type="button" class="stair" data-stair="1"
+                    aria-pressed="false">West</button>
+            <button type="button" class="stair" data-stair="2"
+                    aria-pressed="false">East</button>
+            <button type="button" class="stair" data-stair="3"
+                    aria-pressed="false">South</button>
+          </div>
+          <p class="hint">
+            A closed stairwell stays walkable but becomes expensive, so
+            routes divert to another and anyone already on the stairs can
+            still walk down.
+          </p>
+        </fieldset>
+
+        <fieldset>
+          <legend>View</legend>
+          <div class="row">
+            <button type="button" id="rotate">Rotate</button>
+            <button type="button" id="recentre">Recentre</button>
+            <button type="button" id="relaunch">Send back</button>
+          </div>
+          <label class="slider">
+            Floors shown
+            <input type="range" id="floors" min="1" max="6" value="6">
+            <output id="floorsOut">6</output>
+          </label>
+          <label class="slider">
+            Agents
+            <input type="range" id="agents" min="12" max="96" step="12"
+                   value="48">
+            <output id="agentsOut">48</output>
+          </label>
+          <p class="hint">
+            Drag to orbit, pinch to zoom, two fingers to pan.
+          </p>
+        </fieldset>
+      </div>
+
+      <section id="about">
+        <h2>What this shows</h2>
+        <p>
+          The world is one tess world six floors tall, not six stacked
+          two-dimensional maps. Floors are separated by solid slabs, and
+          the stairwells are the only tiles that connect one floor to the
+          next, so an agent crossing floors is following a single route
+          through three dimensions rather than being teleported between
+          levels.
+        </p>
+        <p>
+          The ground floor and the top floor are open plates holding the
+          starting positions and the goals. The four floors between them
+          carry rooms and wide corridors. Close a stairwell and watch the
+          routes redistribute to the others.
+        </p>
+        <p>
+          This is an early version: the geometry is deliberately simple
+          and the camera is fixed to four orientations. See the
+          <a href="../colony/">colony demo</a> for wall painting on a
+          single floor, and the
+          <a href="../congestion/">congestion page</a> for pricing
+          policies.
+        </p>
+      </section>
+    </main>
+
+    <script src="tess-tower.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

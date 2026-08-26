@@ -89,7 +89,9 @@ int main(int argc, char** argv) {
   int budget = 0;
   bool spread = false;
   bool measure = false;
-  bool settled = false;
+  // Amendment 11 settled this; the pre-amendment predicate stays
+  // reachable for reproducing the earlier rounds.
+  bool settled = true;
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg = argv[i];
     const auto next = [&]() -> std::string_view {
@@ -112,9 +114,9 @@ int main(int argc, char** argv) {
       }
     } else if (arg == "--spread") {
       spread = true;
-    } else if (arg == "--settled-stall") {
-      // Amendment 11: one stall definition across every policy family.
-      settled = true;
+    } else if (arg == "--legacy-stall") {
+      // Reproduces the pre-amendment-11 snapshot predicate.
+      settled = false;
     } else if (arg == "--measure-productivity") {
       // Amendment-10 instrumentation. Adds per-tick route
       // fingerprinting, so runs using it are not wall-time comparable.
@@ -150,12 +152,16 @@ int main(int argc, char** argv) {
   for (; ticks < max_ticks &&
          (!model.turnaround_ready() || incremental_pending());
        ++ticks) {
-    const int batch_tick = scenario == "maze" ? 0 : 4;
-    if (ticks == batch_tick && !incremental) {
+    // Amendment 9's prescription, now applied to every batch scenario:
+    // walls land at tick 0, before any agent has moved. Scheduling them
+    // at a later tick made admission depend on where agents happened to
+    // be, so an arm that shifted early trajectories could be refused a
+    // wall and stop being comparable.
+    if (ticks == 0 && !incremental) {
       const auto [accepted, attempted] = queue_walls(model, scenario);
       walls_ok = walls_ok && accepted == attempted;
     }
-    if (ticks >= 4 && incremental_pending()) {
+    if (incremental_pending()) {
       constexpr std::size_t kWallsPerTick = 4;
       std::size_t accepted_this_tick = 0;
       while (accepted_this_tick < kWallsPerTick && incremental_pending()) {
