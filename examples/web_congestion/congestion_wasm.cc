@@ -55,6 +55,12 @@ TESS_CONGESTION_EXPORT void tess_congestion_set_pricing(int policy) {
   }
 }
 
+TESS_CONGESTION_EXPORT void tess_congestion_set_budget(int mode) {
+  if (model) {
+    model->set_planning_budget(mode);
+  }
+}
+
 TESS_CONGESTION_EXPORT const std::uint8_t* tess_congestion_prices() {
   return model ? model->prices() : nullptr;
 }

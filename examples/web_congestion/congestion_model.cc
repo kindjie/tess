@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 #include "../web_colony/colony_model_internal.h"
@@ -19,6 +20,29 @@ struct CongestionModel::Impl {
   std::uint16_t price_cap = 3;
   std::uint64_t next_reprice = 0;
   long long scoped_replan_total = 0;
+  long long expansions_total = 0;
+  long long pending_integral = 0;
+  // Amendment-10 instrumentation (opt-in, measurement only -- nothing
+  // in the model reads it). A replan is PRODUCTIVE when it returns a
+  // route different from the one the agent already had; spending
+  // planning budget is worthwhile exactly when that happens. Per tick,
+  // fingerprint every retained route and count how many changed; the
+  // denominator is the number of searches the drain actually ran.
+  bool measure_productivity = false;
+  long long replans_drained = 0;
+  long long replans_changed = 0;
+  std::vector<std::uint64_t> route_marks;
+  // Amendment-10b: does replanning actually unstick the agent? A
+  // stalled agent that receives a replaced route arms a rescue with an
+  // 8-tick deadline; it succeeds if the agent moves before the
+  // deadline. This measures the causal effect of the planning spend
+  // rather than a numerical difference in its output.
+  static constexpr std::uint64_t kRescueDeadlineTicks = 8;
+  std::vector<std::uint64_t> rescue_deadline;  // 0 = not armed
+  long long rescue_armed = 0;
+  long long rescue_success = 0;
+  int budget_mode = 0;  // 0 default, >0 static, -1 dynamic,
+                        // -2 unbounded, -3 work budget
   std::vector<std::uint16_t> congestion_heat;
   std::vector<tess::Coord3> reprice_positions;
   std::vector<std::uint8_t> price_view;
@@ -65,9 +89,7 @@ struct CongestionModel::Impl {
       return;
     }
     for (std::size_t i = 0; i < d.agents.size(); ++i) {
-      if (!d.agents[i].has_goal) {
-        stall_duration[i] = 0;
-      } else if (d.agents[i].position == last_positions[i]) {
+      if (d.agents[i].has_goal && d.agents[i].position == last_positions[i]) {
         ++stall_duration[i];
       } else {
         stall_duration[i] = 0;
@@ -148,15 +170,56 @@ struct CongestionModel::Impl {
     // (the screens and any future matrix); between-frame under a
     // variable browser clock, which is the documented approximation.
     auto& d = seam();
-    if (policy == 29 || policy == 30) {
+    if (budget_mode > 0) {
+      d.planning_budget = static_cast<std::size_t>(budget_mode);
+    } else if (budget_mode == -1) {
+      // Amendment-8 dynamic rule: min(32, max(8, pending / 16)).
+      const auto pending = static_cast<std::size_t>(colony.planning_pending());
+      d.planning_budget =
+          std::min<std::size_t>(32, std::max<std::size_t>(8, pending / 16));
+    } else if (budget_mode == -2) {
+      // Unbounded: drain the whole backlog every tick (teaching arm).
+      d.planning_budget = std::numeric_limits<std::size_t>::max();
+    } else if (budget_mode == -3) {
+      // Amendment-9 work budget, the deterministic stand-in for a
+      // wall-clock budget: fit the request count to a fixed per-tick
+      // node target using last tick's measured cost per search. Reads
+      // sim state only, never the clock, so replays stay exact. The
+      // estimate omits recovery-probe expansions (registered
+      // approximation); before the first drain it assumes 512
+      // nodes/search.
+      constexpr std::size_t kNodeTarget = 16384;
+      const auto queries =
+          std::max<std::size_t>(std::size_t{1}, d.last_planning_queries);
+      const auto per_search =
+          d.last_planning_expansions == 0
+              ? std::size_t{512}
+              : std::max<std::size_t>(std::size_t{1},
+                                      d.last_planning_expansions / queries);
+      d.planning_budget = std::min<std::size_t>(
+          64, std::max<std::size_t>(4, kNodeTarget / per_search));
+    }
+    if (policy == 29 || policy == 30 || policy == 31 || measure_productivity) {
       update_stall_durations();
+    }
+    if (measure_productivity) {
+      settle_rescues();
     }
     if (policy != 0 && d.sim_clock.tick >= next_reprice) {
       apply_pricing();
       next_reprice =
           d.sim_clock.tick + static_cast<std::uint64_t>(reprice_period);
     }
-    return colony.tick(dt_seconds);
+    const auto result = colony.tick(dt_seconds);
+    // Exact under fixed-step driving, like repricing above: one call is
+    // one fixed tick, so per-tick counters sum without loss.
+    expansions_total += static_cast<long long>(d.last_planning_expansions);
+    pending_integral += colony.planning_pending();
+    if (measure_productivity) {
+      replans_drained += static_cast<long long>(d.last_planning_queries);
+      sample_route_marks();
+    }
+    return result;
   }
 
   // queue2 (amendment 4): stall-gated chain detection with a graded
@@ -687,6 +750,29 @@ struct CongestionModel::Impl {
         }
         break;
       }
+      case 31: {  // onpath: escalating price along the agent's own route.
+        for (std::size_t i = 0; i < d.agents.size(); ++i) {
+          if (!d.agents[i].has_goal || i >= stall_duration.size() ||
+              stall_duration[i] == 0 ||
+              i >= d.tick_state.routes.routes.size()) {
+            continue;
+          }
+          const auto peak = static_cast<int>(
+              std::min<std::uint32_t>(3, 1 + stall_duration[i] / 8));
+          const auto& route = d.tick_state.routes.routes[i];
+          const auto begin = d.agents[i].path_index;
+          for (std::size_t k = 0; begin + k < route.size(); ++k) {
+            const auto amount = peak - static_cast<int>(k) / 4;
+            if (amount <= 0) {
+              break;
+            }
+            bump(static_cast<int>(route[begin + k].x),
+                 static_cast<int>(route[begin + k].y),
+                 static_cast<std::uint16_t>(amount));
+          }
+        }
+        break;
+      }
       default:
         return;
     }
@@ -724,14 +810,79 @@ struct CongestionModel::Impl {
     if (!any_increase) {
       return;
     }
-    scoped_replan_total += static_cast<long long>(
-        tess::experimental::request_replans_for_route_crossings(
-            d.agents, d.tick_state.routes,
-            [&](tess::Coord3 c) {
-              return increased[index(static_cast<int>(c.x),
-                                     static_cast<int>(c.y))] != 0;
-            },
-            d.replan_queue));
+    const auto queued = tess::experimental::request_replans_for_route_crossings(
+        d.agents, d.tick_state.routes,
+        [&](tess::Coord3 c) {
+          return increased[index(static_cast<int>(c.x),
+                                 static_cast<int>(c.y))] != 0;
+        },
+        d.replan_queue);
+    scoped_replan_total += static_cast<long long>(queued);
+  }
+
+  // 64-bit FNV-1a over a route's tiles. Movement advances path_index
+  // without touching route contents, so a changed fingerprint means the
+  // route was replaced by a search -- and an identical fingerprint
+  // after a search means that search returned the route the agent
+  // already had.
+  [[nodiscard]] static auto route_mark(const std::vector<tess::Coord3>& route)
+      -> std::uint64_t {
+    std::uint64_t h = 1469598103934665603ULL;
+    for (const auto& c : route) {
+      const auto packed =
+          static_cast<std::uint64_t>((static_cast<std::uint64_t>(c.x) << 32) ^
+                                     static_cast<std::uint64_t>(c.y));
+      h = (h ^ packed) * 1099511628211ULL;
+    }
+    return h;
+  }
+
+  void sample_route_marks() {
+    auto& d = seam();
+    const auto& routes = d.tick_state.routes.routes;
+    if (route_marks.size() != routes.size()) {
+      route_marks.assign(routes.size(), 0);
+      rescue_deadline.assign(routes.size(), 0);
+      for (std::size_t i = 0; i < routes.size(); ++i) {
+        route_marks[i] = route_mark(routes[i]);
+      }
+      return;
+    }
+    for (std::size_t i = 0; i < routes.size(); ++i) {
+      const auto mark = route_mark(routes[i]);
+      // Arrivals clear the route; that is not a replan outcome.
+      if (mark != route_marks[i] && !routes[i].empty()) {
+        ++replans_changed;
+        // Arm a rescue when a STALLED agent gets a replaced route and
+        // has no arming outstanding.
+        if (d.agents[i].has_goal && rescue_deadline[i] == 0 &&
+            i < stall_duration.size() && stall_duration[i] > 0) {
+          rescue_deadline[i] = d.sim_clock.tick + kRescueDeadlineTicks;
+          ++rescue_armed;
+        }
+      }
+      route_marks[i] = mark;
+    }
+  }
+
+  // Resolves armed rescues against freshly updated stall durations.
+  void settle_rescues() {
+    auto& d = seam();
+    if (rescue_deadline.size() != d.agents.size()) {
+      return;
+    }
+    for (std::size_t i = 0; i < d.agents.size(); ++i) {
+      if (rescue_deadline[i] == 0) {
+        continue;
+      }
+      if (d.agents[i].has_goal && i < stall_duration.size() &&
+          stall_duration[i] == 0) {
+        ++rescue_success;
+        rescue_deadline[i] = 0;
+      } else if (d.sim_clock.tick >= rescue_deadline[i]) {
+        rescue_deadline[i] = 0;
+      }
+    }
   }
 };
 
@@ -759,6 +910,12 @@ void CongestionModel::set_replan_each_tick(bool enabled) noexcept {
 }
 void CongestionModel::set_pricing_policy(int policy) {
   impl_->set_policy(policy);
+}
+void CongestionModel::set_planning_budget(int mode) {
+  impl_->budget_mode = mode;
+  if (mode == 0) {
+    impl_->seam().planning_budget = 8;
+  }
 }
 auto CongestionModel::pricing_policy() const noexcept -> int {
   return impl_->policy;
@@ -797,6 +954,27 @@ auto CongestionModel::movement_waits_last_tick() const noexcept -> int {
 }
 auto CongestionModel::scoped_replans() const noexcept -> long long {
   return impl_->scoped_replan_total;
+}
+auto CongestionModel::expansions_total() const noexcept -> long long {
+  return impl_->expansions_total;
+}
+auto CongestionModel::pending_integral() const noexcept -> long long {
+  return impl_->pending_integral;
+}
+void CongestionModel::set_measure_productivity(bool enabled) noexcept {
+  impl_->measure_productivity = enabled;
+}
+auto CongestionModel::replans_drained() const noexcept -> long long {
+  return impl_->replans_drained;
+}
+auto CongestionModel::replans_changed() const noexcept -> long long {
+  return impl_->replans_changed;
+}
+auto CongestionModel::rescue_armed() const noexcept -> long long {
+  return impl_->rescue_armed;
+}
+auto CongestionModel::rescue_success() const noexcept -> long long {
+  return impl_->rescue_success;
 }
 auto CongestionModel::tiles() const noexcept -> const std::uint8_t* {
   return impl_->colony.tiles();

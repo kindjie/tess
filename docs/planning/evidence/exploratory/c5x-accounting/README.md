@@ -176,11 +176,129 @@ other fixed-radius policy. Note the anchors' pooled values shift
 slightly from earlier rounds: this round ran on the relocated lab
 path and includes the maze cells; comparisons are within-round.
 
+## Amendment-8 round: on-path variant + planning-budget arms
+(captures `a8-*.txt`)
+
+Same 16 cells and runner as amendment 7, per-arm replays
+bit-identical. The policy arms reproduce amendment 7's pooled values
+exactly (cool 0.4119, escal 0.4220, radiate 0.4349 -- an incidental
+replication check on the relocated path) and add the maintainer-user's
+on-path variant.
+
+| arm | pooled gm (16 cells) | safe | total scoped replans | maze/1024 |
+|---|---|---|---|---|
+| cool | 0.4119 | 16/16 | 153,818 | 2,828 ticks |
+| escal | 0.4220 | 16/16 | **100,494 (lowest)** | **2,471 ticks** |
+| **onpath** (escalating price along own route) | 0.4225 | 16/16 | 107,586 | 2,554 ticks |
+| radiate | 0.4349 | 16/16 | 102,454 | 2,627 ticks |
+
+Findings: (1) onpath is value-indistinguishable from escal (0.4225 vs
+0.4220) at ~7% more planning load -- restricting the escalating price
+to the stalled agent's own remaining route neither helps nor hurts at
+this scale, so the escalating magnitude, not the footprint, carries
+the effect; (2) escal remains the efficiency point of the family:
+within 2.6% of cool's pooled value at two-thirds of its planning
+load.
+
+Budget arms (policy 29 at {4, 16, 32, dynamic} vs default 8): static
+4 is consistently harmful at 1,024 agents (browser-incremental 1,324
+ticks vs 687 default); static 32 posts the best tick counts at 1,024
+in most scenarios (two-gates 432 vs 747); the amendment-8 dynamic
+rule lands within ~5% of static 32 while submitting ~24% fewer
+replans (maze 44,474 vs 58,614). At 256 the backlog rarely exceeds
+the default budget and the arms separate weakly. The registered
+wall-time and backlog metrics were not captured this round (gap
+admitted at registration); amendment 9 adds the columns and reruns
+the budget arms.
+
+## Amendment-9 round: planning-budget family, and a measurement
+## correction (captures `a9-*.txt`)
+
+The budget control gained an option family: static N, the amendment-8
+dynamic rule, unbounded (drain the backlog), and a **work budget** --
+the deterministic stand-in for a fixed time budget, fitting the request
+count to a 16,384-expanded-node target from the previous tick's
+measured cost per search. A true wall-clock budget is excluded by
+design: it reads the host clock, so identical inputs would replan
+different agents on different machines and replay identity would break.
+
+Enabling library change: `PathAgentFrameStats::expanded_nodes`, the
+deterministic work meter the node target reads.
+
+**Measurement correction.** The first amendment-9 run measured its
+wall-clock columns on `build/dev` (`CMAKE_BUILD_TYPE=Debug`). Those
+columns were void and are withdrawn; the run was repeated on the
+Release `examples` preset. Ticks, arrivals, expansions and backlog are
+build-independent and verified identical across both builds, so only
+timing was affected. Debug inflates the templated A* inner loop enough
+to reverse the ordering: on open/1024 the unbounded budget moves from
+worst on CPU to best. The captures retained here are the release run.
+
+Geometric means vs the default budget (8 plans/tick) at 1,024 agents,
+`walls=REFUSED` cells excluded:
+
+| mode | ticks | wall | worst late tick | expansions |
+|---|---|---|---|---|
+| static 4 | 1.227 | 1.042 | 0.733 | 0.854 |
+| static 16 | 0.854 | 1.221 | 1.417 | 1.407 |
+| static 32 | 0.735 | 1.512 | 2.229 | 1.905 |
+| dynamic | 0.782 | 1.406 | 2.088 | 1.718 |
+| unbounded | 0.666 | 2.373 | 10.341 | 4.056 |
+| work budget | 0.777 | 0.984 | 2.303 | 1.200 |
+
+Findings: (1) **no mode dominates** -- fewest ticks is unbounded, at
+2.37x the elapsed time, 4.06x the search and a 10.3x worse worst tick;
+lowest latency tail is static 4, paying 1.227x in settle ticks; the
+work budget has the best settle-per-elapsed-time. (2) The work budget's
+0.984 must not be read as free: **5 of 8 scenarios are slower on
+elapsed time**, the near-1.0 mean is carried by maze,
+browser-incremental and open, and it costs 1.20x the search and 2.30x
+the worst late tick. (3) The unbounded budget's cost is a thundering
+herd measured directly in search work -- maze/1024 runs 1.82 billion
+expansions against the default's 113 million -- and it appears only
+under congestion; on open geometry expansions stay flat across modes.
+
+Boundaries on this round: `wall_ms` is weak evidence at this resolution
+(two back-to-back replays measure adjacent-run jitter rather than
+run-to-run variance, cross-session drift is ~1.5%, `open` cells are
+integer-quantized at 2-4 ms, and runs execute in fixed budget order so
+thermal drift is confounded with mode). Ticks and expansions are exact
+and replay-identical. The unbounded budget also invalidates the
+browser-guard scenario at both populations (`walls=REFUSED`): draining
+the full backlog shifts pre-wall trajectories so agents occupy scripted
+wall tiles before the tick-4 batch. Matrix scenarios must place walls
+at tick 0 or gate admission on acceptance rather than tick number.
+
+## Amendment-10 round: adaptive budget switching -- NEGATIVE RESULT
+
+Two signals were registered and both failed their pre-declared
+separation test; no rule was built and no threshold was fitted
+afterwards.
+
+- **10, replan productivity** (routes changed / searches drained):
+  0.97-1.00 in all eight scenarios, no separation. Pricing perturbs
+  costs, so the optimal route differs on nearly every search; the
+  measure detects difference, not value.
+- **10b, rescue rate** (stalled agents that moved within 8 ticks of
+  receiving a replaced route): informative at the extremes -- lowest in
+  goal-wall (0.729) and maze (0.747), the two worst search blowups,
+  highest in open (0.993) -- but the required grouping overlaps by
+  0.004 (browser-incremental 0.892 vs tip 0.896). Confounded: an agent
+  can unstick because the agent ahead moved, unrelated to its own
+  replan.
+
+The instrument is retained behind `--measure-productivity`, verified
+non-perturbing (identical ticks, arrivals and scoped replans with it
+on). Budget selection remains a documented caller choice.
+
 ## Files
 
 - `<scenario>.txt` -- per-cell captures (arm rows: arrived,
   crowd-blocked, unreachable, ticks, turnaround, gate, planning-load
   integral).
-- `programs.md` -- the recorded screen program; policy and scoping
-  implementations live in the demo model
-  (`examples/web_colony/colony_model_internal.h`).
+- `programs.md` -- the recorded amendment-2..6 screen program
+  (historical). From amendment 7 on, the program is the congestion
+  lab's native runner (`examples/web_congestion/congestion_native.cc`)
+  and the policies live in the lab model
+  (`examples/web_congestion/congestion_model.cc`); the tutorial demo
+  carries only the planning-budget seam.

@@ -35,6 +35,13 @@ class CongestionModel {
   void set_replan_each_tick(bool enabled) noexcept;
   /// Selects the pricing policy (0 disables and restores unit costs).
   void set_pricing_policy(int policy);
+  /// Planning budget per fixed tick: n > 0 sets a static budget, 0
+  /// restores the demo default (8), -1 selects the registered dynamic
+  /// rule budget = min(32, max(8, pending / 16)), -2 drains the whole
+  /// backlog every tick (unbounded), -3 selects the registered work
+  /// budget: fit the request count to a 16,384 expanded-node target
+  /// using last tick's measured nodes per search, clamped to [4, 64].
+  void set_planning_budget(int mode);
   [[nodiscard]] auto pricing_policy() const noexcept -> int;
 
   [[nodiscard]] auto tick(double dt_seconds) -> double;
@@ -54,6 +61,23 @@ class CongestionModel {
   [[nodiscard]] auto movement_waits_last_tick() const noexcept -> int;
   /// Agents asked to replan by the scoped selection since construction.
   [[nodiscard]] auto scoped_replans() const noexcept -> long long;
+  /// Search nodes expanded by exact replans since construction.
+  [[nodiscard]] auto expansions_total() const noexcept -> long long;
+  /// Sum over ticks of the post-drain planning backlog (queue latency).
+  [[nodiscard]] auto pending_integral() const noexcept -> long long;
+  /// Enables amendment-10 replan-productivity measurement. Off by
+  /// default: it fingerprints every retained route each tick, which is
+  /// affordable for evidence runs but not free, so runs with it enabled
+  /// must not be used for wall-time comparisons.
+  void set_measure_productivity(bool enabled) noexcept;
+  /// Searches the drain ran (denominator) and how many replaced an
+  /// agent's route with a different one (numerator).
+  [[nodiscard]] auto replans_drained() const noexcept -> long long;
+  [[nodiscard]] auto replans_changed() const noexcept -> long long;
+  /// Amendment-10b rescue counters: stalled agents that received a
+  /// replaced route, and how many moved within the deadline.
+  [[nodiscard]] auto rescue_armed() const noexcept -> long long;
+  [[nodiscard]] auto rescue_success() const noexcept -> long long;
 
   [[nodiscard]] auto tiles() const noexcept -> const std::uint8_t*;
   [[nodiscard]] auto current_agents() const noexcept -> const std::int16_t*;

@@ -95,6 +95,7 @@ better; 1.0 = no effect), with planning load relative to canonical.
 | Peaked (own tile +2, ring +1) | each agent a small gradient rather than a plateau | 0.41 | ~5x | lower aggregate ratio than the flat nearby-agent signal in this screen |
 | Escalating stall price | each stalled agent's contribution grows with how long it has been stuck (+1 magnitude per 8 stalled ticks, capped) | 0.42 | ~2x | best recorded result on the capacity-bound maze scenario; screened on the relocated lab path |
 | Radiating stall price | same, and the priced region widens with stall duration (a cone sloping from the agent outward) | 0.43 | ~2x | best maze result at 256 agents; the wider cone did not add value at 1,024 |
+| On-path stall price | the escalating magnitude applied only along the stalled agent's own remaining route, fading with distance | 0.42 | ~2x | value-indistinguishable from plain escalation in the screen; restricting the footprint to the route neither helped nor hurt |
 
 **Experiment rejected — ungated queue detection.** In the screen it
 disrupted flowing convoys and created adjacent single-file queues.
@@ -108,6 +109,57 @@ None of the nine combined-signal arms improved on its better
 component in the 14-cell screen. A shared cap clipping the combined
 signal is one plausible explanation; the experiment did not
 instrument the cause.
+
+## Choosing a planning budget
+
+Scoping decides *which* agents replan; the planning budget decides *how
+many* of them get served each tick. The two interact: pricing creates
+replan demand, and the budget decides how fast that demand drains.
+
+Every option below reads only simulation state, so replay stays exact.
+A wall-clock budget is deliberately absent — it would read the host
+clock, and identical inputs would then replan different agents on
+different machines.
+
+| budget rule | settle ticks | elapsed time | worst tick | search |
+|---|---|---|---|---|
+| Small fixed (4/tick) | 1.23 | 1.04 | **0.73** | 0.85 |
+| Larger fixed (32/tick) | 0.74 | 1.51 | 2.23 | 1.91 |
+| Scale with backlog | 0.78 | 1.41 | 2.09 | 1.72 |
+| Drain the backlog | **0.67** | 2.37 | 10.34 | 4.06 |
+| Fit a search-work target | 0.78 | 0.98 | 2.30 | 1.20 |
+
+Ratios are against a fixed budget of 8 per tick, at 1,024 agents,
+geometric means over eight screened scenarios; lower is better.
+
+**No rule dominates, so choose by the constraint you actually have.**
+
+- **A frame budget you must not miss**: the small fixed budget is the
+  only rule that improves the worst tick, and it pays for that with
+  23% more settle ticks. Nothing else here lowers the tail.
+- **Throughput above all, offline or amortized**: draining the whole
+  backlog settles fastest. Under congestion it is very expensive —
+  four times the search overall, and on a dense-maze scenario 1.82
+  billion node expansions against 113 million for the fixed budget of
+  8 — because agents repeatedly replan against a price field that is
+  still moving. On uncongested maps that effect does not appear.
+- **General use**: fitting the request count to a search-work target
+  (a fixed expanded-node budget per tick, divided by the previous
+  tick's measured cost per search) settles about as fast as scaling
+  with the backlog while spending noticeably less time.
+
+**What this does not claim.** The elapsed-time column is the weakest
+evidence in the table: five of the eight scenarios are individually
+slower under the work-target rule even though its aggregate is ~1.0,
+and the aggregate sits inside measurement drift. The settle-tick and
+search columns are exact and replay-identical; treat elapsed time as
+indicative only. A search-work target also bounds work *on average*,
+not per tick: it sets the request count from the previous tick's
+average, so a single expensive search can still overshoot, which is
+why its worst tick is 2.3x rather than lower.
+
+**Screened, not promoted.** Eight scenarios, two populations, one
+platform.
 
 ## Route spreading composes with pricing
 

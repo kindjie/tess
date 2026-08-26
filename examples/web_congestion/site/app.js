@@ -9,6 +9,7 @@ const agentCount = document.getElementById('agent-count');
 const replan = document.getElementById('replan');
 const spread = document.getElementById('spread');
 const pricing = document.getElementById('pricing');
+const budget = document.getElementById('budget');
 const overlay = document.getElementById('overlay');
 const resetButton = document.getElementById('reset');
 const clearButton = document.getElementById('clear-walls');
@@ -89,6 +90,7 @@ function reset() {
   api.setStrategy(replan.checked ? 1 : 0);
   api.setSpread(spread.checked ? 1 : 0);
   api.setPricing(Number(pricing.value));
+  api.setBudget(Number(budget.value));
   const rememberedWalls = Array.from(walls);
   walls.clear();
   for (const key of rememberedWalls) {
@@ -268,38 +270,40 @@ createTessColony()
             [
               'number',
             ]),
-        setSpread: instance.cwrap(
-            'tess_congestion_set_spread', null, ['number']),
-        setPricing: instance.cwrap(
-            'tess_congestion_set_pricing', null, ['number']),
+        setSpread:
+            instance.cwrap('tess_congestion_set_spread', null, ['number']),
+        setPricing:
+            instance.cwrap('tess_congestion_set_pricing', null, ['number']),
+        setBudget:
+            instance.cwrap('tess_congestion_set_budget', null, ['number']),
         prices: instance.cwrap('tess_congestion_prices', 'number', []),
         tick: instance.cwrap('tess_congestion_tick', 'number', ['number']),
         relaunch: instance.cwrap('tess_congestion_relaunch', 'number', []),
         leg: instance.cwrap('tess_congestion_leg', 'number', []),
         tiles: instance.cwrap('tess_congestion_tiles', 'number', []),
         agents: instance.cwrap('tess_congestion_agents', 'number', []),
-        previousAgents: instance.cwrap(
-            'tess_congestion_previous_agents', 'number', []),
-        interpolationAlpha: instance.cwrap(
-            'tess_congestion_interpolation_alpha', 'number', []),
+        previousAgents:
+            instance.cwrap('tess_congestion_previous_agents', 'number', []),
+        interpolationAlpha:
+            instance.cwrap('tess_congestion_interpolation_alpha', 'number', []),
         agentCount: instance.cwrap('tess_congestion_agent_count', 'number', []),
         arrived: instance.cwrap('tess_congestion_arrived', 'number', []),
-        unreachable: instance.cwrap(
-            'tess_congestion_unreachable', 'number', []),
-        crowdBlocked: instance.cwrap(
-            'tess_congestion_crowd_blocked', 'number', []),
-        turnaroundReady: instance.cwrap(
-            'tess_congestion_turnaround_ready', 'number', []),
-        completedLegs: instance.cwrap(
-            'tess_congestion_completed_legs', 'number', []),
-        abortedLegs: instance.cwrap(
-            'tess_congestion_aborted_legs', 'number', []),
-        stalledTicks: instance.cwrap(
-            'tess_congestion_stalled_ticks', 'number', []),
-        planningPending: instance.cwrap(
-            'tess_congestion_planning_pending', 'number', []),
-        advancedLastTick: instance.cwrap(
-            'tess_congestion_advanced_last_tick', 'number', []),
+        unreachable:
+            instance.cwrap('tess_congestion_unreachable', 'number', []),
+        crowdBlocked:
+            instance.cwrap('tess_congestion_crowd_blocked', 'number', []),
+        turnaroundReady:
+            instance.cwrap('tess_congestion_turnaround_ready', 'number', []),
+        completedLegs:
+            instance.cwrap('tess_congestion_completed_legs', 'number', []),
+        abortedLegs:
+            instance.cwrap('tess_congestion_aborted_legs', 'number', []),
+        stalledTicks:
+            instance.cwrap('tess_congestion_stalled_ticks', 'number', []),
+        planningPending:
+            instance.cwrap('tess_congestion_planning_pending', 'number', []),
+        advancedLastTick:
+            instance.cwrap('tess_congestion_advanced_last_tick', 'number', []),
         movementWaitsLastTick: instance.cwrap(
             'tess_congestion_movement_waits_last_tick', 'number', []),
       };
@@ -322,6 +326,10 @@ createTessColony()
       });
       pricing.addEventListener('change', () => {
         api.setPricing(Number(pricing.value));
+        emaUs = 0;
+      });
+      budget.addEventListener('change', () => {
+        api.setBudget(Number(budget.value));
         emaUs = 0;
       });
       resetButton.addEventListener('click', reset);

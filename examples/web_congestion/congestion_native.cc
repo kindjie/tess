@@ -2,8 +2,10 @@
 // the browser demo runs, driven at fixed steps. This is the screen and
 // matrix entry point -- evidence runs and the WASM demo share one code
 // path by construction.
+#include <algorithm>
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <string_view>
@@ -84,7 +86,9 @@ int main(int argc, char** argv) {
   int agents = 256;
   int policy = 0;
   int max_ticks = 5000;
+  int budget = 0;
   bool spread = false;
+  bool measure = false;
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg = argv[i];
     const auto next = [&]() -> std::string_view {
@@ -98,20 +102,28 @@ int main(int argc, char** argv) {
       return 2;
     } else if (arg == "--max-ticks" && !parse_int(next(), max_ticks)) {
       return 2;
+    } else if (arg == "--budget" && !parse_int(next(), budget)) {
+      return 2;
     } else if (arg == "--spread") {
       spread = true;
+    } else if (arg == "--measure-productivity") {
+      // Amendment-10 instrumentation. Adds per-tick route
+      // fingerprinting, so runs using it are not wall-time comparable.
+      measure = true;
     } else if (arg == "--help") {
       std::printf(
           "usage: tess_web_congestion_model --scenario "
           "<open|tip|two-gates|four-gates|goal-wall|browser-guard|maze|"
-          "browser-incremental> [--agents N] [--policy 0..28] [--spread] "
-          "[--max-ticks N]\n");
+          "browser-incremental> [--agents N] [--policy 0..31] [--spread] "
+          "[--budget N|-1|-2|-3] [--max-ticks N]\n");
       return 0;
     }
   }
   wcg::CongestionModel model{agents};
   model.set_spread_congested_routes(spread);
   model.set_pricing_policy(policy);
+  model.set_planning_budget(budget);
+  model.set_measure_productivity(measure);
 
   const bool incremental = scenario == "browser-incremental";
   std::size_t incremental_wall = 0;
@@ -122,6 +134,9 @@ int main(int argc, char** argv) {
   };
   int ticks = 0;
   bool walls_ok = true;
+  long long wall_us_total = 0;
+  long long wall_us_max = 0;
+  long long wall_us_max_late = 0;
   for (; ticks < max_ticks &&
          (!model.turnaround_ready() || incremental_pending());
        ++ticks) {
@@ -143,17 +158,38 @@ int main(int argc, char** argv) {
         ++incremental_wall;
       }
     }
+    // Wall time is reporting only; nothing in the sim reads it. The
+    // registered dynamic-budget concern is precisely work that tick
+    // counts cannot see, so the runner records it directly.
+    const auto begin = std::chrono::steady_clock::now();
     (void)model.tick(0.05);
+    const auto tick_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                             std::chrono::steady_clock::now() - begin)
+                             .count();
+    wall_us_total += tick_us;
+    wall_us_max = std::max(wall_us_max, tick_us);
+    // Tick 0 plans the whole fleet under every mode, so the plain max
+    // is structurally the startup burst; the late max separates the
+    // steady state the budget hypotheses are about.
+    if (ticks >= 16) {
+      wall_us_max_late = std::max(wall_us_max_late, tick_us);
+    }
   }
   walls_ok =
       walls_ok && (!incremental || incremental_wall == kIncrementalTotal);
   std::printf(
-      "congestion scenario=%.*s agents=%d policy=%d spread=%d ticks=%d "
+      "congestion scenario=%.*s agents=%d policy=%d budget=%d spread=%d "
+      "ticks=%d "
       "arrived=%d crowd_blocked=%d unreachable=%d turnaround=%d walls=%s "
-      "scoped_replans=%lld\n",
+      "scoped_replans=%lld expansions=%lld pending_integral=%lld "
+      "wall_ms=%lld wall_max_us=%lld wall_max_late_us=%lld "
+      "drained=%lld changed=%lld armed=%lld rescued=%lld\n",
       static_cast<int>(scenario.size()), scenario.data(), agents, policy,
-      spread ? 1 : 0, ticks, model.arrived(), model.crowd_blocked(),
+      budget, spread ? 1 : 0, ticks, model.arrived(), model.crowd_blocked(),
       model.unreachable(), model.turnaround_ready() ? 1 : 0,
-      walls_ok ? "ok" : "REFUSED", model.scoped_replans());
+      walls_ok ? "ok" : "REFUSED", model.scoped_replans(),
+      model.expansions_total(), model.pending_integral(), wall_us_total / 1000,
+      wall_us_max, wall_us_max_late, model.replans_drained(),
+      model.replans_changed(), model.rescue_armed(), model.rescue_success());
   return walls_ok ? 0 : 1;
 }

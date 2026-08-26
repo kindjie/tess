@@ -64,6 +64,19 @@
               <option value="23">Cooling memory, every 8 ticks (screened)</option>
               <option value="24">Cooling memory, every 16 ticks (screened)</option>
               <option value="27">Cooling memory, price cap 7 (screened)</option>
+              <option value="31">On-path stall price (screened)</option>
+            </select>
+          </label>
+          <label>
+            Planning budget
+            <select id="budget">
+              <option value="0" selected>8 per tick (default)</option>
+              <option value="4">4 per tick (screened: best worst-tick)</option>
+              <option value="16">16 per tick (screened)</option>
+              <option value="32">32 per tick (screened: 0.74x ticks, 1.5x time)</option>
+              <option value="-1">Scale with backlog (screened)</option>
+              <option value="-2">Drain backlog (screened: fastest, 4x search)</option>
+              <option value="-3">Search-work target (screened: best time)</option>
             </select>
           </label>
           <label>
