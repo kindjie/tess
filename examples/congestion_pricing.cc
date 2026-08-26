@@ -122,9 +122,9 @@ void reprice(World& world, std::span<const tess::PathAgentState> agents,
 
 // [congestion-scope]
 // A price change never invalidates a retained route, so only agents
-// whose remaining route crosses a rise are asked to replan; decreases
-// deliberately trigger nothing (chasing newly cheap ground is the
-// oscillation the scoping removes).
+// whose remaining route crosses a price increase are asked to replan.
+// Price decreases request nothing; agents consider them during their
+// next ordinary replan.
 std::size_t scope_replans(std::span<const tess::PathAgentState> agents,
                           const tess::PathAgentRoutes& routes,
                           const PricingState& state,

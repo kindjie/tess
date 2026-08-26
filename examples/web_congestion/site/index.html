@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description"
-          content="Interactive tess WebAssembly colony simulation at scale">
+          content="Compare congestion-pricing policies in the interactive tess WebAssembly lab">
     <title>tess congestion lab</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="style.css">
@@ -16,23 +16,24 @@
           <img src="logo.svg" alt="tess">
         </a>
         <p class="eyebrow">A live WebAssembly example</p>
-        <h1>Colony at scale</h1>
+        <h1>Congestion pricing lab</h1>
         <p>
-          Agents shuttle between the edges while you wall off their routes.
-          Every edit is a queued operation: the dirty mask triggers an
-          incremental topology rebuild, agents replan, and the grid you see
-          is a shadow state fed by versioned DeltaFrames. Agent movement is
-          interpolated only for presentation; the simulation itself stays on
-          fixed integer-tile ticks. Walls survive resets, and the bands near
-          each edge stay passable so the colony always has somewhere to stand.
+          Agents shuttle between the edges while weighted pathfinding
+          treats caller-owned congestion prices as terrain costs. Choose a
+          pricing policy, compare it with equal-cost route spreading, and
+          draw or erase walls. "Nearby agents" is the supported-coverage
+          caller recipe; the other policies are labelled screening results
+          or rejected controls. The price overlay shows the current cost
+          field. Walls survive resets, and the bands near each edge stay
+          passable so the colony always has somewhere to stand.
           The timing readout covers the C++ update, not canvas rendering.
           Single-threaded WebAssembly — native numbers are faster; see
           <a href="https://tess.owx.dev/latest/performance/">performance</a>.
         </p>
       </header>
 
-      <section class="demo" aria-label="Interactive colony demo">
-        <div class="toolbar" role="toolbar" aria-label="Colony controls">
+      <section class="demo" aria-label="Interactive congestion-pricing lab">
+        <div class="toolbar" role="toolbar" aria-label="Congestion-pricing controls">
           <label>Agents
             <input id="agents" type="range" min="16" max="1024" step="16"
                    value="128">
@@ -44,34 +45,34 @@
           </label>
           <label>
             <input id="spread" type="checkbox" checked>
-            Spread congested equal-cost routes
+            Spread equal-cost routes after crowding
           </label>
           <label>
             Congestion pricing
             <select id="pricing">
               <option value="0" selected>Off</option>
-              <option value="9">Cooling memory (value champion)</option>
-              <option value="12">Stalled + cooling (efficiency)</option>
-              <option value="10">Stall-gated queues (minimal)</option>
-              <option value="1">Nearby agents (validated recipe)</option>
-              <option value="5">Stalled agents</option>
-              <option value="8">Peaked kernel</option>
-              <option value="7">Ungated queues (teaching: makes queues)</option>
-              <option value="6">Route demand (teaching: unsafe feedback)</option>
-              <option value="23">Cooling, reprice every 8</option>
-              <option value="24">Cooling, reprice every 16</option>
-              <option value="27">Cooling, deep prices (cap 7)</option>
+              <option value="9">Cooling memory (screened: lowest tick ratio)</option>
+              <option value="12">Stalled + cooling (screened: ~2x planning load)</option>
+              <option value="10">Stall-gated queues (screened: jam-only)</option>
+              <option value="1">Nearby agents (validated caller recipe)</option>
+              <option value="5">Stalled agents (screened)</option>
+              <option value="8">Nearby agents, own tile +2 (screened)</option>
+              <option value="7">Ungated queues (rejected: disrupts convoys)</option>
+              <option value="6">Planned-route demand (rejected: failed outcome gate)</option>
+              <option value="23">Cooling memory, every 8 ticks (screened)</option>
+              <option value="24">Cooling memory, every 16 ticks (screened)</option>
+              <option value="27">Cooling memory, price cap 7 (screened)</option>
             </select>
           </label>
           <label>
             <input id="overlay" type="checkbox" checked>
-            Show price heat
+            Show price overlay
           </label>
           <button id="reset">Reset</button>
           <button id="clear-walls">Clear walls</button>
         </div>
         <canvas id="world" width="768" height="768"
-                aria-label="Colony world grid"></canvas>
+                aria-label="Congestion-pricing world grid"></canvas>
         <p class="edit-hint">
           Drag empty space to draw; drag from a wall to erase.
         </p>
@@ -83,7 +84,7 @@
 
       <footer>
         <a href="../">Try the pathfinder demo</a>
-        <a href="https://github.com/kindjie/tess/tree/main/examples/web_colony">
+        <a href="https://github.com/kindjie/tess/tree/main/examples/web_congestion">
           View this example's source
         </a>
       </footer>

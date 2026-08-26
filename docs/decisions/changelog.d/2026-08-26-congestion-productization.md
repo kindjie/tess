@@ -22,7 +22,8 @@ exact code path.
 `tess::experimental::request_replans_for_route_crossings`
 (`include/tess/experimental/path_agent_replan_selection.h`) -- the
 scoped-replanning query behind the stream's largest measured effect
-(up to ~500x per-tick compute against the global-replan protocol). It
+(the recorded case: ~84 ms to ~1.6 ms per tick, about 53x, against
+the global-replan protocol). It
 grants no authority a caller lacks (it only asks the existing replan
 queue), its contract is pinned by direct fixtures, and one contract
 detail (whether the scan includes the agent's current tile) is

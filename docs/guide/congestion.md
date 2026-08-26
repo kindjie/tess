@@ -1,63 +1,64 @@
 # Congestion pricing
 
-How to make crowded routes cost more so planners spread traffic --
-using only surfaces the library already ships -- and which accounting
-policy to choose. Everything here was measured on the
-[congestion lab](https://tess.owx.dev/latest/demo/congestion/); the numbers come from
-28 pre-registered experiment arms whose captures live in the
-repository's evidence records.
+Congestion pricing makes crowded tiles more expensive to weighted
+planners, using surfaces that tess already ships. The
+[congestion lab](https://tess.owx.dev/latest/demo/congestion/) exposes
+the retained recipe and selected experimental policies; the numbers
+below come from 28 pre-registered experiment arms whose captures live
+in the repository's evidence records.
 
-**Evidence tiers, stated up front.** The base recipe (nearby-agent
-pricing at supported-population coverage on two platforms) is the only
-promotion-grade result. Every ranking below it -- the cooling, stalled,
-and queue policies, the scoped-replanning protocol, and the spread
-interaction -- comes from a screening matrix: seven scenario
-geometries at two populations on one platform. Treat the rankings as
-strong guidance with recorded boundaries, not as guarantees for your
-map.
+**Validated caller recipe.** Nearby-agent pricing was tested across
+seven scenarios, all 64 supported populations, and two platforms.
+
+**Screened, not promoted.** The cooling, stalled-agent, queue,
+scoped-replanning, and route-spreading variants were compared across
+the same seven scenarios at 256 and 1,024 agents on one platform,
+across pre-registered rounds. These results rank the tested
+configurations; they do not predict other maps. The retained captures
+predate the pricing engine's relocation into the current lab model,
+which is the successor measurement surface.
 
 ## The mechanism (all policies share it)
 
 1. Give your movement class a cost term over an ordinary cost field
    (`tess::movement::FieldCost<CostTag>`).
-2. Every repricing period (4 fixed ticks -- measured better than 8 or
-   16), compute a per-tile **signal** and write
-   `price = 1 + min(3, signal)` into the field. The cap of 3 (prices
-   1..4) measured better than a deeper cap of 7.
+2. Every four fixed ticks, compute a per-tile **signal** and write
+   `price = 1 + min(3, signal)` into the field. In the
+   single-platform screen, four ticks produced a lower aggregate
+   settle-tick ratio than eight or sixteen for both cooling policies,
+   and a cap of 3 likewise produced a lower aggregate ratio than a
+   cap of 7.
 3. Publish the writes as versioned edits: `mark_content_changed` on
    every chunk you touched. Do **not** raise the global pathing-dirty
-   flag -- see the replanning section, which is where naive
-   implementations lose two orders of magnitude.
+   flag; request replans only for affected retained routes, as
+   described below.
 4. When pricing turns off, restore every tile to unit cost and only
    then force one full replan: every retained route was planned
    against prices, so this single global replan is correct.
 
-A price is advice, not law: it never makes a tile impassable, and it
-never invalidates a route that was already planned.
+Pricing changes route cost, not passability. An existing route
+remains valid, although it may no longer be the lowest-cost route.
 
-## Scoped replanning -- the part that actually matters
+## Scoped replanning
 
-The single largest measured effect in the whole experiment stream was
-not any signal choice; it was **who replans when prices change**.
-Raising `mark_pathing_dirty` on every repricing replans every agent:
-at 1,024 agents with a bounded planning budget the queue saturates for
-hundreds of ticks, agents far from any congestion oscillate between
-near-equal routes as tie-breaks flip, and per-tick compute inflates up
-to ~500x (the worst measured policy fell from ~84 ms to ~1.6 ms per
-tick when scoped).
+Global replanning dominated the cost of the initial implementation.
+With 1,024 agents and a bounded planning budget, the browser run
+showed a saturated planning queue, replanning far from any changed
+price, and oscillation between near-equal routes. One recorded policy
+fell from about 84 ms to 1.6 ms per tick when replanning was scoped —
+about 53x.
 
-The discipline: a cost change never invalidates a retained route, so
-ask only the agents whose own remaining route crosses a tile whose
-price **increased** to replan -- and let decreases trigger nothing,
-because chasing newly cheap ground is precisely the oscillation. The
+Request a replan only when an agent's remaining route crosses a tile
+whose price **increased**. Price decreases do not request replanning;
+agents consider them during their next ordinary replan. The
 experimental helper encodes this:
 
 <!-- tess-snippet: congestion-scope source=examples/congestion_pricing.cc -->
 ```cpp
 // A price change never invalidates a retained route, so only agents
-// whose remaining route crosses a rise are asked to replan; decreases
-// deliberately trigger nothing (chasing newly cheap ground is the
-// oscillation the scoping removes).
+// whose remaining route crosses a price increase are asked to replan.
+// Price decreases request nothing; agents consider them during their
+// next ordinary replan.
 std::size_t scope_replans(std::span<const tess::PathAgentState> agents,
                           const tess::PathAgentRoutes& routes,
                           const PricingState& state,
@@ -73,73 +74,78 @@ std::size_t scope_replans(std::span<const tess::PathAgentState> agents,
 ```
 <!-- /tess-snippet -->
 
-It is experimental: the spelling and one contract detail (whether the
-scan starts at the agent's current tile) may still change. The twelve
-lines it replaces are recorded in its documentation comment's
-contract if you prefer to own them.
+The helper is experimental. Its name and whether the scan includes
+the agent's current tile may change. Its documentation comment
+specifies the equivalent caller-owned scan.
 
 ## The signal menu
 
-All signals reprice every 4 ticks and share the price formula; they
-differ only in what they count. Screening geometric means are
-policy/canonical settle ticks over the safe cells (lower is better;
-1.0 = no effect), with planning load relative to canonical.
+All signals reprice every four ticks and share the price formula;
+they differ only in what they count. Ratios are policy/canonical
+settle ticks over the screen's safe cells (geometric mean; lower is
+better; 1.0 = no effect), with planning load relative to canonical.
 
-| policy | signal | ticks gm | planning load | character |
+| policy | signal | settle-tick ratio | planning-load ratio | screening result and boundary |
 |---|---|---|---|---|
-| **Cooling memory** | halo of live agents, halved (floor) each period before re-adding | 0.39 | ~5x | best value measured; smooths transient noise; fully evaporates ~2 idle periods after a crowd leaves |
-| **Stalled + cooling** | same, but only agents that failed to move since the last repricing contribute | 0.42 | **~2x** | the efficiency frontier: failure-to-move is already local to real trouble |
-| **Stall-gated queues** | detects single-file chains (>4 agents, at least half stalled); prices the chain, graded into its free side lanes; corridor chains also price their approach ends | 0.69 | **~1.1x** | minimal intervention: healthy maps see literally no pricing; a specialist for jam-only response |
-| Nearby agents (base recipe) | each live agent +1 on its tile and 4 neighbours | 0.41 | ~5x | the promotion-grade anchor; what the architecture notes document |
-| Stalled agents | stalled halo, snapshot | 0.43 | ~2x | superseded by stalled + cooling |
-| Peaked kernel | own tile +2, ring +1 | 0.41 | ~5x | every agent a gradient, not a plateau; beats the flat halo slightly |
+| **Cooling memory** | each live agent's tile and four orthogonal neighbours; the stored signal halves during each idle repricing period | 0.39 | ~5x | lowest aggregate ratio among unspread pricing policies |
+| **Stalled + cooling** | same, but only agents that failed to move since the last repricing contribute | 0.42 | **~2x** | similar aggregate ratio at about 2x planning load rather than about 5x |
+| **Stall-gated queues** | single-file chains of more than four agents, at least half stalled; prices the chain, graded into its free side lanes; corridor chains also price their approach ends | 0.69 | **~1.1x** | emits no signal without a qualifying stalled chain; safe in 13 of 14 cells without spreading |
+| Nearby agents (base recipe) | each live agent +1 on its tile and four neighbours | 0.41 | ~5x | screening ratio shown here; separately validated at supported-population coverage |
+| Stalled agents | stalled tiles and neighbours, snapshot | 0.43 | ~2x | superseded by stalled + cooling |
+| Peaked (own tile +2, ring +1) | each agent a small gradient rather than a plateau | 0.41 | ~5x | lower aggregate ratio than the flat nearby-agent signal in this screen |
 
-Two teaching negatives, selectable in the lab so you can watch them
-fail: **ungated queue detection** breaks up healthy convoys and herds
-escapees into a new single-file lane one over (it manufactures
-queues); **route-demand pricing** (pricing your agents' planned
-tiles) chases its own replans and never settles -- it is the one
-signal that failed safety gates outright, under every protocol tried.
+**Experiment rejected — ungated queue detection.** In the screen it
+disrupted flowing convoys and created adjacent single-file queues.
 
-Composition advice, measured: combining signal mechanisms does not
-stack -- signals add under the shared price cap, which clips the
-better component's gradient exactly where guidance matters. Pick one.
+**Experiment rejected — planned-route demand.** It failed the safety
+gate in 2 of 14 cells under scoped replanning; coupling prices to
+planned routes also creates feedback between pricing and replanning.
+Both remain selectable in the lab as rejected controls.
+
+None of the nine combined-signal arms improved on its better
+component in the 14-cell screen. A shared cap clipping the combined
+signal is one plausible explanation; the experiment did not
+instrument the cause.
 
 ## Route spreading composes with pricing
 
 The library's equal-cost tie-break seed
 (`PathAgentReplanOptions::equal_cost_tie_seed` on
 `process_weighted_path_agent_replans`) distributes agents across
-routes the planner scores identically. Pricing creates gradients;
-spreading distributes the ties that remain -- and the screening
-found them complementary everywhere, never conflicting. Notably,
-spreading repaired the queue specialist's one recorded miss. If you
-adopt one congestion answer, consider both: they address different
-halves of the same problem. Gate the seeded wave on an observed
-congestion signal (the lab's model fires it once per journey leg,
-only above a waits threshold, and skips topologies that already offer
-several openings -- that gating is application policy, not library
-behaviour).
+routes the planner scores identically. Adding it lowered the
+aggregate settle-tick ratio for each of the three screened pricing
+policies, and changed the stall-gated queue policy from 13 of 14 safe
+cells to 14 of 14. **This does not claim universal benefit**: the
+comparison covers seven scenarios at 256 and 1,024 agents on one
+platform.
+
+The lab permits one seeded replan wave per journey leg after its
+waits threshold, and suppresses the wave when the topology already
+offers several openings. Those gates are application policy, not
+library behaviour.
 
 ## Boundaries recorded with the evidence
 
-- Detour-shaped maps whose walls are never contended pay for pricing
-  without benefit (the worst recorded geometry regressed ~1.5x under
-  the value champion). If your map has no real contention, leave
-  pricing off.
-- Fixpoint-style consumers needing per-seed classification stability
-  should not arm pricing: 17 of 132 marginal seeds reclassified
-  chaotically in the substrate screen.
-- All screening beyond the base recipe is single-platform,
-  two-population evidence; a supported-population matrix for the
-  leading policies is planned and this page will be updated from it.
+- The supported nearby-agent recipe regressed the goal-wall geometry
+  by a geometric mean of 1.49x across 64 populations. In the
+  cooling-memory screen, the 256- and 1,024-agent ratios were 0.99x
+  and 1.30x, for a geometric mean of about 1.13x. The experiments
+  measured outcomes, not wall contention: if your map has no real
+  contention, leave pricing off.
+- On the fixpoint substrate, 17 of 132 marginal seeds changed
+  terminal classification in both directions under pricing. Consumers
+  requiring stable per-seed classification under that settle rule
+  should leave pricing disabled.
+- **Screened, not promoted.** No supported-population, two-platform
+  result exists for the cooling, stalled-agent, or queue policies.
 
-## See it, then copy it
+## Lab and example
 
-- The [congestion lab](https://tess.owx.dev/latest/demo/congestion/) runs every
-  policy in this table (plus the period and cap variants) live in the
-  browser over the same simulation the tutorial colony demo uses,
-  with a price-heat overlay and wall painting.
+- The [congestion lab](https://tess.owx.dev/latest/demo/congestion/)
+  runs the recipe, five screened policies, two rejected controls, and
+  three period or price-cap variants live in the browser over the
+  same simulation the colony tutorial uses, with a price overlay and
+  wall painting.
 - `examples/congestion_pricing.cc` is the compile-checked, copyable
-  implementation of the full protocol -- signal, publish, scoped
-  replan, disarm -- against public APIs only.
+  implementation of the full protocol — signal, publish, replan
+  scoping, and restore — against public APIs only.

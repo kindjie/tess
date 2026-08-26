@@ -20,8 +20,10 @@ invalidates a route; decreases trigger nothing). The amendment-2
 capture -- global replan on every repricing -- is superseded and
 recoverable from git history; live browser observation exposed its
 defect (replan-queue saturation, far-field oscillation, and per-tick
-compute inflated up to ~500x, e.g. the memory policy at ~84 ms/tick
-vs ~1.6 ms scoped).
+compute inflated severely -- the recorded case is the memory policy
+at ~84 ms/tick vs ~1.6 ms scoped, about 53x; larger ratios were
+observed on other policies in the same browser session but were not
+captured).
 
 ## Productization note (post-screen)
 
