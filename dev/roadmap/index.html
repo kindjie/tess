@@ -647,6 +647,8 @@
       
         
       
+        
+      
     
     
     
@@ -772,6 +774,34 @@
     
   
     Pathfinding strategy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/congestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Congestion pricing
   
 
     
@@ -2085,9 +2115,11 @@ code that assumes they do.</p>
   yet been evaluated against their separate promotion gates.</li>
 <li><strong>Flow, congestion, and influence fields</strong> (<a href="https://github.com/kindjie/tess/blob/main/docs/tdd/flow-distance-fields.md">TDD</a>) — only
   distance fields, weighted persistent products, nearest-target queries, and
-  coarse chunk corridors are released. Today's fallback
+  coarse chunk corridors are released. Today's supported answer
   for congestion-aware routing: write congestion from your simulation
-  into a cost field and route through a weighted <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>.</li>
+  into a cost field and route through a weighted <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> -- the
+  measured recipe, its policies, and a browser laboratory are in the
+  <a href="../guide/congestion/">congestion pricing guide</a>.</li>
 <li><strong>Additional GPU algorithms</strong> (<a href="https://github.com/kindjie/tess/blob/main/docs/tdd/gpu-backend-interface.md">TDD</a>) — the descriptor/concept
   layer and optional stable-C-API WebGPU transport are released. Consumers
   still provide algorithm pipelines and bindings, and the CPU stays

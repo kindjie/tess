@@ -16,7 +16,7 @@
         <link rel="prev" href="../writes/">
       
       
-        <link rel="next" href="../../pathfinding-strategy-comparison/">
+        <link rel="next" href="../congestion/">
       
       
         
@@ -649,6 +649,8 @@
       
         
       
+        
+      
     
     
     
@@ -920,6 +922,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../congestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Congestion pricing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2237,21 +2267,24 @@ cost climb.</p>
 </ul>
 <h2 id="horizon">Horizon</h2>
 <div class="admonition note">
-<p class="admonition-title">Planned</p>
-<p>Congestion, flow, and influence fields are designed but not shipped
-(see the <a href="../../roadmap/">roadmap</a>, which includes the interim
-cost-field fallback). Do not build agent code that assumes a
-congestion API.</p>
+<p class="admonition-title">Congestion boundary</p>
+<p>Flow and influence fields are designed but not shipped; see the
+<a href="../../roadmap/">roadmap</a>. tess does not ship a congestion field or
+a congestion-specific planner. Congestion-aware routing is instead
+a validated caller recipe over the shipped cost-field surface; the
+<a href="../congestion/">congestion pricing guide</a> records its evidence and
+the screened alternatives.</p>
 <p>Routing itself is optimal per agent — a route is planned without
 reference to where other agents are. Contention is resolved at <em>move</em>
 time instead, by two shipped tiers. Joint movement admits a tick's
-moves together so agents never stack, and by default (<code>SwapPolicy::
-Forbid</code>) a mutually blocked pair stays blocked rather than exchanging
+moves together so agents never stack, and by default
+(<code>SwapPolicy::Forbid</code>) a mutually blocked pair stays blocked rather than exchanging
 tiles; <code>Permit</code> and <code>PermitOnDeadlock</code> relax that deliberately. The
 opt-in PIBT tier additionally lets a blocked agent yield <em>off</em> its
 route, which resolves a head-on that <code>Forbid</code> alone leaves blocked.
-Neither tier spreads a crowd across alternative routes, which is what
-a congestion field would do. See
+Neither movement tier spreads a crowd across alternative routes.
+At planning time, callers can price congested tiles or set
+<code>equal_cost_tie_seed</code> to distribute routes of equal cost. See
 <a href="../../architecture/simulation/">simulation</a>.</p>
 </div>
 
@@ -2309,13 +2342,13 @@ a congestion field would do. See
         
         
           
-          <a href="../../pathfinding-strategy-comparison/" class="md-footer__link md-footer__link--next" aria-label="Next: Interactive comparison">
+          <a href="../congestion/" class="md-footer__link md-footer__link--next" aria-label="Next: Congestion pricing">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Interactive comparison
+                Congestion pricing
               </div>
             </div>
             <div class="md-footer__button md-icon">

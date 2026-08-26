@@ -1,5 +1,6 @@
 var NAVTREEINDEX3 =
 {
+"structtess_1_1diagnostics_1_1TimingSnapshot.html":[2,0,0,1,14],
 "structtess_1_1diagnostics_1_1TraceCategoryStats.html":[2,0,0,1,16],
 "structtess_1_1diagnostics_1_1TraceRecord.html":[2,0,0,1,17],
 "structtess_1_1diagnostics_1_1Warning.html":[2,0,0,1,18],

@@ -238,6 +238,7 @@ var NAVTREEINDEX1 =
 "panels_8h_source.html":[3,0,1,0,2,0,0],
 "path_8h_source.html":[3,0,1,0,9,3],
 "path__agent_8h_source.html":[3,0,1,0,12,6],
+"path__agent__replan__selection_8h_source.html":[3,0,1,0,5,2],
 "path__agent__tick_8h_source.html":[3,0,1,0,12,7],
 "path__runtime_8h_source.html":[3,0,1,0,9,4],
 "path__view_8h_source.html":[3,0,1,0,9,5],
@@ -248,6 +249,5 @@ var NAVTREEINDEX1 =
 "portal__route_8h_source.html":[3,0,1,0,9,6],
 "portal__segment__cache_8h_source.html":[3,0,1,0,9,7],
 "precheck_8h_source.html":[3,0,1,0,9,8],
-"queued_8h_source.html":[3,0,1,0,8,2],
-"registered__maintenance_8h_source.html":[3,0,1,0,5,2]
+"queued_8h_source.html":[3,0,1,0,8,2]
 };

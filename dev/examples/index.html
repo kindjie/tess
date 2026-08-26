@@ -771,6 +771,8 @@
       
         
       
+        
+      
     
     
     
@@ -896,6 +898,34 @@
     
   
     Pathfinding strategy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/congestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Congestion pricing
   
 
     
@@ -2072,6 +2102,14 @@ additionally need their ECS gates, which the <code>dev</code> preset turns on):<
   walls you draw (walls survive resets), with completed and crowd-turnaround
   leg counters, smooth presentation-only movement, a C++-update cost readout,
   and a retained-routes vs replan-every-tick toggle.</li>
+<li><a href="https://tess.owx.dev/latest/demo/congestion/">Congestion lab</a> — the
+  colony simulation with the supported-coverage nearby-agent recipe,
+  five additional screened policies, two rejected controls, and three
+  period or price-cap variants selectable live, with a price overlay,
+  wall painting, and the shipped equal-cost route-spreading toggle.
+  The <a href="../guide/congestion/">congestion pricing guide</a> states the
+  evidence tier and boundary for each result; the native runner
+  executes the same model without browser presentation.</li>
 <li><a href="https://tess.owx.dev/latest/demo/diagnostics/">Live diagnostics</a> — real Dear ImGui
   panels over path, queued-phase, timing, trace, and consumer-instrumented
   allocation snapshots. Mirrored HTML controls keep the demo keyboard
@@ -2110,6 +2148,16 @@ additionally need their ECS gates, which the <code>dev</code> preset turns on):<
   composition compiled to WebAssembly. Its model, Wasm adapter, native
   self-check, browser controller, and page are separate so the library
   patterns are visible without platform glue interrupting them.</li>
+<li><a href="https://github.com/kindjie/tess/blob/main/examples/congestion_pricing.cc"><code>congestion_pricing.cc</code></a> — a compile-checked
+  congestion-pricing recipe against public APIs only: it computes tile
+  prices, marks the changed chunks, requests replans for affected
+  retained routes through the experimental route-crossing helper, and
+  restores unit costs when disabled. Snippet-synced into the
+  <a href="../guide/congestion/">congestion pricing guide</a>.</li>
+<li><a href="https://github.com/kindjie/tess/tree/main/examples/web_congestion"><code>web_congestion</code></a> — the source of the
+  <a href="https://tess.owx.dev/latest/demo/congestion/">congestion lab</a>: wraps
+  the colony model through its native seam so the tutorial stays clean
+  while every pricing experiment lives here.</li>
 <li><a href="https://github.com/kindjie/tess/tree/main/examples/web_traffic"><code>web_traffic</code></a> — the source of the
   <a href="https://tess.owx.dev/latest/demo/traffic/">Traffic Lab</a>: a deterministic
   1024×512 congestion overview with static terrain caching, separately

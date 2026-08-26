@@ -1,5 +1,6 @@
 var NAVTREEINDEX2 =
 {
+"registered__maintenance_8h_source.html":[3,0,1,0,5,3],
 "render__delta_8h_source.html":[3,0,1,0,12,9],
 "request_8h_source.html":[3,0,1,0,9,9],
 "residency_8h_source.html":[3,0,1,0,14,3],
@@ -248,6 +249,5 @@ var NAVTREEINDEX2 =
 "structtess_1_1diagnostics_1_1FlowHealthSnapshot.html#a19ba39ea8c19dff56c5a8c86f7beb452":[2,0,0,1,5,0],
 "structtess_1_1diagnostics_1_1NullWarningSink.html":[2,0,0,1,6],
 "structtess_1_1diagnostics_1_1PathCounters.html":[2,0,0,1,7],
-"structtess_1_1diagnostics_1_1QueuedPhaseCounters.html":[2,0,0,1,8],
-"structtess_1_1diagnostics_1_1TimingSnapshot.html":[2,0,0,1,14]
+"structtess_1_1diagnostics_1_1QueuedPhaseCounters.html":[2,0,0,1,8]
 };

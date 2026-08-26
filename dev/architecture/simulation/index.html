@@ -647,6 +647,8 @@
       
         
       
+        
+      
     
     
     
@@ -772,6 +774,34 @@
     
   
     Pathfinding strategy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/congestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Congestion pricing
   
 
     
@@ -2663,8 +2693,13 @@ frame through the lost-update-safe observe/clear-observed protocol.</p>
 <li><code>PathAgentFrameStats</code> counts submitted and completed work; every
   <code>PathStatus</code> outcome (<code>found</code>, <code>invalid_start</code>, <code>invalid_goal</code>, <code>no_path</code>,
   <code>indeterminate</code>, <code>cost_overflow</code>, <code>not_computed</code>, and <code>no_candidate</code>);
-  <code>precheck_ruled_out</code>; advanced steps; arrivals; blocked waits; and a
-  <code>MovementFailureCounts</code>.
+  <code>precheck_ruled_out</code>; <code>expanded_nodes</code>; advanced steps; arrivals; blocked
+  waits; and a <code>MovementFailureCounts</code>.
+  <code>expanded_nodes</code> totals the search nodes expanded by the completed results a
+  call applied. A replan budget still bounds the number of searches rather than
+  the work inside one, so this counter is what a caller reads to bound planning
+  by search effort instead: it is deterministic, so a budget derived from it
+  replays exactly, which a wall-clock budget would not.
   <code>precheck_ruled_out</code> is the number of agents whose goal an optional topology
   precheck proved unreachable before A* (a subset of <code>no_path</code>; see the path
   runtime's <code>precheck_ruled_out</code>). <code>add_path_agent_stats(lhs, rhs)</code> accumulates
