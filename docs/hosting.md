@@ -52,8 +52,7 @@ root URLs, and `robots.txt` names it so crawlers can read page directives.
 - Pushing to `main` publishes `/dev/`.
 - Pushing a stable `v<major>.<minor>.<patch>` tag publishes
   `/<major>.<minor>/`; the stable root and `latest` compatibility tree move
-  only
-  when the tag's version is at least the currently aliased one, so a
+  only when the tag's version is at least the currently aliased one, so a
   patch on an older minor line refreshes its own tree without pointing
   the site backward.
 - A prerelease tag (for example `v1.0.0-rc.1`) publishes nothing:
@@ -62,9 +61,8 @@ root URLs, and `robots.txt` names it so crawlers can read page directives.
 - Accepted residual: the alias guard compares versions numerically, so
   a mistyped `publish_version` that is numerically newer than every
   release (say `9.9`) would create a junk tree and take `latest` plus the
-  stable root; no
-  guard can distinguish it from a legitimate retroactive publish of a
-  genuinely newer tag, so the dispatch input is the operator's
+  stable root; no guard can distinguish it from a legitimate retroactive
+  publish of a genuinely newer tag, so the dispatch input is the operator's
   responsibility.
 - Dispatching the workflow against a ref with `publish_version` set
   (validated as `<major>.<minor>`) does the same for that ref, which is
@@ -73,9 +71,13 @@ root URLs, and `robots.txt` names it so crawlers can read page directives.
 
 Pull requests build and verify without publishing anything.
 
-All main, tag, and publishing-dispatch runs share one concurrency group. This
-prevents one run from replacing the Pages artifact while another updates the
-storage branch. Pull-request verification keeps a separate per-PR group and
+Every publishing run receives its own concurrency identity. Before touching
+the storage branch, its publish job waits for every older active non-PR
+documentation run to finish. This FIFO turn preserves clustered main, tag,
+and publishing-dispatch events; unlike GitHub's native concurrency queue, it
+does not discard an existing pending run when a newer one arrives. The turn
+also covers Pages deployment, so storage and the served artifact move in the
+same order. Pull-request verification keeps a separate per-PR group and
 cancels only superseded runs of that PR.
 
 ## GitHub settings

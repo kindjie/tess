@@ -1,15 +1,24 @@
 """Tests for the final GitHub Pages publication assembler."""
 
 import gzip
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "publish_docs_root.py"
 SITE = "https://tess.owx.dev/"
+QUEUE_SPEC = importlib.util.spec_from_file_location(
+  "wait_for_publish_turn", ROOT / "tools" / "wait_for_publish_turn.py"
+)
+assert QUEUE_SPEC is not None and QUEUE_SPEC.loader is not None
+QUEUE = importlib.util.module_from_spec(QUEUE_SPEC)
+QUEUE_SPEC.loader.exec_module(QUEUE)
 
 
 def _write(path: Path, text: str) -> None:
@@ -60,6 +69,10 @@ def _make_pages_tree(root: Path) -> None:
   )
   _write(root / "latest" / "assets" / "card.png", "card")
   _write(root / "latest" / "demo" / "module.wasm", "wasm")
+  _write(
+    root / "latest" / "robots.txt",
+    f"User-agent: *\nAllow: /\nSitemap: {SITE}latest/sitemap.xml\n",
+  )
   _write(root / "0.13" / "index.html", _version_page("0.13"))
   _write(root / "dev" / "index.html", _version_page("dev"))
   sitemap = (
@@ -175,3 +188,66 @@ def test_sync_rejects_unowned_root_collisions(tmp_path: Path):
   assert result.returncode != 0
   assert "unowned root path would be overwritten: assets" in result.stderr
   assert (tmp_path / "assets" / "operator-owned.txt").read_text() == "keep"
+
+
+def test_sync_rejects_new_collision_after_manifest_exists(tmp_path: Path):
+  """A later build cannot claim a path absent from the ownership manifest."""
+  _make_pages_tree(tmp_path)
+  assert _run_tool("sync", tmp_path).returncode == 0
+  old_index = (tmp_path / "index.html").read_text()
+  _write(tmp_path / "downloads" / "operator-owned.txt", "keep")
+
+  source = tmp_path / "verified"
+  _write(source / "index.html", f'<link rel="canonical" href="{SITE}">')
+  _write(source / "downloads" / "release.zip", "archive")
+
+  result = _run_tool("sync", tmp_path, "--root-source", source)
+
+  assert result.returncode != 0
+  assert "unowned root path would be overwritten: downloads" in result.stderr
+  assert (tmp_path / "index.html").read_text() == old_index
+  assert (tmp_path / "downloads" / "operator-owned.txt").read_text() == "keep"
+
+
+@pytest.mark.parametrize("entry", [".", "..", "guide/child", "/absolute"])
+def test_sync_rejects_unsafe_manifest_components_without_deleting(
+  tmp_path: Path, entry: str
+):
+  """Malformed ownership cannot escape or erase the publication root."""
+  _make_pages_tree(tmp_path)
+  _write(
+    tmp_path / ".tess-root-current.json",
+    json.dumps({"schema": 1, "paths": [entry]}),
+  )
+  sentinel = tmp_path.parent / "outside-sentinel"
+  _write(sentinel, "keep")
+
+  result = _run_tool("sync", tmp_path)
+
+  assert result.returncode != 0
+  assert "invalid .tess-root-current.json path inventory" in result.stderr
+  assert (tmp_path / "latest" / "index.html").exists()
+  assert sentinel.read_text() == "keep"
+
+
+def test_publication_turn_waits_only_for_older_non_pr_runs():
+  """The FIFO excludes PRs and never lets a newer run block an older one."""
+  runs = [
+    {"id": 11, "run_number": 11, "event": "push", "status": "in_progress"},
+    {"id": 12, "run_number": 12, "event": "pull_request", "status": "queued"},
+    {"id": 13, "run_number": 13, "event": "workflow_dispatch", "status": "waiting"},
+    {"id": 14, "run_number": 14, "event": "push", "status": "completed"},
+    {"id": 15, "run_number": 15, "event": "push", "status": "requested"},
+  ]
+
+  assert [run["id"] for run in QUEUE.older_active_runs(runs, 15)] == [11, 13]
+  assert QUEUE.older_active_runs(runs, 11) == []
+
+
+def test_publication_turn_fails_closed_on_malformed_api_run():
+  """Unknown active-run identity cannot be mistaken for an empty queue."""
+  with pytest.raises(QUEUE.QueueError, match="numeric identity"):
+    QUEUE.older_active_runs(
+      [{"id": "bad", "run_number": 1, "event": "push", "status": "queued"}],
+      2,
+    )

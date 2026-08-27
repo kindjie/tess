@@ -1277,8 +1277,9 @@ def test_pages_publication_serializes_and_checks_the_uploaded_tree():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "pages.yml").read_text()
 
-  assert "&& github.ref || 'publish'" in workflow
+  assert "&& github.ref || github.run_id" in workflow
   assert "group: pages-${{ github.ref }}" not in workflow
+  wait = "python3 tools/wait_for_publish_turn.py"
   assert "name: built-documentation" in workflow
   sync = (
     "python3 tools/publish_docs_root.py sync \\\n"
@@ -1286,13 +1287,19 @@ def test_pages_publication_serializes_and_checks_the_uploaded_tree():
   )
   prepare = "python3 tools/publish_docs_root.py prepare-artifact build/pages"
   check = "python3 tools/publish_docs_root.py check build/pages"
+  push = "git -C build/pages push origin HEAD:gh-pages"
   upload = "- name: Upload Pages artifact"
+  assert wait in workflow
   assert sync in workflow
   assert prepare in workflow
   assert check in workflow
+  assert push in workflow
+  assert workflow.index(wait) < workflow.index("mike deploy --update-aliases")
   assert workflow.index(sync) < workflow.index(prepare)
   assert workflow.index(prepare) < workflow.index(check)
-  assert workflow.index(check) < workflow.index(upload)
+  assert workflow.index(check) < workflow.index(push)
+  assert workflow.index(push) < workflow.index(upload)
+  assert "mike deploy --push" not in workflow
   assert "mike set-default" not in workflow
 
 

@@ -19,8 +19,11 @@ The assembler owns only paths recorded in a storage-branch manifest and fails
 closed on an unowned collision. The first deployment can bootstrap from the
 existing `latest` copy; subsequent development deployments preserve the root,
 and stable releases replace it from the same complete artifact already checked
-for links and browser behavior. Main, tag, and publishing-dispatch workflows
-share one publication queue so storage and Pages artifact updates cannot race.
+for links and browser behavior. A tested FIFO turn makes each publisher wait
+for every older active non-PR documentation run. This avoids GitHub
+concurrency's one-pending replacement behavior while serializing storage and
+Pages artifact updates. The complete served tree is checked before its single
+persistent push.
 
 A GCP edge remains deferred. Direct GitHub Pages is the smaller, portable
 solution for canonical URLs and ordinary static documentation. An edge layer

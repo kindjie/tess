@@ -7,7 +7,7 @@ import argparse
 import gzip
 import html
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import sys
@@ -52,11 +52,19 @@ def _read_manifest(pages: Path) -> list[str] | None:
     data = json.loads(path.read_text())
   except (json.JSONDecodeError, OSError) as error:
     raise PublicationError(f"invalid {MANIFEST}: {error}") from error
+  if not isinstance(data, dict) or data.get("schema") != 1:
+    raise PublicationError(f"invalid {MANIFEST} schema")
   paths = data.get("paths")
   if not isinstance(paths, list) or not all(
-    isinstance(item, str) and item and "/" not in item for item in paths
+    isinstance(item, str)
+    and item not in {"", ".", ".."}
+    and "\0" not in item
+    and PurePosixPath(item).parts == (item,)
+    for item in paths
   ):
     raise PublicationError(f"invalid {MANIFEST} path inventory")
+  if len(set(paths)) != len(paths):
+    raise PublicationError(f"duplicate path in {MANIFEST} inventory")
   if any(_reserved(item) for item in paths):
     raise PublicationError(f"{MANIFEST} claims a reserved path")
   return paths
@@ -159,27 +167,46 @@ def _sync_root(pages: Path, source: Path) -> None:
   items = _source_items(source)
   incoming = [item.name for item in items]
 
-  if owned is None:
-    for name in incoming:
-      destination = pages / name
-      if not destination.exists():
-        continue
-      if name == "index.html" and _looks_like_mike_redirect(destination):
-        continue
-      raise PublicationError(f"unowned root path would be overwritten: {name}")
-    owned = []
-
   with tempfile.TemporaryDirectory(prefix="tess-root-current-") as temp:
     staged = Path(temp)
     for item in items:
       _copy_item(item, staged / item.name)
     _rewrite_root_copy(staged, _latest_version(pages))
 
+    previous = set(owned or [])
+    for name in incoming:
+      destination = pages / name
+      destination_exists = destination.exists() or destination.is_symlink()
+      if name in previous or not destination_exists:
+        continue
+      if (
+        owned is None
+        and name == "index.html"
+        and _looks_like_mike_redirect(destination)
+      ):
+        continue
+      # The migration already has a root robots.txt written by this workflow.
+      # Claim it only when it is byte-identical to the rewritten stable copy;
+      # any operator variation remains an unowned collision.
+      if (
+        owned is None
+        and name == "robots.txt"
+        and destination.is_file()
+        and (staged / name).is_file()
+        and destination.read_bytes() == (staged / name).read_bytes()
+      ):
+        continue
+      raise PublicationError(
+        f"unowned root path would be overwritten: {name}"
+      )
+    if owned is None:
+      owned = []
+
     for name in owned:
       _remove(pages / name)
     for name in incoming:
       destination = pages / name
-      if destination.exists():
+      if destination.exists() or destination.is_symlink():
         _remove(destination)
       _copy_item(staged / name, destination)
   _write_manifest(pages, incoming)

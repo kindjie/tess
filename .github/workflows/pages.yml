@@ -21,13 +21,14 @@ on:
 permissions:
   contents: read
 
-# Pull requests cancel only their own superseded verification. Every event
-# capable of publishing shares one queue, so main, tag, and dispatch runs
-# cannot race while replacing the Pages artifact or updating gh-pages.
+# Pull requests cancel only their own superseded verification. Publishing
+# runs stay independently runnable: the publish job's tested FIFO turn waits
+# for every older non-PR run instead of GitHub concurrency's lossy one-pending
+# slot, so clustered main/tag/dispatch events are preserved and serialized.
 concurrency:
   group: >-
     pages-${{ github.event_name == 'pull_request'
-      && github.ref || 'publish' }}
+      && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -326,10 +327,11 @@ jobs:
     if: needs.select.outputs.version != ''
     needs: [select, build]
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     # The only write token in this workflow. It commits the built tree to the
     # storage branch; it never touches main and never publishes a release.
     permissions:
+      actions: read
       contents: write
       pages: read
     steps:
@@ -337,9 +339,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Not persisted, matching every other checkout here: a token in
-          # .git/config is readable by anything the job later runs. The mike
-          # push below authenticates for its own commands instead.
+          # .git/config is readable by anything the job later runs. The final
+          # publication push authenticates for its own commands instead.
           persist-credentials: false
+
+      - name: Wait for the publication turn
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python3 tools/wait_for_publish_turn.py
+          --repo "$GITHUB_REPOSITORY"
+          --workflow pages.yml
+          --run-number "$GITHUB_RUN_NUMBER"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -395,6 +406,7 @@ jobs:
           # No `|| true`: the branch exists, so a failed fetch means mike
           # would commit onto an orphan and drop every published version.
           git fetch --no-tags --depth=1 origin gh-pages
+          git branch --force gh-pages FETCH_HEAD
 
           # mike shells out to mkdocs, so the virtualenv has to be on PATH
           # rather than only addressed by absolute path.
@@ -422,15 +434,18 @@ jobs:
           # Keep a copy alias so old non-HTML /latest/ resources remain
           # available. The publication helper replaces alias HTML with exact
           # root redirects after making the root tree authoritative.
-          mike deploy --push --update-aliases \
+          deploy_names=("$VERSION")
+          if [ -n "$ALIAS" ]; then
+            deploy_names+=("$ALIAS")
+          fi
+          mike deploy --update-aliases \
             --alias-type copy \
             --branch gh-pages \
             --title "$VERSION" \
-            "$VERSION" $ALIAS
+            "${deploy_names[@]}"
 
           rm -rf build/pages
-          git fetch --no-tags --depth=1 origin gh-pages
-          git worktree add build/pages FETCH_HEAD
+          git worktree add build/pages gh-pages
 
           root_args=()
           if [ -n "$ALIAS" ]; then
@@ -443,16 +458,18 @@ jobs:
           cp docs/robots.txt build/pages/robots.txt
 
           # Root-current content and compatibility redirects are persistent
-          # publication state. Commit them to storage before applying
+          # publication state. Commit them locally before applying
           # artifact-only indexing metadata to immutable version trees.
           git -C build/pages add --all
           if ! git -C build/pages diff --cached --quiet; then
             git -C build/pages commit -m \
               "docs: assemble stable root publication"
-            git -C build/pages push origin HEAD:gh-pages
           fi
           python3 tools/publish_docs_root.py prepare-artifact build/pages
           python3 tools/publish_docs_root.py check build/pages
+          # Nothing reaches persistent storage until the complete served tree
+          # has passed the same final checks as the Pages artifact.
+          git -C build/pages push origin HEAD:gh-pages
           git config --local --unset "http.extraheader"
 
       - name: Configure Pages
