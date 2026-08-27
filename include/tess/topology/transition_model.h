@@ -257,6 +257,22 @@ struct CostExpressionMaximum<movement::SelectCost<Tag, Set, Clear>, Schema> {
       set_max::value > clear_max::value ? set_max::value : clear_max::value;
 };
 
+// Absorption only lowers the value, so the saturating sum of the two
+// operand maxima stays a sound upper bound.
+template <typename Base, typename Overlay, typename Schema>
+struct CostExpressionMaximum<movement::OverlayCost<Base, Overlay>, Schema> {
+  using base_max = CostExpressionMaximum<Base, Schema>;
+  using overlay_max = CostExpressionMaximum<Overlay, Schema>;
+  static constexpr bool known = base_max::known && overlay_max::known;
+  static constexpr std::uint32_t value = [] {
+    const auto sum = static_cast<std::uint64_t>(base_max::value) +
+                     static_cast<std::uint64_t>(overlay_max::value);
+    constexpr auto ceiling =
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max());
+    return static_cast<std::uint32_t>(sum > ceiling ? ceiling : sum);
+  }();
+};
+
 template <typename Class, typename Schema, typename = void>
 struct MovementClassMaximum {
   static constexpr bool known = false;

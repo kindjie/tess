@@ -287,6 +287,18 @@ marker used by compile-time validation and normalization.
 - Cost expressions (0 == impassable, u32-saturated): `UnitCost`,
   `ConstantCost<N>`, `FieldCost<CostTag>`, `SelectCost<SelTag, WhenSet,
   WhenClear>`. `normalize_cost` is byte-exact with the weighted A* leaf.
+  Experimental `tess::experimental::OverlayCost<Base, Overlay>`
+  (`include/tess/experimental/overlay_cost.h`) prices a base cost with
+  an additive overlay — terrain plus a congestion price or a toll. It is
+  zero if and only if its base is zero, so an overlay never makes
+  impassable ground enterable; that is the same rule the forward probe
+  applies where a provider's cost meets a class's entry cost. Its
+  overlay operand is the one place in this vocabulary where zero means
+  "no surcharge" rather than impassable, so the operands are not
+  interchangeable. Absorption is a backstop, not a substitute for
+  `NotZero<BaseTag>` in the passability predicate: that is what keeps
+  the region graph exact, and the minimum-step APIs that substitute
+  `UnitCost` for a class's cost expression see only the predicate.
 - Field-backed adapters: `UnitCostFieldMovement<PassableTag>` carries the raw
   tag and a `passable_span` fast path so the identity region flood remains a
   byte-identical `field_span` scan;

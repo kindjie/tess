@@ -142,6 +142,45 @@ struct FieldCost {
   }
 };
 
+// cost = Base == 0 ? 0 : saturating(Base + Overlay).
+// Base/Overlay are cost EXPRESSION types, not values.
+/**
+ * Prices a base cost with an additive overlay, preserving impassability.
+ *
+ * `eval()` is zero if and only if `Base::eval()` is zero: an overlay
+ * prices a tile the base already admits, and can never make an
+ * impassable one enterable. The operands are therefore not
+ * interchangeable, which is why this is not spelled as a sum. It
+ * matches the rule the transition model already applies where a
+ * provider's cost meets a class's entry cost: pricing an edge does not
+ * override destination entry legality.
+ *
+ * The overlay's zero means "no surcharge". That is the one place in
+ * this vocabulary where zero is not the impassable sentinel.
+ *
+ * Absorption is a backstop, not a substitute for putting the base's
+ * impassability in the passability predicate. `NotZero<BaseTag>` there
+ * is what keeps the region graph exact, and the minimum-step APIs that
+ * substitute `UnitCost` for a class's cost expression see only the
+ * predicate.
+ */
+template <typename Base, typename Overlay>
+struct OverlayCost {
+  template <typename Page>
+  [[nodiscard]] static constexpr std::uint32_t eval(const Page& page,
+                                                    LocalTileId id) noexcept {
+    const auto base = Base::eval(page, id);
+    if (base == 0) {
+      return 0;
+    }
+    const auto sum = static_cast<std::uint64_t>(base) +
+                     static_cast<std::uint64_t>(Overlay::eval(page, id));
+    constexpr auto ceiling =
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max());
+    return static_cast<std::uint32_t>(sum > ceiling ? ceiling : sum);
+  }
+};
+
 // cost = SelTag(truthy) ? WhenSet::eval(page, id) : WhenClear::eval(page, id).
 // WhenSet/WhenClear are cost EXPRESSION types, not values.
 /// Selects between two cost expressions using field `SelTag`.
