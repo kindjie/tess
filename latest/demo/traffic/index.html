@@ -1,62 +1,19 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description"
-          content="A 1024 by 512 tess WebAssembly traffic laboratory">
-    <title>tess Traffic Lab</title>
-    <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css">
-  </head>
-  <body>
-    <main>
-      <header>
-        <a class="brand" href="../../"
-           aria-label="Read the tess documentation">
-          <img src="logo.svg" alt="tess">
-        </a>
-        <p class="eyebrow">Large-grid WebAssembly experiment</p>
-        <h1>Traffic Lab</h1>
-        <p>
-          Compare deterministic congestion patterns across a 1024×512 world
-          with 1,024 agents. The full map stays visible: terrain is cached
-          after each scenario reset, while moving agents are rendered on a
-          separate layer. Exact route planning is limited to eight searches
-          per fixed tick.
-        </p>
-      </header>
-
-      <section class="lab" aria-label="Traffic Lab simulation">
-        <div class="toolbar" role="toolbar" aria-label="Traffic Lab controls">
-          <label for="scenario">Scenario</label>
-          <select id="scenario">
-            <option value="0">Aligned</option>
-            <option value="1">Shuffled crossing</option>
-            <option value="2">Funnel</option>
-            <option value="3">Multi-gate</option>
-          </select>
-          <button id="reset">Reset</button>
-          <button id="measurement-snapshot" hidden>Snapshot latency</button>
-        </div>
-        <canvas id="traffic-world" width="1024" height="512"
-                aria-label="1024 by 512 traffic overview"></canvas>
-        <div class="status" aria-live="polite">
-          <span id="message">Loading WebAssembly…</span>
-          <span id="metrics"></span>
-        </div>
-        <pre id="measurement-output" class="measurement-output" hidden></pre>
-      </section>
-
-      <footer>
-        <a href="../colony/">Try the colony tutorial</a>
-        <a
-          href="https://github.com/kindjie/tess/tree/main/examples/web_traffic">
-          View this example's source
-        </a>
-      </footer>
-    </main>
-    <script src="tess-traffic.js"></script>
-    <script src="app.js"></script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <title>Redirecting to tess documentation</title>
+  <meta name="robots" content="noindex, follow">
+  <link rel="canonical" href="https://tess.owx.dev/demo/traffic/">
+  <meta http-equiv="refresh" content="0; url=https://tess.owx.dev/demo/traffic/">
+  <script>
+    const target = new URL("https://tess.owx.dev/demo/traffic/");
+    target.search = window.location.search;
+    target.hash = window.location.hash;
+    window.location.replace(target.href);
+  </script>
+</head>
+<body>
+  <p>This page moved to <a href="https://tess.owx.dev/demo/traffic/">https://tess.owx.dev/demo/traffic/</a>.</p>
+</body>
 </html>

@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "paths": [
+    "404.html",
+    "api",
+    "architecture",
+    "assets",
+    "demo",
+    "examples",
+    "favicon.ico",
+    "for-agents",
+    "getting-started",
+    "guide",
+    "index.html",
+    "integration-policy",
+    "llms.txt",
+    "packaging",
+    "pathfinding-strategy-comparison",
+    "performance",
+    "roadmap",
+    "robots.txt",
+    "search",
+    "sitemap.xml",
+    "sitemap.xml.gz",
+    "stylesheets",
+    "support",
+    "terminology",
+    "upgrade-1.0",
+    "use-cases"
+  ]
+}

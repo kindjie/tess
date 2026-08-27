@@ -1,0 +1,2574 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+      
+      
+      
+        <link rel="canonical" href="https://tess.owx.dev/integration-policy/">
+      
+      
+        <link rel="prev" href="../use-cases/">
+      
+      
+        <link rel="next" href="../upgrade-1.0/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/tess-symbol.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Integration policy - tess</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    <meta property="og:type" content="website">
+  <meta property="og:site_name" content="tess">
+  <meta property="og:title" content="Integration policy - tess">
+  <meta property="og:description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+  <meta property="og:url" content="https://tess.owx.dev/integration-policy/">
+  <meta property="og:image" content="https://tess.owx.dev/assets/tess-social-preview.png">
+  <meta property="og:image:width" content="2560">
+  <meta property="og:image:height" content="1280">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Integration policy - tess">
+  <meta name="twitter:description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+  <meta name="twitter:image" content="https://tess.owx.dev/assets/tess-social-preview.png">
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#integration-policy" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="tess" class="md-header__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            tess
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Integration policy
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Decision guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://tess.owx.dev/api/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../performance/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Performance
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../use-cases/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Use cases
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="tess" class="md-nav__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    tess
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Decision guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/residency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Residency
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/writes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/pathfinding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding strategy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pathfinding-strategy-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology and precheck
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/entities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Entities and ECS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/presentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../terminology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terminology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility evidence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/shape/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shapes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/persistence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Persistence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/block/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Block kernels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/no-exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exception-free builds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/query/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintenance experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/spatial-coordination/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial coordination
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/queued-operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Queued operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/simulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation and scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/ecs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ECS integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://tess.owx.dev/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../use-cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration policy
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exceptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rtti" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RTTI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#determinism-across-thread-counts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Determinism across thread counts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thread-pool-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thread-pool ownership
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#steady-state-allocations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Steady-state allocations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-experimental-namespace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The experimental namespace
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#residency-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Residency coverage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#platforms-and-compilers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platforms and compilers
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../upgrade-1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade to 1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../for-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    For agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exceptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rtti" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RTTI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#determinism-across-thread-counts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Determinism across thread counts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thread-pool-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thread-pool ownership
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#steady-state-allocations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Steady-state allocations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-experimental-namespace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The experimental namespace
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#residency-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Residency coverage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#platforms-and-compilers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platforms and compilers
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="integration-policy">Integration policy</h1>
+<p>What tess guarantees to a consumer, and what it deliberately does not.
+Every statement here is backed by code or a test; where the honest
+answer is "not guaranteed" or "not tested", it says so rather than
+leaving you to find out.</p>
+<h2 id="exceptions">Exceptions</h2>
+<p>tess supports two build-wide compiler modes. Exception-enabled C++20 remains
+the default. Clang-family and GCC consumers may compile every translation unit
+with <code>-fno-exceptions</code>. Native MSVC consumers use <code>/EHs-c-</code> together with
+<code>_HAS_EXCEPTIONS=0</code>. The latter is an undocumented and unsupported MSVC STL
+implementation switch, so this mode is version-sensitive and verified against
+the CI toolset rather than guaranteed by Microsoft. Aggregate headers,
+representative runtime behavior, installed and FetchContent consumers, and
+full Clang/GCC examples are tested in exception-free configurations. The
+installed <code>tess::tess</code> target never forces either policy.
+<code>TESS_HAS_EXCEPTIONS</code> and <code>tess::has_exceptions</code> report the compiler mode and
+cannot be overridden.</p>
+<p>Exceptions tess throws itself:</p>
+<ul>
+<li><code>std::length_error</code> from legacy portal-segment cache operations when a
+  deterministic capacity limit is exceeded.</li>
+<li><code>std::bad_alloc</code> from block-scratch capacity overflow and from allocation,
+  including implicitly from container growth.</li>
+</ul>
+<p>Checked capacity entry points report pre-allocation size failures in either
+mode. In an exception-free build, legacy wrappers abort for those
+Tess-detected failures. General allocation failure is not converted to a
+status and has no recovery guarantee.</p>
+<p>Exceptions you can also receive through tess:</p>
+<ul>
+<li><strong>Anything your own callback throws.</strong> Callback exceptions propagate
+  verbatim; tess neither swallows nor translates them.</li>
+<li><code>std::system_error</code> if thread construction fails while an executor is
+  starting up.</li>
+</ul>
+<p>In an exception-free build, application callbacks and all other supplied
+operations must not throw. Allocation failure, thread-creation failure, and a
+throwing callback are outside the supported recovery and state contract. Tess
+does not install a new handler or terminate handler.</p>
+<p>What is guaranteed when something throws:</p>
+<ul>
+<li>A phase executor <strong>joins every in-flight callback before
+  propagating</strong>, so no callback is still running when the exception
+  reaches you.</li>
+<li>Queued-operation planning pre-validates, so a policy mismatch means
+  nothing executes rather than a partially applied plan.</li>
+<li>Schedule tasks either side of a throwing task keep their triggers
+  coherent.</li>
+<li>A maintenance callback exception consumes the invocation that entered the
+  callback. Reentrant follow-ups coalesced into that same synchronous
+  call-local invocation are consumed with it; independently retained accepted
+  maintenance offers remain reachable. The callback owner must keep its
+  authoritative dirty-mask and content-version state suitable for an explicit
+  retry decision.</li>
+</ul>
+<p>Those propagation and rollback guarantees apply to exception-enabled builds.
+The exception-free path performs successful work and status-based rollback
+directly, without catch-based recovery.</p>
+<p>The explicit <code>NoThrowWorkerPoolPhaseExecutor</code> and
+<code>NoThrowScopedThreadPhaseExecutor</code> aliases require callbacks typed <code>noexcept</code>
+in exception-enabled builds and reject other callback types at compile time.
+Queued and result-channel adapters reserve their internal dispatch storage
+before preserving that no-throw property through the worker boundary.</p>
+<p>What is <strong>not</strong> guaranteed:</p>
+<ul>
+<li>If several callbacks throw concurrently, <strong>which</strong> exception
+  propagates is unspecified.</li>
+<li>There is no library-wide strong exception guarantee. Individual
+  operations document their own rollback behaviour; absent that, assume
+  the basic guarantee.</li>
+<li>Assertion failures never throw, so <code>noexcept</code> functions stay honest.
+  But note <strong>when</strong> they fire: assertions default to enabled only while
+  <code>NDEBUG</code> is absent. Release and benchmark builds define <code>NDEBUG</code>, so
+  the macros compile to nothing and the preconditions on unchecked hot
+  accessors go <strong>unverified in production</strong> — a violation is undefined
+  behaviour there, not an abort. Do not design around assertions as a
+  fail-fast safety net in a release build; use the checked entry points
+  (<code>try_resolve</code>, <code>try_field</code>, plan validation), which validate at
+  runtime in every configuration. Define <code>TESS_ENABLE_ASSERTS=1</code>
+  explicitly if you want the checks in an optimised build.</li>
+</ul>
+<p>Some lifecycle and ownership violations are stronger than unchecked hot-path
+preconditions: continuing would publish a plausible but false result, orphan
+retained accounting, or mutate an object during its own dispatch. Those APIs
+call Tess's unconditional fail-fast path in every build and name the violated
+contract on stderr. Examples include detectable invalid
+<code>PathRequestRuntime::result</code> tickets, invalid schedule registration or
+dispatch state, reentrant <code>ResumableWorkQueue</code> mutation, and rebinding a
+nonempty flow-accounted queue or event stream. Checked alternatives remain the
+right choice where uncertainty is expected, such as
+<code>PathRequestRuntime::try_result</code>.</p>
+<p><strong>Build-wide macros must be build-wide.</strong> <code>TESS_ENABLE_ASSERTS</code> changes the
+bodies of inline functions — 14 in <code>storage/world.h</code> alone — and
+<code>TESS_ENABLE_DIAGNOSTICS</code> changes public <em>types</em>: <code>PathCounters</code>,
+<code>TraceBuffer</code>, <code>WarningSink</code> and six more exist only when it is defined.
+Defining either for some translation units and not others violates the
+one-definition rule. No compiler diagnoses it; the linker keeps one
+arbitrary definition, so the checks or the members silently vanish from the
+other half of your program. Set them for a whole binary or not at all.</p>
+<p>On MSVC each is stamped with <code>#pragma detect_mismatch</code>, which turns the
+mismatch into a link error. GCC and Clang have no equivalent mechanism, so
+consistency there is your build system's job.</p>
+<p>Native MSVC's exception-free configuration is supported by construction, not
+as an equivalent to the stronger GCC/Clang compiler mode. An exception that
+nevertheless escapes application or standard-library code remains outside the
+contract. Mixed exception modes within one program are unsupported and are
+not reliably diagnosed by MSVC at link time; consumers must enforce one mode
+across every translation unit. See
+<a href="../architecture/no-exceptions/">Exception-free builds</a> for the complete
+failure contract and standard-library operation inventory.</p>
+<h2 id="rtti">RTTI</h2>
+<p>tess contains no <code>dynamic_cast</code> and no <code>typeid</code>. Type identity where it
+is needed at runtime comes from <code>tag_identity&lt;T&gt;()</code>, which returns the
+address of a per-type static — that facility exists precisely so the
+library does not depend on RTTI.</p>
+<p>Virtual declarations appear only in the experimental maintenance layer.
+The stable <code>ImmediateScheduler</code> spelling shares that measured concrete
+implementation, but neither documents nor stabilizes the experimental
+<code>MaintenanceScheduler</code> base or polymorphic use. Virtuals need vtables, not
+RTTI.</p>
+<p>Stable surfaces are compiled and exercised without RTTI on every supported
+compiler family. <code>tag_identity</code> is unique only within one linked image. Its
+tokens must not be compared, persisted, or transferred across a dynamic
+library boundary. Public caches, graphs, payloads, and products that retain
+such tokens repeat this restriction on their type documentation.</p>
+<h2 id="determinism-across-thread-counts">Determinism across thread counts</h2>
+<p>For <strong>deterministic, operation-local kernels</strong> — callbacks whose
+observable behaviour depends only on the chunk and inputs they are
+handed — identical inputs produce identical results whether operations
+run serially or on a worker pool, and regardless of worker count.</p>
+<p>That condition is load-bearing, not boilerplate. The callback object is
+shared across workers, so a kernel that is merely thread-<em>safe</em> can
+still be order-dependent: one that stamps chunks with an atomic
+counter, or accumulates into shared state, will observe worker
+scheduling. Disjoint writes prevent data races; they do not make an
+arbitrary kernel deterministic. Determinism is a property you and tess
+provide together.</p>
+<p>The mechanism, not just the claim:</p>
+<ul>
+<li>Planning groups operations into phases whose mutable chunk sets are
+  <strong>disjoint</strong>, so no two concurrent callbacks touch the same chunk.</li>
+<li>Result reduction runs in <strong>plan order</strong> after the executor returns,
+  never in completion order, and the first non-executed status wins
+  regardless of which worker finished first.</li>
+<li>Dirty records land in per-operation partitions and are merged by the
+  caller afterwards.</li>
+<li>Pre-validation makes runtime aborts unreachable, so serial and pooled
+  runs cannot diverge on a partially applied plan.</li>
+</ul>
+<p>What is actually proven: the colony scenario asserts serial-versus-pool
+equality and worker-count invariance (2 and 4 workers) over final agent
+positions, step counts, and topology answers, with the pool asserted to
+have genuinely dispatched so the comparison cannot pass on an idle
+task.</p>
+<p>Scope limits:</p>
+<ul>
+<li>The invariance gate covers <strong>one scenario</strong> at worker counts 0, 2,
+  and 4. It is strong evidence for the mechanism, not a proof for every
+  workload.</li>
+<li>Determinism <strong>across machines, compilers, or standard libraries is
+  not claimed</strong>. Counter goldens run in shadow mode and report drift;
+  they do not gate.</li>
+<li>No floating-point reduction-order guarantee is made.</li>
+<li>Route-cache results depend on the configured staleness policy. The
+  default (<code>UnitRouteStaleness::WholeWorldExact</code>) serves routes
+  identical to fresh recomputation after any world change. The opt-in
+  <code>ScopedFeasible</code> mode is deterministic but weaker: served routes are
+  legal at their stated cost and were optimal when stored, and a
+  cost-lowering edit outside a route's chunk footprint can leave it
+  suboptimal until retirement. Enabling it is a semantics choice, not a
+  tuning knob.</li>
+</ul>
+<h2 id="thread-pool-ownership">Thread-pool ownership</h2>
+<p><strong>tess never starts a thread on its own.</strong> The only thread-creating
+types are the executors you construct explicitly.</p>
+<p>Ownership and lifetime:</p>
+<ul>
+<li><code>WorkerPoolPhaseExecutor</code> starts its threads in the constructor and
+  joins them in the destructor. It is neither copyable nor movable, so
+  hold it by reference and let it outlive every dispatch that uses it.</li>
+<li><code>ScopedThreadPhaseExecutor</code> spawns and joins per phase, and allocates
+  on every call. It is the simple option, not the allocation-free one.</li>
+</ul>
+<p>Constraints you must honour, specific to
+<code>WorkerPoolPhaseExecutor</code> (<code>SerialPhaseExecutor</code> is stateless and
+<code>ScopedThreadPhaseExecutor</code> keeps its dispatch state locally, so
+neither carries these):</p>
+<ul>
+<li>At most one dispatch per pool executor may be in flight.</li>
+<li>A callback must not re-enter its own pool executor, and must not call
+  <code>reserve_operations</code> on it during a dispatch. Both violations fail fast in
+  debug and release builds while the pool mutex protects the state check,
+  before shared dispatch state can be changed.</li>
+<li><strong>Callbacks are shared across pool workers.</strong> The kernel you supply
+  must be stateless or self-synchronising.</li>
+<li><code>Schedule::notify_dirty</code>, <code>notify_events</code>, and <code>request_run</code> are
+  frame-owner-thread calls. They are reentrant from task bodies, but
+  never from a pool worker.</li>
+</ul>
+<p>You may supply your own executor: anything satisfying the
+<code>PhaseExecutor</code> concept works. A concurrent executor must not declare
+<code>serial_execution_tag</code>.</p>
+<p>The worker-pool and scoped-thread executors are stable interfaces. The scoped
+executor remains the simple per-dispatch thread-owning alternative; it is not
+an asynchronous scheduler.</p>
+<h2 id="steady-state-allocations">Steady-state allocations</h2>
+<p>tess does <strong>not</strong> claim to be allocation-free. It claims that specific
+operations do not allocate <strong>once warm and reserved</strong>, and it tests
+that claim.</p>
+<p>Proven allocation-free in steady state, after the matching reserve —
+stated at the granularity the tests actually cover:</p>
+<ul>
+<li>Worker-pool and serial dispatch at the executor level, and the
+  queued-operation wrapper under the serial executor. There is no
+  allocation-counted test of the queued wrapper <em>on a pool</em>, so treat
+  that combination as untested rather than proven.</li>
+<li>Queued-operation planning through the reuse overload.</li>
+<li>Schedule ticks.</li>
+<li>Render-delta collection.</li>
+<li>Warmed <strong>movement-only</strong> ECS ticks, for the generic, EnTT, and Flecs
+  adapters. Those tests assert that path processing did not occur, so
+  this is not a claim about ticks that plan paths.</li>
+</ul>
+<p>Four benchmarks additionally abort if a steady-state iteration
+allocates, so a regression fails rather than quietly costing
+allocations: path A*, EnTT ECS, fields, and render delta.</p>
+<p>The conditions are the contract:</p>
+<ul>
+<li>Every claim above depends on having reserved for the working set,
+  and the reservations are more than one number: operations for the
+  pool, capacity for delta frames, maximum population for ECS batches,
+  and — for field products — goal, node, dependency, and scratch
+  capacity, not merely chunk count. Under-reserving any one of them
+  reintroduces allocation.</li>
+<li>A phase larger than the reserved size reallocates on that dispatch.</li>
+<li>Caches differ, and the difference matters. A cache backed by a
+  reusable reserved arena stops allocating once warm; the field-product
+  cache allocates a fresh heap-owned product for <strong>every new-key
+  store</strong>, before it evicts to budget. A full cache under a churning
+  key set therefore keeps allocating on every miss, indefinitely.</li>
+<li>First touch and growth allocate. There is no global "never allocates
+  after warmup" property, and claiming one would be false.</li>
+</ul>
+<h2 id="the-experimental-namespace">The experimental namespace</h2>
+<p><code>include/tess/experimental/</code> holds work whose shape is still being
+validated. Names there may change or be removed in any release, including
+a patch release, and they are excluded from whatever compatibility promise
+a future 1.0 makes. The stable maintenance contract — tasks, budgets,
+metrics, opaque handles, explicit results, the structural backend boundary,
+the registered scheduler, synchronous immediate execution, and the external
+chunk adapter — lives under <code>tess::maintenance</code> and is covered by
+<a href="../support/">support</a>. What remains experimental is the deferred
+maintenance machinery: the virtual <code>MaintenanceScheduler</code> interface and the
+<code>DirtyBitScheduler</code>, <code>FifoScheduler</code>, and <code>CoalescingScheduler</code> backends.
+Supplying one of those types to the stable facade explicitly does not make
+it stable.</p>
+<p>The template behind the queued experimental aliases,
+<code>detail::QueuedScheduler&lt;Coalescing&gt;</code>, is not a supported name: it
+lives in <code>detail</code>, which <code>docs/style.md</code> excludes from source compatibility,
+and it is spelled that way deliberately so an alias can be repointed without
+breaking callers who used the documented name.</p>
+<h2 id="residency-coverage">Residency coverage</h2>
+<p>Four families are dense-only. They <code>static_assert</code> on <code>AlwaysResident</code>
+and do not compile against a <code>SparseResidentWorld</code>:</p>
+<ul>
+<li>the queued-operations layer (<code>ops/queued.h</code>)</li>
+<li>the weighted distance-field product family
+  (<code>path/field_product_cache.h</code>)</li>
+<li>the portal-route product family (<code>path/portal_route.h</code>,
+  <code>path/portal_segment_cache.h</code>)</li>
+<li>the PIBT tier (<code>sim/pibt_movement.h</code>)</li>
+</ul>
+<p>This is a residency coverage boundary, not an experimental marker. These
+families are production-promoted and tested on dense worlds; what is
+missing is the sparse dimension. They stay in the ordinary public
+namespace rather than moving to <code>include/tess/experimental/</code>, because
+relocating them would churn every consumer include to signal a maturity
+difference that is not the actual distinction.</p>
+<p>The header manifest, not directory placement alone, defines stability; see
+<a href="../support/">support</a>. The current dense queued-operation, field-product, and
+PIBT signatures are frozen for 1.x. Sparse residency support must use distinct
+entry points or additive overloads that leave those dense signatures and their
+existing call resolution unchanged. Such variants can accept the
+<code>MissingChunkPolicy</code> used by sparse-aware path entry points such as
+<code>astar_path</code> and <code>cached_astar_path</code>.</p>
+<p>Note that <code>weighted_path_batch</code> is residency-generic and <em>does</em> compile
+against a sparse world, but currently hardcodes <code>AssumeImpassable</code>: it
+answers <code>NoPath</code> across a missing chunk rather than <code>Indeterminate</code>.
+Adding a policy-aware variant there is open work and remains subject to the
+additive-entry-point rule above.</p>
+<p>Everything else in the public surface is residency-generic: it either
+works on both world kinds, or names the difference in its own
+documentation.</p>
+<h2 id="platforms-and-compilers">Platforms and compilers</h2>
+<p>tess requires a C++20 compiler. CMake-based source and installed-package
+integration additionally require CMake 3.25 or newer; the portable headers
+release asset requires only an include-path-capable build. Beyond that, support
+means <em>continuously tested</em>. Ordinary change CI and exact-SHA release CI
+provide two layers of evidence:</p>
+<ul>
+<li>Ubuntu 24.04 with Clang builds and runs the full tests, sanitizers, installed
+  and FetchContent consumers, standalone headers, and macro configurations.</li>
+<li>Ubuntu 24.04 with GCC 12 and 14 performs warning-clean builds and full
+  runtime tests on code changes.</li>
+<li>macOS 15 with AppleClang builds, tests, sanitizes, and consumes an install on
+  non-PR full-tier runs. Release runs select Xcode 16.0 and add no-RTTI runtime
+  evidence.</li>
+<li>Windows 2025 with current MSVC is a required PR build-and-test gate. Release
+  runs use Windows 2022 to verify Visual Studio 2022 17.14/MSVC 19.44 and add
+  no-RTTI runtime evidence.</li>
+<li>Exact-SHA release mode packages the canonical installed headers, directly
+  compiles the extracted tar and zip assets with Clang 16, GCC 12, and MSVC
+  19.44 without consumer-side CMake, and retains those tested bytes.</li>
+</ul>
+<p>Consequences worth knowing before you depend on a platform:</p>
+<ul>
+<li>A macOS regression can merge and only surface on the next main,
+  scheduled, or dispatched run.</li>
+<li>Benchmarks and coverage run on Ubuntu only.</li>
+<li>Every platform job is skipped for documentation-only changes, and
+  pull-request thread sanitizer coverage is path-filtered rather than
+  universal.</li>
+</ul>
+<p>The tested compiler floors are GCC 12, Clang 16, AppleClang from Xcode 16.0,
+and MSVC 19.44. CMake 3.25.3 is the separately tested floor for CMake-based
+integration. These are evidence-backed support floors, not configure-time
+rejection rules: a different C++20 toolchain may work, but is outside the
+tested contract. See <a href="../support/">support</a> for the complete floor and no-RTTI
+policy.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../use-cases/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Use cases">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Use cases
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../upgrade-1.0/" class="md-footer__link md-footer__link--next" aria-label="Next: Upgrade to 1.0">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Upgrade to 1.0
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; tess contributors
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.sections", "navigation.tabs", "navigation.top", "search.highlight", "search.suggest"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+  <script>
+    (() => {
+      const searchDialog = document.querySelector(
+        ".md-search[role=\"dialog\"]",
+      );
+      searchDialog?.setAttribute(
+        "aria-label", "Search",
+      );
+
+      const mermaidRuntimeUrl = new URL(
+        "../assets/javascripts/mermaid.min.js",
+        document.baseURI,
+      ).href;
+      let initializationOptions;
+      let runtimePromise;
+
+      const mermaidProxy = {
+        initialize(options) {
+          initializationOptions = options;
+        },
+        async render(...args) {
+          const mermaidRuntime = await loadMermaidRuntime();
+          return mermaidRuntime.render(...args);
+        },
+      };
+
+      function loadMermaidRuntime() {
+        if (!runtimePromise) {
+          runtimePromise = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = mermaidRuntimeUrl;
+            script.addEventListener("load", () => {
+              const mermaidRuntime = window.mermaid;
+              if (mermaidRuntime === mermaidProxy) {
+                reject(new Error("Mermaid runtime did not initialize"));
+                return;
+              }
+              mermaidRuntime.initialize(initializationOptions);
+              resolve(mermaidRuntime);
+            }, { once: true });
+            script.addEventListener("error", () => {
+              reject(new Error("Unable to load Mermaid runtime"));
+            }, { once: true });
+            document.head.append(script);
+          });
+        }
+        return runtimePromise;
+      }
+
+      window.mermaid = mermaidProxy;
+    })();
+  </script>
+  
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+
+  </body>
+</html>

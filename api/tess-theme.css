@@ -1,0 +1,21 @@
+/**
+ * tess brand overrides for doxygen-awesome-css.
+ *
+ * Aligns the API reference with the documentation site's Material
+ * palette (deep purple primary). Variable names come from the vendored
+ * doxygen-awesome.css :root block.
+ */
+
+html {
+  --primary-color: #673ab7; /* deep purple 500 */
+  --primary-dark-color: #512da8; /* deep purple 700 */
+  --primary-light-color: #9575cd; /* deep purple 300 */
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not(.light-mode) {
+    --primary-color: #b39ddb; /* deep purple 200 on slate */
+    --primary-dark-color: #9575cd; /* deep purple 300 */
+    --primary-light-color: #d1c4e9; /* deep purple 100 */
+  }
+}
