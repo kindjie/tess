@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <tess/experimental/overlay_cost.h>
 #include <tess/tess.h>
 
 #include <algorithm>
@@ -192,8 +191,7 @@ TEST(TessTransitionModel, OverlayCostAbsorbsAnImpassableBase) {
   // pass with absorption removed.
   using Overlaid = mv::MovementClass<
       mv::Field<PassableTag>,
-      tess::experimental::OverlayCost<mv::FieldCost<CostTag>,
-                                      mv::FieldCost<SurchargeTag>>>;
+      mv::OverlayCost<mv::FieldCost<CostTag>, mv::FieldCost<SurchargeTag>>>;
 
   OverlayWorld world;
   world.fill_field<PassableTag>(true);
@@ -251,13 +249,11 @@ TEST(TessTransitionModel, OverlayCostAbsorbsAnImpassableBase) {
   // The maximum trait is known only when both operands are known, and
   // sums saturating.
   using Max = tess::detail::CostExpressionMaximum<
-      tess::experimental::OverlayCost<mv::ConstantCost<3>, mv::ConstantCost<4>>,
-      OverlaySchema>;
+      mv::OverlayCost<mv::ConstantCost<3>, mv::ConstantCost<4>>, OverlaySchema>;
   static_assert(Max::known);
   static_assert(Max::value == 7U);
   using UnknownMax = tess::detail::CostExpressionMaximum<
-      tess::experimental::OverlayCost<mv::ConstantCost<3>, UnknownCost>,
-      OverlaySchema>;
+      mv::OverlayCost<mv::ConstantCost<3>, UnknownCost>, OverlaySchema>;
   static_assert(!UnknownMax::known);
 }
 
