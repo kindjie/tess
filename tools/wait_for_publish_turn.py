@@ -65,27 +65,31 @@ def _request_json(url: str, token: str) -> dict[str, Any]:
   return payload
 
 
-def _active_runs(repo: str, workflow: str, token: str) -> list[dict[str, Any]]:
+def _workflow_runs(repo: str, workflow: str, token: str) -> list[dict[str, Any]]:
+  """Read unfiltered non-PR runs so status changes cannot cross queries."""
   runs: list[dict[str, Any]] = []
   encoded_workflow = quote(workflow, safe="")
-  for status in ACTIVE_STATUSES:
-    page = 1
-    while True:
-      query = urlencode({"status": status, "per_page": 100, "page": page})
-      url = (
-        f"{API_ROOT}/repos/{repo}/actions/workflows/"
-        f"{encoded_workflow}/runs?{query}"
-      )
-      payload = _request_json(url, token)
-      batch = payload.get("workflow_runs")
-      if not isinstance(batch, list) or not all(
-        isinstance(run, dict) for run in batch
-      ):
-        raise QueueError("GitHub workflow query omitted workflow_runs")
-      runs.extend(batch)
-      if len(batch) < 100:
-        break
-      page += 1
+  page = 1
+  while True:
+    query = urlencode({
+      "exclude_pull_requests": "true",
+      "per_page": 100,
+      "page": page,
+    })
+    url = (
+      f"{API_ROOT}/repos/{repo}/actions/workflows/"
+      f"{encoded_workflow}/runs?{query}"
+    )
+    payload = _request_json(url, token)
+    batch = payload.get("workflow_runs")
+    if not isinstance(batch, list) or not all(
+      isinstance(run, dict) for run in batch
+    ):
+      raise QueueError("GitHub workflow query omitted workflow_runs")
+    runs.extend(batch)
+    if len(batch) < 100:
+      break
+    page += 1
   return runs
 
 
@@ -101,7 +105,7 @@ def wait_for_turn(
   deadline = time.monotonic() + timeout_seconds
   while True:
     blockers = older_active_runs(
-      _active_runs(repo, workflow, token), current_run_number
+      _workflow_runs(repo, workflow, token), current_run_number
     )
     if not blockers:
       print("No older documentation publication run is active")

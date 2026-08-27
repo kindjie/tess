@@ -1299,6 +1299,7 @@ def test_pages_publication_serializes_and_checks_the_uploaded_tree():
   assert workflow.index(prepare) < workflow.index(check)
   assert workflow.index(check) < workflow.index(push)
   assert workflow.index(push) < workflow.index(upload)
+  assert "cp docs/robots.txt build/pages/robots.txt" not in workflow
   assert "mike deploy --push" not in workflow
   assert "mike set-default" not in workflow
 

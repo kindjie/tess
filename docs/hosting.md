@@ -40,6 +40,8 @@ assembler owns only paths in its manifest and fails closed before deleting
 version trees or unknown operator-owned files. The first deployment can
 bootstrap the root from the existing `latest` copy; later `main` deployments
 leave the stable root unchanged.
+The root `robots.txt` travels with that stable copy; development and
+older-minor publications cannot replace it from their own source refs.
 
 Before upload, the workflow adds `noindex, follow` to `/dev/` and numeric
 archive HTML in the ephemeral Pages artifact. That metadata does not rewrite

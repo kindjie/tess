@@ -455,7 +455,6 @@ jobs:
             build/pages "${root_args[@]}"
           # Jekyll would otherwise drop Doxygen's underscore-prefixed assets.
           touch build/pages/.nojekyll
-          cp docs/robots.txt build/pages/robots.txt
 
           # Root-current content and compatibility redirects are persistent
           # publication state. Commit them locally before applying

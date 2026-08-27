@@ -124,8 +124,10 @@ def test_sync_bootstraps_root_and_redirects_latest_without_touching_assets(
   )
 
   first_root = root_html
+  first_robots = (tmp_path / "robots.txt").read_text()
   assert _run_tool("sync", tmp_path).returncode == 0
   assert (tmp_path / "index.html").read_text() == first_root
+  assert (tmp_path / "robots.txt").read_text() == first_robots
 
 
 def test_sync_uses_verified_root_build_and_prunes_owned_stale_paths(
@@ -251,3 +253,33 @@ def test_publication_turn_fails_closed_on_malformed_api_run():
       [{"id": "bad", "run_number": 1, "event": "push", "status": "queued"}],
       2,
     )
+
+
+def test_publication_turn_reads_statuses_from_one_unfiltered_run_listing(
+  monkeypatch: pytest.MonkeyPatch,
+):
+  """A requested-to-queued transition cannot fall between status queries."""
+  requested_urls: list[str] = []
+
+  def fake_request(url: str, token: str):
+    requested_urls.append(url)
+    assert token == "token"
+    return {
+      "workflow_runs": [
+        {
+          "id": 7,
+          "run_number": 7,
+          "event": "push",
+          "status": "queued",
+        }
+      ]
+    }
+
+  monkeypatch.setattr(QUEUE, "_request_json", fake_request)
+
+  runs = QUEUE._workflow_runs("kindjie/tess", "pages.yml", "token")
+
+  assert [run["id"] for run in runs] == [7]
+  assert len(requested_urls) == 1
+  assert "exclude_pull_requests=true" in requested_urls[0]
+  assert "status=" not in requested_urls[0]
