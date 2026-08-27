@@ -95,9 +95,18 @@ std::size_t scope_replans(std::span<const tess::PathAgentState> agents,
 ```
 <!-- /tess-snippet -->
 
-The helper is experimental. Its name and whether the scan includes
-the agent's current tile may change. Its documentation comment
-specifies the equivalent caller-owned scan.
+The scan starts at the agent's next step, not the tile it occupies: a
+tile's cost is charged on entering it, so the occupied tile is already
+paid for and a price rise there cannot change what the remaining route
+costs. A route that revisits that tile later is still caught, at the
+later index.
+
+The helper is experimental and its name may still change. Its
+documentation comment specifies the equivalent caller-owned scan.
+
+Its cost grows with the total length of the routes it scans rather than
+with the number of agents, which is why long routes with distant price
+changes are its worst case.
 
 ## The signal menu
 
@@ -235,10 +244,13 @@ evidence in the table: five of the eight scenarios are individually
 slower under the work-target rule even though its aggregate is ~1.0,
 and the aggregate sits inside measurement drift. The settle-tick and
 search columns are exact and replay-identical; treat elapsed time as
-indicative only. A search-work target also bounds work *on average*,
-not per tick: it sets the request count from the previous tick's
-average, so a single expensive search can still overshoot, which is
-why its worst tick is 2.3x rather than lower.
+indicative only. A search-work target is a *lagged* target, not a
+bound: it sets this tick's request count from the previous tick's
+average cost per search, so a single expensive search still overshoots
+and the count reacts only afterwards. That is why its worst tick is
+2.3x rather than lower. A genuine per-tick bound would need a search
+that can be paused or cancelled mid-expansion, which this library's
+synchronous drain does not offer.
 
 **Screened, not promoted.** Eight scenarios, two populations, one
 platform.
