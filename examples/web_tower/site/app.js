@@ -78,6 +78,34 @@ function diamond(x, y, floor, w, h, fill) {
   ctx.fill();
 }
 
+// A wall reads as a wall rather than a darker floor tile: a short
+// extruded body with a lighter cap, so the room outlines are legible at
+// the small scale a phone shows.
+function wall(x, y, floor) {
+  const [sx, sy] = project(x, y, floor);
+  const halfW = (TILE_W * camera.zoom) / 2;
+  const halfH = (TILE_H * camera.zoom) / 2;
+  const rise = Math.max(2, 9 * camera.zoom);
+  ctx.beginPath();
+  ctx.moveTo(sx - halfW, sy);
+  ctx.lineTo(sx, sy + halfH);
+  ctx.lineTo(sx + halfW, sy);
+  ctx.lineTo(sx + halfW, sy - rise);
+  ctx.lineTo(sx, sy + halfH - rise);
+  ctx.lineTo(sx - halfW, sy - rise);
+  ctx.closePath();
+  ctx.fillStyle = '#3a4763';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - halfH - rise);
+  ctx.lineTo(sx + halfW, sy - rise);
+  ctx.lineTo(sx, sy + halfH - rise);
+  ctx.lineTo(sx - halfW, sy - rise);
+  ctx.closePath();
+  ctx.fillStyle = '#5a6b90';
+  ctx.fill();
+}
+
 function floorPlate(floor) {
   const corners = [[0, 0], [width, 0], [width, depth], [0, depth]].map(
       ([x, y]) => project(x, y, floor));
@@ -136,7 +164,7 @@ function draw() {
            x += 1) {
         const y = sum - x;
         if (tiles[(level * depth + y) * width + x] === 0) {
-          diamond(x + 0.5, y + 0.5, floor, 1, 1, '#2b3446');
+          wall(x + 0.5, y + 0.5, floor);
         }
       }
     }

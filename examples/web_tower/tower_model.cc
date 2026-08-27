@@ -67,6 +67,24 @@ constexpr int kStairwellCount =
   return x >= s.x && x < s.x + 3 && y >= s.y && y < s.y + 3;
 }
 
+// Whether `stair` rises out of the walkable floor `floor`. Two of the
+// four serve each floor, and the pair alternates between the diagonal
+// couples {0, 2} and {1, 3}, which buys both properties the demo needs.
+//
+// Crossing is compulsory: an agent arriving on a floor lands at one of
+// this floor's risers, and every way up belongs to the other pair,
+// elsewhere on the plate. Opening every stairwell through every slab
+// instead makes the tower a lift shaft and leaves the rooms decorative
+// -- measured that way as zero agent-ticks anywhere on an intermediate
+// floor.
+//
+// A choice still exists: two risers serve each floor, so closing one
+// diverts traffic to the other rather than changing nothing, which is
+// what a single riser per floor would do.
+[[nodiscard]] auto stair_serves_floor(int stair, int floor) -> bool {
+  return (stair % 2) == (floor % 2);
+}
+
 [[nodiscard]] auto any_stairwell(int x, int y) -> int {
   for (int i = 0; i < kStairwellCount; ++i) {
     if (in_stairwell(i, x, y)) {
@@ -74,6 +92,13 @@ constexpr int kStairwellCount =
     }
   }
   return -1;
+}
+
+// The clear area around each floor's endpoints, with a one-tile margin
+// so the approach lanes are never partitioned either.
+[[nodiscard]] auto in_endpoint_block(int x, int y, bool ground) -> bool {
+  return ground ? (x >= 1 && x <= 19 && y >= 1 && y <= 15)
+                : (x >= 28 && x <= 47 && y >= 32 && y <= 46);
 }
 
 // One floor: an outer wall, and interior partitions on a 16-tile grid
@@ -84,11 +109,15 @@ constexpr int kStairwellCount =
   if (x <= 0 || y <= 0 || x >= kWidth - 1 || y >= kDepth - 1) {
     return false;
   }
-  // The ground floor and the top floor are open plates: they hold the
-  // endpoints, and a partition there would let arrived agents park
-  // across a doorway and seal the floor behind them. The floors between
-  // carry the room structure, which is where routing is interesting.
-  if (z == 0 || z == kTopLevel) {
+  // The endpoint floors carry the same room structure as the rest,
+  // except inside the block that holds the endpoints themselves. Agents
+  // park on their endpoint for the remainder of a leg, and a parked
+  // agent standing in a doorway would seal the floor behind it, which
+  // is what wedged earlier versions of this demo.
+  if (z == 0 && in_endpoint_block(x, y, /*ground=*/true)) {
+    return true;
+  }
+  if (z == kTopLevel && in_endpoint_block(x, y, /*ground=*/false)) {
     return true;
   }
   const bool partition = (x % 16 == 0) || (y % 16 == 0);
@@ -155,9 +184,11 @@ struct TowerModel::Impl {
           if (walkable) {
             passable = floor_passable(x, y, z) || stair >= 0;
           } else {
-            // The slab between floors is solid apart from the
-            // stairwell columns.
-            passable = stair >= 0;
+            // The slab between floors is solid apart from the ONE
+            // stairwell that serves this pair of floors. Opening every
+            // stairwell through every slab would let an agent ride a
+            // single column the whole height of the tower.
+            passable = stair >= 0 && stair_serves_floor(stair, (z - 1) / 2);
           }
           const tess::Coord3 c{x, y, z};
           world.template field<PassableTag>(c) = passable;
