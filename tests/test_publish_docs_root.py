@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -13,6 +14,13 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "publish_docs_root.py"
 SITE = "https://tess.owx.dev/"
+LEGACY_ROBOTS = """User-agent: *
+Allow: /
+# The development tree duplicates released pages; only the release
+# trees should be indexed.
+Disallow: /dev/
+Sitemap: https://tess.owx.dev/latest/sitemap.xml
+"""
 QUEUE_SPEC = importlib.util.spec_from_file_location(
   "wait_for_publish_turn", ROOT / "tools" / "wait_for_publish_turn.py"
 )
@@ -71,7 +79,7 @@ def _make_pages_tree(root: Path) -> None:
   _write(root / "latest" / "demo" / "module.wasm", "wasm")
   _write(
     root / "latest" / "robots.txt",
-    f"User-agent: *\nAllow: /\nSitemap: {SITE}latest/sitemap.xml\n",
+    LEGACY_ROBOTS,
   )
   _write(root / "0.13" / "index.html", _version_page("0.13"))
   _write(root / "dev" / "index.html", _version_page("dev"))
@@ -84,7 +92,7 @@ def _make_pages_tree(root: Path) -> None:
   )
   _write(
     root / "robots.txt",
-    f"User-agent: *\nAllow: /\nSitemap: {SITE}sitemap.xml\n",
+    LEGACY_ROBOTS,
   )
 
 
@@ -192,6 +200,18 @@ def test_sync_rejects_unowned_root_collisions(tmp_path: Path):
   assert (tmp_path / "assets" / "operator-owned.txt").read_text() == "keep"
 
 
+def test_sync_rejects_modified_legacy_root_robots(tmp_path: Path):
+  """Bootstrap recognizes only the exact pre-migration robots file."""
+  _make_pages_tree(tmp_path)
+  _write(tmp_path / "robots.txt", LEGACY_ROBOTS + "# operator change\n")
+
+  result = _run_tool("sync", tmp_path)
+
+  assert result.returncode != 0
+  assert "unowned root path would be overwritten: robots.txt" in result.stderr
+  assert (tmp_path / "robots.txt").read_text().endswith("operator change\n")
+
+
 def test_sync_rejects_new_collision_after_manifest_exists(tmp_path: Path):
   """A later build cannot claim a path absent from the ownership manifest."""
   _make_pages_tree(tmp_path)
@@ -232,53 +252,91 @@ def test_sync_rejects_unsafe_manifest_components_without_deleting(
   assert sentinel.read_text() == "keep"
 
 
-def test_publication_turn_waits_only_for_older_non_pr_runs():
-  """The FIFO excludes PRs and never lets a newer run block an older one."""
+def _api_run(
+  run_id: int,
+  number: int,
+  started: str,
+  *,
+  event: str = "push",
+  status: str = "in_progress",
+  attempt: int = 1,
+):
+  return {
+    "id": run_id,
+    "run_number": number,
+    "run_attempt": attempt,
+    "run_started_at": started,
+    "event": event,
+    "status": status,
+  }
+
+
+def test_publication_turn_orders_attempts_by_actual_start_time():
+  """A rerun's new attempt time, not its old run number, controls the turn."""
+  current = _api_run(15, 15, "2026-08-27T01:00:00Z")
   runs = [
-    {"id": 11, "run_number": 11, "event": "push", "status": "in_progress"},
-    {"id": 12, "run_number": 12, "event": "pull_request", "status": "queued"},
-    {"id": 13, "run_number": 13, "event": "workflow_dispatch", "status": "waiting"},
-    {"id": 14, "run_number": 14, "event": "push", "status": "completed"},
-    {"id": 15, "run_number": 15, "event": "push", "status": "requested"},
+    _api_run(11, 11, "2026-08-27T00:50:00Z"),
+    _api_run(
+      12,
+      12,
+      "2026-08-27T00:51:00Z",
+      event="pull_request",
+      status="queued",
+    ),
+    _api_run(
+      13,
+      13,
+      "2026-08-27T00:52:00Z",
+      event="workflow_dispatch",
+      status="waiting",
+    ),
+    _api_run(14, 14, "2026-08-27T00:53:00Z", status="completed"),
+    current,
+    _api_run(5, 5, "2026-08-27T01:01:00Z", attempt=2),
   ]
 
-  assert [run["id"] for run in QUEUE.older_active_runs(runs, 15)] == [11, 13]
-  assert QUEUE.older_active_runs(runs, 11) == []
+  assert [run["id"] for run in QUEUE.earlier_active_runs(runs, current)] == [
+    11,
+    13,
+  ]
+  later_rerun = runs[-1]
+  assert [
+    run["id"] for run in QUEUE.earlier_active_runs(runs, later_rerun)
+  ] == [11, 13, 15]
 
 
 def test_publication_turn_fails_closed_on_malformed_api_run():
   """Unknown active-run identity cannot be mistaken for an empty queue."""
   with pytest.raises(QUEUE.QueueError, match="numeric identity"):
-    QUEUE.older_active_runs(
-      [{"id": "bad", "run_number": 1, "event": "push", "status": "queued"}],
-      2,
+    QUEUE.earlier_active_runs(
+      [_api_run("bad", 1, "2026-08-27T00:00:00Z", status="queued")],
+      _api_run(2, 2, "2026-08-27T01:00:00Z"),
     )
 
 
-def test_publication_turn_reads_statuses_from_one_unfiltered_run_listing(
+def test_publication_turn_queries_only_bounded_active_statuses(
   monkeypatch: pytest.MonkeyPatch,
 ):
-  """A requested-to-queued transition cannot fall between status queries."""
+  """Polling cost is independent of completed workflow history."""
   requested_urls: list[str] = []
 
   def fake_request(url: str, token: str):
     requested_urls.append(url)
     assert token == "token"
+    status = parse_qs(urlparse(url).query)["status"][0]
     return {
-      "workflow_runs": [
-        {
-          "id": 7,
-          "run_number": 7,
-          "event": "push",
-          "status": "queued",
-        }
-      ]
+      "workflow_runs": (
+        [_api_run(7, 7, "2026-08-27T00:00:00Z", status="queued")]
+        if status == "queued"
+        else []
+      )
     }
 
   monkeypatch.setattr(QUEUE, "_request_json", fake_request)
 
-  runs = QUEUE._workflow_runs("kindjie/tess", "pages.yml", "token")
+  runs = QUEUE._active_workflow_runs("kindjie/tess", "pages.yml", "token")
 
   assert [run["id"] for run in runs] == [7]
-  assert len(requested_urls) == 1
-  assert "status=" not in requested_urls[0]
+  assert len(requested_urls) == len(QUEUE.STATUS_SCAN_ORDER)
+  assert all("status=" in url for url in requested_urls)
+  assert all("page=2" not in url for url in requested_urls)

@@ -19,10 +19,13 @@ The assembler owns only paths recorded in a storage-branch manifest and fails
 closed on an unowned collision. The first deployment can bootstrap from the
 existing `latest` copy; subsequent development deployments preserve the root,
 and stable releases replace it from the same complete artifact already checked
-for links and browser behavior. A tested FIFO turn makes each publisher wait
-for every older active non-PR documentation run. This avoids GitHub
-concurrency's one-pending replacement behavior while serializing storage and
-Pages artifact updates. The complete served tree is checked before its single
+for links and browser behavior. The one-time bootstrap recognizes the exact
+legacy root `robots.txt` written by the previous workflow, while rejecting any
+operator-modified collision. A tested FIFO turn orders active non-PR attempts
+by their actual start time, including reruns, and queries only active API
+states. This avoids GitHub concurrency's one-pending replacement behavior
+without polling an ever-growing history, while serializing storage and Pages
+artifact updates. The complete served tree is checked before its single
 persistent push.
 
 A GCP edge remains deferred. Direct GitHub Pages is the smaller, portable

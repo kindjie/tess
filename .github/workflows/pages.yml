@@ -22,9 +22,9 @@ permissions:
   contents: read
 
 # Pull requests cancel only their own superseded verification. Publishing
-# runs stay independently runnable: the publish job's tested FIFO turn waits
-# for every older non-PR run instead of GitHub concurrency's lossy one-pending
-# slot, so clustered main/tag/dispatch events are preserved and serialized.
+# runs stay independently runnable: the publish job's tested FIFO turn orders
+# actual attempts instead of GitHub concurrency's lossy one-pending slot, so
+# clustered main/tag/dispatch events and reruns are preserved and serialized.
 concurrency:
   group: >-
     pages-${{ github.event_name == 'pull_request'
@@ -350,7 +350,7 @@ jobs:
           python3 tools/wait_for_publish_turn.py
           --repo "$GITHUB_REPOSITORY"
           --workflow pages.yml
-          --run-number "$GITHUB_RUN_NUMBER"
+          --run-id "$GITHUB_RUN_ID"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

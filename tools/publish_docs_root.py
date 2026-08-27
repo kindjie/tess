@@ -34,6 +34,13 @@ TEXT_SUFFIXES = {
   ".xml",
 }
 NOINDEX = '<meta name="robots" content="noindex, follow">'
+LEGACY_ROOT_ROBOTS = """User-agent: *
+Allow: /
+# The development tree duplicates released pages; only the release
+# trees should be indexed.
+Disallow: /dev/
+Sitemap: https://tess.owx.dev/latest/sitemap.xml
+"""
 
 
 class PublicationError(RuntimeError):
@@ -185,15 +192,14 @@ def _sync_root(pages: Path, source: Path) -> None:
         and _looks_like_mike_redirect(destination)
       ):
         continue
-      # The migration already has a root robots.txt written by this workflow.
-      # Claim it only when it is byte-identical to the rewritten stable copy;
-      # any operator variation remains an unowned collision.
+      # The pre-migration workflow installed one exact legacy robots file at
+      # the root. Claim that known file once; any operator variation remains
+      # an unowned collision.
       if (
         owned is None
         and name == "robots.txt"
         and destination.is_file()
-        and (staged / name).is_file()
-        and destination.read_bytes() == (staged / name).read_bytes()
+        and destination.read_text() == LEGACY_ROOT_ROBOTS
       ):
         continue
       raise PublicationError(

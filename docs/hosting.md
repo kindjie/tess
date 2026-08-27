@@ -74,13 +74,16 @@ root URLs, and `robots.txt` names it so crawlers can read page directives.
 Pull requests build and verify without publishing anything.
 
 Every publishing run receives its own concurrency identity. Before touching
-the storage branch, its publish job waits for every older active non-PR
-documentation run to finish. This FIFO turn preserves clustered main, tag,
-and publishing-dispatch events; unlike GitHub's native concurrency queue, it
-does not discard an existing pending run when a newer one arrives. The turn
-also covers Pages deployment, so storage and the served artifact move in the
-same order. Pull-request verification keeps a separate per-PR group and
-cancels only superseded runs of that PR.
+the storage branch, its publish job waits for every active non-PR attempt that
+started earlier. Attempt start time matters because rerunning an old workflow
+must queue behind a newer publication already in flight. Polling asks GitHub
+only for active statuses, so its API cost does not grow with workflow history.
+This FIFO turn preserves clustered main, tag, publishing-dispatch, and rerun
+attempts; unlike GitHub's native concurrency queue, it does not discard an
+existing pending run when a newer one arrives. The turn also covers Pages
+deployment, so storage and the served artifact move in the same order.
+Pull-request verification keeps a separate per-PR group and cancels only
+superseded runs of that PR.
 
 ## GitHub settings
 

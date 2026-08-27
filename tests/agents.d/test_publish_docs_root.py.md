@@ -5,8 +5,9 @@
   non-HTML compatibility assets, root-only sitemap URLs, version-tree
   `noindex` metadata, owned-path pruning, and fail-closed collision handling.
   It also pins the API-response filtering used by the lossless publication
-  turn: one unfiltered workflow listing is classified locally, and only older
-  active non-PR runs can block a publisher. A non-stable sync also
-  preserves the manifest-owned root robots file.
+  turn: polling is bounded to active statuses, and actual attempt start time
+  orders normal runs and reruns while pull requests remain excluded. The
+  bootstrap recognizes only the exact known legacy root robots file, and a
+  non-stable sync preserves the manifest-owned replacement.
   The tests use tiny text placeholders for binary assets because the helper
   must copy them byte-for-byte rather than interpret them.
