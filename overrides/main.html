@@ -17,8 +17,8 @@
   {%- if page and page.meta and page.meta.get("description") -%}
     {%- set social_description = page.meta["description"] -%}
   {%- endif -%}
-  {%- set social_image =
-    config.site_url ~ "assets/tess-social-preview.png" -%}
+  {%- set social_image = config.site_url.rstrip("/") ~
+    "/assets/tess-social-preview.png" -%}
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="{{ config.site_name }}">
   <meta property="og:title" content="{{ social_title }}">

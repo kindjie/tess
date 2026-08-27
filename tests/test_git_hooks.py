@@ -1270,7 +1270,38 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   assert "set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)" in cmake
   assert "set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)" in cmake
   assert '"tess::detail::*"' in cmake
-  assert "API reference: https://tess.owx.dev/latest/api/" in mkdocs
+  assert "API reference: https://tess.owx.dev/api/" in mkdocs
+
+
+def test_pages_publication_serializes_and_checks_the_uploaded_tree():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "pages.yml").read_text()
+
+  assert "&& github.ref || github.run_id" in workflow
+  assert "group: pages-${{ github.ref }}" not in workflow
+  wait = "python3 tools/wait_for_publish_turn.py"
+  assert "name: built-documentation" in workflow
+  sync = (
+    "python3 tools/publish_docs_root.py sync \\\n"
+    '            build/pages "${root_args[@]}"'
+  )
+  prepare = "python3 tools/publish_docs_root.py prepare-artifact build/pages"
+  check = "python3 tools/publish_docs_root.py check build/pages"
+  push = "git -C build/pages push origin HEAD:gh-pages"
+  upload = "- name: Upload Pages artifact"
+  assert wait in workflow
+  assert sync in workflow
+  assert prepare in workflow
+  assert check in workflow
+  assert push in workflow
+  assert workflow.index(wait) < workflow.index("mike deploy --update-aliases")
+  assert workflow.index(sync) < workflow.index(prepare)
+  assert workflow.index(prepare) < workflow.index(check)
+  assert workflow.index(check) < workflow.index(push)
+  assert workflow.index(push) < workflow.index(upload)
+  assert "cp docs/robots.txt build/pages/robots.txt" not in workflow
+  assert "mike deploy --push" not in workflow
+  assert "mike set-default" not in workflow
 
 
 def test_webgpu_smoke_only_adapter_unavailable_is_unsupported():

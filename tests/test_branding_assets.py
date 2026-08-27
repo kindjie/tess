@@ -172,10 +172,7 @@ def test_docs_search_metadata_establishes_tess_site_identity():
   assert robots == (
     "User-agent: *\n"
     "Allow: /\n"
-    "# The development tree duplicates released pages; only the release\n"
-    "# trees should be indexed.\n"
-    "Disallow: /dev/\n"
-    "Sitemap: https://tess.owx.dev/latest/sitemap.xml\n"
+    "Sitemap: https://tess.owx.dev/sitemap.xml\n"
   )
 
   assert 'property="og:site_name" content="{{ config.site_name }}"' in template
@@ -184,6 +181,18 @@ def test_docs_search_metadata_establishes_tess_site_identity():
   assert '"alternateName": "tess.owx.dev"' in template
   assert '"url": {{ config.site_url | tojson }}' in template
   assert "if page and page.is_homepage" in template
+  assert 'config.site_url.rstrip("/")' in template
+
+
+def test_current_public_links_use_stable_root_urls():
+  maintained = [ROOT / "README.md", *ROOT.glob("docs/**/*.md")]
+  maintained.extend(ROOT.glob("examples/web_*/site/*.html"))
+  historical_parts = {"decisions", "planning", "tdd"}
+
+  for path in maintained:
+    if historical_parts.intersection(path.parts):
+      continue
+    assert "https://tess.owx.dev/latest/" not in path.read_text(), path
 
 
 def test_docs_lazy_loads_the_self_hosted_mermaid_runtime():

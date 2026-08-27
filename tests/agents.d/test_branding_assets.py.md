@@ -26,3 +26,5 @@
   synchronized with the templates and configuration they pin.
 - The README identity assertion pins a plain-language H1 naming pathfinding
   and 2D/3D grid worlds, while the opening sentence carries the C++20 term.
+- Maintained README, documentation, and browser-demo links use stable root
+  URLs; historical design and planning records retain their original wording.
