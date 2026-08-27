@@ -17,8 +17,8 @@ namespace tess {
 // - Idle: no goal (or arrived); the agent does not consume processing.
 // - NeedsPath: a goal was assigned and no route has been computed yet.
 // - Following: a Found route is being walked tile by tile.
-// - Blocked: the last step or path attempt hit a transient failure; the agent
-//   retries a retained occupancy-blocked step or re-paths an invalid route
+// - Blocked: the last step or search hit a transient failure; the agent
+//   retries a retained occupancy-blocked step or re-searches an invalid route
 //   until its shared retry budget runs out, then follows the tick policy.
 // - Unreachable: a structural movement failure or an explicit compatibility
 //   exhaustion policy terminalized the goal until a new one is assigned.
