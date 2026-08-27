@@ -282,7 +282,8 @@ TEST(TessMovement, ClassifiesTransientVersusTerminalFailures) {
   using tess::is_transient_movement_failure;
   using tess::MovementStatus;
 
-  // Transient: the world state can legitimately change; re-path and retry.
+  // Transient: the world state can legitimately change; retry, re-searching
+  // where the route is invalid.
   EXPECT_TRUE(is_transient_movement_failure(MovementStatus::ImpassableFrom));
   EXPECT_TRUE(is_transient_movement_failure(MovementStatus::ImpassableTo));
   EXPECT_TRUE(is_transient_movement_failure(MovementStatus::Blocked));
@@ -366,7 +367,7 @@ TEST(TessPathAgent, TransientMovementFailureKeepsFoundStatusAndBlocks) {
   EXPECT_EQ(stats.movement_failures.occupied, 1u);
   EXPECT_EQ(agents[0].last_result, tess::PathStatus::Found);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
-  // The blocked step itself consumes no re-path budget; only the tick
+  // The blocked step itself consumes no re-search budget; only the tick
   // driver's prepare pass counts attempts.
   EXPECT_EQ(agents[0].blocked_retries, 0u);
   EXPECT_EQ(agents[0].position, (tess::Coord3{0, 0, 0}));

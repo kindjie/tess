@@ -225,7 +225,7 @@ system), extending the standing one-runtime-per-(world, class) contract.
 
 ## Planning Cost
 
-World-scoped invalidation re-paths every active agent. The raw-span tick
+World-scoped invalidation re-searches for every active agent. The raw-span tick
 drivers retain routes and use `PathSubmitScope::NeedsOnly`, but the current ECS
 drivers intentionally use runtime-owned paths and an all-agent processing pass
 whenever collection reports a changed goal. They therefore do not inherit
