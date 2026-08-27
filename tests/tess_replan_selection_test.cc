@@ -165,6 +165,7 @@ TEST(ReplanSelection, PendingAgentIsNeitherRequeuedNorRescanned) {
 TEST(ReplanSelection, DrainedAgentsAreScannedAndQueuedAgain) {
   Fixture f;
   std::vector<std::size_t> ids;
+  ids.reserve(4);
   for (int lane = 0; lane < 4; ++lane) {
     ids.push_back(f.add(agent_at(0, lane), line_route(lane, 0, 5)));
   }
