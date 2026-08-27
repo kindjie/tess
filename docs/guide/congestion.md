@@ -43,11 +43,14 @@ remains valid, although it may no longer be the lowest-cost route.
 
 Two consequences of the separate field. The maximum cost your planner
 is configured for must cover terrain plus the surcharge cap, not the
-cap alone. And the passability term must keep reading its own field:
-`OverlayCost` is zero exactly when terrain is zero, so a surcharge
-cannot make impassable ground enterable, but that absorption is a
-backstop rather than a licence to derive passability from the summed
-cost.
+cap alone. And if you encode impassable terrain as cost zero, say so in the
+passability term as well — `AllOf<Field<PassableTag>,
+NotZero<TerrainTag>>`. `OverlayCost` is zero exactly when terrain is
+zero, so a surcharge cannot make impassable ground enterable in the
+weighted search, but that absorption is a backstop rather than the
+whole guard: region labelling and the minimum-step APIs consult the
+passability predicate alone, and would otherwise disagree with the
+search about the same tile.
 
 A single cost field, with the price written as `1 + min(3, signal)` and
 restored by writing 1 everywhere, is a valid shortcut **only** on

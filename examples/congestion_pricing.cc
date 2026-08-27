@@ -41,11 +41,14 @@ using World = tess::AlwaysResidentWorld<Shape, Schema>;
 // erase it again on disarm.
 //
 // `OverlayCost` is zero exactly when terrain is zero, so a surcharge
-// cannot make impassable ground enterable. Passability still reads its
-// own field: absorption is a backstop, not a licence to derive
-// passability from a summed cost.
+// cannot make impassable ground enterable in the weighted search. That
+// absorption is a backstop, not the whole guard: the region graph and
+// the minimum-step APIs consult the passability predicate alone, so a
+// caller who encodes impassable terrain as cost zero must say so there
+// too. `NotZero<TerrainTag>` is what keeps those three in agreement.
 using Traveler = tess::movement::MovementClass<
-    tess::movement::Field<PassableTag>,
+    tess::movement::AllOf<tess::movement::Field<PassableTag>,
+                          tess::movement::NotZero<TerrainTag>>,
     tess::movement::OverlayCost<tess::movement::FieldCost<TerrainTag>,
                                 tess::movement::FieldCost<SurchargeTag>>>;
 // [congestion-world]
@@ -75,7 +78,7 @@ struct PricingState {
 // [congestion-reprice]
 // Every repricing period (4 fixed ticks measured best): compute the
 // signal, halve-and-add the cooling memory, write
-// price = 1 + min(3, heat), publish content marks ONLY, and remember
+// surcharge = min(3, heat), publish content marks ONLY, and remember
 // which tiles rose. No global pathing-dirty: that is the ~500x
 // mistake.
 void reprice(World& world, std::span<const tess::PathAgentState> agents,
@@ -263,6 +266,26 @@ int main() {
   // Terrain survived pricing: the surcharge never touched it.
   CHECK(world.field<TerrainTag>(rough) == 4,
         "pricing leaves the caller's terrain alone");
+  // Zero terrain is impassable even where the boolean says otherwise
+  // and a surcharge sits on the tile -- the predicate and the cost
+  // expression agree, which is what keeps the region graph and the
+  // minimum-step APIs consistent with the weighted search.
+  {
+    constexpr tess::Coord3 sealed{5, 5, 0};
+    world.field<TerrainTag>(sealed) = 0;
+    world.field<SurchargeTag>(sealed) = 2;
+    const auto resolved = world.resolve(sealed);
+    const auto* page = world.try_chunk(resolved.chunk_key);
+    CHECK(page != nullptr, "sealed tile resolves");
+    if (page != nullptr) {
+      CHECK(!Traveler::passable(*page, resolved.local_tile_id),
+            "zero terrain stays impassable under a surcharge");
+      CHECK(Traveler::entry_cost(*page, resolved.local_tile_id) == 0,
+            "zero terrain absorbs the surcharge");
+    }
+    world.field<TerrainTag>(sealed) = 1;
+    world.field<SurchargeTag>(sealed) = 0;
+  }
   disarm(world, tick_state, pricing);
   bool cleared = true;
   for (int y = 0; y < kHeight && cleared; ++y) {
