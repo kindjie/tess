@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include <tess/experimental/path_agent_replan_selection.h>
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 
@@ -130,6 +131,80 @@ TEST(ReplanSelection, AscendingAgentIndexOrder) {
   EXPECT_EQ(f.queue.front(), std::optional<std::size_t>{a});
   f.queue.pop_front();
   EXPECT_EQ(f.queue.front(), std::optional<std::size_t>{b});
+}
+
+TEST(ReplanSelection, PendingAgentIsNeitherRequeuedNorRescanned) {
+  Fixture f;
+  const auto a = f.add(agent_at(0, 0), line_route(0, 0, 5));
+  const auto b = f.add(agent_at(0, 1), line_route(1, 0, 5));
+  // A is already waiting; B is not. Both routes cross the increase.
+  ASSERT_TRUE(f.queue.request(a, f.agents[a]));
+  ASSERT_TRUE(f.queue.contains(a));
+  ASSERT_FALSE(f.queue.contains(b));
+
+  std::vector<Coord3> consulted;
+  const auto count = f.run([&consulted](Coord3 c) {
+    consulted.push_back(c);
+    return c.x == 3;
+  });
+
+  // Semantics: the return counts only agents newly queued by this call,
+  // the queue holds both exactly once, and FIFO order is preserved.
+  EXPECT_EQ(count, 1U);
+  EXPECT_EQ(f.queue.pending(), 2U);
+  EXPECT_EQ(f.queue.front(), std::optional<std::size_t>{a});
+  f.queue.pop_front();
+  EXPECT_EQ(f.queue.front(), std::optional<std::size_t>{b});
+  // The optimisation itself: A's route was never consulted. This fails
+  // if the skip is removed, and the assertions above still hold either
+  // way, so they are the semantic proof and this is the regression pin.
+  EXPECT_TRUE(std::none_of(consulted.begin(), consulted.end(),
+                           [](Coord3 c) { return c.y == 0; }));
+}
+
+TEST(ReplanSelection, DrainedAgentsAreScannedAndQueuedAgain) {
+  Fixture f;
+  std::vector<std::size_t> ids;
+  for (std::size_t lane = 0; lane < 4; ++lane) {
+    ids.push_back(f.add(agent_at(0, static_cast<std::int64_t>(lane)),
+                        line_route(static_cast<std::int64_t>(lane), 0, 5)));
+  }
+  EXPECT_EQ(f.run([](Coord3 c) { return c.x == 3; }), 4U);
+  // Drain two. Membership is the PENDING set, not a record of having
+  // ever been requested, so the drained pair must be scanned and queued
+  // again by the next selection. A sticky bit would silently drop them.
+  f.queue.pop_front();
+  f.queue.pop_front();
+  EXPECT_FALSE(f.queue.contains(ids[0]));
+  EXPECT_FALSE(f.queue.contains(ids[1]));
+  EXPECT_EQ(f.run([](Coord3 c) { return c.x == 3; }), 2U);
+  EXPECT_EQ(f.queue.pending(), 4U);
+}
+
+TEST(ReplanSelection, MembershipOnUnreservedQueueStaysInBounds) {
+  // `queued_` is sized lazily, so an index never requested must report
+  // false rather than read past the end.
+  PathAgentReplanQueue fresh;
+  EXPECT_FALSE(fresh.contains(0U));
+  EXPECT_FALSE(fresh.contains(4096U));
+}
+
+TEST(ReplanSelection, QueueMembershipTracksRequestAndDrain) {
+  Fixture f;
+  const auto a = f.add(agent_at(0, 0), line_route(0, 0, 3));
+  EXPECT_FALSE(f.queue.contains(a));
+  EXPECT_TRUE(f.queue.request(a, f.agents[a]));
+  EXPECT_TRUE(f.queue.contains(a));
+  // A second request for a pending agent is refused, not duplicated.
+  EXPECT_FALSE(f.queue.request(a, f.agents[a]));
+  EXPECT_EQ(f.queue.pending(), 1U);
+  f.queue.pop_front();
+  EXPECT_FALSE(f.queue.contains(a));
+  // Out of range never reports membership.
+  EXPECT_FALSE(f.queue.contains(9999U));
+  EXPECT_TRUE(f.queue.request(a, f.agents[a]));
+  f.queue.clear();
+  EXPECT_FALSE(f.queue.contains(a));
 }
 
 }  // namespace

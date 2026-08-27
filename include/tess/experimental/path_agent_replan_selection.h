@@ -55,6 +55,15 @@ template <typename CostIncreasedFn>
         i >= routes.routes.size()) {
       continue;
     }
+    // An agent already waiting in the queue cannot be queued again --
+    // `request` refuses it -- so scanning its route can only reach a
+    // conclusion that is then discarded. Under a bounded planning
+    // budget the backlog persists across repricings, so this is the
+    // difference between rescanning the whole backlog every time and
+    // scanning only what is new.
+    if (queue.contains(i)) {
+      continue;
+    }
     const auto& route = routes.routes[i];
     for (auto step = agent.path_index + 1; step < route.size(); ++step) {
       if (cost_increased(route[step])) {

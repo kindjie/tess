@@ -372,6 +372,18 @@ class PathAgentReplanQueue {
     return indices_.size() - head_;
   }
 
+  /// Whether `index` is currently waiting in this queue.
+  ///
+  /// Membership is what makes `request` idempotent: a second request for
+  /// a pending agent is refused. Exposing it lets a caller skip work it
+  /// would otherwise do to build a request that is certain to be
+  /// refused -- selecting over long routes, for instance. Membership
+  /// begins at an accepted `request` and ends at the matching
+  /// `pop_front` or at `clear`.
+  [[nodiscard]] auto contains(std::size_t index) const noexcept -> bool {
+    return index < queued_.size() && queued_[index] != 0;
+  }
+
   [[nodiscard]] auto front() const noexcept -> std::optional<std::size_t> {
     if (empty()) {
       return std::nullopt;

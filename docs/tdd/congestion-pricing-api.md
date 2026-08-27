@@ -147,26 +147,57 @@ its own fail-before test: `PathAgentReplanQueue` tracks membership
 internally but exposes no accessor, so under a bounded planning budget
 agents already queued are rescanned in full at every repricing.
 
-## The gate
+## The gate, and its first firing
 
-The decision changes when both of the following exist, and not before:
+The original gate named two conditions. **Both have since been met, the
+question was re-evaluated, and the decision is unchanged.**
 
-1. **One settled stall definition, re-screened across both families.**
-   Until the escalation and snapshot arms are measured against the same
-   predicate, the config space does not describe the evidence. This is
-   a prerequisite, not a refinement.
-2. **Supported-population coverage on two platforms** for the candidate
-   optima — the bar the validated nearby-agent recipe already cleared:
-   seven scenarios, all sixty-four supported populations, terminal
-   classification retained or improved in every cell.
+1. ~~One settled stall definition, re-screened across both families.~~
+   Met by amendment 11: the duration counter is the single definition
+   and the snapshot families threshold it. The measured ordering
+   survived.
+2. ~~Supported-population coverage on two platforms.~~ Met by the
+   matrix: 8 scenarios x 64 populations x 5 arms on two platforms,
+   4,608 runs a side, with zero replay mismatches, zero cross-platform
+   divergence across 2,560 cells, and zero construction refusals.
+   Cooling, escalating-stall and stalled-cooling clear retention and
+   no-worse in every cell. Queue detection with spreading is rejected:
+   it strands more agents than canonical on six maze cells whose
+   populations interleave with passing ones.
 
-Beyond those, before anything is discussed for the stable tier: a
-scenario family with non-unit terrain, a non-slab three-dimensional
-geometry preserving the measured ordering, and a sparse implementation
-shown identical to the dense one across the capture set — or an
-explicit statement that trajectories are not reproducible across
-library versions, which would have to be reconciled with what a named
-configuration is supposed to promise.
+**Re-evaluated verdict: still no API.** The config-space defect that
+originally decided it is fixable, so it is no longer the deciding
+reason, and leading with it would have been leading with the weaker
+argument. The deciding reason is the one coverage cannot touch: the
+costs that scale are price application, proportional to tiles written,
+and replan selection, proportional to total remaining route length.
+More passing cells add cells, not a different cost shape. Every
+screened world is also unit terrain, so the price cap remains
+denominated in units no experiment has varied, and further cells on
+those worlds cannot vary them.
+
+## The replacement gate
+
+A met gate left standing is stale, so it is replaced here by the
+conditions this document previously listed as further requirements:
+
+1. **A scenario family with non-unit terrain**, so the envelope's cap
+   is expressed in units something has measured.
+2. **A non-slab three-dimensional geometry** preserving the measured
+   ordering under a different branching factor and a much lower areal
+   density.
+3. **A sparse implementation shown identical to the dense one** across
+   the capture set -- or an explicit statement that trajectories are
+   not reproducible across library versions, which would then have to
+   be reconciled with what a named configuration promises.
+
+Two candidates fall outside this decision and should not be treated as
+settled by it. A saturating **cost-composition expression** summing two
+cost fields is movement vocabulary rather than a pricing policy, and any
+caller combining terrain with an overlay needs it. A **per-tick
+expansion bound** on search would turn a work budget into an actual
+bound rather than a lagged target, and only the search itself can
+enforce one.
 
 ## Verification
 
