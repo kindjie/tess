@@ -2,7 +2,7 @@
 
 Congestion pricing makes crowded tiles more expensive to weighted
 planners, using surfaces that tess already ships. The
-[congestion lab](https://tess.owx.dev/demo/congestion/) exposes
+[congestion lab](../../demo/congestion/) exposes
 the retained recipe and selected experimental policies; the numbers
 below come from 28 pre-registered experiment arms whose captures live
 in the repository's evidence records.
@@ -284,7 +284,7 @@ library behaviour.
 
 ## Lab and example
 
-- The [congestion lab](https://tess.owx.dev/demo/congestion/)
+- The [congestion lab](../../demo/congestion/)
   runs the recipe, five screened policies, two rejected controls, and
   three period or price-cap variants live in the browser over the
   same simulation the colony tutorial uses, with a price overlay and
