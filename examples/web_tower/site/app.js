@@ -78,6 +78,34 @@ function diamond(x, y, floor, w, h, fill) {
   ctx.fill();
 }
 
+// A wall reads as a wall rather than a darker floor tile: a short
+// extruded body with a lighter cap, so the room outlines are legible at
+// the small scale a phone shows.
+function wall(x, y, floor) {
+  const [sx, sy] = project(x, y, floor);
+  const halfW = (TILE_W * camera.zoom) / 2;
+  const halfH = (TILE_H * camera.zoom) / 2;
+  const rise = Math.max(2, 9 * camera.zoom);
+  ctx.beginPath();
+  ctx.moveTo(sx - halfW, sy);
+  ctx.lineTo(sx, sy + halfH);
+  ctx.lineTo(sx + halfW, sy);
+  ctx.lineTo(sx + halfW, sy - rise);
+  ctx.lineTo(sx, sy + halfH - rise);
+  ctx.lineTo(sx - halfW, sy - rise);
+  ctx.closePath();
+  ctx.fillStyle = '#3a4763';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - halfH - rise);
+  ctx.lineTo(sx + halfW, sy - rise);
+  ctx.lineTo(sx, sy + halfH - rise);
+  ctx.lineTo(sx - halfW, sy - rise);
+  ctx.closePath();
+  ctx.fillStyle = '#5a6b90';
+  ctx.fill();
+}
+
 function floorPlate(floor) {
   const corners = [[0, 0], [width, 0], [width, depth], [0, depth]].map(
       ([x, y]) => project(x, y, floor));
@@ -130,14 +158,27 @@ function draw() {
     const level = floor * 2;
     floorPlate(floor);
 
-    // Solid tiles. Iterating back to front keeps the overlap correct.
+    // Agents that have arrived seal their own tile, so `tiles()` reports
+    // it impassable; drawing that as a wall would turn the finishing
+    // crowd into masonry. Collect their positions and skip those tiles.
+    const parked = new Set();
+    for (let i = 0; i < agentCount; i += 1) {
+      if (current[i * 3 + 2] === level) {
+        parked.add(current[i * 3 + 1] * width + current[i * 3]);
+      }
+    }
+
+    // Walls and agents share one back-to-front pass, so an agent behind
+    // a wall is overlapped by it rather than drawn over it.
     for (let sum = 0; sum <= width + depth - 2; sum += 1) {
       for (let x = Math.max(0, sum - depth + 1); x <= Math.min(sum, width - 1);
            x += 1) {
         const y = sum - x;
-        if (tiles[(level * depth + y) * width + x] === 0) {
-          diamond(x + 0.5, y + 0.5, floor, 1, 1, '#2b3446');
+        if (tiles[(level * depth + y) * width + x] === 0 &&
+            !parked.has(y * width + x)) {
+          wall(x + 0.5, y + 0.5, floor);
         }
+        drawAgentsAt(x, y, level, floor, current, previous, alpha, agentCount);
       }
     }
 
@@ -151,32 +192,35 @@ function draw() {
           open ? 'rgba(110, 168, 254, 0.30)' : 'rgba(240, 160, 90, 0.34)');
     }
 
-    // Agents on this floor, interpolated between fixed ticks. An agent
-    // inside a stairwell sits on an odd slab level; drawing only even
-    // levels would make it vanish for exactly the ticks this demo
-    // exists to show, so an odd level is drawn against the floor below
-    // it and lifted halfway to the next.
-    for (let i = 0; i < agentCount; i += 1) {
-      const cz = current[i * 3 + 2];
-      const onSlab = (cz & 1) === 1;
-      if (cz !== level && !(onSlab && cz - 1 === level)) {
-        continue;
-      }
-      const cx = current[i * 3];
-      const cy = current[i * 3 + 1];
-      const px = previous[i * 3];
-      const py = previous[i * 3 + 1];
-      const pz = previous[i * 3 + 2];
-      // Only interpolate within a floor; a step between floors would
-      // otherwise slide the marker through the slab.
-      const ix = pz === cz ? px + (cx - px) * alpha : cx;
-      const iy = pz === cz ? py + (cy - py) * alpha : cy;
-      // Half a storey up for a slab level, so a climbing agent reads as
-      // between the two floors rather than standing on the lower one.
-      diamond(
-          ix + 0.5, iy + 0.5, onSlab ? floor + 0.5 : floor, 0.8, 0.8,
-          onSlab ? '#9ec5ff' : '#6ea8fe');
+  }
+}
+
+// Agents standing on (x, y) of this floor, interpolated between fixed
+// ticks. An agent inside a stairwell sits on an odd slab level; drawing
+// only even levels would make it vanish for exactly the ticks this demo
+// exists to show, so an odd level is drawn against the floor below it
+// and lifted halfway to the next.
+function drawAgentsAt(x, y, level, floor, current, previous, alpha, count) {
+  for (let i = 0; i < count; i += 1) {
+    const cz = current[i * 3 + 2];
+    const onSlab = (cz & 1) === 1;
+    if (cz !== level && !(onSlab && cz - 1 === level)) {
+      continue;
     }
+    if (current[i * 3] !== x || current[i * 3 + 1] !== y) {
+      continue;
+    }
+    const cx = current[i * 3];
+    const cy = current[i * 3 + 1];
+    const px = previous[i * 3];
+    const py = previous[i * 3 + 1];
+    const pz = previous[i * 3 + 2];
+    // Only interpolate within a floor; a step between floors would
+    // otherwise slide the marker through the slab.
+    const ix = pz === cz ? px + (cx - px) * alpha : cx;
+    const iy = pz === cz ? py + (cy - py) * alpha : cy;
+    diamond(ix + 0.5, iy + 0.5, onSlab ? floor + 0.5 : floor, 0.8, 0.8,
+            onSlab ? '#9ec5ff' : '#6ea8fe');
   }
 }
 
