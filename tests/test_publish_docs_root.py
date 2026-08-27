@@ -281,5 +281,4 @@ def test_publication_turn_reads_statuses_from_one_unfiltered_run_listing(
 
   assert [run["id"] for run in runs] == [7]
   assert len(requested_urls) == 1
-  assert "exclude_pull_requests=true" in requested_urls[0]
   assert "status=" not in requested_urls[0]

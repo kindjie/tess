@@ -66,16 +66,12 @@ def _request_json(url: str, token: str) -> dict[str, Any]:
 
 
 def _workflow_runs(repo: str, workflow: str, token: str) -> list[dict[str, Any]]:
-  """Read unfiltered non-PR runs so status changes cannot cross queries."""
+  """Read all run states together so status changes cannot cross queries."""
   runs: list[dict[str, Any]] = []
   encoded_workflow = quote(workflow, safe="")
   page = 1
   while True:
-    query = urlencode({
-      "exclude_pull_requests": "true",
-      "per_page": 100,
-      "page": page,
-    })
+    query = urlencode({"per_page": 100, "page": page})
     url = (
       f"{API_ROOT}/repos/{repo}/actions/workflows/"
       f"{encoded_workflow}/runs?{query}"
