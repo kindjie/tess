@@ -2285,7 +2285,7 @@ Following agent's ticket -- asserted in debug builds, silently stalled
 movement in release. One runtime per (world, <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>, agent
 system), extending the standing one-runtime-per-(world, class) contract.</p>
 <h2 id="planning-cost">Planning Cost</h2>
-<p>World-scoped invalidation re-paths every active agent. The raw-span tick
+<p>World-scoped invalidation re-searches for every active agent. The raw-span tick
 drivers retain routes and use <code>PathSubmitScope::NeedsOnly</code>, but the current ECS
 drivers intentionally use runtime-owned paths and an all-agent processing pass
 whenever collection reports a changed goal. They therefore do not inherit

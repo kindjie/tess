@@ -137,7 +137,7 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('result__channe
 <div class="line"><a id="l00012" name="l00012"></a><span class="lineno">   12</span><span class="preprocessor">#include &lt;vector&gt;</span></div>
 <div class="line"><a id="l00013" name="l00013"></a><span class="lineno">   13</span> </div>
 <div class="line"><a id="l00014" name="l00014"></a><span class="lineno">   14</span><span class="comment">// A ResultChannel&lt;T&gt; is caller-owned queued-operation result scratch</span></div>
-<div class="line"><a id="l00015" name="l00015"></a><span class="lineno">   15</span><span class="comment">// scratch delivering one typed payload plus an OpCompletion per queued</span></div>
+<div class="line"><a id="l00015" name="l00015"></a><span class="lineno">   15</span><span class="comment">// delivering one typed payload plus an OpCompletion per queued</span></div>
 <div class="line"><a id="l00016" name="l00016"></a><span class="lineno">   16</span><span class="comment">// operation, keyed by OpHandle. Publication is synchronous and</span></div>
 <div class="line"><a id="l00017" name="l00017"></a><span class="lineno">   17</span><span class="comment">// executor-agnostic: each op&#39;s executing thread writes only its own dense</span></div>
 <div class="line"><a id="l00018" name="l00018"></a><span class="lineno">   18</span><span class="comment">// slot (the same per-operation-slot discipline the partitioned dirty scratch</span></div>

@@ -171,7 +171,7 @@ std::size_t&#160;</td><td class="memItemRight"><b>max_steps</b> = 1</td></tr>
       </table>
 </div><div class="memdoc">
 <p>Budget of consecutive ticks spent retrying a Blocked agent.</p>
-<p>Occupied and reserved destinations retry the retained step without an occupancy-blind search; route-invalidating failures re-path. The first movement failure records the block, and each following tick consumes one attempt until a successful move resets the count. At exhaustion the policy below either keeps the agent blocked without further path processing, or preserves the historical terminal transition. </p>
+<p>Occupied and reserved destinations retry the retained step without an occupancy-blind search; route-invalidating failures re-search. The first movement failure records the block, and each following tick consumes one attempt until a successful move resets the count. At exhaustion the policy below either keeps the agent blocked without further path processing, or preserves the historical terminal transition. </p>
 
 </div>
 </div>

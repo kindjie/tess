@@ -656,7 +656,7 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('path__agent__t
 <div class="line"><a id="l00616" name="l00616"></a><span class="lineno">  616</span><span class="comment">// Scans agents ahead of a tick&#39;s path processing. NeedsPath agents request</span></div>
 <div class="line"><a id="l00617" name="l00617"></a><span class="lineno">  617</span><span class="comment">// processing with no manual dirty mark. Blocked agents consume one retry per</span></div>
 <div class="line"><a id="l00618" name="l00618"></a><span class="lineno">  618</span><span class="comment">// following tick. A retained Found route waits without path processing for</span></div>
-<div class="line"><a id="l00619" name="l00619"></a><span class="lineno">  619</span><span class="comment">// occupancy/reservations; invalid routes request a re-path. Exhausted agents</span></div>
+<div class="line"><a id="l00619" name="l00619"></a><span class="lineno">  619</span><span class="comment">// occupancy/reservations; invalid routes request a re-search. Exhausted agents</span></div>
 <div class="line"><a id="l00620" name="l00620"></a><span class="lineno">  620</span><span class="comment">// stop path processing at exhaustion; the configured policy decides whether</span></div>
 <div class="line"><a id="l00621" name="l00621"></a><span class="lineno">  621</span><span class="comment">// they remain honestly Blocked or become terminally Unreachable.</span></div>
 <div class="line"><a id="l00623" name="l00623"></a><span class="lineno">  623</span><span class="keyword">inline</span> <span class="keyword">auto</span> prepare_path_agent_processing(</div>

@@ -2333,7 +2333,7 @@ deltas.</p>
   coordinates.</li>
 <li><code>is_transient_movement_failure(status)</code> classifies failures: blocked,
   occupied, reserved, and stale statuses are transient (the world can
-  legitimately change under a routed agent; re-path and retry), while
+  legitimately change under a routed agent; re-search and retry), while
   invalid endpoints and non-adjacent steps indicate a caller bug and are
   terminal.</li>
 <li><code>MovementFailureCounts</code> aggregates failures into <code>invalid</code>, <code>impassable</code>,
@@ -2685,7 +2685,8 @@ frame through the lost-update-safe observe/clear-observed protocol.</p>
   search result: <code>Idle</code> (no goal or arrived), <code>NeedsPath</code> (goal assigned, no
   route yet), <code>Following</code> (walking a <code>Found</code> route), <code>Blocked</code> (transient
   failure; retained-step contention waits, while route-invalidating failures
-  re-path until the shared retry budget and exhaustion policy take effect),
+  re-search until the shared retry budget and exhaustion policy take
+  effect),
   and <code>Unreachable</code> (structural failure or explicitly terminal exhaustion;
   terminal until a new goal is assigned).</li>
 <li><code>set_path_agent_goal(agent, goal)</code> arms the lifecycle (<code>NeedsPath</code>, retry
@@ -3048,13 +3049,13 @@ without a world edit. Planner failures and transient movement failures both
 land in <code>Blocked</code>; each following tick consumes one of
 <code>max_blocked_retries</code> when movement is enabled; <code>max_steps == 0</code> pauses the
 budget. Occupancy and reservations retry the retained step, while
-route-invalidating failures re-path. Successful movement resets the
+route-invalidating failures re-search. Successful movement resets the
 consecutive-block count. Exhaustion remains <code>Blocked</code> by default; callers that
 need the historical terminal timeout select <code>MarkUnreachable</code> explicitly.
 Structural movement failures (invalid endpoints, non-adjacent steps) skip the
 retry budget entirely. A missing edge under a special-transition provider is
 <code>StaleTopology</code>, because a provider revision can legitimately remove it, and
-therefore requests a bounded re-path. Only a new goal re-arms an
+therefore requests a bounded re-search. Only a new goal re-arms an
 <code>Unreachable</code> agent.
 Clearing a goal returns any active lifecycle state to <code>Idle</code>; those equivalent
 edges are omitted from the diagram to keep the failure paths legible.</p>
