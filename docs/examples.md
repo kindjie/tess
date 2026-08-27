@@ -31,7 +31,7 @@ cmake --build --preset examples
   walls you draw (walls survive resets), with completed and crowd-turnaround
   leg counters, smooth presentation-only movement, a C++-update cost readout,
   and a retained-routes vs replan-every-tick toggle.
-- [Congestion lab](https://tess.owx.dev/demo/congestion/) — the
+- [Congestion lab](../demo/congestion/) — the
   colony simulation with the supported-coverage nearby-agent recipe,
   five additional screened policies, two rejected controls, and three
   period or price-cap variants selectable live, with a price overlay,
@@ -39,7 +39,7 @@ cmake --build --preset examples
   The [congestion pricing guide](guide/congestion.md) states the
   evidence tier and boundary for each result; the native runner
   executes the same model without browser presentation.
-- [Tower](https://tess.owx.dev/demo/tower/) — a six-floor world
+- [Tower](../demo/tower/) — a six-floor world
   where solid slabs separate the floors and stairwell columns are the only
   tiles joining them, so an agent crossing floors follows one route
   through three dimensions rather than switching between stacked maps.
@@ -91,7 +91,7 @@ cmake --build --preset examples
   restores unit costs when disabled. Snippet-synced into the
   [congestion pricing guide](guide/congestion.md).
 - [`web_congestion`][web_congestion_src] — the source of the
-  [congestion lab](https://tess.owx.dev/demo/congestion/): wraps
+  [congestion lab](../demo/congestion/): wraps
   the colony model through its native seam so the tutorial stays clean
   while every pricing experiment lives here.
 - [`web_traffic`][web_traffic_src] — the source of the
