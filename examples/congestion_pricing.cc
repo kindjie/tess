@@ -24,16 +24,30 @@ int failures = 0;
 
 // [congestion-world]
 struct PassableTag {};
-struct CostTag {};
+// Terrain cost belongs to the caller and pricing never writes it.
+struct TerrainTag {};
+// The congestion surcharge, owned entirely by the pricing code. Zero
+// means "no surcharge" here, not impassable.
+struct SurchargeTag {};
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
-                                 tess::Field<CostTag, std::uint8_t>>;
+                                 tess::Field<TerrainTag, std::uint8_t>,
+                                 tess::Field<SurchargeTag, std::uint8_t>>;
 using Shape = tess::Shape<tess::Extent3{64, 64, 1}, tess::Extent3{16, 16, 1}>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
-// The movement class prices the cost field: planners and caches see
-// congestion prices as ordinary weighted terrain.
-using Traveler =
-    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
-                                  tess::movement::FieldCost<CostTag>>;
+// Terrain and surcharge live in separate fields and the movement class
+// reads their sum, so pricing never overwrites terrain and disarming is
+// just clearing the surcharge. Writing the price into the terrain field
+// instead would destroy the caller's terrain on the first repricing and
+// erase it again on disarm.
+//
+// `OverlayCost` is zero exactly when terrain is zero, so a surcharge
+// cannot make impassable ground enterable. Passability still reads its
+// own field: absorption is a backstop, not a licence to derive
+// passability from a summed cost.
+using Traveler = tess::movement::MovementClass<
+    tess::movement::Field<PassableTag>,
+    tess::movement::OverlayCost<tess::movement::FieldCost<TerrainTag>,
+                                tess::movement::FieldCost<SurchargeTag>>>;
 // [congestion-world]
 
 constexpr int kWidth = 64;
@@ -97,16 +111,19 @@ void reprice(World& world, std::span<const tess::PathAgentState> agents,
           static_cast<std::uint16_t>(state.heat[at] / 2 + signal[at]);
       const auto capped =
           state.heat[at] > 3 ? std::uint16_t{3} : state.heat[at];
-      const auto price = static_cast<std::uint8_t>(1 + capped);
+      // The surcharge is the capped signal itself. Terrain supplies the
+      // base, so this is not biased by one the way a single-field
+      // recipe has to be.
+      const auto surcharge = static_cast<std::uint8_t>(capped);
       const tess::Coord3 coord{x, y, 0};
-      auto& cost = world.field<CostTag>(coord);
-      if (cost == price) {
+      auto& priced = world.field<SurchargeTag>(coord);
+      if (priced == surcharge) {
         continue;
       }
-      if (price > cost) {
+      if (surcharge > priced) {
         state.increased[at] = 1;
       }
-      cost = price;
+      priced = surcharge;
       state.changed_chunks[static_cast<std::size_t>(
           tess::chunk_key<Shape>(tess::chunk_coord<Shape>(coord)).value)] =
           true;
@@ -141,8 +158,13 @@ std::size_t scope_replans(std::span<const tess::PathAgentState> agents,
 
 // [congestion-disarm]
 // Turning pricing OFF is the one place a global replan is correct:
-// restore unit costs, publish the marks, then raise the pathing-dirty
+// clear the surcharge, publish the marks, then raise the pathing-dirty
 // flag once -- every retained route was planned against prices.
+//
+// Clearing one field is the whole of it. A recipe that wrote prices
+// into the terrain field would have to restore terrain here, and could
+// only restore what it happened to know: a uniform value, not whatever
+// the caller's map actually held.
 void disarm(World& world, tess::PathAgentTickState& tick_state,
             PricingState& state) {
   std::fill(state.heat.begin(), state.heat.end(), std::uint16_t{0});
@@ -150,9 +172,9 @@ void disarm(World& world, tess::PathAgentTickState& tick_state,
   for (int y = 0; y < kHeight; ++y) {
     for (int x = 0; x < kWidth; ++x) {
       const tess::Coord3 coord{x, y, 0};
-      auto& cost = world.field<CostTag>(coord);
-      if (cost != 1) {
-        cost = 1;
+      auto& priced = world.field<SurchargeTag>(coord);
+      if (priced != 0) {
+        priced = 0;
         state.changed_chunks[static_cast<std::size_t>(
             tess::chunk_key<Shape>(tess::chunk_coord<Shape>(coord)).value)] =
             true;
@@ -171,15 +193,29 @@ void disarm(World& world, tess::PathAgentTickState& tick_state,
 }  // namespace
 
 int main() {
+  // The composed expression must still let the library prove the cost
+  // range is safe. Omitting a maximum on a hand-rolled cost expression
+  // degrades this to Unknown silently; this turns that into a compile
+  // error instead.
+  static_assert(tess::path_cost_range_assessment<World, Traveler> ==
+                tess::CostRangeAssessment::ProvenSafe);
+
   World world;
   for (auto& page : world.chunks()) {
     auto open = page.template field_span<PassableTag>();
-    auto cost = page.template field_span<CostTag>();
+    auto terrain = page.template field_span<TerrainTag>();
+    auto surcharge = page.template field_span<SurchargeTag>();
     for (std::size_t i = 0; i < open.size(); ++i) {
       open[i] = true;
-      cost[i] = 1;
+      terrain[i] = 1;
+      surcharge[i] = 0;
     }
   }
+  // One tile of costlier ground, so the checks below prove pricing
+  // leaves terrain alone rather than passing on a uniformly flat map
+  // where every value happens to be the value pricing would write.
+  constexpr tess::Coord3 rough{3, 3, 0};
+  world.field<TerrainTag>(rough) = 4;
   // A wall with one gate, and a small crowd routed through it.
   for (int y = 0; y < kHeight; ++y) {
     if (y < 30 || y > 33) {
@@ -208,7 +244,10 @@ int main() {
       scoped_total +=
           scope_replans(agents, tick_state.routes, pricing, replan_queue);
     }
-    const auto stats = tess::tick_weighted_path_agents<World, Traveler, 4>(
+    // Terrain maximum (4 here) plus the surcharge cap (3). A single-cost
+    // recipe only had to cover the cap; separating the fields means the
+    // planner's ceiling must cover their sum.
+    const auto stats = tess::tick_weighted_path_agents<World, Traveler, 7>(
         tick_state, world, agents, runtime,
         tess::PathAgentTickOptions{.max_steps = 1});
     (void)stats;
@@ -221,17 +260,22 @@ int main() {
   }
   CHECK(arrived > 0, "some agents complete under pricing");
   CHECK(scoped_total > 0, "scoped replans actually fired");
+  // Terrain survived pricing: the surcharge never touched it.
+  CHECK(world.field<TerrainTag>(rough) == 4,
+        "pricing leaves the caller's terrain alone");
   disarm(world, tick_state, pricing);
-  bool unit = true;
-  for (int y = 0; y < kHeight && unit; ++y) {
+  bool cleared = true;
+  for (int y = 0; y < kHeight && cleared; ++y) {
     for (int x = 0; x < kWidth; ++x) {
-      if (world.field<CostTag>(tess::Coord3{x, y, 0}) != 1) {
-        unit = false;
+      if (world.field<SurchargeTag>(tess::Coord3{x, y, 0}) != 0) {
+        cleared = false;
         break;
       }
     }
   }
-  CHECK(unit, "disarm restores unit costs everywhere");
+  CHECK(cleared, "disarm clears the surcharge everywhere");
+  CHECK(world.field<TerrainTag>(rough) == 4,
+        "disarm leaves the caller's terrain alone");
   std::printf("congestion pricing example: %s (%d) scoped=%zu arrived=%d\n",
               failures == 0 ? "OK" : "FAILURES", failures, scoped_total,
               arrived);

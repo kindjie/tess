@@ -20,39 +20,41 @@ which is the successor measurement surface.
 
 ## The mechanism (all policies share it)
 
-1. Give your movement class a cost term over an ordinary cost field
-   (`tess::movement::FieldCost<CostTag>`).
+1. Give congestion its own field, separate from terrain, and have the
+   movement class read their sum:
+   `OverlayCost<FieldCost<TerrainTag>, FieldCost<SurchargeTag>>`.
+   Pricing then owns one field outright and never writes the caller's
+   terrain.
 2. Every four fixed ticks, compute a per-tile **signal** and write
-   `price = 1 + min(3, signal)` into the field. In the
-   single-platform screen, four ticks produced a lower aggregate
-   settle-tick ratio than eight or sixteen for both cooling policies,
-   and a cap of 3 likewise produced a lower aggregate ratio than a
-   cap of 7.
+   `min(3, signal)` into the surcharge field. In the single-platform
+   screen, four ticks produced a lower aggregate settle-tick ratio than
+   eight or sixteen for both cooling policies, and a cap of 3 likewise
+   produced a lower aggregate ratio than a cap of 7.
 3. Publish the writes as versioned edits: `mark_content_changed` on
    every chunk you touched. Do **not** raise the global pathing-dirty
    flag; request replans only for affected retained routes, as
    described below.
-4. When pricing turns off, restore the field to its unpriced values
-   and only then force one full replan: every retained route was
-   planned against prices, so this single global replan is correct.
+4. When pricing turns off, clear the surcharge field and only then
+   force one full replan: every retained route was planned against
+   prices, so this single global replan is correct.
 
 Pricing changes route cost, not passability. An existing route
 remains valid, although it may no longer be the lowest-cost route.
 
-**If your world has terrain costs, do not follow step 2 literally.**
-The recipe below writes the price into the same field the movement
-class reads, and restores it by writing 1 everywhere. That is correct
-only because the demo's terrain is uniformly 1
-(`world.fill_field<CostTag>(1)`), and every experiment in this stream
-was screened on such a world. A caller whose field already carries
-terrain weight would overwrite it when pricing turns on and erase it
-when pricing turns off. Give congestion its own field instead and have
-the movement class read the sum, so terrain and price stay separable
-and restoring means clearing the price field alone. Two consequences
-follow: the maximum cost your planner is configured for must cover
-terrain plus the price cap, and the passability term must keep reading
-terrain only — a price must never be able to make impassable ground
-passable.
+Two consequences of the separate field. The maximum cost your planner
+is configured for must cover terrain plus the surcharge cap, not the
+cap alone. And the passability term must keep reading its own field:
+`OverlayCost` is zero exactly when terrain is zero, so a surcharge
+cannot make impassable ground enterable, but that absorption is a
+backstop rather than a licence to derive passability from the summed
+cost.
+
+A single cost field, with the price written as `1 + min(3, signal)` and
+restored by writing 1 everywhere, is a valid shortcut **only** on
+uniformly unit terrain — which is what every experiment in this stream
+was screened on. On any other map it destroys terrain when pricing
+turns on and cannot restore it when pricing turns off, because the
+restoring code knows only the uniform value, not the map.
 
 Note also that the cap and the price magnitudes are expressed in your
 cost units. All the measured results here come from unit terrain, so

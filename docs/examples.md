@@ -88,7 +88,9 @@ cmake --build --preset examples
   congestion-pricing recipe against public APIs only: it computes tile
   prices, marks the changed chunks, requests replans for affected
   retained routes through the experimental route-crossing helper, and
-  restores unit costs when disabled. Snippet-synced into the
+  clears the surcharge when disabled. Terrain and congestion live in
+  separate fields summed by the movement class, so pricing never
+  overwrites the caller's terrain. Snippet-synced into the
   [congestion pricing guide](guide/congestion.md).
 - [`web_congestion`][web_congestion_src] — the source of the
   [congestion lab](../demo/congestion/): wraps

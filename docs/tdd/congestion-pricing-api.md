@@ -97,17 +97,18 @@ would not touch the selection scan at all.
 
 These are independent of whether any policy API is ever built.
 
-**Prices belong in their own field.** The shipped recipe writes the
-price into the same field the movement class reads and restores it by
-writing 1 everywhere. That is correct only on uniform terrain. A caller
-whose field carries terrain weight would overwrite it when pricing
-turns on and erase it when pricing turns off, and a passability term
-derived from cost could let a price make impassable ground passable.
-The correct shape is a separate price field summed with terrain by the
-movement class, which keeps restoration to clearing the price field and
-keeps passability reading terrain only. The caller's configured maximum
-cost must then cover terrain plus the price cap. This is recorded in
-the guide as a hazard.
+**Prices belong in their own field.** The recipe originally written for
+this stream wrote the price into the same field the movement class
+reads and restored it by writing 1 everywhere -- correct only on
+uniform terrain, and destructive on any other map, since the restoring
+code knows the uniform value rather than the terrain. That has since
+been corrected: `examples/congestion_pricing.cc` now keeps terrain and
+surcharge in separate fields summed by
+`tess::movement::OverlayCost`, so disarming clears one field and
+terrain is never touched. The caller's configured maximum cost must
+cover terrain plus the surcharge cap, and passability keeps reading its
+own field. `OverlayCost` is zero exactly when terrain is zero, so a
+surcharge cannot make impassable ground enterable.
 
 **Sparse application has a natural key.** `TileKey<Shape>` already
 packs `chunk_key << local_bits | local_tile_id`, so ordering by the
@@ -216,4 +217,6 @@ the two stall definitions in `examples/web_congestion/congestion_model.cc`;
 unit terrain in `examples/web_colony/colony_model.cc`; the decay fixed
 point by inspection of its integer arithmetic; the cost shares in the
 congestion guide and the amendment-9 profiling comments on issue #269;
-and the direct-write hazard in `examples/congestion_pricing.cc`.
+and the two-field shape now demonstrated in
+`examples/congestion_pricing.cc` (the direct-write hazard this document
+originally recorded is corrected there).
