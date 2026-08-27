@@ -187,7 +187,7 @@ void BM_ecs_index_move(benchmark::State& state) {
 
 // Full-tick fixtures: N agents, one per row, marching toward the right
 // edge. Every kResetInterval ticks the fixture pauses timing, teleports
-// the column back, re-arms goals, and absorbs the re-path tick outside
+// the column back, re-arms goals, and absorbs the re-search tick outside
 // the timed region -- timed iterations are pure steady-state ticks
 // (collect + movement + apply; no path processing, no arrivals).
 constexpr std::int64_t kMarchStart = 2;
@@ -233,7 +233,7 @@ struct EnttMarchFixture {
 
   // Teleport everyone back to the start column, re-arm goals (arrival
   // consumes PathGoal, so a returning agent needs a fresh one), and
-  // absorb the re-path tick; caller pauses timing around this.
+  // absorb the re-search tick; caller pauses timing around this.
   void reset() {
     for (std::size_t i = 0; i < agents.size(); ++i) {
       const auto row = static_cast<std::int64_t>(i);
@@ -359,7 +359,7 @@ void BM_ecs_tick_entt_alloc_gate(benchmark::State& state) {
 
   // The reset runs at the TOP of the iteration, outside the counter
   // scope, so the final iteration's post-loop assertion always reads a
-  // pure steady-state tick -- never a reset/re-path pass.
+  // pure steady-state tick -- never a reset/re-search pass.
   tess::diagnostics::AllocationCounters counters;
   bool need_reset = false;
   for (auto _ : state) {

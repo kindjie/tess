@@ -97,9 +97,13 @@ inline void record_movement_failure(MovementFailureCounts& counts,
 
 // Transient failures describe a world state that can legitimately change
 // under a routed agent (another agent passing through, a fresh wall, a
-// stale content-version guard); callers should re-path and retry. The remaining
-// failures (invalid endpoints, non-adjacent steps) indicate a caller bug
-// and are terminal.
+// stale content-version guard), so retrying may succeed. How to retry
+// splits by cause. Occupancy and reservation failures should retry the
+// retained step: path passability deliberately ignores both, so a fresh
+// search returns the same route. The rest invalidate the route and need
+// a new search before movement can resume. The remaining failures
+// (invalid endpoints, non-adjacent steps) indicate a caller bug and are
+// terminal.
 /// Returns whether retrying after world state changes may allow the move.
 [[nodiscard]] constexpr auto is_transient_movement_failure(
     MovementStatus status) noexcept -> bool {

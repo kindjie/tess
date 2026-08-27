@@ -371,7 +371,7 @@ flowchart TB
   inventing `NoPath`; `MarkUnreachable` explicitly selects the historical
   terminal transition. Occupied/reserved destinations retry the retained step
   without processing because occupancy is intentionally absent from planning
-  passability; other transient failures request a re-path. Ticks with
+  passability; other transient failures request a re-search. Ticks with
   `max_steps == 0` pause the retry budget without attempting movement.
   Successful movement resets the consecutive-block count.
   `mark_pathing_dirty(state)` remains the hook -- and the only correct one --

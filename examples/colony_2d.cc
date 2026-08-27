@@ -81,7 +81,7 @@ struct AgentTask {
 };
 
 // OnDirty(terrain) task: incremental per-class topology update over the
-// dirty chunks, then re-path every agent -- runs exactly on the ticks
+// dirty chunks, then re-search for every agent -- runs exactly on the ticks
 // where the auto-exec task landed construction.
 struct TopologyTask {
   Colony* colony = nullptr;

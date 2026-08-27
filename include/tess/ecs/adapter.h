@@ -56,7 +56,7 @@ struct PathAgentCollectInfo {
   std::size_t count = 0;
   // True iff any goal was armed or re-armed during collection; the tick
   // pipeline maps it to mark_pathing_dirty. Goal clears do not set it: a
-  // cleared agent is skipped by every processing pass, so re-pathing the
+  // cleared agent is skipped by every processing pass, so re-searching for the
   // survivors would be pure waste.
   bool pathing_dirty = false;
 };
