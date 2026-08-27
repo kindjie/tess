@@ -445,7 +445,10 @@ stateDiagram-v2
   proves unreachable are resolved without A* and surfaced in
   `PathAgentFrameStats::precheck_ruled_out`.
 - `PathAgentReplanQueue` is an opt-in, caller-owned FIFO for replans. Pending
-  agent indices deduplicate. `process_path_agent_replans` invokes a synchronous
+  agent indices deduplicate, and `contains(index)` reports that pending set —
+  membership begins at an accepted `request` and ends at the matching
+  `pop_front` or at `clear`, so a caller can skip building a request that
+  would only be refused. `process_path_agent_replans` invokes a synchronous
   caller planner at most its supplied request count and copies each borrowed
   result into retained routes; the generic drain deliberately does not certify
   path legality or optimality. `process_unit_path_agent_replans` and

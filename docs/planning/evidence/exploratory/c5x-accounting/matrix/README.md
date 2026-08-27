@@ -47,6 +47,14 @@ Across every capture there are 4,097 replayed cells and **zero**
 `replay=DIFFER`. The gates below recompute from these rows and
 reproduce the original results cell for cell.
 
+The Deck leg was interrupted once and resumed from its per-cell
+markers. The cell in progress at that moment had already written output
+and ran again on resume, so six cells were captured twice — including
+one canonical row, which the format otherwise never duplicates. Every
+duplicate matched its first capture exactly, which is corroboration
+that the resumed run was consistent rather than a defect; the rows are
+recorded once, in the format's canonical form.
+
 ## Results
 
 | gate | outcome |

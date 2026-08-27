@@ -142,10 +142,20 @@ contract clarifications rather than surface:
   cost characteristic documented, since it is the term that dominates
   congested workloads.
 
-One candidate stable-tier change was identified and is deferred pending
-its own fail-before test: `PathAgentReplanQueue` tracks membership
-internally but exposes no accessor, so under a bounded planning budget
-agents already queued are rescanned in full at every repricing.
+One candidate stable-tier change was identified here and has since
+shipped: `PathAgentReplanQueue::contains(index)`. Membership is what
+makes `request` idempotent, and without an accessor a caller writing
+its own selection pass had to guess; under a bounded planning budget
+agents already queued were rescanned in full at every repricing. The
+scoped-replan helper now skips them.
+
+Its equivalence is established by asymmetry rather than assertion:
+removing the skip fails only the fixture's consultation assertion,
+while the returned count, queue contents and drain order hold either
+way. That is what makes the change invisible to a caller. The
+membership set is the PENDING set, cleared at `pop_front`, and a
+partial-drain fixture pins that — a sticky "ever requested" bit would
+silently drop agents that had been drained and needed queueing again.
 
 ## The gate, and its first firing
 
