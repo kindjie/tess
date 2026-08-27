@@ -39,6 +39,13 @@ cmake --build --preset examples
   The [congestion pricing guide](guide/congestion.md) states the
   evidence tier and boundary for each result; the native runner
   executes the same model without browser presentation.
+- [Tower](https://tess.owx.dev/latest/demo/tower/) — a six-floor world
+  where solid slabs separate the floors and stairwell columns are the only
+  tiles joining them, so an agent crossing floors follows one route
+  through three dimensions rather than switching between stacked maps.
+  Closing a stairwell prices it instead of sealing it, so routes divert
+  while anyone on the stairs can still walk out. Isometric 2D canvas with
+  touch controls; an early version whose geometry is deliberately simple.
 - [Live diagnostics](https://tess.owx.dev/latest/demo/diagnostics/) — real Dear ImGui
   panels over path, queued-phase, timing, trace, and consumer-instrumented
   allocation snapshots. Mirrored HTML controls keep the demo keyboard

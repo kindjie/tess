@@ -33,9 +33,15 @@ namespace tess::experimental {
  * through `PathAgentReplanQueue`; the return value counts agents newly
  * queued by THIS call. Allocates only through the queue's own growth.
  *
- * Experimental: the spelling and one contract detail (whether the scan
- * starts at the agent's current tile, as here, or at the next step)
- * may still change before any stable promotion.
+ * The scan starts at the agent's NEXT step, not the tile it occupies.
+ * Movement charges a tile's cost on entering it, so the occupied tile
+ * has already been paid for and its price cannot change the cost of the
+ * remaining route; scanning it would queue replans that cannot improve
+ * anything. A route that revisits that tile later is still caught, at
+ * the later index.
+ *
+ * Experimental: the spelling may still change before any stable
+ * promotion.
  */
 template <typename CostIncreasedFn>
 [[nodiscard]] auto request_replans_for_route_crossings(
@@ -50,7 +56,7 @@ template <typename CostIncreasedFn>
       continue;
     }
     const auto& route = routes.routes[i];
-    for (auto step = agent.path_index; step < route.size(); ++step) {
+    for (auto step = agent.path_index + 1; step < route.size(); ++step) {
       if (cost_increased(route[step])) {
         if (queue.request(i, agent)) {
           ++newly_queued;
