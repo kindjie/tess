@@ -2198,9 +2198,16 @@ experimental helper encodes this:</p>
 </code></pre></div>
 <!-- /tess-snippet -->
 
-<p>The helper is experimental. Its name and whether the scan includes
-the agent's current tile may change. Its documentation comment
-specifies the equivalent caller-owned scan.</p>
+<p>The scan starts at the agent's next step, not the tile it occupies: a
+tile's cost is charged on entering it, so the occupied tile is already
+paid for and a price rise there cannot change what the remaining route
+costs. A route that revisits that tile later is still caught, at the
+later index.</p>
+<p>The helper is experimental and its name may still change. Its
+documentation comment specifies the equivalent caller-owned scan.</p>
+<p>Its cost grows with the total length of the routes it scans rather than
+with the number of agents, which is why long routes with distant price
+changes are its worst case.</p>
 <h2 id="the-signal-menu">The signal menu</h2>
 <p>All signals reprice every four ticks and share the price formula;
 they differ only in what they count.</p>
@@ -2423,10 +2430,13 @@ evidence in the table: five of the eight scenarios are individually
 slower under the work-target rule even though its aggregate is ~1.0,
 and the aggregate sits inside measurement drift. The <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr>-tick and
 search columns are exact and replay-identical; treat elapsed time as
-indicative only. A search-work target also bounds work <em>on average</em>,
-not per tick: it sets the request count from the previous tick's
-average, so a single expensive search can still overshoot, which is
-why its worst tick is 2.3x rather than lower.</p>
+indicative only. A search-work target is a <em>lagged</em> target, not a
+bound: it sets this tick's request count from the previous tick's
+average cost per search, so a single expensive search still overshoots
+and the count reacts only afterwards. That is why its worst tick is
+2.3x rather than lower. A genuine per-tick bound would need a search
+that can be paused or cancelled mid-expansion, which this library's
+synchronous drain does not offer.</p>
 <p><strong>Screened, not promoted.</strong> Eight scenarios, two populations, one
 platform.</p>
 <h2 id="route-spreading-composes-with-pricing">Route spreading composes with pricing</h2>

@@ -200,7 +200,7 @@ var annotated_dup =
       [ "PathAgentCollectInfo", "structtess_1_1PathAgentCollectInfo.html", null ],
       [ "PathAgentFrameStats", "structtess_1_1PathAgentFrameStats.html", null ],
       [ "PathAgentReplanOptions", "structtess_1_1PathAgentReplanOptions.html", "structtess_1_1PathAgentReplanOptions" ],
-      [ "PathAgentReplanQueue", "classtess_1_1PathAgentReplanQueue.html", null ],
+      [ "PathAgentReplanQueue", "classtess_1_1PathAgentReplanQueue.html", "classtess_1_1PathAgentReplanQueue" ],
       [ "PathAgentRoutes", "structtess_1_1PathAgentRoutes.html", null ],
       [ "PathAgentState", "structtess_1_1PathAgentState.html", "structtess_1_1PathAgentState" ],
       [ "PathAgentTickOptions", "structtess_1_1PathAgentTickOptions.html", "structtess_1_1PathAgentTickOptions" ],

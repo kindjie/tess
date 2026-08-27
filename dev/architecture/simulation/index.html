@@ -2743,7 +2743,10 @@ frame through the lost-update-safe observe/clear-observed protocol.</p>
   proves unreachable are resolved without A* and surfaced in
   <code>PathAgentFrameStats::precheck_ruled_out</code>.</li>
 <li><code>PathAgentReplanQueue</code> is an opt-in, caller-owned FIFO for replans. Pending
-  agent indices deduplicate. <code>process_path_agent_replans</code> invokes a synchronous
+  agent indices deduplicate, and <code>contains(index)</code> reports that pending set —
+  membership begins at an accepted <code>request</code> and ends at the matching
+  <code>pop_front</code> or at <code>clear</code>, so a caller can skip building a request that
+  would only be refused. <code>process_path_agent_replans</code> invokes a synchronous
   caller planner at most its supplied request count and copies each borrowed
   result into retained routes; the generic drain deliberately does not certify
   path legality or optimality. <code>process_unit_path_agent_replans</code> and

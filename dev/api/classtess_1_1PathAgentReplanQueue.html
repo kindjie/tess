@@ -140,6 +140,7 @@ void&#160;</td><td class="memItemRight"><b>request_all</b> (std::span&lt; const 
 auto&#160;</td><td class="memItemRight"><b>empty</b> () const noexcept -&gt; bool</td></tr>
 <tr class="memitem:a0fae0ac9db3b50391bf7984ede1b6542" id="r_a0fae0ac9db3b50391bf7984ede1b6542"><td class="memItemLeft"><a id="a0fae0ac9db3b50391bf7984ede1b6542" name="a0fae0ac9db3b50391bf7984ede1b6542"></a>
 auto&#160;</td><td class="memItemRight"><b>pending</b> () const noexcept -&gt; std::size_t</td></tr>
+<tr class="memitem:a09583e6a60862303a2c7d24dc492f0dd" id="r_a09583e6a60862303a2c7d24dc492f0dd"><td class="memItemLeft">auto&#160;</td><td class="memItemRight"><a class="el" href="#a09583e6a60862303a2c7d24dc492f0dd">contains</a> (std::size_t index) const noexcept -&gt; bool</td></tr>
 <tr class="memitem:a5f829575353340bfe1175bd802e2871f" id="r_a5f829575353340bfe1175bd802e2871f"><td class="memItemLeft"><a id="a5f829575353340bfe1175bd802e2871f" name="a5f829575353340bfe1175bd802e2871f"></a>
 auto&#160;</td><td class="memItemRight"><b>front</b> () const noexcept -&gt; std::optional&lt; std::size_t &gt;</td></tr>
 <tr class="memitem:af2a692b89a76ba9ded4c0b75107648b4" id="r_af2a692b89a76ba9ded4c0b75107648b4"><td class="memItemLeft"><a id="af2a692b89a76ba9ded4c0b75107648b4" name="af2a692b89a76ba9ded4c0b75107648b4"></a>
@@ -148,7 +149,35 @@ void&#160;</td><td class="memItemRight"><b>pop_front</b> () noexcept</td></tr>
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>Caller-owned FIFO of agent indices awaiting replanning.</p>
 <p>Pending indices are deduplicated. Like retained routes and recovery schedules, the queue is paired with the caller's agent-span indices; reorder or compact only when also clearing or equivalently remapping it. The queue is externally synchronized. Separate owners may process separate queues concurrently with independent path scratch. </p>
-</div><hr/>The documentation for this class was generated from the following file:<ul>
+</div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="a09583e6a60862303a2c7d24dc492f0dd" name="a09583e6a60862303a2c7d24dc492f0dd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a09583e6a60862303a2c7d24dc492f0dd">&#9670;&#160;</a></span>contains()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">auto tess::PathAgentReplanQueue::contains </td>
+          <td>(</td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>index</em></span></td><td>)</td>
+          <td> const -&gt; bool</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<p>Whether <span class="tt">index</span> is currently waiting in this queue.</p>
+<p>Membership is what makes <span class="tt">request</span> idempotent: a second request for a pending agent is refused. Exposing it lets a caller skip work it would otherwise do to build a request that is certain to be refused &ndash; selecting over long routes, for instance. Membership begins at an accepted <span class="tt">request</span> and ends at the matching <span class="tt">pop_front</span> or at <span class="tt">clear</span>. </p>
+
+</div>
+</div>
+<hr/>The documentation for this class was generated from the following file:<ul>
 <li>include/tess/sim/<a class="el" href="path__agent__tick_8h_source.html">path_agent_tick.h</a></li>
 </ul>
 </div><!-- contents -->
