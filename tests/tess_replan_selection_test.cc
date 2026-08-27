@@ -165,9 +165,8 @@ TEST(ReplanSelection, PendingAgentIsNeitherRequeuedNorRescanned) {
 TEST(ReplanSelection, DrainedAgentsAreScannedAndQueuedAgain) {
   Fixture f;
   std::vector<std::size_t> ids;
-  for (std::size_t lane = 0; lane < 4; ++lane) {
-    ids.push_back(f.add(agent_at(0, static_cast<std::int64_t>(lane)),
-                        line_route(static_cast<std::int64_t>(lane), 0, 5)));
+  for (int lane = 0; lane < 4; ++lane) {
+    ids.push_back(f.add(agent_at(0, lane), line_route(lane, 0, 5)));
   }
   EXPECT_EQ(f.run([](Coord3 c) { return c.x == 3; }), 4U);
   // Drain two. Membership is the PENDING set, not a record of having
