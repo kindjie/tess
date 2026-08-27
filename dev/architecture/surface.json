@@ -613,6 +613,7 @@
     "MovementClassFor",
     "Not",
     "NotZero",
+    "OverlayCost",
     "ReachabilityResult",
     "ReachabilityStatus",
     "RegionGraph",

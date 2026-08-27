@@ -72,6 +72,7 @@ var annotated_dup =
         [ "MovementClass", "structtess_1_1movement_1_1MovementClass.html", null ],
         [ "Not", "structtess_1_1movement_1_1Not.html", null ],
         [ "NotZero", "structtess_1_1movement_1_1NotZero.html", null ],
+        [ "OverlayCost", "structtess_1_1movement_1_1OverlayCost.html", null ],
         [ "PositiveCostFieldMovement", "structtess_1_1movement_1_1PositiveCostFieldMovement.html", null ],
         [ "SelectCost", "structtess_1_1movement_1_1SelectCost.html", null ],
         [ "UnitCost", "structtess_1_1movement_1_1UnitCost.html", null ],

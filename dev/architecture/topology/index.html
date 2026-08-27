@@ -2457,7 +2457,19 @@ marker used by compile-time validation and normalization.</p>
   <code>Not&lt;Term&gt;</code>, <code>AllOf&lt;Terms...&gt;</code>, <code>AnyOf&lt;Terms...&gt;</code>.</li>
 <li>Cost expressions (0 == impassable, u32-saturated): <code>UnitCost</code>,
   <code>ConstantCost&lt;N&gt;</code>, <code>FieldCost&lt;CostTag&gt;</code>, <code>SelectCost&lt;SelTag, WhenSet,
-  WhenClear&gt;</code>. <code>normalize_cost</code> is byte-exact with the weighted A* leaf.</li>
+  WhenClear&gt;</code>. <code>normalize_cost</code> is byte-exact with the weighted A* leaf.
+  Experimental <code>tess::experimental::OverlayCost&lt;Base, Overlay&gt;</code>
+  (<code>include/tess/experimental/overlay_cost.h</code>) prices a base cost with
+  an additive overlay — terrain plus a congestion price or a toll. It is
+  zero if and only if its base is zero, so an overlay never makes
+  impassable ground enterable; that is the same rule the forward probe
+  applies where a provider's cost meets a class's entry cost. Its
+  overlay operand is the one place in this vocabulary where zero means
+  "no surcharge" rather than impassable, so the operands are not
+  interchangeable. Absorption is a backstop, not a substitute for
+  <code>NotZero&lt;BaseTag&gt;</code> in the passability predicate: that is what keeps
+  the region graph exact, and the minimum-step APIs that substitute
+  <code>UnitCost</code> for a class's cost expression see only the predicate.</li>
 <li>Field-backed adapters: <code>UnitCostFieldMovement&lt;PassableTag&gt;</code> carries the raw
   tag and a <code>passable_span</code> fast path so the identity region flood remains a
   byte-identical <code>field_span</code> scan;

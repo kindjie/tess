@@ -166,6 +166,7 @@ var hierarchy =
     [ "tess::OpHandle", "structtess_1_1OpHandle.html", null ],
     [ "tess::OpId", "structtess_1_1OpId.html", null ],
     [ "tess::lattice::Orthogonal", "structtess_1_1lattice_1_1Orthogonal.html", null ],
+    [ "tess::movement::OverlayCost&lt; Base, Overlay &gt;", "structtess_1_1movement_1_1OverlayCost.html", null ],
     [ "tess::OwnedChunkDomain", "classtess_1_1OwnedChunkDomain.html", null ],
     [ "tess::PathAgentAdvanceOptions", "structtess_1_1PathAgentAdvanceOptions.html", null ],
     [ "tess::PathAgentBatch", "classtess_1_1PathAgentBatch.html", null ],

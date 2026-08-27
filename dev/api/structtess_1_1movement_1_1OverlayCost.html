@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=11"/>
 <meta name="generator" content="Doxygen 1.17.0"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>tess: tess::ReverseTransitionModelFor Concept Reference</title>
+<title>tess: tess::movement::OverlayCost&lt; Base, Overlay &gt; Struct Template Reference</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="codefolding.js"></script>
 <script type="text/javascript" src="clipboard.js"></script>
@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
   </div>
 </div>
 <script type="text/javascript">
-document.addEventListener('DOMContentLoaded',() => { initNavTree('concepttess_1_1ReverseTransitionModelFor.html','',''); });
+document.addEventListener('DOMContentLoaded',() => { initNavTree('structtess_1_1movement_1_1OverlayCost.html','','structtess_1_1movement_1_1OverlayCost-members'); });
 </script>
 <div id="container">
 <div id="doc-content">
@@ -120,32 +120,41 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('concepttess_1_
 </div>
 
 <div class="header">
-  <div class="headertitle"><div class="title">tess::ReverseTransitionModelFor Concept Reference</div></div>
+  <div class="headertitle"><div class="title">tess::movement::OverlayCost&lt; Base, Overlay &gt; Struct Template Reference</div></div>
 </div><!--header-->
 <div class="contents">
 
-<p><code>#include &lt;<a class="el" href="transition__model_8h_source.html">tess/topology/transition_model.h</a>&gt;</code></p>
-<h2 id="header-conceptdef" class="groupheader">Concept definition</h2>
-<div class="fragment"><div class="line"><span class="keyword">template</span>&lt;<span class="keyword">typename</span> Model, <span class="keyword">typename</span> World&gt;</div>
-<div class="line"><span class="keyword">concept </span><a class="code hl_concept" href="concepttess_1_1ReverseTransitionModelFor.html">ReverseTransitionModelFor</a> =</div>
-<div class="line">    <a class="code hl_concept" href="concepttess_1_1ForwardTransitionModelFor.html">ForwardTransitionModelFor&lt;Model, World&gt;</a> &amp;&amp;</div>
-<div class="line">    <span class="keyword">requires</span>(<span class="keyword">const</span> Model&amp; model, <span class="keyword">const</span> <a class="code hl_class" href="classtess_1_1World.html">World</a>&amp; world, <a class="code hl_struct" href="structtess_1_1Coord3.html">Coord3</a> to,</div>
-<div class="line">             std::uint64_t index) {</div>
-<div class="line">      model.for_each_reverse(world, to, index, detail::TransitionProbeSink{});</div>
-<div class="line">    }</div>
-<div class="ttc" id="aclasstess_1_1World_html"><div class="ttname"><a href="classtess_1_1World.html">tess::World</a></div><div class="ttdef"><b>Definition</b> world.h:22</div></div>
-<div class="ttc" id="aconcepttess_1_1ForwardTransitionModelFor_html"><div class="ttname"><a href="concepttess_1_1ForwardTransitionModelFor.html">tess::ForwardTransitionModelFor</a></div><div class="ttdef"><b>Definition</b> transition_model.h:728</div></div>
-<div class="ttc" id="aconcepttess_1_1ReverseTransitionModelFor_html"><div class="ttname"><a href="concepttess_1_1ReverseTransitionModelFor.html">tess::ReverseTransitionModelFor</a></div><div class="ttdef"><b>Definition</b> transition_model.h:738</div></div>
-<div class="ttc" id="astructtess_1_1Coord3_html"><div class="ttname"><a href="structtess_1_1Coord3.html">tess::Coord3</a></div><div class="ttdef"><b>Definition</b> shape.h:46</div></div>
-</div><!-- fragment --><a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
-<div class="textblock"><p>Checks forward plus reverse transition enumeration. </p>
-</div></div><!-- contents -->
+<p><code>#include &lt;<a class="el" href="movement__class_8h_source.html">tess/topology/movement_class.h</a>&gt;</code></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-static-methods" class="groupheader"><a id="pub-static-methods" name="pub-static-methods"></a>
+Static Public Member Functions</h2></td></tr>
+<tr class="memitem:a8865ff171dbcf7a93ed07e0c16ad8318" id="r_a8865ff171dbcf7a93ed07e0c16ad8318"><td class="memTemplParams" colspan="2"><a id="a8865ff171dbcf7a93ed07e0c16ad8318" name="a8865ff171dbcf7a93ed07e0c16ad8318"></a>
+template&lt;typename Page&gt; </td></tr>
+<tr class="memitem:a8865ff171dbcf7a93ed07e0c16ad8318 template"><td class="memItemLeft">static constexpr std::uint32_t&#160;</td><td class="memItemRight"><b>eval</b> (const Page &amp;page, <a class="el" href="structtess_1_1LocalTileId.html">LocalTileId</a> id) noexcept</td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><div class="compoundTemplParams">template&lt;typename Base, typename Overlay&gt;<br />
+struct tess::movement::OverlayCost&lt; Base, Overlay &gt;</div><p>Prices a base cost with an additive overlay, preserving impassability.</p>
+<p><span class="tt">eval()</span> is zero if and only if <span class="tt">Base::eval()</span> is zero: an overlay prices a tile the base already admits, and can never make an impassable one enterable. The operands are therefore not interchangeable, which is why this is not spelled as a sum. It matches the rule the transition model already applies where a provider's cost meets a class's entry cost: pricing an edge does not override destination entry legality.</p>
+<p>The overlay's zero means "no surcharge". That is the one place in this vocabulary where zero is not the impassable sentinel.</p>
+<p>Absorption is a backstop, not a substitute for putting the base's impassability in the passability predicate. <span class="tt"><a class="el" href="structtess_1_1movement_1_1NotZero.html" title="Evaluates whether integral field Tag is nonzero at a resolved tile.">NotZero</a>&lt;BaseTag&gt;</span> there is what keeps the region graph exact, and the minimum-step APIs that substitute <span class="tt"><a class="el" href="structtess_1_1movement_1_1UnitCost.html" title="Produces unit entry cost for every tile.">UnitCost</a></span> for a class's cost expression see only the predicate. </p>
+</div><hr/>The documentation for this struct was generated from the following file:<ul>
+<li>include/tess/topology/<a class="el" href="movement__class_8h_source.html">movement_class.h</a></li>
+</ul>
+</div><!-- contents -->
 </div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
 </div><!-- container -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
-    <li class="navelem"><b>tess</b></li><li class="navelem"><a href="concepttess_1_1ReverseTransitionModelFor.html">ReverseTransitionModelFor</a></li>
+    <li class="navelem"><b>tess</b></li><li class="navelem"><b>movement</b></li><li class="navelem"><a href="structtess_1_1movement_1_1OverlayCost.html">OverlayCost</a></li>
     <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.17.0 </li>
   </ul>
 </div>
