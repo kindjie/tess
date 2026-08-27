@@ -1,159 +1,159 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://tess.owx.dev/latest/</loc>
+         <loc>https://tess.owx.dev/dev/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/examples/</loc>
+         <loc>https://tess.owx.dev/dev/examples/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/for-agents/</loc>
+         <loc>https://tess.owx.dev/dev/for-agents/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/getting-started/</loc>
+         <loc>https://tess.owx.dev/dev/getting-started/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/integration-policy/</loc>
+         <loc>https://tess.owx.dev/dev/integration-policy/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/packaging/</loc>
+         <loc>https://tess.owx.dev/dev/packaging/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/pathfinding-strategy-comparison/</loc>
+         <loc>https://tess.owx.dev/dev/pathfinding-strategy-comparison/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/performance/</loc>
+         <loc>https://tess.owx.dev/dev/performance/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/roadmap/</loc>
+         <loc>https://tess.owx.dev/dev/roadmap/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/support/</loc>
+         <loc>https://tess.owx.dev/dev/support/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/terminology/</loc>
+         <loc>https://tess.owx.dev/dev/terminology/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/upgrade-1.0/</loc>
+         <loc>https://tess.owx.dev/dev/upgrade-1.0/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/use-cases/</loc>
+         <loc>https://tess.owx.dev/dev/use-cases/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/block/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/block/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/compatibility/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/compatibility/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/diagnostics/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/diagnostics/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/ecs/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/ecs/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/gpu/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/gpu/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/maintenance/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/maintenance/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/no-exceptions/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/no-exceptions/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/path/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/path/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/persistence/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/persistence/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/query/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/query/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/queued-operations/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/queued-operations/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/shape/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/shape/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/simulation/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/simulation/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/spatial-coordination/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/spatial-coordination/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/storage/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/storage/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/architecture/topology/</loc>
+         <loc>https://tess.owx.dev/dev/architecture/topology/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/guide/</loc>
+         <loc>https://tess.owx.dev/dev/guide/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/guide/congestion/</loc>
+         <loc>https://tess.owx.dev/dev/guide/congestion/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/guide/diagnostics/</loc>
+         <loc>https://tess.owx.dev/dev/guide/diagnostics/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/guide/entities/</loc>
+         <loc>https://tess.owx.dev/dev/guide/entities/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/guide/pathfinding/</loc>
+         <loc>https://tess.owx.dev/dev/guide/pathfinding/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/guide/presentation/</loc>
+         <loc>https://tess.owx.dev/dev/guide/presentation/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/guide/residency/</loc>
+         <loc>https://tess.owx.dev/dev/guide/residency/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/guide/topology/</loc>
+         <loc>https://tess.owx.dev/dev/guide/topology/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
     <url>
-         <loc>https://tess.owx.dev/latest/guide/writes/</loc>
+         <loc>https://tess.owx.dev/dev/guide/writes/</loc>
          <lastmod>2026-08-27</lastmod>
     </url>
 </urlset>

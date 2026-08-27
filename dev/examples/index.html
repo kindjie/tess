@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://tess.owx.dev/latest/examples/">
+        <link rel="canonical" href="https://tess.owx.dev/dev/examples/">
       
       
         <link rel="prev" href="../packaging/">
@@ -58,14 +58,14 @@
   <meta property="og:site_name" content="tess">
   <meta property="og:title" content="C++20 Grid Pathfinding and Simulation Examples - tess">
   <meta property="og:description" content="Explore complete, self-checking C++20 examples for grid pathfinding, sparse worlds, coordinated agent movement, simulation, and WebAssembly demos.">
-  <meta property="og:url" content="https://tess.owx.dev/latest/examples/">
-  <meta property="og:image" content="https://tess.owx.dev/latestassets/tess-social-preview.png">
+  <meta property="og:url" content="https://tess.owx.dev/dev/examples/">
+  <meta property="og:image" content="https://tess.owx.dev/dev/assets/tess-social-preview.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1280">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="C++20 Grid Pathfinding and Simulation Examples - tess">
   <meta name="twitter:description" content="Explore complete, self-checking C++20 examples for grid pathfinding, sparse worlds, coordinated agent movement, simulation, and WebAssembly demos.">
-  <meta name="twitter:image" content="https://tess.owx.dev/latestassets/tess-social-preview.png">
+  <meta name="twitter:image" content="https://tess.owx.dev/dev/assets/tess-social-preview.png">
 
   </head>
   
@@ -323,7 +323,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="https://tess.owx.dev/latest/api/" class="md-tabs__link">
+      <a href="https://tess.owx.dev/api/" class="md-tabs__link">
         
   
   
@@ -1677,7 +1677,7 @@
   
   
     <li class="md-nav__item">
-      <a href="https://tess.owx.dev/latest/api/" class="md-nav__link">
+      <a href="https://tess.owx.dev/api/" class="md-nav__link">
         
   
   
@@ -2090,19 +2090,19 @@ additionally need their ECS gates, which the <code>dev</code> preset turns on):<
 </code></pre></div>
 <h2 id="start-here">Start here</h2>
 <ul>
-<li><a href="https://tess.owx.dev/latest/demo/">Live pathfinder</a> — the interactive
+<li><a href="https://tess.owx.dev/demo/">Live pathfinder</a> — the interactive
   WebAssembly demo, built from the same C++20 headers as the library and
   published with this site.</li>
-<li><a href="https://tess.owx.dev/latest/demo/strategies/">Live strategy comparison</a> — the
+<li><a href="https://tess.owx.dev/demo/strategies/">Live strategy comparison</a> — the
   native pathfinding-strategy model compiled to WebAssembly: four call shapes,
   a shared obstacle course, C++-reported paths and reuse counters, and distinct
   route, batch, and map-wide field data products without browser timing claims.</li>
-<li><a href="https://tess.owx.dev/latest/demo/colony/">Live colony</a> — the scale demo:
+<li><a href="https://tess.owx.dev/demo/colony/">Live colony</a> — the scale demo:
   up to 1,024 agents shuttling between the edges and replanning around
   walls you draw (walls survive resets), with completed and crowd-turnaround
   leg counters, smooth presentation-only movement, a C++-update cost readout,
   and a retained-routes vs replan-every-tick toggle.</li>
-<li><a href="https://tess.owx.dev/latest/demo/congestion/">Congestion lab</a> — the
+<li><a href="https://tess.owx.dev/demo/congestion/">Congestion lab</a> — the
   colony simulation with the supported-coverage nearby-agent recipe,
   five additional screened policies, two rejected controls, and three
   period or price-cap variants selectable live, with a price overlay,
@@ -2110,14 +2110,14 @@ additionally need their ECS gates, which the <code>dev</code> preset turns on):<
   The <a href="../guide/congestion/">congestion pricing guide</a> states the
   evidence tier and boundary for each result; the native runner
   executes the same model without browser presentation.</li>
-<li><a href="https://tess.owx.dev/latest/demo/tower/">Tower</a> — a six-floor world
+<li><a href="https://tess.owx.dev/demo/tower/">Tower</a> — a six-floor world
   where solid slabs separate the floors and stairwell columns are the only
   tiles joining them, so an agent crossing floors follows one route
   through three dimensions rather than switching between stacked maps.
   Closing a stairwell prices it instead of sealing it, so routes divert
   while anyone on the stairs can still walk out. Isometric 2D canvas with
   touch controls; an early version whose geometry is deliberately simple.</li>
-<li><a href="https://tess.owx.dev/latest/demo/diagnostics/">Live diagnostics</a> — real Dear ImGui
+<li><a href="https://tess.owx.dev/demo/diagnostics/">Live diagnostics</a> — real Dear ImGui
   panels over path, queued-phase, timing, trace, and consumer-instrumented
   allocation snapshots. Mirrored HTML controls keep the demo keyboard
   operable and make its runtime state visible to browser automation.</li>
@@ -2151,7 +2151,7 @@ additionally need their ECS gates, which the <code>dev</code> preset turns on):<
   through the byte-budgeted <code>FieldProductCache</code> instead of searching
   independently.</li>
 <li><a href="https://github.com/kindjie/tess/tree/main/examples/web_colony"><code>web_colony</code></a> — the source of the
-  <a href="https://tess.owx.dev/latest/demo/colony/">live colony demo</a>: the colony_2d
+  <a href="https://tess.owx.dev/demo/colony/">live colony demo</a>: the colony_2d
   composition compiled to WebAssembly. Its model, Wasm adapter, native
   self-check, browser controller, and page are separate so the library
   patterns are visible without platform glue interrupting them.</li>
@@ -2162,11 +2162,11 @@ additionally need their ECS gates, which the <code>dev</code> preset turns on):<
   restores unit costs when disabled. Snippet-synced into the
   <a href="../guide/congestion/">congestion pricing guide</a>.</li>
 <li><a href="https://github.com/kindjie/tess/tree/main/examples/web_congestion"><code>web_congestion</code></a> — the source of the
-  <a href="https://tess.owx.dev/latest/demo/congestion/">congestion lab</a>: wraps
+  <a href="https://tess.owx.dev/demo/congestion/">congestion lab</a>: wraps
   the colony model through its native seam so the tutorial stays clean
   while every pricing experiment lives here.</li>
 <li><a href="https://github.com/kindjie/tess/tree/main/examples/web_traffic"><code>web_traffic</code></a> — the source of the
-  <a href="https://tess.owx.dev/latest/demo/traffic/">Traffic Lab</a>: a deterministic
+  <a href="https://tess.owx.dev/demo/traffic/">Traffic Lab</a>: a deterministic
   1024×512 congestion overview with static terrain caching, separately
   rendered agents, and an eight-search planning budget. Static barrier
   scenarios supply their known gate crossings to exact weighted segments;
@@ -2240,7 +2240,7 @@ The fractional coordinates never return to simulation state.</p>
   a single-threaded WebAssembly build with a small JavaScript shell.</li>
 <li><a href="https://github.com/kindjie/tess/tree/main/examples/web_diagnostics"><code>web_diagnostics</code></a> — a dependency-free native model
   self-check plus the Dear ImGui GLFW/WebGL2 browser host used by the
-  <a href="https://tess.owx.dev/latest/demo/diagnostics/">live diagnostics demo</a>.</li>
+  <a href="https://tess.owx.dev/demo/diagnostics/">live diagnostics demo</a>.</li>
 </ul>
 
 
