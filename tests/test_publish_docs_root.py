@@ -231,7 +231,9 @@ def test_sync_rejects_new_collision_after_manifest_exists(tmp_path: Path):
   assert (tmp_path / "downloads" / "operator-owned.txt").read_text() == "keep"
 
 
-@pytest.mark.parametrize("entry", [".", "..", "guide/child", "/absolute"])
+@pytest.mark.parametrize(
+  "entry", [".", "..", "guide/child", "/absolute", "/", "//"]
+)
 def test_sync_rejects_unsafe_manifest_components_without_deleting(
   tmp_path: Path, entry: str
 ):
@@ -334,7 +336,7 @@ def test_publication_turn_queries_only_bounded_active_statuses(
 
   monkeypatch.setattr(QUEUE, "_request_json", fake_request)
 
-  runs = QUEUE._active_workflow_runs("kindjie/tess", "pages.yml", "token")
+  runs = QUEUE._active_workflow_runs("example/tess", "pages.yml", "token")
 
   assert [run["id"] for run in runs] == [7]
   assert len(requested_urls) == len(QUEUE.STATUS_SCAN_ORDER)

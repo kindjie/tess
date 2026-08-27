@@ -66,6 +66,7 @@ def _read_manifest(pages: Path) -> list[str] | None:
     isinstance(item, str)
     and item not in {"", ".", ".."}
     and "\0" not in item
+    and not PurePosixPath(item).is_absolute()
     and PurePosixPath(item).parts == (item,)
     for item in paths
   ):
