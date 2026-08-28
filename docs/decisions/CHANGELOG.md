@@ -10,6 +10,121 @@ entries from 2026-07-09 through 2026-07-10 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-26 - Restore stable documentation at root URLs
+
+The canonical documentation returns to stable root paths such as `/guide/`
+and `/performance/`. This supersedes the 2026-08-21 decision to make
+`/latest/` canonical. Search engines retained and served the established root
+URLs after that migration, while those URLs returned 404; the version prefix
+also produced a malformed social-image URL and moved the only sitemap away
+from its established location.
+
+The publication keeps mike for `/dev/` and immutable `/<major>.<minor>/`
+archives. A small deterministic assembly step copies the complete verified
+stable build to the root. `/latest/` HTML becomes an immediate exact redirect
+to the corresponding root page, while its non-HTML files remain available for
+old demo and asset URLs. Version trees receive `noindex, follow` only in the
+served Pages artifact; the storage copies remain unchanged. The root sitemap
+contains canonical root URLs only.
+
+The assembler owns only paths recorded in a storage-branch manifest and fails
+closed on an unowned collision. The first deployment can bootstrap from the
+existing `latest` copy; subsequent development deployments preserve the root,
+and stable releases replace it from the same complete artifact already checked
+for links and browser behavior. The one-time bootstrap recognizes the exact
+legacy root `robots.txt` written by the previous workflow, while rejecting any
+operator-modified collision. A tested FIFO turn orders active non-PR attempts
+by their actual start time, including reruns, and queries only active API
+states. This avoids GitHub concurrency's one-pending replacement behavior
+without polling an ever-growing history, while serializing storage and Pages
+artifact updates. The complete served tree is checked before its single
+persistent push.
+
+A GCP edge remains deferred. Direct GitHub Pages is the smaller, portable
+solution for canonical URLs and ordinary static documentation. An edge layer
+becomes justified only if a separately designed threaded WebAssembly feature
+needs cross-origin isolation headers or another requirement GitHub Pages
+cannot express.
+
+## 2026-08-26 - Congestion findings productize as guide, lab, and one experimental primitive
+
+The congestion-accounting stream (issue #269, six pre-registered
+amendment rounds, 28 arms) productizes on three decisions, reviewed by
+two independent design agents and chosen by the maintainer:
+
+**Policies stay out of the library.** No pricing policy becomes
+library API at any tier: the exploratory evidence is screening-scale,
+policy outputs are trajectory-sensitive (a compatibility hazard under
+the 1.x promise), and the caller-recipe boundary the v1.0 synthesis
+drew remains correct. The recipes ship as a decision-guide page
+(`docs/guide/congestion.md`, tier-labelled), a compile-checked
+copyable example (`examples/congestion_pricing.cc`, snippet-synced
+into the guide), and a browser laboratory
+(`examples/web_congestion/`) that wraps the colony tutorial's
+simulation through its native seam -- the colony demo itself reverts
+to a clean tutorial, and every pricing experiment now lives in the
+lab, which the future supported-population matrix will drive as its
+exact code path.
+
+**One primitive enters the experimental tier**:
+`tess::experimental::request_replans_for_route_crossings`
+(`include/tess/experimental/path_agent_replan_selection.h`) -- the
+scoped-replanning query behind the stream's largest measured effect
+(the recorded case: ~84 ms to ~1.6 ms per tick, about 53x, against
+the global-replan protocol). It
+grants no authority a caller lacks (it only asks the existing replan
+queue), its contract is pinned by direct fixtures, and one contract
+detail (whether the scan includes the agent's current tile) is
+deliberately left settleable before any stable promotion. This
+narrowly supersedes the "no new library authority" entry for
+plumbing only; every policy decision remains caller-side.
+
+**The maintained recipe's replanning instruction is corrected**: the
+architecture note now prescribes scoped replanning with the global
+mark as the historical supported-coverage protocol, ending the
+divergence between the documented recipe and the measured best
+practice.
+
+## 2026-08-26 - Congestion pricing stays out of the library API
+
+A parameterized congestion-signal type — named immutable configurations
+over four axes, defaults set to the best screened values — was designed
+and reviewed by two independent agents with opposite mandates. Both
+found the same defects, and the design is declined at current evidence.
+See [the TDD](../tdd/congestion-pricing-api.md).
+
+The deciding defect is that the laboratory carries two incompatible
+definitions of a stalled agent: the snapshot family counts an agent
+stalled when its position is unchanged since the previous repricing,
+while the escalation family counts consecutive ticks unmoved. A config
+space with one "stalled" axis cannot express both, so a preset named
+for an escalation arm would not reproduce the result it cites — fatal
+for a design whose premise is that the formula is the contract and the
+formula was measured.
+
+Two further defects: every screened world is unit terrain, so the price
+cap is denominated in units no experiment varied; and the `decay`
+memory has a fixed point at 1 under integer division, so its active set
+can only grow, which is incompatible with sparse price application.
+
+Profiling also showed a signal abstraction would abstract the cheap
+part. Applying prices is proportional to tiles written and dominates
+uncongested workloads; selecting who replans is proportional to total
+remaining route length and dominates congested ones. Signal computation
+is already cheap.
+
+Two structural findings are retained independently of any API. Prices
+belong in a separate field summed with terrain rather than written over
+the field the planner reads — the shipped recipe is safe only on
+uniform terrain, and this is now recorded in the guide as a hazard.
+And `TileKey<Shape>` already packs chunk and local identity, so
+ordering by it gives chunk-major traversal for a future sparse price
+map.
+
+The decision changes when one settled stall definition has been
+re-screened across both families and the candidate optima have
+supported-population coverage on two platforms.
+
 ## 2026-08-24 - Phase 2 prototype queue closed: no new library authority
 
 The v0.13-to-v1.0 execution plan's bounded prototype queue (P1-P6,

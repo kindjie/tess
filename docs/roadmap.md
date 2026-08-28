@@ -66,10 +66,10 @@ acceptance evidence.
   (`docs/planning/evidence/v1.0/`), no new library authority was
   accepted, and the accepted test suites and caller-recipe
   documentation have landed.
-- Create `v1.0.0-rc.1` only after adding its immutable compatibility snapshot,
-  recording a substantial downstream evaluation of the resulting surface,
-  assembling release records, and passing release-mode CI on the exact
-  candidate commit.
+- `v1.0.0-rc.1` is in its candidate phase: the immutable compatibility
+  snapshot, a substantial downstream evaluation of the resulting
+  surface, and the assembled release records are on `main`, and the tag
+  follows a passing release-mode CI run on the exact candidate commit.
 - Publish `v1.0.0` only after the candidate observation period and the final
   exact-commit release checks described in the release process.
 
