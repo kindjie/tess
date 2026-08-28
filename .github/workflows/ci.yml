@@ -617,7 +617,9 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: Quality Gates (${{ matrix.preset }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # 75: a cold clang-tidy sweep after a core header change exceeds 45,
+    # and a cancelled job saves no cache, so the low limit deadlocked.
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
