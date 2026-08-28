@@ -2128,11 +2128,23 @@ The conservative caller predicate can reject currently occupied destinations,
 which also rejects swaps and move-through cycles under the existing movement
 commit contract.</p>
 <h2 id="dynamic-congestion-pricing">Dynamic congestion pricing</h2>
-<p><strong>Validated caller recipe.</strong> tess does not ship a congestion field. A
-caller can add <code>FieldCost</code> over an ordinary cost field, compute
-per-tile prices from observed demand, and publish the changed chunks
-with <code>mark_content_changed</code>; weighted planners using that movement
-class then read the updated prices.</p>
+<p><strong>The shape.</strong> tess does not ship a congestion field. A caller keeps
+terrain and price in two fields and composes them in the movement
+class — <code>OverlayCost&lt;FieldCost&lt;TerrainTag&gt;, FieldCost&lt;SurchargeTag&gt;&gt;</code> —
+writing only the surcharge field, then publishing the changed chunks
+with <code>mark_content_changed</code>; weighted planners using that class read
+the updated prices. Where zero terrain means impassable, say so in the
+passability term as well (<code>AllOf&lt;Field&lt;PassableTag&gt;,
+NotZero&lt;TerrainTag&gt;&gt;</code>): <code>OverlayCost</code> absorbs a zero base, but region
+labelling and the minimum-step APIs consult the predicate alone.</p>
+<p>Pricing into the terrain field itself is a shortcut valid only on
+uniformly unit terrain; on any other map it destroys terrain when
+pricing turns on and cannot restore it when pricing turns off. The
+<a href="../../guide/congestion/">congestion pricing guide</a> states the
+condition and the failure.</p>
+<p><strong>Validated policy.</strong> The label below covers the pricing policy on the
+terrain it was measured on — every scenario in this stream used unit
+terrain — not the field layout, which no experiment varied.</p>
 <p>The validated nearby-agent policy writes
 <code>1 + min(3, live agents within Manhattan distance 1)</code> every four
 ticks. Across seven scenarios, all 64 supported populations, and two

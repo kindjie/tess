@@ -2004,15 +2004,70 @@ hardware campaigns are recorded separately and do not become portable gates
 without machine-specific calibration.</p>
 <p>For the paired A*, route-cache, batch, and distance-field workloads, start with
 the <a href="../pathfinding-strategy-comparison/">pathfinding strategy comparison</a>.</p>
-<p>Representative medians from the benchmark suite on an Apple M3 Max
-(single-threaded):</p>
-<ul>
-<li>A* across an open 512x512 grid, corner to corner (a 1,022-step path,
-  ~1,023 nodes expanded): ~2.1 us; the weighted variant: ~2.4 us.</li>
-<li>One clean tick of 100 path agents with retained routes: ~330 ns.</li>
-<li>One <code>weighted_path_batch</code> plan of 100 near-goal requests on a 512x512
-  grid: ~50 us.</li>
-</ul>
+<p>Representative single-threaded medians from the benchmark suite:</p>
+<table>
+<thead>
+<tr>
+<th>Workload</th>
+<th style="text-align: right;">Median</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A* across an open 512x512 grid, corner to corner (1,022 steps, 1,023 nodes expanded)</td>
+<td style="text-align: right;">2.21 us</td>
+</tr>
+<tr>
+<td>The weighted variant of the same query</td>
+<td style="text-align: right;">2.66 us</td>
+</tr>
+<tr>
+<td>One clean tick of 100 path agents with retained routes</td>
+<td style="text-align: right;">354 ns</td>
+</tr>
+<tr>
+<td>One <code>weighted_path_batch</code> plan of 100 near-goal requests on a 512x512 grid</td>
+<td style="text-align: right;">53.6 us</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>Apple M3 Max</td>
+</tr>
+<tr>
+<td>Toolchain</td>
+<td>Apple Clang 21.0.0, <code>bench-only</code> preset (Release)</td>
+</tr>
+<tr>
+<td>Commit</td>
+<td><code>6b0f3c22cb66</code></td>
+</tr>
+<tr>
+<td>Method</td>
+<td>15 repetitions, 0.5 s minimum per repetition</td>
+</tr>
+<tr>
+<td>Quality</td>
+<td>CV 0.69-0.76%; work counters identical across repetitions</td>
+</tr>
+<tr>
+<td>Measured</td>
+<td>2026-08-27, developer workstation under light load</td>
+</tr>
+</tbody>
+</table>
+<p>These are one machine's numbers, not portable ceilings. The CI gates use
+per-benchmark thresholds calibrated on their own runners, and the
+handheld baseline below is a separate campaign.</p>
 <p>Memory, not time, but enforced the same way: <code>examples/sparse_stream.cc</code>
 self-checks a 1,024-chunk world held to a 16-page residency budget — 64x
 less resident field storage than the dense equivalent (1 MiB vs 16 KiB
