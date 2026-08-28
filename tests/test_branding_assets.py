@@ -3,16 +3,30 @@
 from __future__ import annotations
 
 import json
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "docs" / "assets"
+SITE_HOST = "tess.owx.dev"
+URL_PATTERN = re.compile(r"\bhttps?://[^\s<>\"')\]]+")
 
 
 def read(path: str) -> str:
   return (ROOT / path).read_text(encoding="utf-8")
+
+
+def same_origin(url: str) -> bool:
+  """Whether a URL points at the documentation site itself.
+
+  Compares the parsed host rather than searching for the site name as a
+  substring, so a third-party URL that merely mentions the host in a
+  path or query is not mistaken for one of ours.
+  """
+  return (urlsplit(url).hostname or "").lower() == SITE_HOST
 
 
 def contrast_ratio(foreground: str, background: str) -> float:
@@ -212,7 +226,8 @@ def test_versioned_pages_do_not_link_out_of_their_own_version():
     if {"decisions", "planning", "tdd"}.intersection(path.parts):
       continue
     for number, line in enumerate(path.read_text().splitlines(), start=1):
-      if "https://tess.owx.dev/" in line:
+      urls: list[str] = URL_PATTERN.findall(line)
+      if any(same_origin(url) for url in urls):
         offenders.append(f"{path.relative_to(ROOT)}:{number}")
   assert not offenders, (
     "use a relative link inside versioned documentation; these escape "
