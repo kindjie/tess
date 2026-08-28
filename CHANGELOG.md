@@ -9,7 +9,181 @@ and their rationale are recorded separately in
 
 ## [Unreleased]
 
-## [1.0.0-rc.1] - 2026-08-25
+## [1.0.0-rc.1] - 2026-08-28
+
+### Added
+
+- `PathAgentFrameStats` now reports `expanded_nodes`, the total search nodes
+  expanded by the completed results a processing or replan-drain call applied.
+  This gives callers a deterministic work meter: planning can be budgeted by
+  search effort per tick where a wall-clock budget would break replay.
+- `tess::movement::OverlayCost<Base, Overlay>` prices a base cost with an
+  additive overlay -- terrain plus congestion, tolls, or any other
+  surcharge -- saturating at the 32-bit maximum. It is zero if and only
+  if its base is zero, so an overlay can never make impassable ground
+  enterable, matching the rule the transition model already applies
+  where a provider's cost meets a movement class's entry cost. The
+  operands are not interchangeable: the overlay's zero means "no
+  surcharge", which is the one place in this vocabulary where zero is
+  not the impassable sentinel.
+- `PathAgentReplanQueue::contains(index)` reports whether an agent is
+  currently waiting in the queue. Membership is what makes `request`
+  idempotent, and exposing it lets a caller skip work that would only
+  build a request certain to be refused.
+  `tess::experimental::request_replans_for_route_crossings` now uses it
+  to skip agents already pending: under a bounded planning budget the
+  backlog persists across repricings, so this is the difference between
+  rescanning the whole backlog every time and scanning only what is new.
+  Queue contents, ordering, and the returned count are unchanged.
+- Added `tess::experimental::request_replans_for_route_crossings`
+  (`tess/experimental/path_agent_replan_selection.h`): asks the replan
+  queue for exactly the agents whose remaining retained route crosses
+  a caller-nominated tile, the scoped-replanning discipline that keeps
+  periodic cost-field edits (congestion pricing, tolls, seasonal
+  terrain) from replanning every agent. Experimental tier; contract
+  pinned by direct fixtures.
+- Release-mode CI now fails unless the release records are assembled:
+  `assemble_changelog.py --require-released VERSION` rejects pending
+  fragments in any stream, a missing released section for VERSION, and
+  duplicate sections for one version, and `release-evidence` runs it
+  with the dispatch's expected version. Fragment-syntax validation alone
+  had reported success while 24 fragments sat unassembled beside an
+  already-dated RC1 heading. Rerunning `--release` for a version that
+  already has a section is also refused regardless of date, so a redate
+  must fold back rather than append a second section.
+- A tower demo: a six-floor tess world where floors are separated by
+  solid slabs and stairwell columns are the only tiles connecting them,
+  so crossing floors follows one route through three dimensions rather
+  than switching between stacked maps. Closing a stairwell prices it
+  rather than sealing it, so routes divert while anyone on the stairs
+  can still walk out. Published beside the other browser demos, with an
+  isometric 2D-canvas view and touch controls sized for a phone.
+
+### Changed
+
+- The congestion-pricing example keeps terrain and the congestion
+  surcharge in separate fields, summed by
+  `tess::movement::OverlayCost`, instead of writing prices into the
+  field the movement class reads. Disarming clears the surcharge and
+  leaves terrain untouched; the previous shape restored unit costs
+  everywhere, which is correct only on uniformly unit terrain and
+  destroys a real terrain map. Settle behaviour is unchanged: on unit
+  terrain the summed cost is identical tile for tile, and the example
+  reports the same arrivals and scoped replans as before.
+- The pre-commit hook now runs the inventory tests when a change stages
+  `examples/CMakeLists.txt`, `tests/CMakeLists.txt`, or the CI workflow.
+  Those tests assert exact example and smoke counts against the CMake
+  declarations, and forgetting to run them turned a one-line count into
+  a red pull request twice. Other commits pay nothing: the check is a
+  no-op unless a triggering file is staged.
+- The path-agents example reports `re-search failed` rather than
+  `repath failed`, matching the reserved vocabulary where *search* names
+  graph work.
+- The 1.0.0-rc.1 compatibility consumer now instantiates
+  `tess::movement::OverlayCost` and checks that it adds, saturates, and
+  absorbs a zero base, both on the expression and through a weighted
+  search. The snapshot previously recorded only the bare name, which
+  would have let an incompatible change to a newly stable type pass.
+- `tess::experimental::request_replans_for_route_crossings` now begins its
+  scan at the agent's next step rather than at the tile it occupies.
+  Movement charges a tile's cost on entering it, so a price rise on the
+  occupied tile cannot change the cost of the route that remains, and
+  scanning it queued replans that could not improve anything. A route
+  that revisits that tile later is still detected, at the later index.
+- The weekly long-seed property sweeps and advisory coverage jobs moved
+  from `ci.yml` into a `scheduled-sweeps.yml` reusable workflow that
+  `ci.yml` calls, bringing `ci.yml` back under the repository's
+  24,000-token per-file limit with room to edit it again.
+- The tower demo's rooms are now on the route rather than decorative.
+  Two of its four stairwells serve each floor, alternating as you climb,
+  so an agent arriving on a floor must cross it to reach the next way
+  up; previously every stairwell was passable at every level and the
+  cheapest route ran straight up one shaft without ever stepping onto an
+  intermediate floor. The endpoint floors gained the same structure
+  outside the endpoint block itself, and walls are drawn with height so
+  the room outlines are legible.
+
+### Fixed
+
+- The CI quality job allows 75 minutes rather than 45. The full-tree
+  clang-tidy sweep runs about 28 minutes with a warm compiler cache, but
+  a change to a widely included header invalidates most of that cache in
+  a header-only library. Two consecutive default-branch runs were
+  cancelled at the old limit after one such change, and because a
+  cancelled job saves no cache, every later run began equally cold — a
+  deadlock that could not clear itself.
+- The compiled congestion example no longer calls global pathing-dirty
+  the "~500x mistake". The retained measurement is about 84 ms against
+  1.6 ms per tick, roughly 53x; the guide and the evidence summary were
+  corrected earlier and the example comment was missed.
+- Fix the congestion and tower documentation links so unreleased demos resolve
+  inside the development documentation tree and automatically follow their
+  containing version after release.
+- A saturated `PathAgentState::path_index` no longer restarts a consumed
+  route. `path_index` is a public field with no enforced range, and the
+  five stable advance paths plus the experimental replan-selection
+  helper computed `path_index + 1` before their bound check; at
+  `SIZE_MAX` that wraps to zero, which compares as in range. An advance
+  would step the agent onto `route[0]`, and the helper would rescan a
+  route its own comment calls fully consumed.
+- Corrected pre-1.0 audit findings in maintained documentation: the
+  spatial-coordination page now shows the two-field `OverlayCost`
+  congestion shape instead of the single-field one the guide warns
+  against, the topology reference gives `OverlayCost`'s real namespace,
+  header, and stable tier, and the compatibility page names archive
+  format v2 rather than v1.
+- Attached measurement conditions to the headline performance numbers,
+  which are now remeasured at a named commit, and recorded that the
+  span-query figures come from a run whose conditions were never
+  recorded.
+- Replaced durable "pre-1.0" wording in a shipped header and two
+  architecture pages, and added a check that rejects its return once a
+  1.x release exists.
+- The two remaining provisional 2x entries in
+  `bench/thresholds/path.json` are recalibrated to that manifest's own
+  6x bootstrap convention over a fresh local arm64 median. One of them
+  had been cancelling default-branch runs. Its 2x ceiling of 101,000 ns
+  sat *below* the gate's own recorded CI medians, which span 68,331 to
+  101,147 ns, so the gate could fail on work counters identical to a
+  passing run. No benchmark regressed: the local median is 53,316 ns at
+  0.32% variation, essentially unchanged from the 50,096 ns the original
+  ceiling was derived from. The file's seven explicitly uncalibrated
+  `BOOTSTRAP 4x` entries are unaffected and stay provisional.
+- Restored canonical documentation at stable root URLs, kept `/latest/`
+  compatibility redirects and resources, repaired sitemap and social-card
+  URLs, and hardened Pages checks against the final uploaded artifact.
+  Publication now uses a lossless FIFO turn and validates the complete tree
+  before its single storage push.
+- Documentation publication now applies the root `robots.txt` policy on
+  the established-root path as well as the bootstrap path. The previous
+  fix only ran where the root was created, so on the live tree — which
+  has a publication manifest — the legacy `Disallow: /dev/` survived and
+  the artifact check correctly rejected it, failing every `main`
+  deployment. A root file the manifest does not own is never rewritten;
+  publication fails instead.
+- Documentation links now stay inside their own version tree. Absolute
+  same-origin links in `docs/` published into every version, so a reader
+  on the development tree who followed one silently landed on released
+  content — and a link to a page that existed only in the newer tree
+  returned 404 until a release caught up. A regression test rejects the
+  pattern rather than the instances.
+- The docs publication check refuses a root `robots.txt` that disallows
+  a path. A crawler forbidden to fetch a page never reads that page's
+  `noindex`, so disallowing a version tree pins whatever is already
+  indexed instead of retiring it, which is the opposite of the intent.
+- The published root `robots.txt` is now written by the publication tool
+  rather than inherited from the released tree the root is derived from.
+  The live file still carried `Disallow: /dev/` from before the version
+  trees switched to `noindex, follow`, which kept crawlers from reading
+  the very noindex meant to retire them.
+- The pathfinding guide no longer restates A* timings that the
+  performance page had already corrected; it defers to that page, which
+  records the measurement conditions alongside the figures.
+- The strategy-comparison timing table, whose original run's commit and
+  toolchain were never recorded, is regenerated from commit `d653d813`
+  on two platforms — Apple M3 Max and Steam Deck — with conditions and
+  raw outputs retained. The unprovenanced ratios reproduced within
+  0.2, and the ordering held on both architectures.
 
 ### Documentation
 
@@ -31,6 +205,21 @@ and their rationale are recorded separately in
   `/<major>.<minor>/`, `main` publishes to `/dev/`, and a version selector
   moves between them. Every documented link now points at `/latest/`, and
   the site root redirects there.
+- Added the congestion-pricing decision guide
+  (`docs/guide/congestion.md`) with a compile-checked copyable
+  implementation (`examples/congestion_pricing.cc`) and a browser
+  laboratory (`/demo/congestion/`) running every screened pricing
+  policy live over the colony simulation with a price-heat overlay;
+  the colony demo itself returns to a clean tutorial. The spatial
+  coordination recipe now prescribes scoped replanning.
+- Comments and maintained notes that described graph work as a "re-path"
+  or a "path attempt" now say "re-search", matching the vocabulary the
+  terminology guide reserves: *search* for the work, *path* for a
+  returned coordinate sequence, *route* for retained planning state. The
+  sweep covers the public headers, maintained architecture notes,
+  examples, tests, and benchmarks; historical records keep their
+  original wording, and the stable `repath*` field names are unchanged.
+  Comment-only; no API, behaviour, or identifier changed.
 
 ## [0.13.0] - 2026-08-20
 
