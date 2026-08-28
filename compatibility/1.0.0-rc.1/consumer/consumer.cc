@@ -144,7 +144,12 @@ int main() {
     }
   }
   const tess::Coord3 wall{16, 4, 0};
-  const tess::Coord3 tolled{16, 6, 0};
+  // Off the corridor the traversal check below searches, deliberately.
+  // A priced tile on that corridor gives the search a second reason to
+  // leave the straight route, and the wall-crossing and wall-avoiding
+  // detours can then cost the same -- letting a tie-break decide a
+  // check that is supposed to be deciding absorption.
+  const tess::Coord3 tolled{20, 20, 0};
   priced.field<TerrainTag>(wall) = 0;
   // Deliberately 1, not a large toll: the wall sits on the straight
   // route, so without absorption its entry cost would equal its
@@ -159,16 +164,20 @@ int main() {
   priced.mark_content_changed(
       tess::chunk_key<Shape>(tess::chunk_coord<Shape>(tolled)));
 
+  // The two tiles are deliberately in different chunks, so each is
+  // evaluated against its own page rather than a shared one.
   const auto& wall_page =
       priced.chunk(tess::chunk_key<Shape>(tess::chunk_coord<Shape>(wall)));
+  const auto& tolled_page =
+      priced.chunk(tess::chunk_key<Shape>(tess::chunk_coord<Shape>(tolled)));
   const auto local_of = [](tess::Coord3 coord) {
     return tess::local_tile_id<Shape>(tess::local_coord<Shape>(coord));
   };
-  CHECK(PricedCost::eval(wall_page, local_of(tolled)) == 7,
+  CHECK(PricedCost::eval(tolled_page, local_of(tolled)) == 7,
         "OverlayCost adds terrain and surcharge");
   CHECK(PricedCost::eval(wall_page, local_of(wall)) == 0,
         "OverlayCost absorbs a zero base");
-  CHECK(SaturatedCost::eval(wall_page, local_of(tolled)) == 0xFFFFFFFFU,
+  CHECK(SaturatedCost::eval(tolled_page, local_of(tolled)) == 0xFFFFFFFFU,
         "OverlayCost saturates at the 32-bit maximum");
 
   // Absorption must reach traversal, not just eval. The wall's boolean
