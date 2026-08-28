@@ -373,8 +373,16 @@ def release(version: str, date: str, *, dry_run: bool) -> int:
       file=sys.stderr,
     )
     return 1
-  if heading in text:
-    print(f"changelog: {heading!r} already exists", file=sys.stderr)
+  # Any dated section for this version blocks a rerun, not only one with
+  # the same date: rerunning with a different date would append a second
+  # section for the same version, and the file's format implies one.
+  version_heading = f"## [{version}] - "
+  if version_heading in text:
+    print(
+      f"changelog: a section for {version} already exists; fold it back "
+      "under Unreleased before reassembling",
+      file=sys.stderr,
+    )
     return 1
   head, _, tail = text.partition(UNRELEASED_HEADING)
   next_release = tail.find("\n## ")
@@ -437,6 +445,11 @@ def main(argv: list[str] | None = None) -> int:
     "--preview", action="store_true", help="print what assembly would render"
   )
   group.add_argument("--release", metavar="VERSION", help="assemble under VERSION")
+  group.add_argument(
+    "--require-released",
+    metavar="VERSION",
+    help="fail unless VERSION is assembled and no fragments are pending",
+  )
   parser.add_argument("--date", help="release date (YYYY-MM-DD)")
   parser.add_argument(
     "--dry-run", action="store_true", help="with --release, print instead of write"
@@ -455,6 +468,51 @@ def main(argv: list[str] | None = None) -> int:
                         OPTLOG_FRAGMENTS)
     )
     print(f"changelog: {pending} fragments valid")
+    return 0
+
+  if args.require_released:
+    # Release mode ran with only fragment-syntax validation for RC1 and
+    # reported success while 24 fragments sat unassembled beside an
+    # already-dated release heading. Syntax validity is necessary but
+    # says nothing about whether the documented assembly step happened.
+    problems = check()
+    def _label(path: Path) -> str:
+      try:
+        return path.relative_to(REPO_ROOT).as_posix()
+      except ValueError:  # a test-relocated fragment directory
+        return f"{path.parent.name}/{path.name}"
+
+    pending = [
+      _label(path)
+      for directory in (RELEASE_FRAGMENTS, DECISION_FRAGMENTS,
+                        OPTLOG_FRAGMENTS)
+      for path in _fragment_files(directory)
+    ]
+    if pending:
+      problems.append(
+        "release records are not assembled; pending fragments: "
+        + ", ".join(sorted(pending))
+      )
+    heading = f"## [{args.require_released}] - "
+    count = RELEASE_CHANGELOG.read_text(encoding="utf-8").count(heading)
+    if count == 0:
+      problems.append(
+        f"{RELEASE_CHANGELOG.name} has no released section for "
+        f"{args.require_released}"
+      )
+    elif count > 1:
+      # A substring test would bless an ambiguous record: two
+      # differently dated sections for one version, which a rerun of
+      # --release could produce before the rerun guard existed.
+      problems.append(
+        f"{RELEASE_CHANGELOG.name} has {count} released sections for "
+        f"{args.require_released}; a version gets exactly one"
+      )
+    for problem in problems:
+      print(f"changelog: {problem}", file=sys.stderr)
+    if problems:
+      return 1
+    print(f"changelog: {args.require_released} is assembled; no fragments pending")
     return 0
 
   if args.preview:

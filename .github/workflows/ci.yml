@@ -1724,6 +1724,17 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      # Fragment-syntax validity is checked on every run; it says
+      # nothing about whether the release records were assembled. RC1's
+      # first release-mode run reported success with 24 valid fragments
+      # pending beside an already-dated release heading.
+      - name: Require assembled release records
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          python3 tools/assemble_changelog.py \
+            --require-released "$EXPECTED_VERSION"
+
       - name: Require every release gate
         env:
           DEV: ${{ needs.dev.result }}
