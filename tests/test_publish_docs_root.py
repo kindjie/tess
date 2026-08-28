@@ -14,6 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "publish_docs_root.py"
 SITE = "https://tess.owx.dev/"
+MANIFEST_NAME = ".tess-root-current.json"
 LEGACY_ROBOTS = """User-agent: *
 Allow: /
 # The development tree duplicates released pages; only the release
@@ -208,6 +209,96 @@ def test_sync_writes_the_root_robots_instead_of_inheriting_it(
   assert f"Sitemap: {SITE}sitemap.xml" in robots
   # The source tree keeps its own file; only the root is rewritten.
   assert "Disallow: /dev/" in (tmp_path / "latest" / "robots.txt").read_text()
+
+
+def test_sync_normalizes_an_already_published_root_robots(tmp_path: Path):
+  """The established-root path must apply the policy too.
+
+  This is the production shape: the root has been published before, so
+  a manifest exists and `sync` runs without `--root-source`. That path
+  returns early, so writing the policy only where the root is
+  bootstrapped left the live file untouched and the final check
+  rejected the artifact.
+  """
+  _make_pages_tree(tmp_path)
+  assert _run_tool("sync", tmp_path).returncode == 0
+  # Simulate a root established by an earlier release, whose robots
+  # file predates the current policy.
+  _write(tmp_path / "robots.txt", LEGACY_ROBOTS)
+  assert (tmp_path / MANIFEST_NAME).is_file()
+
+  assert _run_tool("sync", tmp_path).returncode == 0
+
+  robots = (tmp_path / "robots.txt").read_text()
+  assert "Disallow:" not in robots
+  assert f"Sitemap: {SITE}sitemap.xml" in robots
+  assert _run_tool("check", tmp_path).returncode == 0
+
+
+def test_sync_refuses_an_unowned_stale_root_robots(tmp_path: Path):
+  """An operator-owned root robots file is never silently rewritten."""
+  _make_pages_tree(tmp_path)
+  assert _run_tool("sync", tmp_path).returncode == 0
+  manifest = json.loads((tmp_path / MANIFEST_NAME).read_text())
+  manifest["paths"] = [p for p in manifest["paths"] if p != "robots.txt"]
+  _write(tmp_path / MANIFEST_NAME, json.dumps(manifest))
+  _write(tmp_path / "robots.txt", LEGACY_ROBOTS)
+
+  result = _run_tool("sync", tmp_path)
+
+  assert result.returncode != 0
+  assert "not manifest-owned" in result.stderr
+  assert (tmp_path / "robots.txt").read_text() == LEGACY_ROBOTS
+
+
+def test_sync_recreates_a_deleted_manifest_owned_robots(tmp_path: Path):
+  """A manifest-owned robots file that vanished is restored, not fatal."""
+  _make_pages_tree(tmp_path)
+  assert _run_tool("sync", tmp_path).returncode == 0
+  (tmp_path / "robots.txt").unlink()
+
+  assert _run_tool("sync", tmp_path).returncode == 0
+
+  robots = (tmp_path / "robots.txt").read_text()
+  assert "Disallow:" not in robots
+  assert _run_tool("check", tmp_path).returncode == 0
+
+
+def test_sync_replaces_an_owned_robots_symlink_without_following_it(
+  tmp_path: Path,
+):
+  """A symlinked robots file is replaced; its target is never written."""
+  _make_pages_tree(tmp_path)
+  assert _run_tool("sync", tmp_path).returncode == 0
+  target = tmp_path / "assets" / "outside.txt"
+  _write(target, "operator data")
+  (tmp_path / "robots.txt").unlink()
+  (tmp_path / "robots.txt").symlink_to(target)
+
+  assert _run_tool("sync", tmp_path).returncode == 0
+
+  assert not (tmp_path / "robots.txt").is_symlink()
+  assert "Disallow:" not in (tmp_path / "robots.txt").read_text()
+  assert target.read_text() == "operator data"
+
+
+def test_sync_refuses_an_unowned_robots_symlink(tmp_path: Path):
+  _make_pages_tree(tmp_path)
+  assert _run_tool("sync", tmp_path).returncode == 0
+  manifest = json.loads((tmp_path / MANIFEST_NAME).read_text())
+  manifest["paths"] = [p for p in manifest["paths"] if p != "robots.txt"]
+  _write(tmp_path / MANIFEST_NAME, json.dumps(manifest))
+  target = tmp_path / "assets" / "outside.txt"
+  _write(target, "operator data")
+  (tmp_path / "robots.txt").unlink()
+  (tmp_path / "robots.txt").symlink_to(target)
+
+  result = _run_tool("sync", tmp_path)
+
+  assert result.returncode != 0
+  assert "unowned symlink" in result.stderr
+  assert (tmp_path / "robots.txt").is_symlink()
+  assert target.read_text() == "operator data"
 
 
 def test_sync_rejects_unowned_root_collisions(tmp_path: Path):
