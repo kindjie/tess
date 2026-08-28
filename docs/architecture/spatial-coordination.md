@@ -124,11 +124,25 @@ commit contract.
 
 ## Dynamic congestion pricing
 
-**Validated caller recipe.** tess does not ship a congestion field. A
-caller can add `FieldCost` over an ordinary cost field, compute
-per-tile prices from observed demand, and publish the changed chunks
-with `mark_content_changed`; weighted planners using that movement
-class then read the updated prices.
+**The shape.** tess does not ship a congestion field. A caller keeps
+terrain and price in two fields and composes them in the movement
+class — `OverlayCost<FieldCost<TerrainTag>, FieldCost<SurchargeTag>>` —
+writing only the surcharge field, then publishing the changed chunks
+with `mark_content_changed`; weighted planners using that class read
+the updated prices. Where zero terrain means impassable, say so in the
+passability term as well (`AllOf<Field<PassableTag>,
+NotZero<TerrainTag>>`): `OverlayCost` absorbs a zero base, but region
+labelling and the minimum-step APIs consult the predicate alone.
+
+Pricing into the terrain field itself is a shortcut valid only on
+uniformly unit terrain; on any other map it destroys terrain when
+pricing turns on and cannot restore it when pricing turns off. The
+[congestion pricing guide](../guide/congestion.md) states the
+condition and the failure.
+
+**Validated policy.** The label below covers the pricing policy on the
+terrain it was measured on — every scenario in this stream used unit
+terrain — not the field layout, which no experiment varied.
 
 The validated nearby-agent policy writes
 `1 + min(3, live agents within Manhattan distance 1)` every four

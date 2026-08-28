@@ -286,9 +286,10 @@ marker used by compile-time validation and normalization.
   `Not<Term>`, `AllOf<Terms...>`, `AnyOf<Terms...>`.
 - Cost expressions (0 == impassable, u32-saturated): `UnitCost`,
   `ConstantCost<N>`, `FieldCost<CostTag>`, `SelectCost<SelTag, WhenSet,
-  WhenClear>`. `normalize_cost` is byte-exact with the weighted A* leaf.
-  Experimental `tess::experimental::OverlayCost<Base, Overlay>`
-  (`include/tess/experimental/overlay_cost.h`) prices a base cost with
+  WhenClear>`, `OverlayCost<Base, Overlay>`. `normalize_cost` is
+  byte-exact with the weighted A* leaf. All of them are stable
+  `tess::movement` names in `include/tess/topology/movement_class.h`.
+  `OverlayCost` prices a base cost with
   an additive overlay — terrain plus a congestion price or a toll. It is
   zero if and only if its base is zero, so an overlay never makes
   impassable ground enterable; that is the same rule the forward probe

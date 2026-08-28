@@ -148,14 +148,15 @@ APIs may change between minor versions. See
 
 ## Performance
 
-Representative single-threaded medians on an Apple M3 Max:
+Representative single-threaded medians on an Apple M3 Max (Apple Clang
+21.0.0, Release, 15 repetitions, commit `6b0f3c22cb66`):
 
-- Open 512x512 A*, corner to corner: ~2.1 us.
-- Clean tick for 100 agents with retained routes: ~330 ns.
-- Weighted batch of 100 near-goal requests on a 512x512 grid: ~50 us.
+- Open 512x512 A*, corner to corner: 2.21 us.
+- Clean tick for 100 agents with retained routes: 354 ns.
+- Weighted batch of 100 near-goal requests on a 512x512 grid: 53.6 us.
 
-The [performance page](https://tess.owx.dev/performance/) records the benchmark
-protocol, calibrated CI ceilings, and trend snapshots.
+The [performance page](https://tess.owx.dev/performance/) records the
+measurement conditions, calibrated CI ceilings, and trend snapshots.
 
 ## Learn more
 
