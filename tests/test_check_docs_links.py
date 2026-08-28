@@ -126,3 +126,22 @@ def test_check_site_resolves_same_origin_absolute_urls_as_internal(
 
   assert len(failures) == 1
   assert "demo/tower" in failures[0]
+
+
+def test_check_site_exempts_link_metadata_from_same_origin_resolution(
+  tmp_path,
+):
+  """A canonical names where a page will be published, not a target.
+
+  Version-prefixed canonicals stamped at build time point into trees
+  the build directory does not contain; treating them as navigation
+  would fail every stamped page. Anchor navigation keeps validating.
+  """
+  write_site(tmp_path)
+  (tmp_path / "index.html").write_text(
+    '<link rel="canonical" href="https://tess.owx.dev/dev/guide/">'
+    '<a href="https://tess.owx.dev/guide/">Guide</a>',
+    encoding="utf-8",
+  )
+
+  assert cdl.check_site(tmp_path) == []
