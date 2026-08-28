@@ -310,6 +310,17 @@ def check(pages: Path) -> None:
   if f"{SITE_URL}latest/" in sitemap or f"{SITE_URL}dev/" in sitemap:
     raise PublicationError("root sitemap contains a noncanonical version URL")
   _assert_contains(pages / "robots.txt", f"Sitemap: {SITE_URL}sitemap.xml")
+  # A crawler that is forbidden to fetch a page never reads its
+  # `noindex`, so disallowing a version tree pins whatever is already
+  # indexed instead of retiring it. The version trees carry `noindex,
+  # follow` and must stay crawlable for that to take effect.
+  robots = (pages / "robots.txt").read_text()
+  for line in robots.splitlines():
+    stripped = line.strip()
+    if stripped.startswith("Disallow:") and stripped != "Disallow:":
+      raise PublicationError(
+        f"root robots.txt disallows a path, blocking noindex: {stripped}"
+      )
   _assert_contains(pages / "latest" / "index.html", NOINDEX)
   _assert_contains(
     pages / "latest" / "index.html",

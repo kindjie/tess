@@ -195,6 +195,31 @@ def test_current_public_links_use_stable_root_urls():
     assert "https://tess.owx.dev/latest/" not in path.read_text(), path
 
 
+def test_versioned_pages_do_not_link_out_of_their_own_version():
+  """Documentation under `docs/` is published into every version tree.
+
+  An absolute same-origin link inside it escapes that tree: a reader on
+  `/dev/` who clicks one silently lands on released content, and a link
+  to a page that exists only in the newer tree 404s until a release
+  catches up. That is how the tower demo's link broke. Relative links
+  resolve within whichever tree served the page, so they cannot.
+
+  The README is excluded deliberately: it is read on GitHub, outside any
+  version tree, where a relative documentation link has no meaning.
+  """
+  offenders: list[str] = []
+  for path in sorted(ROOT.glob("docs/**/*.md")):
+    if {"decisions", "planning", "tdd"}.intersection(path.parts):
+      continue
+    for number, line in enumerate(path.read_text().splitlines(), start=1):
+      if "https://tess.owx.dev/" in line:
+        offenders.append(f"{path.relative_to(ROOT)}:{number}")
+  assert not offenders, (
+    "use a relative link inside versioned documentation; these escape "
+    "their own version tree: " + ", ".join(offenders)
+  )
+
+
 def test_docs_lazy_loads_the_self_hosted_mermaid_runtime():
   template = read("overrides/main.html")
 
