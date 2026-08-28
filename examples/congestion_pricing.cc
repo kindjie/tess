@@ -79,8 +79,9 @@ struct PricingState {
 // Every repricing period (4 fixed ticks measured best): compute the
 // signal, halve-and-add the cooling memory, write
 // surcharge = min(3, heat), publish content marks ONLY, and remember
-// which tiles rose. No global pathing-dirty: that is the ~500x
-// mistake.
+// which tiles rose. No global pathing-dirty: in the recorded case that
+// is the difference between about 84 ms and 1.6 ms per tick, roughly
+// 53x.
 void reprice(World& world, std::span<const tess::PathAgentState> agents,
              PricingState& state) {
   std::vector<std::uint16_t> signal(state.heat.size(), std::uint16_t{0});
