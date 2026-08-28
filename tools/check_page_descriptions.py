@@ -21,7 +21,22 @@ from pathlib import Path
 DESCRIPTION_RE = re.compile(
   r'<meta name="description" content="([^"]*)"'
 )
-GENERIC_PREFIX = "Header-only C++20 library for grid pathfinding"
+SITE_DESCRIPTION_RE = re.compile(
+  r"^site_description:\s*>-?\n((?:[ \t]+\S[^\n]*\n?)+)", re.M
+)
+
+
+def generic_description(repo_root: Path) -> str:
+  """The mkdocs fallback, read from configuration rather than pinned.
+
+  A hard-coded copy would go stale the day `site_description` is
+  reworded, and the reworded fallback would then pass this check.
+  """
+  config = (repo_root / "mkdocs.yml").read_text(encoding="utf-8")
+  match = SITE_DESCRIPTION_RE.search(config)
+  if match is None:
+    raise SystemExit("mkdocs.yml has no site_description block")
+  return " ".join(match.group(1).split())
 SKIPPED_TOP_LEVEL = {"api", "demo", "dev", "latest", "assets", "search"}
 VERSION_NAME = re.compile(r"^[0-9]+\.[0-9]+$")
 # The 404 template renders for every unknown URL; a page-specific
@@ -29,8 +44,9 @@ VERSION_NAME = re.compile(r"^[0-9]+\.[0-9]+$")
 EXEMPT = {"404.html"}
 
 
-def check_site(site: Path) -> list[str]:
+def check_site(site: Path, *, generic: str) -> list[str]:
   failures: list[str] = []
+  first_page_for: dict[str, str] = {}
   seen = 0
   for page in sorted(site.rglob("*.html")):
     relative = page.relative_to(site)
@@ -48,10 +64,21 @@ def check_site(site: Path) -> list[str]:
         f"{len(descriptions)}"
       )
       continue
-    if not descriptions[0].strip():
+    normalized = " ".join(descriptions[0].split())
+    if not normalized:
       failures.append(f"{label}: description is empty")
-    elif descriptions[0].startswith(GENERIC_PREFIX):
+      continue
+    if normalized.startswith(generic):
       failures.append(f"{label}: generic site description")
+      continue
+    if normalized in first_page_for:
+      # Two pages sharing one description recreates the interchangeable
+      # snippets this check exists to prevent, one rung up.
+      failures.append(
+        f"{label}: description duplicates {first_page_for[normalized]}"
+      )
+    else:
+      first_page_for[normalized] = label
   if seen == 0:
     failures.append("no maintained pages were checked; wrong directory?")
   return failures
@@ -61,7 +88,10 @@ def main() -> int:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("site", nargs="?", type=Path, default=Path("build/site"))
   args = parser.parse_args()
-  failures = check_site(args.site.resolve())
+  repo_root = Path(__file__).resolve().parents[1]
+  failures = check_site(
+    args.site.resolve(), generic=generic_description(repo_root)
+  )
   for failure in failures:
     print(f"error: {failure}", file=sys.stderr)
   if failures:
