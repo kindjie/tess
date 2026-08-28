@@ -2216,8 +2216,9 @@ evidence lives on the <a href="../../performance/">performance page</a>.
 The <a href="../../pathfinding-strategy-comparison/">side-by-side strategy comparison</a>
 shows the four call shapes over one compiled, self-checking example.</p>
 <h2 id="thresholds">Thresholds</h2>
-<p>A single A* across an open 512x512 grid measures ~2.1 us (weighted
-~2.4 us; see <a href="../../performance/">performance</a>). Below a few hundred
+<p>A single A* across an open 512x512 grid measures a couple of
+microseconds, weighted or not — <a href="../../performance/">performance</a> carries
+the current figures and the conditions they were measured under. Below a few hundred
 queries per tick, plain searches are rarely the bottleneck — measure
 before reaching for a sharing strategy. The
 <a href="../../demo/colony/">live colony demo</a> makes the

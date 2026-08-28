@@ -695,111 +695,112 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('pibt__movement
 <div class="line"><a id="l00573" name="l00573"></a><span class="lineno">  573</span>                         <a class="code hl_struct" href="structtess_1_1Box3.html">Box3</a>{to, <a class="code hl_struct" href="structtess_1_1Extent3.html">Extent3</a>{1, 1, 1}});</div>
 <div class="line"><a id="l00574" name="l00574"></a><span class="lineno">  574</span>      }</div>
 <div class="line"><a id="l00575" name="l00575"></a><span class="lineno">  575</span>      <span class="keyword">const</span> <span class="keyword">auto</span>&amp; route = routes.routes[i];</div>
-<div class="line"><a id="l00576" name="l00576"></a><span class="lineno">  576</span>      <span class="keyword">const</span> <span class="keywordtype">bool</span> on_route = agent.path_index + 1 &lt; route.size() &amp;&amp;</div>
-<div class="line"><a id="l00577" name="l00577"></a><span class="lineno">  577</span>                            route[agent.path_index + 1] == to;</div>
-<div class="line"><a id="l00578" name="l00578"></a><span class="lineno">  578</span>      agent.position = to;</div>
-<div class="line"><a id="l00579" name="l00579"></a><span class="lineno">  579</span>      <span class="keywordflow">if</span> (on_route) {</div>
-<div class="line"><a id="l00580" name="l00580"></a><span class="lineno">  580</span>        ++agent.path_index;</div>
-<div class="line"><a id="l00581" name="l00581"></a><span class="lineno">  581</span>        detail::resume_path_agent(agent);</div>
-<div class="line"><a id="l00582" name="l00582"></a><span class="lineno">  582</span>      } <span class="keywordflow">else</span> {</div>
-<div class="line"><a id="l00583" name="l00583"></a><span class="lineno">  583</span>        <span class="comment">// Off the retained route: drop it so scoped resubmission replans from</span></div>
-<div class="line"><a id="l00584" name="l00584"></a><span class="lineno">  584</span>        <span class="comment">// the new position. A Blocked agent with no last result is the state</span></div>
-<div class="line"><a id="l00585" name="l00585"></a><span class="lineno">  585</span>        <span class="comment">// the tick drivers already treat as &quot;needs planning&quot;.</span></div>
-<div class="line"><a id="l00586" name="l00586"></a><span class="lineno">  586</span>        agent.last_result.reset();</div>
-<div class="line"><a id="l00587" name="l00587"></a><span class="lineno">  587</span>        agent.phase = PathAgentPhase::Blocked;</div>
-<div class="line"><a id="l00588" name="l00588"></a><span class="lineno">  588</span>        agent.blocked_retries = 0;</div>
-<div class="line"><a id="l00589" name="l00589"></a><span class="lineno">  589</span>      }</div>
-<div class="line"><a id="l00590" name="l00590"></a><span class="lineno">  590</span>      scratch.committed.push_back(<span class="keyword">static_cast&lt;</span>std::uint32_t<span class="keyword">&gt;</span>(i));</div>
-<div class="line"><a id="l00591" name="l00591"></a><span class="lineno">  591</span>      scratch.committed_from.push_back(from);</div>
-<div class="line"><a id="l00592" name="l00592"></a><span class="lineno">  592</span>      ++stats.frame.advanced;</div>
-<div class="line"><a id="l00593" name="l00593"></a><span class="lineno">  593</span>      <span class="comment">// `has_goal` gates the comparison because `clear_path_agent_goal`</span></div>
-<div class="line"><a id="l00594" name="l00594"></a><span class="lineno">  594</span>      <span class="comment">// zeroes `goal`, so a goalless agent standing on the origin tile would</span></div>
-<div class="line"><a id="l00595" name="l00595"></a><span class="lineno">  595</span>      <span class="comment">// otherwise register an arrival for a journey that was never admitted</span></div>
-<div class="line"><a id="l00596" name="l00596"></a><span class="lineno">  596</span>      <span class="comment">// -- inflating `completed` and breaking the retention identity. Every</span></div>
-<div class="line"><a id="l00597" name="l00597"></a><span class="lineno">  597</span>      <span class="comment">// other arrival site reaches this check behind the same gate.</span></div>
-<div class="line"><a id="l00598" name="l00598"></a><span class="lineno">  598</span>      <span class="keywordflow">if</span> (agent.has_goal &amp;&amp; agent.position == agent.goal) {</div>
-<div class="line"><a id="l00599" name="l00599"></a><span class="lineno">  599</span>        arrive_path_agent(agent, accounting);</div>
-<div class="line"><a id="l00600" name="l00600"></a><span class="lineno">  600</span>        agent.last_result = PathStatus::Found;</div>
-<div class="line"><a id="l00601" name="l00601"></a><span class="lineno">  601</span>        <span class="comment">// Reset priority at the commit itself: a caller may assign a new</span></div>
-<div class="line"><a id="l00602" name="l00602"></a><span class="lineno">  602</span>        <span class="comment">// goal before the next pass, and the journey it just finished must</span></div>
-<div class="line"><a id="l00603" name="l00603"></a><span class="lineno">  603</span>        <span class="comment">// not carry its accumulated priority into the new one.</span></div>
-<div class="line"><a id="l00604" name="l00604"></a><span class="lineno">  604</span>        priorities.elapsed[i] = 0;</div>
-<div class="line"><a id="l00605" name="l00605"></a><span class="lineno">  605</span>        ++stats.frame.arrived;</div>
-<div class="line"><a id="l00606" name="l00606"></a><span class="lineno">  606</span>      }</div>
-<div class="line"><a id="l00607" name="l00607"></a><span class="lineno">  607</span>    }</div>
-<div class="line"><a id="l00608" name="l00608"></a><span class="lineno">  608</span>    <span class="comment">// Same observer contract as the joint advance: callbacks observe the fully</span></div>
-<div class="line"><a id="l00609" name="l00609"></a><span class="lineno">  609</span>    <span class="comment">// applied configuration; an injective tile mirror must buffer the batch.</span></div>
-<div class="line"><a id="l00610" name="l00610"></a><span class="lineno">  610</span>    <span class="keywordflow">for</span> (std::size_t k = 0; k &lt; scratch.committed.size(); ++k) {</div>
-<div class="line"><a id="l00611" name="l00611"></a><span class="lineno">  611</span>      <span class="keyword">const</span> <span class="keyword">auto</span> index = <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(scratch.committed[k]);</div>
-<div class="line"><a id="l00612" name="l00612"></a><span class="lineno">  612</span>      on_commit(index, scratch.committed_from[k], agents[index].position);</div>
-<div class="line"><a id="l00613" name="l00613"></a><span class="lineno">  613</span>    }</div>
-<div class="line"><a id="l00614" name="l00614"></a><span class="lineno">  614</span>    <span class="comment">// A pass that moved nobody would repeat identically (a uniform elapsed</span></div>
-<div class="line"><a id="l00615" name="l00615"></a><span class="lineno">  615</span>    <span class="comment">// increment cannot reorder decisions), so further passes are pure waste.</span></div>
-<div class="line"><a id="l00616" name="l00616"></a><span class="lineno">  616</span>    <span class="keywordflow">if</span> (stats.frame.advanced == advanced_before) {</div>
-<div class="line"><a id="l00617" name="l00617"></a><span class="lineno">  617</span>      <span class="keywordflow">break</span>;</div>
-<div class="line"><a id="l00618" name="l00618"></a><span class="lineno">  618</span>    }</div>
-<div class="line"><a id="l00619" name="l00619"></a><span class="lineno">  619</span>  }</div>
-<div class="line"><a id="l00620" name="l00620"></a><span class="lineno">  620</span>  <span class="keywordflow">return</span> stats;</div>
-<div class="line"><a id="l00621" name="l00621"></a><span class="lineno">  621</span>}</div>
-<div class="line"><a id="l00622" name="l00622"></a><span class="lineno">  622</span></div>
-<div class="line"><a id="l00624" name="l00624"></a><span class="lineno">  624</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> World, <span class="keyword">typename</span> ClassOrTag, <span class="keyword">typename</span> OccupancyTag,</div>
-<div class="line"><a id="l00625" name="l00625"></a><span class="lineno">  625</span>          <span class="keyword">typename</span> ReservationTag, <span class="keyword">typename</span> Ranking&gt;</div>
-<div class="line"><a id="l00626" name="l00626"></a><span class="lineno">  626</span>  <span class="keyword">requires</span> PibtRanking&lt;Ranking&gt;</div>
-<div class="line"><a id="l00627" name="l00627"></a><span class="lineno">  627</span><span class="keyword">auto</span> advance_path_agents_with_pibt(</div>
-<div class="line"><a id="l00628" name="l00628"></a><span class="lineno">  628</span>    World&amp; world, std::span&lt;PathAgentState&gt; agents,</div>
-<div class="line"><a id="l00629" name="l00629"></a><span class="lineno">  629</span>    <span class="keyword">const</span> PathAgentRoutes&amp; routes, PibtPriorities&amp; priorities,</div>
-<div class="line"><a id="l00630" name="l00630"></a><span class="lineno">  630</span>    JointMoveScratch&amp; scratch, Ranking&amp;&amp; rank, JointMoveOptions options = {},</div>
-<div class="line"><a id="l00631" name="l00631"></a><span class="lineno">  631</span>    PathAgentAdvanceOptions advance_options = {},</div>
-<div class="line"><a id="l00632" name="l00632"></a><span class="lineno">  632</span>    diagnostics::FlowAccounting* accounting = <span class="keyword">nullptr</span>) -&gt; JointMoveStats {</div>
-<div class="line"><a id="l00633" name="l00633"></a><span class="lineno">  633</span>  <span class="keywordflow">return</span> advance_path_agents_with_pibt&lt;World, ClassOrTag, OccupancyTag,</div>
-<div class="line"><a id="l00634" name="l00634"></a><span class="lineno">  634</span>                                       ReservationTag&gt;(</div>
-<div class="line"><a id="l00635" name="l00635"></a><span class="lineno">  635</span>      world, agents, routes, priorities, scratch, std::forward&lt;Ranking&gt;(rank),</div>
-<div class="line"><a id="l00636" name="l00636"></a><span class="lineno">  636</span>      options, advance_options, [](std::size_t, Coord3, Coord3) {}, accounting);</div>
-<div class="line"><a id="l00637" name="l00637"></a><span class="lineno">  637</span>}</div>
-<div class="line"><a id="l00638" name="l00638"></a><span class="lineno">  638</span> </div>
-<div class="line"><a id="l00639" name="l00639"></a><span class="lineno">  639</span><span class="comment">// Mirrors `tick_weighted_path_agents_with_joint_movement` with the PIBT</span></div>
-<div class="line"><a id="l00640" name="l00640"></a><span class="lineno">  640</span><span class="comment">// advance in place of the joint one; planning semantics are identical.</span></div>
-<div class="line"><a id="l00642" name="l00642"></a><span class="lineno">  642</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> World, <span class="keyword">typename</span> Class, std::uint32_t MaxCost,</div>
-<div class="line"><a id="l00643" name="l00643"></a><span class="lineno">  643</span>          <span class="keyword">typename</span> OccupancyTag, <span class="keyword">typename</span> ReservationTag, <span class="keyword">typename</span> Ranking&gt;</div>
-<div class="line"><a id="l00644" name="l00644"></a><span class="lineno">  644</span>  <span class="keyword">requires</span> PibtRanking&lt;Ranking&gt;</div>
-<div class="line"><a id="l00645" name="l00645"></a><span class="lineno">  645</span>[[nodiscard]] <span class="keyword">auto</span> tick_weighted_path_agents_with_pibt(</div>
-<div class="line"><a id="l00646" name="l00646"></a><span class="lineno">  646</span>    PathAgentTickState&amp; state, World&amp; world, std::span&lt;PathAgentState&gt; agents,</div>
-<div class="line"><a id="l00647" name="l00647"></a><span class="lineno">  647</span>    PathRequestRuntime&amp; runtime, PibtPriorities&amp; priorities,</div>
-<div class="line"><a id="l00648" name="l00648"></a><span class="lineno">  648</span>    JointMoveScratch&amp; scratch, Ranking&amp;&amp; rank,</div>
-<div class="line"><a id="l00649" name="l00649"></a><span class="lineno">  649</span>    PathAgentTickOptions options = {}, JointMoveOptions pibt_options = {},</div>
-<div class="line"><a id="l00650" name="l00650"></a><span class="lineno">  650</span>    <span class="keyword">const</span> RegionGraphT&lt;typename World::residency_type&gt;* graph = <span class="keyword">nullptr</span>,</div>
-<div class="line"><a id="l00651" name="l00651"></a><span class="lineno">  651</span>    JointMoveStats* pibt_stats = <span class="keyword">nullptr</span>) -&gt; PathAgentTickStats {</div>
-<div class="line"><a id="l00652" name="l00652"></a><span class="lineno">  652</span>  PathAgentTickStats stats;</div>
-<div class="line"><a id="l00653" name="l00653"></a><span class="lineno">  653</span>  stats.tick = advance_sim_tick(state.clock);</div>
-<div class="line"><a id="l00654" name="l00654"></a><span class="lineno">  654</span> </div>
-<div class="line"><a id="l00655" name="l00655"></a><span class="lineno">  655</span>  <span class="keyword">const</span> <span class="keywordtype">bool</span> repath_needed = prepare_path_agent_processing(</div>
-<div class="line"><a id="l00656" name="l00656"></a><span class="lineno">  656</span>      agents, options, stats, state.flow_accounting);</div>
-<div class="line"><a id="l00657" name="l00657"></a><span class="lineno">  657</span>  state.routes.ensure_size(agents.size());</div>
-<div class="line"><a id="l00658" name="l00658"></a><span class="lineno">  658</span>  <span class="keywordflow">if</span> (state.pathing_dirty || repath_needed) {</div>
-<div class="line"><a id="l00659" name="l00659"></a><span class="lineno">  659</span>    <span class="keyword">const</span> <span class="keyword">auto</span> scope =</div>
-<div class="line"><a id="l00660" name="l00660"></a><span class="lineno">  660</span>        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;</div>
-<div class="line"><a id="l00661" name="l00661"></a><span class="lineno">  661</span>    stats.pathing = process_weighted_path_agents&lt;World, Class, MaxCost&gt;(</div>
-<div class="line"><a id="l00662" name="l00662"></a><span class="lineno">  662</span>        world, agents, runtime, options.cache_policy, graph, scope,</div>
-<div class="line"><a id="l00663" name="l00663"></a><span class="lineno">  663</span>        &amp;state.routes, state.flow_accounting);</div>
-<div class="line"><a id="l00664" name="l00664"></a><span class="lineno">  664</span>    stats.processed_paths = <span class="keyword">true</span>;</div>
-<div class="line"><a id="l00665" name="l00665"></a><span class="lineno">  665</span>    state.pathing_dirty = <span class="keyword">false</span>;</div>
-<div class="line"><a id="l00666" name="l00666"></a><span class="lineno">  666</span>  }</div>
-<div class="line"><a id="l00667" name="l00667"></a><span class="lineno">  667</span> </div>
-<div class="line"><a id="l00668" name="l00668"></a><span class="lineno">  668</span>  <span class="keyword">auto</span> moved =</div>
-<div class="line"><a id="l00669" name="l00669"></a><span class="lineno">  669</span>      advance_path_agents_with_pibt&lt;World, Class, OccupancyTag, ReservationTag&gt;(</div>
-<div class="line"><a id="l00670" name="l00670"></a><span class="lineno">  670</span>          world, agents, state.routes, priorities, scratch,</div>
-<div class="line"><a id="l00671" name="l00671"></a><span class="lineno">  671</span>          std::forward&lt;Ranking&gt;(rank), pibt_options,</div>
-<div class="line"><a id="l00672" name="l00672"></a><span class="lineno">  672</span>          PathAgentAdvanceOptions{options.max_steps,</div>
-<div class="line"><a id="l00673" name="l00673"></a><span class="lineno">  673</span>                                  options.movement_dirty_mask},</div>
-<div class="line"><a id="l00674" name="l00674"></a><span class="lineno">  674</span>          state.flow_accounting);</div>
-<div class="line"><a id="l00675" name="l00675"></a><span class="lineno">  675</span>  stats.movement = moved.frame;</div>
-<div class="line"><a id="l00676" name="l00676"></a><span class="lineno">  676</span>  <span class="keywordflow">if</span> (pibt_stats != <span class="keyword">nullptr</span>) {</div>
-<div class="line"><a id="l00677" name="l00677"></a><span class="lineno">  677</span>    *pibt_stats = moved;</div>
-<div class="line"><a id="l00678" name="l00678"></a><span class="lineno">  678</span>  }</div>
-<div class="line"><a id="l00679" name="l00679"></a><span class="lineno">  679</span>  <span class="keywordflow">return</span> stats;</div>
-<div class="line"><a id="l00680" name="l00680"></a><span class="lineno">  680</span>}</div>
-<div class="line"><a id="l00681" name="l00681"></a><span class="lineno">  681</span> </div>
-<div class="line"><a id="l00682" name="l00682"></a><span class="lineno">  682</span>}  <span class="comment">// namespace tess</span></div>
+<div class="line"><a id="l00576" name="l00576"></a><span class="lineno">  576</span>      <span class="keyword">const</span> <span class="keywordtype">bool</span> on_route =</div>
+<div class="line"><a id="l00577" name="l00577"></a><span class="lineno">  577</span>          detail::has_next_step(agent.path_index, route.size()) &amp;&amp;</div>
+<div class="line"><a id="l00578" name="l00578"></a><span class="lineno">  578</span>          route[agent.path_index + 1] == to;</div>
+<div class="line"><a id="l00579" name="l00579"></a><span class="lineno">  579</span>      agent.position = to;</div>
+<div class="line"><a id="l00580" name="l00580"></a><span class="lineno">  580</span>      <span class="keywordflow">if</span> (on_route) {</div>
+<div class="line"><a id="l00581" name="l00581"></a><span class="lineno">  581</span>        ++agent.path_index;</div>
+<div class="line"><a id="l00582" name="l00582"></a><span class="lineno">  582</span>        detail::resume_path_agent(agent);</div>
+<div class="line"><a id="l00583" name="l00583"></a><span class="lineno">  583</span>      } <span class="keywordflow">else</span> {</div>
+<div class="line"><a id="l00584" name="l00584"></a><span class="lineno">  584</span>        <span class="comment">// Off the retained route: drop it so scoped resubmission replans from</span></div>
+<div class="line"><a id="l00585" name="l00585"></a><span class="lineno">  585</span>        <span class="comment">// the new position. A Blocked agent with no last result is the state</span></div>
+<div class="line"><a id="l00586" name="l00586"></a><span class="lineno">  586</span>        <span class="comment">// the tick drivers already treat as &quot;needs planning&quot;.</span></div>
+<div class="line"><a id="l00587" name="l00587"></a><span class="lineno">  587</span>        agent.last_result.reset();</div>
+<div class="line"><a id="l00588" name="l00588"></a><span class="lineno">  588</span>        agent.phase = PathAgentPhase::Blocked;</div>
+<div class="line"><a id="l00589" name="l00589"></a><span class="lineno">  589</span>        agent.blocked_retries = 0;</div>
+<div class="line"><a id="l00590" name="l00590"></a><span class="lineno">  590</span>      }</div>
+<div class="line"><a id="l00591" name="l00591"></a><span class="lineno">  591</span>      scratch.committed.push_back(<span class="keyword">static_cast&lt;</span>std::uint32_t<span class="keyword">&gt;</span>(i));</div>
+<div class="line"><a id="l00592" name="l00592"></a><span class="lineno">  592</span>      scratch.committed_from.push_back(from);</div>
+<div class="line"><a id="l00593" name="l00593"></a><span class="lineno">  593</span>      ++stats.frame.advanced;</div>
+<div class="line"><a id="l00594" name="l00594"></a><span class="lineno">  594</span>      <span class="comment">// `has_goal` gates the comparison because `clear_path_agent_goal`</span></div>
+<div class="line"><a id="l00595" name="l00595"></a><span class="lineno">  595</span>      <span class="comment">// zeroes `goal`, so a goalless agent standing on the origin tile would</span></div>
+<div class="line"><a id="l00596" name="l00596"></a><span class="lineno">  596</span>      <span class="comment">// otherwise register an arrival for a journey that was never admitted</span></div>
+<div class="line"><a id="l00597" name="l00597"></a><span class="lineno">  597</span>      <span class="comment">// -- inflating `completed` and breaking the retention identity. Every</span></div>
+<div class="line"><a id="l00598" name="l00598"></a><span class="lineno">  598</span>      <span class="comment">// other arrival site reaches this check behind the same gate.</span></div>
+<div class="line"><a id="l00599" name="l00599"></a><span class="lineno">  599</span>      <span class="keywordflow">if</span> (agent.has_goal &amp;&amp; agent.position == agent.goal) {</div>
+<div class="line"><a id="l00600" name="l00600"></a><span class="lineno">  600</span>        arrive_path_agent(agent, accounting);</div>
+<div class="line"><a id="l00601" name="l00601"></a><span class="lineno">  601</span>        agent.last_result = PathStatus::Found;</div>
+<div class="line"><a id="l00602" name="l00602"></a><span class="lineno">  602</span>        <span class="comment">// Reset priority at the commit itself: a caller may assign a new</span></div>
+<div class="line"><a id="l00603" name="l00603"></a><span class="lineno">  603</span>        <span class="comment">// goal before the next pass, and the journey it just finished must</span></div>
+<div class="line"><a id="l00604" name="l00604"></a><span class="lineno">  604</span>        <span class="comment">// not carry its accumulated priority into the new one.</span></div>
+<div class="line"><a id="l00605" name="l00605"></a><span class="lineno">  605</span>        priorities.elapsed[i] = 0;</div>
+<div class="line"><a id="l00606" name="l00606"></a><span class="lineno">  606</span>        ++stats.frame.arrived;</div>
+<div class="line"><a id="l00607" name="l00607"></a><span class="lineno">  607</span>      }</div>
+<div class="line"><a id="l00608" name="l00608"></a><span class="lineno">  608</span>    }</div>
+<div class="line"><a id="l00609" name="l00609"></a><span class="lineno">  609</span>    <span class="comment">// Same observer contract as the joint advance: callbacks observe the fully</span></div>
+<div class="line"><a id="l00610" name="l00610"></a><span class="lineno">  610</span>    <span class="comment">// applied configuration; an injective tile mirror must buffer the batch.</span></div>
+<div class="line"><a id="l00611" name="l00611"></a><span class="lineno">  611</span>    <span class="keywordflow">for</span> (std::size_t k = 0; k &lt; scratch.committed.size(); ++k) {</div>
+<div class="line"><a id="l00612" name="l00612"></a><span class="lineno">  612</span>      <span class="keyword">const</span> <span class="keyword">auto</span> index = <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(scratch.committed[k]);</div>
+<div class="line"><a id="l00613" name="l00613"></a><span class="lineno">  613</span>      on_commit(index, scratch.committed_from[k], agents[index].position);</div>
+<div class="line"><a id="l00614" name="l00614"></a><span class="lineno">  614</span>    }</div>
+<div class="line"><a id="l00615" name="l00615"></a><span class="lineno">  615</span>    <span class="comment">// A pass that moved nobody would repeat identically (a uniform elapsed</span></div>
+<div class="line"><a id="l00616" name="l00616"></a><span class="lineno">  616</span>    <span class="comment">// increment cannot reorder decisions), so further passes are pure waste.</span></div>
+<div class="line"><a id="l00617" name="l00617"></a><span class="lineno">  617</span>    <span class="keywordflow">if</span> (stats.frame.advanced == advanced_before) {</div>
+<div class="line"><a id="l00618" name="l00618"></a><span class="lineno">  618</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><a id="l00619" name="l00619"></a><span class="lineno">  619</span>    }</div>
+<div class="line"><a id="l00620" name="l00620"></a><span class="lineno">  620</span>  }</div>
+<div class="line"><a id="l00621" name="l00621"></a><span class="lineno">  621</span>  <span class="keywordflow">return</span> stats;</div>
+<div class="line"><a id="l00622" name="l00622"></a><span class="lineno">  622</span>}</div>
+<div class="line"><a id="l00623" name="l00623"></a><span class="lineno">  623</span></div>
+<div class="line"><a id="l00625" name="l00625"></a><span class="lineno">  625</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> World, <span class="keyword">typename</span> ClassOrTag, <span class="keyword">typename</span> OccupancyTag,</div>
+<div class="line"><a id="l00626" name="l00626"></a><span class="lineno">  626</span>          <span class="keyword">typename</span> ReservationTag, <span class="keyword">typename</span> Ranking&gt;</div>
+<div class="line"><a id="l00627" name="l00627"></a><span class="lineno">  627</span>  <span class="keyword">requires</span> PibtRanking&lt;Ranking&gt;</div>
+<div class="line"><a id="l00628" name="l00628"></a><span class="lineno">  628</span><span class="keyword">auto</span> advance_path_agents_with_pibt(</div>
+<div class="line"><a id="l00629" name="l00629"></a><span class="lineno">  629</span>    World&amp; world, std::span&lt;PathAgentState&gt; agents,</div>
+<div class="line"><a id="l00630" name="l00630"></a><span class="lineno">  630</span>    <span class="keyword">const</span> PathAgentRoutes&amp; routes, PibtPriorities&amp; priorities,</div>
+<div class="line"><a id="l00631" name="l00631"></a><span class="lineno">  631</span>    JointMoveScratch&amp; scratch, Ranking&amp;&amp; rank, JointMoveOptions options = {},</div>
+<div class="line"><a id="l00632" name="l00632"></a><span class="lineno">  632</span>    PathAgentAdvanceOptions advance_options = {},</div>
+<div class="line"><a id="l00633" name="l00633"></a><span class="lineno">  633</span>    diagnostics::FlowAccounting* accounting = <span class="keyword">nullptr</span>) -&gt; JointMoveStats {</div>
+<div class="line"><a id="l00634" name="l00634"></a><span class="lineno">  634</span>  <span class="keywordflow">return</span> advance_path_agents_with_pibt&lt;World, ClassOrTag, OccupancyTag,</div>
+<div class="line"><a id="l00635" name="l00635"></a><span class="lineno">  635</span>                                       ReservationTag&gt;(</div>
+<div class="line"><a id="l00636" name="l00636"></a><span class="lineno">  636</span>      world, agents, routes, priorities, scratch, std::forward&lt;Ranking&gt;(rank),</div>
+<div class="line"><a id="l00637" name="l00637"></a><span class="lineno">  637</span>      options, advance_options, [](std::size_t, Coord3, Coord3) {}, accounting);</div>
+<div class="line"><a id="l00638" name="l00638"></a><span class="lineno">  638</span>}</div>
+<div class="line"><a id="l00639" name="l00639"></a><span class="lineno">  639</span> </div>
+<div class="line"><a id="l00640" name="l00640"></a><span class="lineno">  640</span><span class="comment">// Mirrors `tick_weighted_path_agents_with_joint_movement` with the PIBT</span></div>
+<div class="line"><a id="l00641" name="l00641"></a><span class="lineno">  641</span><span class="comment">// advance in place of the joint one; planning semantics are identical.</span></div>
+<div class="line"><a id="l00643" name="l00643"></a><span class="lineno">  643</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> World, <span class="keyword">typename</span> Class, std::uint32_t MaxCost,</div>
+<div class="line"><a id="l00644" name="l00644"></a><span class="lineno">  644</span>          <span class="keyword">typename</span> OccupancyTag, <span class="keyword">typename</span> ReservationTag, <span class="keyword">typename</span> Ranking&gt;</div>
+<div class="line"><a id="l00645" name="l00645"></a><span class="lineno">  645</span>  <span class="keyword">requires</span> PibtRanking&lt;Ranking&gt;</div>
+<div class="line"><a id="l00646" name="l00646"></a><span class="lineno">  646</span>[[nodiscard]] <span class="keyword">auto</span> tick_weighted_path_agents_with_pibt(</div>
+<div class="line"><a id="l00647" name="l00647"></a><span class="lineno">  647</span>    PathAgentTickState&amp; state, World&amp; world, std::span&lt;PathAgentState&gt; agents,</div>
+<div class="line"><a id="l00648" name="l00648"></a><span class="lineno">  648</span>    PathRequestRuntime&amp; runtime, PibtPriorities&amp; priorities,</div>
+<div class="line"><a id="l00649" name="l00649"></a><span class="lineno">  649</span>    JointMoveScratch&amp; scratch, Ranking&amp;&amp; rank,</div>
+<div class="line"><a id="l00650" name="l00650"></a><span class="lineno">  650</span>    PathAgentTickOptions options = {}, JointMoveOptions pibt_options = {},</div>
+<div class="line"><a id="l00651" name="l00651"></a><span class="lineno">  651</span>    <span class="keyword">const</span> RegionGraphT&lt;typename World::residency_type&gt;* graph = <span class="keyword">nullptr</span>,</div>
+<div class="line"><a id="l00652" name="l00652"></a><span class="lineno">  652</span>    JointMoveStats* pibt_stats = <span class="keyword">nullptr</span>) -&gt; PathAgentTickStats {</div>
+<div class="line"><a id="l00653" name="l00653"></a><span class="lineno">  653</span>  PathAgentTickStats stats;</div>
+<div class="line"><a id="l00654" name="l00654"></a><span class="lineno">  654</span>  stats.tick = advance_sim_tick(state.clock);</div>
+<div class="line"><a id="l00655" name="l00655"></a><span class="lineno">  655</span> </div>
+<div class="line"><a id="l00656" name="l00656"></a><span class="lineno">  656</span>  <span class="keyword">const</span> <span class="keywordtype">bool</span> repath_needed = prepare_path_agent_processing(</div>
+<div class="line"><a id="l00657" name="l00657"></a><span class="lineno">  657</span>      agents, options, stats, state.flow_accounting);</div>
+<div class="line"><a id="l00658" name="l00658"></a><span class="lineno">  658</span>  state.routes.ensure_size(agents.size());</div>
+<div class="line"><a id="l00659" name="l00659"></a><span class="lineno">  659</span>  <span class="keywordflow">if</span> (state.pathing_dirty || repath_needed) {</div>
+<div class="line"><a id="l00660" name="l00660"></a><span class="lineno">  660</span>    <span class="keyword">const</span> <span class="keyword">auto</span> scope =</div>
+<div class="line"><a id="l00661" name="l00661"></a><span class="lineno">  661</span>        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;</div>
+<div class="line"><a id="l00662" name="l00662"></a><span class="lineno">  662</span>    stats.pathing = process_weighted_path_agents&lt;World, Class, MaxCost&gt;(</div>
+<div class="line"><a id="l00663" name="l00663"></a><span class="lineno">  663</span>        world, agents, runtime, options.cache_policy, graph, scope,</div>
+<div class="line"><a id="l00664" name="l00664"></a><span class="lineno">  664</span>        &amp;state.routes, state.flow_accounting);</div>
+<div class="line"><a id="l00665" name="l00665"></a><span class="lineno">  665</span>    stats.processed_paths = <span class="keyword">true</span>;</div>
+<div class="line"><a id="l00666" name="l00666"></a><span class="lineno">  666</span>    state.pathing_dirty = <span class="keyword">false</span>;</div>
+<div class="line"><a id="l00667" name="l00667"></a><span class="lineno">  667</span>  }</div>
+<div class="line"><a id="l00668" name="l00668"></a><span class="lineno">  668</span> </div>
+<div class="line"><a id="l00669" name="l00669"></a><span class="lineno">  669</span>  <span class="keyword">auto</span> moved =</div>
+<div class="line"><a id="l00670" name="l00670"></a><span class="lineno">  670</span>      advance_path_agents_with_pibt&lt;World, Class, OccupancyTag, ReservationTag&gt;(</div>
+<div class="line"><a id="l00671" name="l00671"></a><span class="lineno">  671</span>          world, agents, state.routes, priorities, scratch,</div>
+<div class="line"><a id="l00672" name="l00672"></a><span class="lineno">  672</span>          std::forward&lt;Ranking&gt;(rank), pibt_options,</div>
+<div class="line"><a id="l00673" name="l00673"></a><span class="lineno">  673</span>          PathAgentAdvanceOptions{options.max_steps,</div>
+<div class="line"><a id="l00674" name="l00674"></a><span class="lineno">  674</span>                                  options.movement_dirty_mask},</div>
+<div class="line"><a id="l00675" name="l00675"></a><span class="lineno">  675</span>          state.flow_accounting);</div>
+<div class="line"><a id="l00676" name="l00676"></a><span class="lineno">  676</span>  stats.movement = moved.frame;</div>
+<div class="line"><a id="l00677" name="l00677"></a><span class="lineno">  677</span>  <span class="keywordflow">if</span> (pibt_stats != <span class="keyword">nullptr</span>) {</div>
+<div class="line"><a id="l00678" name="l00678"></a><span class="lineno">  678</span>    *pibt_stats = moved;</div>
+<div class="line"><a id="l00679" name="l00679"></a><span class="lineno">  679</span>  }</div>
+<div class="line"><a id="l00680" name="l00680"></a><span class="lineno">  680</span>  <span class="keywordflow">return</span> stats;</div>
+<div class="line"><a id="l00681" name="l00681"></a><span class="lineno">  681</span>}</div>
+<div class="line"><a id="l00682" name="l00682"></a><span class="lineno">  682</span> </div>
+<div class="line"><a id="l00683" name="l00683"></a><span class="lineno">  683</span>}  <span class="comment">// namespace tess</span></div>
 <div class="ttc" id="aclasstess_1_1ResolvedTransitionModel_html"><div class="ttname"><a href="classtess_1_1ResolvedTransitionModel.html">tess::ResolvedTransitionModel</a></div><div class="ttdef"><b>Definition</b> transition_model.h:380</div></div>
 <div class="ttc" id="aclasstess_1_1World_html"><div class="ttname"><a href="classtess_1_1World.html">tess::World</a></div><div class="ttdef"><b>Definition</b> world.h:22</div></div>
 <div class="ttc" id="aconcepttess_1_1PibtRanking_html"><div class="ttname"><a href="concepttess_1_1PibtRanking.html">tess::PibtRanking</a></div><div class="ttdoc">Requirements on a ranking callable supplied to the PIBT movement tier.</div><div class="ttdef"><b>Definition</b> pibt_movement.h:99</div></div>

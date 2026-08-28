@@ -2456,13 +2456,19 @@ nodes, cache hits, and misses outside the timed loops. See the
 <a href="https://github.com/kindjie/tess/tree/main/bench">benchmark implementation</a> and the
 <a href="../performance/">performance methodology</a> before treating a result as a
 portable constant.</p>
-<p>For a concrete scale check, these are median CPU times from a Release build on
-one Apple M3 Max. Each benchmark ran single-threaded for at least one second
-per repetition across ten repetitions:</p>
+<p>For a concrete scale check, these are median CPU times from Release
+builds of commit <code>d653d813</code> on two platforms — an Apple M3 Max (Apple
+Clang 21.0.0) and a Steam Deck LCD (Zen 2, Clang 19.1.7 in the pinned
+steamrt4 SDK). Each benchmark ran single-threaded for at least one
+second per repetition across ten repetitions; per-benchmark CV stayed at
+or under 1.1% on the M3 and 0.6% on the Deck, work counters were
+byte-identical across platforms and repetitions, and the raw outputs are
+retained with the <a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/strategy-comparison-refresh/README.md">full conditions</a>:</p>
 <table>
 <thead>
 <tr>
 <th>Workload</th>
+<th>Platform</th>
 <th style="text-align: right;">Independent searches</th>
 <th style="text-align: right;">Reuse strategy</th>
 <th style="text-align: right;">Relative time</th>
@@ -2471,34 +2477,70 @@ per repetition across ten repetitions:</p>
 <tbody>
 <tr>
 <td>Shared unit-cost goal</td>
-<td style="text-align: right;">17.80 ms</td>
-<td style="text-align: right;">2.78 ms field</td>
-<td style="text-align: right;">6.4x faster</td>
+<td>M3 Max</td>
+<td style="text-align: right;">18.28 ms</td>
+<td style="text-align: right;">2.91 ms field</td>
+<td style="text-align: right;">6.3x faster</td>
+</tr>
+<tr>
+<td></td>
+<td>Steam Deck</td>
+<td style="text-align: right;">68.96 ms</td>
+<td style="text-align: right;">5.52 ms field</td>
+<td style="text-align: right;">12.5x faster</td>
 </tr>
 <tr>
 <td>Exact route repeats</td>
-<td style="text-align: right;">48.88 ms</td>
-<td style="text-align: right;">14.52 ms cache</td>
-<td style="text-align: right;">3.4x faster</td>
+<td>M3 Max</td>
+<td style="text-align: right;">50.62 ms</td>
+<td style="text-align: right;">15.25 ms cache</td>
+<td style="text-align: right;">3.3x faster</td>
+</tr>
+<tr>
+<td></td>
+<td>Steam Deck</td>
+<td style="text-align: right;">191.92 ms</td>
+<td style="text-align: right;">65.80 ms cache</td>
+<td style="text-align: right;">2.9x faster</td>
 </tr>
 <tr>
 <td>Same-goal suffixes</td>
-<td style="text-align: right;">113.08 us</td>
-<td style="text-align: right;">17.41 us cache</td>
-<td style="text-align: right;">6.5x faster</td>
+<td>M3 Max</td>
+<td style="text-align: right;">112.52 us</td>
+<td style="text-align: right;">17.84 us cache</td>
+<td style="text-align: right;">6.3x faster</td>
+</tr>
+<tr>
+<td></td>
+<td>Steam Deck</td>
+<td style="text-align: right;">259.19 us</td>
+<td style="text-align: right;">24.66 us cache</td>
+<td style="text-align: right;">10.5x faster</td>
 </tr>
 <tr>
 <td>Eight weighted goals</td>
-<td style="text-align: right;">441.16 ms</td>
-<td style="text-align: right;">42.29 ms batch</td>
+<td>M3 Max</td>
+<td style="text-align: right;">467.98 ms</td>
+<td style="text-align: right;">44.80 ms batch</td>
 <td style="text-align: right;">10.4x faster</td>
+</tr>
+<tr>
+<td></td>
+<td>Steam Deck</td>
+<td style="text-align: right;">904.07 ms</td>
+<td style="text-align: right;">75.44 ms batch</td>
+<td style="text-align: right;">12.0x faster</td>
 </tr>
 </tbody>
 </table>
-<p>The run could not pin thread affinity and the system load average was about
-4.0, so use these numbers as workload evidence, not target-machine promises.
-The result that matters is the shape: reuse won substantially when the paired
-request set actually contained the structure each API is designed to share.</p>
+<p>Neither run pinned thread affinity, and the M3 host carried load
+averages between five and six and a half, so use these as workload
+evidence, not target-machine promises. The result that matters is the shape, and it held on both
+architectures: every reuse strategy beat its independent-search baseline
+whenever the paired request set actually contained the structure each
+API is designed to share. The magnitudes move with the machine — the
+field and planner strategies win larger on the Deck's Zen 2, the exact
+<abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr> somewhat smaller.</p>
 <p>Run the comparison on the target machine:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>cmake<span class="w"> </span>--preset<span class="w"> </span>bench
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>bench<span class="w"> </span>--target<span class="w"> </span>tess_bench
