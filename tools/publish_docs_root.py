@@ -284,13 +284,36 @@ def _normalize_root_robots(pages: Path, owned: list[str]) -> None:
   live tree.
   """
   robots = pages / "robots.txt"
-  if not robots.is_file() or robots.read_text() == ROOT_ROBOTS:
-    return
-  if "robots.txt" not in owned:
+  owned_robots = "robots.txt" in owned
+  if robots.is_symlink():
+    # A symlink is replaced, never written through: following it would
+    # write outside the publication tree the ownership model bounds.
+    if not owned_robots:
+      raise PublicationError(
+        "root robots.txt is an unowned symlink; resolve it manually "
+        "before publishing"
+      )
+    robots.unlink()
+  elif robots.is_file():
+    # Byte-identical content is accepted regardless of ownership: there
+    # is no operator data an overwrite could destroy, and the moment the
+    # policy and an unowned file diverge, the branch below fails closed.
+    if robots.read_text() == ROOT_ROBOTS:
+      return
+    if not owned_robots:
+      raise PublicationError(
+        "root robots.txt is not manifest-owned and does not match the "
+        "current policy; resolve it manually before publishing"
+      )
+  elif robots.exists():
     raise PublicationError(
-      "root robots.txt is not manifest-owned and does not match the "
-      "current policy; resolve it manually before publishing"
+      "root robots.txt is not a regular file; resolve it manually "
+      "before publishing"
     )
+  # A missing file is written whether or not the manifest lists it: an
+  # absent name is claimable, exactly as the bootstrap collision rule
+  # treats absent destinations, and the final artifact check requires
+  # the file to exist.
   robots.write_text(ROOT_ROBOTS)
 
 
