@@ -296,6 +296,11 @@ per repetition across ten repetitions:
 
 The run could not pin thread affinity and the system load average was about
 4.0, so use these numbers as workload evidence, not target-machine promises.
+Its source commit and toolchain were not recorded and no raw benchmark
+artifact was retained, so the exact values cannot be reproduced or told
+apart from later drift in the benchmark sources. Treat the table as
+one-off screening evidence for the ratios rather than as measurements to
+compare a later run against.
 The result that matters is the shape: reuse won substantially when the paired
 request set actually contained the structure each API is designed to share.
 
