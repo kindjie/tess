@@ -82,15 +82,51 @@ def _make_pages_tree(root: Path) -> None:
     root / "latest" / "robots.txt",
     LEGACY_ROBOTS,
   )
-  _write(root / "0.13" / "index.html", _version_page("0.13"))
+  # 0.13 is the frozen-release shape: published while aliased as
+  # `latest`, so its head metadata still claims /latest/ (the social
+  # image malformed as `latestassets`), and its anchors carry the
+  # latest prefix. One resolvable escape, one deliberate cross-version
+  # link to a page the release never had, and the bare-origin escape
+  # hatch -- the exact census of the real stored tree.
+  _write(
+    root / "0.13" / "index.html",
+    "<html><head>"
+    f'<link rel="canonical" href="{SITE}latest/">'
+    f'<meta property="og:url" content="{SITE}latest/">'
+    f'<meta property="og:image" content="{SITE}latestassets/card.png">'
+    '<script type="application/ld+json">'
+    f'{{"@type": "WebSite", "url": "{SITE}latest/"}}</script>'
+    "</head><body>"
+    f'<a href="{SITE}latest/api/">API</a>'
+    f'<a href="{SITE}latest/guide/removed/">gone</a>'
+    f'<a href="{SITE}">stable</a>'
+    "</body></html>",
+  )
+  _write(root / "0.13" / "api" / "index.html", _version_page("0.13", "api/"))
   _write(root / "dev" / "index.html", _version_page("dev"))
+  # dev carries correct tree-local metadata; its escapes are the mkdocs
+  # nav api link and one link to a page that only exists at the root.
+  _write(
+    root / "dev" / "guide" / "index.html",
+    "<html><head>"
+    f'<link rel="canonical" href="{SITE}dev/guide/">'
+    "</head><body>"
+    f'<a href="{SITE}api/">API</a>'
+    f'<a href="{SITE}root-only/">root only</a>'
+    "</body></html>",
+  )
+  _write(root / "dev" / "api" / "index.html", _version_page("dev", "api/"))
   sitemap = (
     f'<?xml version="1.0"?><urlset><url><loc>{SITE}latest/</loc></url></urlset>'
   )
-  _write(root / "latest" / "sitemap.xml", sitemap)
-  (root / "latest" / "sitemap.xml.gz").write_bytes(
-    gzip.compress(sitemap.encode(), mtime=0)
-  )
+  for tree in ("latest", "0.13", "dev"):
+    _write(root / tree / "sitemap.xml", sitemap)
+    (root / tree / "sitemap.xml.gz").write_bytes(
+      gzip.compress(sitemap.encode(), mtime=0)
+    )
+    _write(root / tree / "llms.txt", f"# tess ({tree})\n")
+    if tree != "latest":
+      _write(root / tree / "robots.txt", LEGACY_ROBOTS)
   _write(
     root / "robots.txt",
     LEGACY_ROBOTS,
@@ -232,6 +268,7 @@ def test_sync_normalizes_an_already_published_root_robots(tmp_path: Path):
   robots = (tmp_path / "robots.txt").read_text()
   assert "Disallow:" not in robots
   assert f"Sitemap: {SITE}sitemap.xml" in robots
+  assert _run_tool("prepare-artifact", tmp_path).returncode == 0
   assert _run_tool("check", tmp_path).returncode == 0
 
 
@@ -261,6 +298,7 @@ def test_sync_recreates_a_deleted_manifest_owned_robots(tmp_path: Path):
 
   robots = (tmp_path / "robots.txt").read_text()
   assert "Disallow:" not in robots
+  assert _run_tool("prepare-artifact", tmp_path).returncode == 0
   assert _run_tool("check", tmp_path).returncode == 0
 
 
@@ -455,3 +493,159 @@ def test_publication_turn_queries_only_bounded_active_statuses(
   assert len(requested_urls) == len(QUEUE.STATUS_SCAN_ORDER)
   assert all("status=" in url for url in requested_urls)
   assert all("page=2" not in url for url in requested_urls)
+
+
+def _prepared_tree(tmp_path: Path) -> Path:
+  """The production sequence up to the served artifact."""
+  _make_pages_tree(tmp_path)
+  assert _run_tool("sync", tmp_path).returncode == 0
+  assert _run_tool("prepare-artifact", tmp_path).returncode == 0
+  return tmp_path
+
+
+def test_prepare_removes_indexable_resources_from_served_trees(
+  tmp_path: Path,
+):
+  """Served version trees carry no sitemap, llms.txt, or robots.txt.
+
+  Storage keeps them -- pages.yml commits the branch before artifact
+  preparation -- so this shapes only what crawlers can fetch.
+  """
+  _prepared_tree(tmp_path)
+
+  for tree in ("dev", "0.13", "latest"):
+    for name in ("sitemap.xml", "sitemap.xml.gz", "llms.txt", "robots.txt"):
+      assert not (tmp_path / tree / name).exists(), f"{tree}/{name}"
+  # The root copies the trees defer to survive.
+  for name in ("sitemap.xml", "sitemap.xml.gz", "llms.txt", "robots.txt"):
+    assert (tmp_path / name).is_file(), name
+  assert _run_tool("check", tmp_path).returncode == 0
+
+
+def test_prepare_localizes_resolvable_anchors_and_preserves_escapes(
+  tmp_path: Path,
+):
+  """Same-origin anchors stay inside their tree exactly when they can.
+
+  The rule is grounded in the stored-tree census: dev's nav api link
+  localizes; a link to a page only the root has is preserved; 0.13's
+  latest-prefixed escapes localize when the target exists in-tree and
+  are preserved when it does not; the bare-origin escape hatch is
+  never rewritten; and `latest/` -- whose root-absolute anchors are the
+  redirect fallbacks -- is untouched by construction (its HTML is
+  redirect-shaped before preparation runs).
+  """
+  _prepared_tree(tmp_path)
+
+  dev_guide = (tmp_path / "dev" / "guide" / "index.html").read_text()
+  assert 'href="/dev/api/"' in dev_guide
+  assert f'href="{SITE}root-only/"' in dev_guide
+
+  frozen = (tmp_path / "0.13" / "index.html").read_text()
+  assert 'href="/0.13/api/"' in frozen
+  assert f'href="{SITE}latest/guide/removed/"' in frozen
+  assert f'<a href="{SITE}">stable</a>' in frozen
+
+
+def test_prepare_repairs_stale_latest_head_metadata_in_numeric_trees(
+  tmp_path: Path,
+):
+  """A frozen tree's head stops claiming /latest/; dev's head is as-is.
+
+  0.13 was published while aliased as latest, so its canonical, og:url,
+  structured-data URL, and (malformed) og:image still point there.
+  Repair targets exactly those attributes; dev's current-correct
+  metadata must come through byte-identical.
+  """
+  _prepared_tree(tmp_path)
+
+  frozen = (tmp_path / "0.13" / "index.html").read_text()
+  assert f'<link rel="canonical" href="{SITE}0.13/">' in frozen
+  assert f'<meta property="og:url" content="{SITE}0.13/">' in frozen
+  assert f'content="{SITE}0.13/assets/card.png"' in frozen
+  assert f'"url": "{SITE}0.13/"' in frozen
+  assert f"{SITE}latestassets/" not in frozen
+
+  dev_guide = (tmp_path / "dev" / "guide" / "index.html").read_text()
+  assert f'<link rel="canonical" href="{SITE}dev/guide/">' in dev_guide
+
+
+def test_check_walks_every_page_not_just_tree_indexes(tmp_path: Path):
+  """A nested page missing noindex fails the artifact check.
+
+  The previous check read only each tree's index.html, so a faulty
+  traversal could noindex one page and leave hundreds indexable.
+  """
+  _prepared_tree(tmp_path)
+  nested = tmp_path / "dev" / "guide" / "index.html"
+  nested.write_text(nested.read_text().replace(
+    '<meta name="robots" content="noindex, follow">', "", 1
+  ))
+
+  result = _run_tool("check", tmp_path)
+
+  assert result.returncode != 0
+  assert "guide" in result.stderr
+
+
+def test_check_rejects_a_reintroduced_tree_resource(tmp_path: Path):
+  _prepared_tree(tmp_path)
+  _write(tmp_path / "dev" / "llms.txt", "# tess (dev)\n")
+
+  result = _run_tool("check", tmp_path)
+
+  assert result.returncode != 0
+  assert "llms.txt" in result.stderr
+
+
+def test_check_rejects_an_empty_version_tree(tmp_path: Path):
+  """An enumeration that visits nothing must fail, not pass vacuously."""
+  _prepared_tree(tmp_path)
+  for page in (tmp_path / "dev").rglob("*.html"):
+    page.unlink()
+
+  result = _run_tool("check", tmp_path)
+
+  assert result.returncode != 0
+  assert "no HTML" in result.stderr
+
+
+def test_check_rejects_a_diverged_gzip_sitemap(tmp_path: Path):
+  _prepared_tree(tmp_path)
+  (tmp_path / "sitemap.xml.gz").write_bytes(
+    gzip.compress(
+      f"<urlset><url><loc>{SITE}other/</loc></url></urlset>".encode(),
+      mtime=0,
+    )
+  )
+
+  result = _run_tool("check", tmp_path)
+
+  assert result.returncode != 0
+  assert "same URLs" in result.stderr
+
+
+def test_root_copy_keeps_noindex_on_canonical_less_utility_pages(
+  tmp_path: Path,
+):
+  """The root strip must not declassify generated utility pages.
+
+  Stripping noindex at root assembly exists for authored pages, which
+  carry a canonical. A generated utility page (functions/globals/member
+  indexes) carries noindex INSTEAD of a canonical -- that is its
+  classification -- and stripping it would put those pages on the
+  production root with neither.
+  """
+  _make_pages_tree(tmp_path)
+  noindex = '<meta name="robots" content="noindex, follow">'
+  _write(
+    tmp_path / "latest" / "api" / "functions_b.html",
+    f"<html><head>{noindex}</head><body>index</body></html>",
+  )
+
+  assert _run_tool("sync", tmp_path).returncode == 0
+
+  utility = (tmp_path / "api" / "functions_b.html").read_text()
+  assert noindex in utility
+  # An authored page (canonical present) still sheds its tree noindex.
+  assert "noindex" not in (tmp_path / "index.html").read_text()

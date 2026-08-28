@@ -12,7 +12,7 @@ The site publishes one tree per documented version, managed by
 | URL | Content |
 | --- | --- |
 | `/` | Newest stable release and the canonical public URL |
-| `/latest/` | Compatibility redirects plus retained non-HTML assets |
+| `/latest/` | Compatibility redirects plus retained non-HTML assets (served without its own `sitemap.xml`, `llms.txt`, or `robots.txt`) |
 | `/<major>.<minor>/` | Immutable, non-indexed release archive |
 | `/dev/` | Non-indexed development snapshot from `main` |
 
@@ -27,7 +27,11 @@ casually:
   does not serve symlinked directories. After mike updates `latest`, the
   publication helper replaces its HTML with exact root redirects but retains
   copied Wasm, JavaScript, CSS, images, and other non-HTML resources so old
-  embeds do not break.
+  embeds do not break. Four per-tree resources are the exception: artifact
+  preparation removes each tree's `sitemap.xml`, `sitemap.xml.gz`,
+  `llms.txt`, and nested `robots.txt` from what is served (they remain in
+  storage), because each is an independently indexable resource inside a
+  tree whose HTML policy is retirement.
 - **The generated API and demo trees are staged into `docs/` before deploy.**
   mike runs mkdocs itself and has no prebuilt-directory mode, so anything that
   must appear inside a version tree has to be somewhere mkdocs copies. Both
@@ -52,9 +56,14 @@ retire those pages. A root `robots.txt` the manifest does not own is
 never rewritten; publication fails instead, so an operator edit is
 resolved deliberately.
 
-Before upload, the workflow adds `noindex, follow` to `/dev/` and numeric
-archive HTML in the ephemeral Pages artifact. That metadata does not rewrite
-the stored archive. `/latest/` HTML has an immediate redirect, canonical root
+Before upload, the workflow prepares the ephemeral Pages artifact: it adds
+`noindex, follow` to `/dev/` and numeric archive HTML, removes each version
+tree's `sitemap.xml`, `sitemap.xml.gz`, `llms.txt`, and nested `robots.txt`
+(those URLs return 404 from the served site), localizes a tree's same-origin
+anchors onto its own pages where the target exists in-tree, and repoints a
+frozen numeric tree's stale `/latest/`-prefixed head metadata at the tree's
+own URL. None of that rewrites the stored archive -- the storage branch is
+committed before preparation runs, which the workflow-order tests pin. `/latest/` HTML has an immediate redirect, canonical root
 URL, and the same `noindex` policy. The root sitemap contains only canonical
 root URLs, and `robots.txt` names it so crawlers can read page directives.
 

@@ -102,3 +102,46 @@ def test_check_site_requires_an_index(tmp_path):
   assert cdl.check_site(tmp_path) == [
     f"documentation site has no index: {tmp_path / 'index.html'}"
   ]
+
+
+def test_check_site_resolves_same_origin_absolute_urls_as_internal(
+  tmp_path,
+):
+  """A URL wearing the site's own hostname is an internal link.
+
+  Skipping every URL with a scheme is how the tower demo's broken
+  absolute link passed CI: the page existed only in the newer tree, and
+  the checker never resolved it. Same-origin URLs now validate as
+  root-relative paths; other hosts stay out of scope.
+  """
+  write_site(tmp_path)
+  (tmp_path / "index.html").write_text(
+    '<a href="https://tess.owx.dev/guide/">Guide</a>'
+    '<a href="https://tess.owx.dev/demo/tower/">Missing</a>'
+    '<a href="https://example.com/whatever/">External</a>',
+    encoding="utf-8",
+  )
+
+  failures = cdl.check_site(tmp_path)
+
+  assert len(failures) == 1
+  assert "demo/tower" in failures[0]
+
+
+def test_check_site_exempts_link_metadata_from_same_origin_resolution(
+  tmp_path,
+):
+  """A canonical names where a page will be published, not a target.
+
+  Version-prefixed canonicals stamped at build time point into trees
+  the build directory does not contain; treating them as navigation
+  would fail every stamped page. Anchor navigation keeps validating.
+  """
+  write_site(tmp_path)
+  (tmp_path / "index.html").write_text(
+    '<link rel="canonical" href="https://tess.owx.dev/dev/guide/">'
+    '<a href="https://tess.owx.dev/guide/">Guide</a>',
+    encoding="utf-8",
+  )
+
+  assert cdl.check_site(tmp_path) == []
