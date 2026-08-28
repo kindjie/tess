@@ -34,9 +34,14 @@ SITE_URL = "https://tess.owx.dev/"
 NOINDEX = '<meta name="robots" content="noindex, follow">'
 SOCIAL_IMAGE = f"{SITE_URL}assets/tess-social-preview.png"
 TITLE_RE = re.compile(r"<title>([^<]*)</title>")
-DESCRIPTION_RE = re.compile(r'<meta name="description" content="[^"]*"\s*/?>')
+# \s matches newlines: the real demo templates split the attributes
+# across lines, and one content value wraps -- a single-line pattern
+# would silently keep the old description beside the new one.
+DESCRIPTION_RE = re.compile(
+  r'<meta\s+name="description"\s+content="[^"]*"\s*/?>'
+)
 OG_REPLACED_RE = re.compile(
-  r'<meta property="og:(?:title|url)" content="[^"]*"\s*/?>'
+  r'<meta\s+property="og:(?:title|url)"\s+content="[^"]*"\s*/?>'
 )
 HEAD_END = "</head>"
 
@@ -49,6 +54,7 @@ HEAD_END = "</head>"
 API_NOINDEX_PATTERNS = (
   "functions*.html",
   "globals*.html",
+  "namespacemembers*.html",
   "*-members.html",
   "navtree*.html",
   "search/*.html",
@@ -147,7 +153,13 @@ def _noindex(page: Path) -> None:
 
 def _title_of(page: Path) -> str:
   match = TITLE_RE.search(page.read_text(encoding="utf-8"))
-  return match.group(1).strip() if match else "tess"
+  title = match.group(1).strip() if match else ""
+  if not title:
+    # A silent "tess" fallback would stamp a broken page shape with
+    # generic metadata and sail through _verify -- the exact class of
+    # quiet degradation this pass exists to refuse.
+    raise FinalizeError(f"{page}: no usable <title> to derive metadata from")
+  return title
 
 
 def finalize(site: Path, version: str) -> list[str]:

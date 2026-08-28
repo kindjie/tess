@@ -156,3 +156,61 @@ def test_cli_reports_the_stamp_count(tmp_path):
   assert result.returncode == 0, result.stderr
   assert "finalized" in result.stdout
   assert "/1.0/" in result.stdout
+
+
+def test_finalize_replaces_multiline_description_and_og_tags(tmp_path):
+  """The real demo templates split attributes across lines.
+
+  A single-line pattern matched none of them, so the registered
+  description would have been added beside the old one instead of
+  replacing it.
+  """
+  _make_site(tmp_path)
+  _write(
+    tmp_path / "demo" / "colony" / "index.html",
+    "<html><head><title>tess colony demo</title>\n"
+    '    <meta name="description"\n'
+    '          content="Interactive tess WebAssembly colony simulation\n'
+    '                   at scale">\n'
+    '    <meta property="og:title"\n'
+    '          content="tess colony">\n'
+    "</head><body>x</body></html>",
+  )
+
+  fgp.finalize(tmp_path, "dev")
+
+  colony = (tmp_path / "demo" / "colony" / "index.html").read_text()
+  assert "Interactive tess WebAssembly colony simulation" not in colony
+  assert "Colony simulation demo" in colony
+  assert colony.count('name="description"') == 1
+  assert colony.count('property="og:title"') == 1
+
+
+def test_finalize_noindexes_namespace_member_indexes(tmp_path):
+  _make_site(tmp_path)
+  for name in ("namespacemembers.html", "namespacemembers_func.html"):
+    _write(tmp_path / "api" / name, _page("tess: Namespace Members"))
+
+  stamped = fgp.finalize(tmp_path, "dev")
+
+  for name in ("namespacemembers.html", "namespacemembers_func.html"):
+    text = (tmp_path / "api" / name).read_text()
+    assert fgp.NOINDEX in text
+    assert "canonical" not in text
+  assert all("namespacemembers" not in url for url in stamped)
+
+
+def test_finalize_rejects_a_titleless_page(tmp_path):
+  """No silent 'tess' fallback: a broken page shape fails the build."""
+  _make_site(tmp_path)
+  _write(
+    tmp_path / "api" / "untitled.html",
+    "<html><head></head><body>x</body></html>",
+  )
+
+  try:
+    fgp.finalize(tmp_path, "dev")
+  except fgp.FinalizeError as error:
+    assert "untitled" in str(error)
+  else:
+    raise AssertionError("a titleless page must fail the build")
