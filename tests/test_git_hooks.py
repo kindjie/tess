@@ -707,6 +707,10 @@ ADVISORY_CI_JOBS = {
   "publish-benchmark-history": "publishes baselines after a main push",
   "long-seed-properties": "scheduled deep sweep, far longer than a gate allows",
   "coverage": "weekly advisory gap-finder, not a threshold",
+  "scheduled-sweeps": (
+    "caller for the two scheduled sweeps above; release-evidence gates "
+    "on its aggregate result"
+  ),
   "release-linux-floors": "main/release floor; release-evidence governs RCs",
   "release-macos-floor": "main/release floor; release-evidence governs RCs",
   "release-windows-floor": "main/release floor; release-evidence governs RCs",
@@ -729,8 +733,14 @@ def test_every_ci_job_is_gated_or_explicitly_waived():
   """
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
-  body = workflow.split("\njobs:\n", 1)[1]
-  jobs = re.findall(r"^  ([a-z0-9][a-z0-9_-]*):$", body, flags=re.M)
+  # Jobs ci.yml calls out to are still ci.yml's jobs for this purpose:
+  # moving one into a reusable workflow must not drop it out of the
+  # waiver ledger, which is the exact hole this test exists to close.
+  jobs = []
+  for name in ("ci.yml", "scheduled-sweeps.yml"):
+    text = (root / ".github" / "workflows" / name).read_text()
+    body = text.split("\njobs:\n", 1)[1]
+    jobs.extend(re.findall(r"^  ([a-z0-9][a-z0-9_-]*):$", body, flags=re.M))
 
   assert len(jobs) >= 15, jobs
   ci_gate = _job_body(workflow, "ci-gate")
@@ -788,8 +798,7 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
     "windows",
     "windows-noexceptions",
     "bench",
-    "long-seed-properties",
-    "coverage",
+    "scheduled-sweeps",
     "ci-gate",
   ) + release_jobs
 
@@ -801,8 +810,17 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert 'test "$EVENT_SHA" = "$EXPECTED_SHA"' in changes
   assert 'test "$WORKFLOW_SHA" = "$EXPECTED_SHA"' in changes
   assert 'test "$version" = "$EXPECTED_VERSION"' in changes
+  sweeps = (
+    root / ".github" / "workflows" / "scheduled-sweeps.yml"
+  ).read_text()
   assert "ref: ${{ inputs." not in workflow
-  assert workflow.count("ref: ${{ github.sha }}") == 27
+  assert "ref: ${{ inputs." not in sweeps
+  # Every checkout across both files pins the tested commit. Counting
+  # only ci.yml would let a checkout in the called workflow float.
+  assert (
+    workflow.count("ref: ${{ github.sha }}")
+    + sweeps.count("ref: ${{ github.sha }}")
+  ) == 27
   assert "needs.changes.outputs.release_mode == 'true'" in evidence
   for job in always_required:
     assert f"      - {job}\n" in evidence
