@@ -29,6 +29,35 @@ using Traveler =
     tess::movement::MovementClass<tess::movement::Field<PassableTag>,
                                   tess::movement::FieldCost<CostTag>>;
 
+// The snapshot's name inventory records the bare spelling `OverlayCost`
+// and nothing else, so it cannot tell a compatible change from an
+// incompatible one that keeps the name. These declarations pin the
+// namespace, the template arity, and the operand order; the checks in
+// main() pin the semantics.
+struct TerrainTag {};
+struct SurchargeTag {};
+using PricedSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                       tess::Field<TerrainTag, std::uint8_t>,
+                                       tess::Field<SurchargeTag, std::uint8_t>>;
+using PricedWorld = tess::AlwaysResidentWorld<Shape, PricedSchema>;
+using PricedCost =
+    tess::movement::OverlayCost<tess::movement::FieldCost<TerrainTag>,
+                                tess::movement::FieldCost<SurchargeTag>>;
+using Priced = tess::movement::MovementClass<
+    tess::movement::AllOf<tess::movement::Field<PassableTag>,
+                          tess::movement::NotZero<TerrainTag>>,
+    PricedCost>;
+using SaturatedCost =
+    tess::movement::OverlayCost<tess::movement::ConstantCost<0xFFFFFF00U>,
+                                tess::movement::ConstantCost<0x00000400U>>;
+// Deliberately omits the NotZero<TerrainTag> term that `Priced` carries,
+// so absorption is the only thing that can close a zero-terrain tile.
+// This is a probe for observing that, not a recipe: without the term,
+// region labelling would disagree with the weighted search.
+using AbsorbOnly =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  PricedCost>;
+
 }  // namespace
 
 int main() {
@@ -97,6 +126,79 @@ int main() {
     if (step.x == cut.x && step.y == cut.y) avoids_cut = false;
   }
   CHECK(avoids_cut, "served route reflects the post-edit world");
+
+  // OverlayCost: additive, saturating, and absorbing on a zero base.
+  // The absorbing leg is the one that matters -- an overlay must never
+  // make impassable ground enterable -- so it is checked twice: once on
+  // the expression, and once through a search whose passability term is
+  // satisfied on the tile, where only absorption can reject it.
+  PricedWorld priced;
+  for (auto& page : priced.chunks()) {
+    auto open = page.template field_span<PassableTag>();
+    auto terrain = page.template field_span<TerrainTag>();
+    auto surcharge = page.template field_span<SurchargeTag>();
+    for (std::size_t i = 0; i < open.size(); ++i) {
+      open[i] = true;
+      terrain[i] = 1;
+      surcharge[i] = 0;
+    }
+  }
+  const tess::Coord3 wall{16, 4, 0};
+  const tess::Coord3 tolled{16, 6, 0};
+  priced.field<TerrainTag>(wall) = 0;
+  // Deliberately 1, not a large toll: the wall sits on the straight
+  // route, so without absorption its entry cost would equal its
+  // neighbours' and the search would prefer it. A larger surcharge
+  // would make the detour cheaper on price alone and the traversal
+  // check below would pass whether or not absorption survives.
+  priced.field<SurchargeTag>(wall) = 1;
+  priced.field<TerrainTag>(tolled) = 3;
+  priced.field<SurchargeTag>(tolled) = 4;
+  priced.mark_content_changed(
+      tess::chunk_key<Shape>(tess::chunk_coord<Shape>(wall)));
+  priced.mark_content_changed(
+      tess::chunk_key<Shape>(tess::chunk_coord<Shape>(tolled)));
+
+  const auto& wall_page =
+      priced.chunk(tess::chunk_key<Shape>(tess::chunk_coord<Shape>(wall)));
+  const auto local_of = [](tess::Coord3 coord) {
+    return tess::local_tile_id<Shape>(tess::local_coord<Shape>(coord));
+  };
+  CHECK(PricedCost::eval(wall_page, local_of(tolled)) == 7,
+        "OverlayCost adds terrain and surcharge");
+  CHECK(PricedCost::eval(wall_page, local_of(wall)) == 0,
+        "OverlayCost absorbs a zero base");
+  CHECK(SaturatedCost::eval(wall_page, local_of(tolled)) == 0xFFFFFFFFU,
+        "OverlayCost saturates at the 32-bit maximum");
+
+  // Absorption must reach traversal, not just eval. The wall's boolean
+  // passable field is true and AbsorbOnly's predicate reads nothing
+  // else, so under the weighted entry point a search that crosses the
+  // wall is the observable failure a non-absorbing OverlayCost gives.
+  // The minimum-step entry points deliberately do not see this: they
+  // substitute UnitCost for the class's cost expression, which is why
+  // the passability term carries the terrain in `Priced` below.
+  const tess::PathRequest across{{16, 2, 0}, {16, 8, 0}};
+  const auto absorbed = tess::weighted_astar_path<PricedWorld, AbsorbOnly>(
+      priced, across, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
+  CHECK(absorbed.status == tess::PathStatus::Found,
+        "a route around the wall exists");
+  bool crosses_wall = false;
+  for (const auto step : absorbed.path) {
+    if (step.x == wall.x && step.y == wall.y) crosses_wall = true;
+  }
+  CHECK(!crosses_wall, "a surcharge never opens impassable ground");
+
+  // The shape callers should copy keeps the terrain in the predicate as
+  // well, so the minimum-step entry points agree with the weighted one.
+  const auto safe = tess::astar_path<PricedWorld, Priced>(
+      priced, across, scratch, tess::MissingChunkPolicy::ReportIndeterminate);
+  CHECK(safe.status == tess::PathStatus::Found, "priced class plans a route");
+  bool safe_crosses_wall = false;
+  for (const auto step : safe.path) {
+    if (step.x == wall.x && step.y == wall.y) safe_crosses_wall = true;
+  }
+  CHECK(!safe_crosses_wall, "the terrain term closes the wall unweighted");
 
   // Persistence round trip through the stable archive surface.
   using Archive = tess::PersistenceSchema<

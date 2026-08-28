@@ -63,7 +63,7 @@ lifecycle.
   debug-asserted, never rehashes), `entity_at(tile)`, `size`, and
   `clear`. Steady state performs no allocation; growth beyond the
   reserved capacity rehashes as a setup-time event. Box/radius queries
-  and per-chunk buckets are deferred beyond the current pre-1.0 scope: an
+  and per-chunk buckets are outside this index's scope: an
   open-addressing table
   answers area queries only by probing every coordinate in the box, which
   is not a useful spatial query, and `entity_at` is the primitive

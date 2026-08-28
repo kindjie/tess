@@ -47,8 +47,7 @@ enum class CadenceKind : std::uint8_t {
 
 // Deterministic background bound: a due background task is offered at most
 // max_items work units per run and reports how many it consumed plus
-// whether work remains. There is deliberately no wall-clock budget in the
-// current pre-1.0 release --
+// whether work remains. There is deliberately no wall-clock budget --
 // a time valve would make tick outcomes nondeterministic, and every
 // consumer bound is expressible in items; it returns with its first real
 // consumer.

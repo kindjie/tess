@@ -24,8 +24,17 @@ Reference tests compare 100,000 seeded box and radius queries across top-down,
 vertical, and 3D shapes. The warm emitter path performs no dynamic allocation.
 Local five-repetition medians for 512-wide queries measured 678 ns versus
 213,076 ns for per-tile rectangular callbacks and 1,789 ns versus 157,203 ns
-for radius scanning. Both exceed the historical 15% promotion gate. These
-numbers are decision evidence, not portable performance ceilings.
+for radius scanning — roughly 300x and 90x. Both exceed the historical 15%
+promotion gate by margins no plausible measurement condition closes, which
+is what the promotion decision rested on.
+
+The record for that decision is the 2026-07-22 entry in the [optimization
+log archive][span-record]. It states the repetition count and the date and
+nothing further: the machine, toolchain, build configuration, and commit
+were not recorded. Treat the exact nanosecond figures as screening evidence
+from an unreproducible run, not as measurements to compare against.
+
+[span-record]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-07-31.md
 
 Predicate bitsets and chunk summaries are not part of this surface. They need
 authoritative predicate identity, mutation-cost evidence, and their separate
