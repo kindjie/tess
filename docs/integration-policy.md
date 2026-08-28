@@ -1,3 +1,9 @@
+---
+description: >-
+  How tess takes optional dependencies: two-gate builds, pinned
+  versions, and adapters that never enter the dependency-free core.
+---
+
 # Integration policy
 
 What tess guarantees to a consumer, and what it deliberately does not.

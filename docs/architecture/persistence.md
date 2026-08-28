@@ -1,3 +1,9 @@
+---
+description: >-
+  Versioned world archives in tess: canonical little-endian format v2,
+  exact load preflight, and explicit schema migration.
+---
+
 # Persistence and Compatibility
 
 `include/tess/persistence/archive.h` provides a dependency-free, versioned

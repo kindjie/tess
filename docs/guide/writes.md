@@ -1,3 +1,9 @@
+---
+description: >-
+  Writing tile data in tess: direct field writes versus queued
+  operations, versioned edits, and replan notification.
+---
+
 # Writes
 
 **The decision:** does anything downstream need to *react* to this edit?

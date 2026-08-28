@@ -1,3 +1,9 @@
+---
+description: >-
+  The exception-free configuration of tess: status-based error reporting
+  and the consumer contract compiled without exceptions.
+---
+
 # Exception-Free Builds
 
 Tess supports Clang-family and GCC consumers compiled with

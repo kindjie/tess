@@ -1,3 +1,9 @@
+---
+description: >-
+  Choosing an entity integration for tess: EnTT and Flecs adapters,
+  custom sources and sinks, and the agent lifecycle contract.
+---
+
 # Entities and ECS
 
 **The decision:** who owns the agents? tess never does — tiles are not

@@ -1,3 +1,9 @@
+---
+description: >-
+  The tess simulation loop: schedules, movement commit, joint admission,
+  and the opt-in PIBT tier for contested moves.
+---
+
 # Simulation and Scheduling
 
 The current simulation integration layer lives under `include/tess/sim/` and

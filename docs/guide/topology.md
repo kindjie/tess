@@ -1,3 +1,9 @@
+---
+description: >-
+  Movement rules in tess: movement classes, passability terms, cost
+  expressions, and pre-search reachability checks.
+---
+
 # Topology and precheck
 
 **The decision:** is a failed search expensive enough, often enough, to

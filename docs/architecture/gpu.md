@@ -1,3 +1,9 @@
+---
+description: >-
+  The tess GPU descriptor interface and optional WebGPU transport:
+  CPU-authoritative compute with compile-time descriptor checks.
+---
+
 # GPU Backends
 
 The GPU layer in `include/tess/gpu/` keeps tess's deterministic CPU results

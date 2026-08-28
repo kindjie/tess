@@ -1,3 +1,9 @@
+---
+description: >-
+  Enabling tess diagnostics: compile gates, counters, traces, and
+  reading instrumentation without paying for it in release builds.
+---
+
 # Diagnostics
 
 **The decision:** which build configurations compile the instrumentation

@@ -1,3 +1,9 @@
+---
+description: >-
+  Spatial coordination in tess: tactical assignment, local move
+  arbitration, congestion summaries, and the pricing recipe.
+---
+
 # Spatial Coordination
 
 The spatial-coordination layer provides game-agnostic derived indexes and

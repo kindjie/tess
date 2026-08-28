@@ -1,3 +1,9 @@
+---
+description: >-
+  World storage in tess: dense and sparse residency, typed tile fields,
+  dirty tracking, and content/topology versioning.
+---
+
 # Storage Foundation
 
 The implemented storage foundation covers typed compile-time field schemas,

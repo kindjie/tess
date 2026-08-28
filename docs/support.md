@@ -1,3 +1,9 @@
+---
+description: >-
+  The tess stability policy: the 1.x source-compatibility promise,
+  archive format support, and the exclusions that bound both.
+---
+
 # Support and compatibility
 
 Use [GitHub Discussions](https://github.com/kindjie/tess/discussions) for

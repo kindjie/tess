@@ -1,3 +1,9 @@
+---
+description: >-
+  How coding agents should consume the tess C++20 library: entry points,
+  conventions, and the documentation map.
+---
+
 # Adopting tess programmatically
 
 tess is unusually verifiable for automated adopters (coding agents, CI
