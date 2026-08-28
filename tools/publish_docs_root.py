@@ -273,10 +273,33 @@ def _redirect_latest(pages: Path) -> None:
   _rewrite_root_copy(latest, _latest_version(pages), strip_noindex=False)
 
 
+def _normalize_root_robots(pages: Path, owned: list[str]) -> None:
+  """Bring an already-published root robots.txt up to the current policy.
+
+  The ordinary publication path returns early once the root is
+  established, so a root file written by an earlier release would
+  otherwise never be revisited. That is how `Disallow: /dev/` outlived
+  the switch to `noindex, follow` -- and, until this ran here, why
+  writing the policy only on the bootstrap path fixed nothing on the
+  live tree.
+  """
+  robots = pages / "robots.txt"
+  if not robots.is_file() or robots.read_text() == ROOT_ROBOTS:
+    return
+  if "robots.txt" not in owned:
+    raise PublicationError(
+      "root robots.txt is not manifest-owned and does not match the "
+      "current policy; resolve it manually before publishing"
+    )
+  robots.write_text(ROOT_ROBOTS)
+
+
 def sync(pages: Path, root_source: Path | None) -> None:
   """Publish a stable root tree and exact latest-HTML redirects."""
   pages = pages.resolve()
-  if root_source is None and _read_manifest(pages) is not None:
+  owned = _read_manifest(pages)
+  if root_source is None and owned is not None:
+    _normalize_root_robots(pages, owned)
     return
   source = root_source.resolve() if root_source else pages / "latest"
   _sync_root(pages, source)

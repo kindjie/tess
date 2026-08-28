@@ -40,8 +40,17 @@ assembler owns only paths in its manifest and fails closed before deleting
 version trees or unknown operator-owned files. The first deployment can
 bootstrap the root from the existing `latest` copy; later `main` deployments
 leave the stable root unchanged.
-The root `robots.txt` travels with that stable copy; development and
-older-minor publications cannot replace it from their own source refs.
+
+The root `robots.txt` is the exception: the assembler writes it from its
+own constant on every run, including the runs that otherwise leave the
+established root alone. It is authored rather than inherited because the
+stable copy comes from a released version tree, so directives that were
+correct at that release would stay pinned at the root until the next one
+— which is how `Disallow: /dev/` outlived the switch to `noindex,
+follow` and kept crawlers from reading the very directive meant to
+retire those pages. A root `robots.txt` the manifest does not own is
+never rewritten; publication fails instead, so an operator edit is
+resolved deliberately.
 
 Before upload, the workflow adds `noindex, follow` to `/dev/` and numeric
 archive HTML in the ephemeral Pages artifact. That metadata does not rewrite
