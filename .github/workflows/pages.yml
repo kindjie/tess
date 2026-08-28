@@ -182,6 +182,19 @@ jobs:
       - name: Assemble Pages artifact
         run: cp -R build/docs-api/docs/html build/site/api
 
+      # Runs before anything consumes the site and on every pull
+      # request, so a wrong hook point or an unclassified page shape
+      # fails here rather than after merge. Every downstream copy
+      # inherits the stamps: the link-checked site, the uploaded
+      # artifact, mike's staged api/demo trees, and the stable root a
+      # release assembles from this artifact via --root-source.
+      - name: Finalize generated pages
+        env:
+          SELECTED_VERSION: ${{ needs.select.outputs.version }}
+        run: |
+          python3 tools/finalize_generated_pages.py build/site \
+            --version "${SELECTED_VERSION:-dev}"
+
       - name: Check generated documentation links
         run: |
           # Doxygen 1.17.0 emits these quick-index links without anchors. Keep

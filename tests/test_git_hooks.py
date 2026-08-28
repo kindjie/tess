@@ -1299,6 +1299,16 @@ def test_pages_publication_serializes_and_checks_the_uploaded_tree():
   assert "group: pages-${{ github.ref }}" not in workflow
   wait = "python3 tools/wait_for_publish_turn.py"
   assert "name: built-documentation" in workflow
+  # Generated-page finalization must run before the link check and the
+  # artifact upload, on every build: located later, a wrong hook point
+  # or an unclassified page shape would only fail after merge.
+  finalize = "python3 tools/finalize_generated_pages.py build/site"
+  link_check = "python3 tools/check_docs_links.py build/site"
+  assert finalize in workflow
+  assert workflow.index("cp -R build/docs-api/docs/html build/site/api") < (
+    workflow.index(finalize)
+  )
+  assert workflow.index(finalize) < workflow.index(link_check)
   sync = (
     "python3 tools/publish_docs_root.py sync \\\n"
     '            build/pages "${root_args[@]}"'
