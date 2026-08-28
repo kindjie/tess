@@ -271,7 +271,7 @@ auto advance_path_agents_with_joint_movement(
         continue;
       }
       const auto& route = routes.routes[i];
-      if (route.empty() || agent.path_index + 1 >= route.size()) {
+      if (!detail::has_next_step(agent.path_index, route.size())) {
         continue;
       }
       const auto to = route[agent.path_index + 1];
