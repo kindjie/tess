@@ -92,8 +92,9 @@ shows the four call shapes over one compiled, self-checking example.
 
 ## Thresholds
 
-A single A* across an open 512x512 grid measures ~2.1 us (weighted
-~2.4 us; see [performance](../performance.md)). Below a few hundred
+A single A* across an open 512x512 grid measures a couple of
+microseconds, weighted or not — [performance](../performance.md) carries
+the current figures and the conditions they were measured under. Below a few hundred
 queries per tick, plain searches are rarely the bottleneck — measure
 before reaching for a sharing strategy. The
 [live colony demo](../../demo/colony/) makes the

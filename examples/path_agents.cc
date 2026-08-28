@@ -63,7 +63,7 @@ auto run() -> int {
       tick_state, world, agents, runtime, options);
   stats = tick.pathing;
   if (stats.found != agents.size()) {
-    std::cerr << "repath failed\n";
+    std::cerr << "re-search failed\n";
     return 1;
   }
 

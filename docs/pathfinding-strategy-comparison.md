@@ -283,21 +283,34 @@ nodes, cache hits, and misses outside the timed loops. See the
 [performance methodology](performance.md) before treating a result as a
 portable constant.
 
-For a concrete scale check, these are median CPU times from a Release build on
-one Apple M3 Max. Each benchmark ran single-threaded for at least one second
-per repetition across ten repetitions:
+For a concrete scale check, these are median CPU times from Release
+builds of commit `d653d813` on two platforms — an Apple M3 Max (Apple
+Clang 21.0.0) and a Steam Deck LCD (Zen 2, Clang 19.1.7 in the pinned
+steamrt4 SDK). Each benchmark ran single-threaded for at least one
+second per repetition across ten repetitions; per-benchmark CV stayed at
+or under 1.1% on the M3 and 0.6% on the Deck, work counters were
+byte-identical across platforms and repetitions, and the raw outputs are
+retained with the [full conditions][strategy-refresh-evidence]:
 
-| Workload | Independent searches | Reuse strategy | Relative time |
-| --- | ---: | ---: | ---: |
-| Shared unit-cost goal | 17.80 ms | 2.78 ms field | 6.4x faster |
-| Exact route repeats | 48.88 ms | 14.52 ms cache | 3.4x faster |
-| Same-goal suffixes | 113.08 us | 17.41 us cache | 6.5x faster |
-| Eight weighted goals | 441.16 ms | 42.29 ms batch | 10.4x faster |
+| Workload | Platform | Independent searches | Reuse strategy | Relative time |
+| --- | --- | ---: | ---: | ---: |
+| Shared unit-cost goal | M3 Max | 18.28 ms | 2.91 ms field | 6.3x faster |
+| | Steam Deck | 68.96 ms | 5.52 ms field | 12.5x faster |
+| Exact route repeats | M3 Max | 50.62 ms | 15.25 ms cache | 3.3x faster |
+| | Steam Deck | 191.92 ms | 65.80 ms cache | 2.9x faster |
+| Same-goal suffixes | M3 Max | 112.52 us | 17.84 us cache | 6.3x faster |
+| | Steam Deck | 259.19 us | 24.66 us cache | 10.5x faster |
+| Eight weighted goals | M3 Max | 467.98 ms | 44.80 ms batch | 10.4x faster |
+| | Steam Deck | 904.07 ms | 75.44 ms batch | 12.0x faster |
 
-The run could not pin thread affinity and the system load average was about
-4.0, so use these numbers as workload evidence, not target-machine promises.
-The result that matters is the shape: reuse won substantially when the paired
-request set actually contained the structure each API is designed to share.
+Neither run pinned thread affinity, and the M3 host carried load
+averages between five and six and a half, so use these as workload
+evidence, not target-machine promises. The result that matters is the shape, and it held on both
+architectures: every reuse strategy beat its independent-search baseline
+whenever the paired request set actually contained the structure each
+API is designed to share. The magnitudes move with the machine — the
+field and planner strategies win larger on the Deck's Zen 2, the exact
+route cache somewhat smaller.
 
 Run the comparison on the target machine:
 
@@ -326,3 +339,4 @@ does not justify another invalidation or grouping lifecycle.
 [waypoint-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-17.md
 [movement-screening]: https://github.com/kindjie/tess/blob/main/docs/planning/local-movement-resolution.md#evidence
 [execution-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md
+[strategy-refresh-evidence]: https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/strategy-comparison-refresh/README.md

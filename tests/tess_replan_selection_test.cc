@@ -8,6 +8,7 @@
 #include <tess/experimental/path_agent_replan_selection.h>
 
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -79,6 +80,17 @@ TEST(ReplanSelection, ConsumedPrefixDoesNotCount) {
   EXPECT_EQ(f.run([](Coord3 c) { return c.x == 3; }), 0U);
   // The next step does count.
   EXPECT_EQ(f.run([](Coord3 c) { return c.x == 4; }), 1U);
+}
+
+TEST(ReplanSelection, SaturatedCursorDoesNotRescanFromTheStart) {
+  // path_index is a public field with no enforced range. At the maximum,
+  // `path_index + 1` wraps to 0, and the scan would walk the whole route
+  // it is supposed to treat as consumed.
+  Fixture f;
+  (void)f.add(agent_at(5, 0), line_route(0, 0, 5),
+              std::numeric_limits<std::size_t>::max());
+  EXPECT_EQ(f.run([](Coord3 c) { return c.x == 1; }), 0U);
+  EXPECT_EQ(f.run([](Coord3) { return true; }), 0U);
 }
 
 TEST(ReplanSelection, SkipsGoallessUnreachableAndRouteless) {

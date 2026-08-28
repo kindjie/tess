@@ -522,6 +522,35 @@ TEST(TessPathAgent, OnCommitHookSkipsFailedCommits) {
   EXPECT_EQ(commit_count, 0u);
 }
 
+TEST(TessPathAgent, SaturatedCursorDoesNotRestartAConsumedRoute) {
+  // `path_index` is a public field with no enforced range. At the
+  // maximum, `path_index + 1` wraps to 0, which compares as in-range and
+  // would advance the agent onto route[0] -- restarting a route the
+  // cursor says is finished, and teleporting the agent to its start.
+  World world;
+  fill_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{3, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  const auto stats = tess::process_unit_path_agents<World, PassableTag>(
+      world, agents, runtime);
+  ASSERT_EQ(stats.found, 1u);
+
+  const auto position = agents[0].position;
+  agents[0].path_index = std::numeric_limits<std::size_t>::max();
+  const auto advance = tess::advance_path_agents(agents, runtime, 8);
+
+  EXPECT_EQ(advance.advanced, 0u);
+  EXPECT_EQ(advance.arrived, 0u);
+  EXPECT_EQ(agents[0].position, position);
+  EXPECT_EQ(agents[0].path_index, std::numeric_limits<std::size_t>::max());
+}
+
 TEST(TessPathAgent, UnitAgentsProcessAdvanceAndArrive) {
   World world;
   fill_world(world);

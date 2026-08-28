@@ -121,6 +121,48 @@ constexpr auto traveler_passable = [](const auto& world, tess::Coord3 c) {
          !world.template field<SettledTag>(c);
 };
 
+TEST(TessPibtMovement, SaturatedCursorClassifiesTheCommitAsOffRoute) {
+  // The commit classifier asks whether the landed tile is the route's
+  // next step. With `path_index` saturated, `path_index + 1` wraps to
+  // zero, so a move onto route[0] -- here, a step back toward the goal
+  // -- would be classified as on-route and the cursor incremented to
+  // zero, restarting a route the cursor says is consumed. The guarded
+  // form classifies it off-route: the move still commits, and the stale
+  // route is dropped for replanning.
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world, true);
+  const auto i =
+      add_agent(world, agents, routes, {{1, 1, 0}, {2, 1, 0}, {3, 1, 0}});
+  agents[i].position = tess::Coord3{2, 1, 0};
+  agents[i].goal = tess::Coord3{0, 1, 0};  // route[0] is the best step
+  world.field<OccupancyTag>(tess::Coord3{1, 1, 0}) = false;
+  world.field<OccupancyTag>(agents[i].position) = true;
+  agents[i].path_index = std::numeric_limits<std::size_t>::max();
+
+  tess::PibtPriorities priorities;
+  priorities.elapsed = {1};
+  tess::JointMoveScratch scratch;
+  const auto rank = [&](std::size_t agent, tess::Coord3 c) -> std::uint32_t {
+    const auto goal = agents[agent].goal;
+    return static_cast<std::uint32_t>(std::abs(c.x - goal.x) +
+                                      std::abs(c.y - goal.y));
+  };
+  const auto stats =
+      tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                          ReservationTag>(
+          world, std::span<tess::PathAgentState>(agents), routes, priorities,
+          scratch, rank);
+
+  EXPECT_EQ(stats.frame.advanced, 1u);
+  EXPECT_EQ(agents[i].position, (tess::Coord3{1, 1, 0}));
+  // Off-route commit: the retained route is dropped rather than resumed
+  // with a wrapped cursor.
+  EXPECT_EQ(agents[i].path_index, std::numeric_limits<std::size_t>::max());
+  EXPECT_FALSE(agents[i].last_result.has_value());
+}
+
 TEST(TessPibtMovement, RingRegressionPibtSolvesWhereJointCongestionSeals) {
   // A Phase 3 gate cell (width-3 ring, 64x64, n=48, seeded) through the real
   // tick driver with the full settled consumer recipe. On this seed the joint

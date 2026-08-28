@@ -65,6 +65,9 @@ template <typename CostIncreasedFn>
       continue;
     }
     const auto& route = routes.routes[i];
+    if (!detail::has_next_step(agent.path_index, route.size())) {
+      continue;
+    }
     for (auto step = agent.path_index + 1; step < route.size(); ++step) {
       if (cost_increased(route[step])) {
         if (queue.request(i, agent)) {

@@ -154,6 +154,17 @@ inline void resume_path_agent(PathAgentState& agent) noexcept {
           agent.last_result == PathStatus::Found);
 }
 
+// Whether a cursor at `path_index` has a step left in a route of `size`.
+//
+// Spelled without addition on purpose. `PathAgentState::path_index` is a
+// public field with no enforced range, so `path_index + 1` wraps to 0 at
+// the maximum -- and a wrapped cursor compares as in-range, which would
+// advance a fully consumed route from its first step.
+[[nodiscard]] constexpr bool has_next_step(std::size_t path_index,
+                                           std::size_t size) noexcept {
+  return size > 0 && path_index < size - 1;
+}
+
 }  // namespace detail
 
 /// Arms `agent` to plan a route toward `goal` on the next processing pass.
@@ -371,7 +382,7 @@ inline auto advance_path_agents(
     }
 
     for (std::size_t step = 0; step < max_steps; ++step) {
-      if (agent.path_index + 1 >= result.path.size()) {
+      if (!detail::has_next_step(agent.path_index, result.path.size())) {
         break;
       }
       ++agent.path_index;
@@ -428,7 +439,7 @@ inline auto advance_path_agents_with_movement(
     }
 
     for (std::size_t step = 0; step < options.max_steps; ++step) {
-      if (agent.path_index + 1 >= result.path.size()) {
+      if (!detail::has_next_step(agent.path_index, result.path.size())) {
         break;
       }
 
@@ -515,7 +526,8 @@ inline auto advance_path_agents_with_movement(
     }
     const auto& route = routes.routes[agent_index];
     for (std::size_t step = 0;
-         step < options.max_steps && agent.path_index + 1 < route.size();
+         step < options.max_steps &&
+         detail::has_next_step(agent.path_index, route.size());
          ++step) {
       const auto from = agent.position;
       const auto to = route[agent.path_index + 1];
@@ -580,7 +592,7 @@ inline auto advance_path_agents(
     }
 
     for (std::size_t step = 0; step < max_steps; ++step) {
-      if (agent.path_index + 1 >= route.size()) {
+      if (!detail::has_next_step(agent.path_index, route.size())) {
         break;
       }
       ++agent.path_index;
@@ -628,7 +640,7 @@ inline auto advance_path_agents_with_movement(
     }
 
     for (std::size_t step = 0; step < options.max_steps; ++step) {
-      if (agent.path_index + 1 >= route.size()) {
+      if (!detail::has_next_step(agent.path_index, route.size())) {
         break;
       }
 
