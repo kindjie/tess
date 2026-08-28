@@ -71,7 +71,15 @@ def check_site(
     for raw_target in parse_document(source).links:
       parsed = urlsplit(raw_target)
       if parsed.scheme or parsed.netloc:
-        continue
+        # A same-origin absolute URL is an internal link wearing the
+        # site's own hostname; skipping it is how the tower demo's
+        # broken link passed CI. Validate it as the root-relative path
+        # it is. Genuinely external hosts stay out of scope.
+        if (parsed.hostname or "").lower() != "tess.owx.dev":
+          continue
+        parsed = parsed._replace(scheme="", netloc="")
+        if not parsed.path.startswith("/"):
+          parsed = parsed._replace(path="/" + parsed.path)
       target = resolve_target(site, source, parsed.path)
       try:
         target.relative_to(site)

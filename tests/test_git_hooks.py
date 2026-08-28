@@ -1317,6 +1317,14 @@ def test_pages_publication_serializes_and_checks_the_uploaded_tree():
   assert workflow.index(prepare) < workflow.index(check)
   assert workflow.index(check) < workflow.index(push)
   assert workflow.index(push) < workflow.index(upload)
+  # The storage commit must precede artifact preparation: prepare now
+  # DELETES per-tree sitemaps, llms.txt, and nested robots.txt and
+  # rewrites frozen-tree metadata for the served artifact only. Staged
+  # after preparation, those deletions would silently persist to
+  # gh-pages, and the next root assembly would lose its inputs.
+  commit = '"docs: assemble stable root publication"'
+  assert commit in workflow
+  assert workflow.index(commit) < workflow.index(prepare)
   assert "cp docs/robots.txt build/pages/robots.txt" not in workflow
   assert "mike deploy --push" not in workflow
   assert "mike set-default" not in workflow

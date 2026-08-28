@@ -339,14 +339,122 @@ def _insert_noindex(path: Path) -> None:
   path.write_text(text.replace(marker, f"  {NOINDEX}\n{marker}", 1))
 
 
+# Per-tree copies of these stay in STORAGE (pages.yml commits the branch
+# before this runs) but must not be served: a sitemap or llms.txt inside
+# a noindexed version tree is an independently indexable resource that
+# advertises URLs the HTML policy retires, and a nested robots.txt is a
+# directive file nothing should be reading at a subpath.
+TREE_UNSERVED = ("sitemap.xml", "sitemap.xml.gz", "llms.txt", "robots.txt")
+ANCHOR_RE = re.compile(
+  r'(<a\b[^>]*?\bhref=")' + re.escape(SITE_URL) + r'([^"#]+)(#[^"]*)?(")'
+)
+
+
+def _resolves_in_tree(tree: Path, path: str) -> bool:
+  """Whether site-relative `path` names a page or file in `tree`."""
+  if not path or path.startswith(".."):
+    return False
+  candidate = tree / path
+  if path.endswith("/"):
+    return (candidate / "index.html").is_file()
+  return candidate.is_file() or (candidate / "index.html").is_file()
+
+
+def _localize_tree_anchors(text: str, tree: Path) -> str:
+  """Point a tree's same-origin anchors back into the tree itself.
+
+  Anchor hrefs only -- `link` and `meta` are deliberately out of scope,
+  and the bare origin never matches (`[^"#]+` requires a nonempty
+  path): an absolute link to the site root is the reader's escape hatch
+  to the stable release and must survive. A numeric tree's anchors were
+  written when that tree WAS `latest`, so a leading `latest/` is
+  stripped before resolution. An href whose target does not exist in
+  the tree is preserved: it is either a deliberate cross-version link
+  or points at a page this release never had, and the stable site is
+  the right destination for both.
+  """
+  def replace(match: re.Match[str]) -> str:
+    path = match.group(2)
+    candidate = path
+    if VERSION_NAME.fullmatch(tree.name) and candidate.startswith("latest/"):
+      candidate = candidate[len("latest/") :]
+    if not _resolves_in_tree(tree, candidate):
+      return match.group(0)
+    fragment = match.group(3) or ""
+    return f"{match.group(1)}/{tree.name}/{candidate}{fragment}{match.group(4)}"
+
+  return ANCHOR_RE.sub(replace, text)
+
+
+def _repair_stale_head(text: str, tree: Path) -> str:
+  """Repoint a frozen tree's stale `latest` head metadata at itself.
+
+  Numeric trees were published while aliased as `latest`, so their
+  canonical, `og:url`, structured-data URL, and social images still
+  claim `/latest/` (the image malformed as `latestassets`). Those
+  claims were correct at publish and are stale now; repairing a stale
+  claim to the tree's own URL is not the same act as altering
+  current-correct metadata, which this function never touches -- every
+  pattern below requires the stale `latest` prefix to match at all.
+  """
+  own = f"{SITE_URL}{tree.name}/"
+  replacements = [
+    # The malformed social image: {SITE}latestassets/... lost its slash.
+    (
+      re.compile(r'(content=")' + re.escape(f"{SITE_URL}latestassets/")),
+      rf"\g<1>{own}assets/",
+    ),
+    (
+      re.compile(
+        r'(<link rel="canonical" href=")'
+        + re.escape(f"{SITE_URL}latest/")
+      ),
+      rf"\g<1>{own}",
+    ),
+    (
+      re.compile(
+        r'(<meta property="og:url" content=")'
+        + re.escape(f"{SITE_URL}latest/")
+      ),
+      rf"\g<1>{own}",
+    ),
+    # The homepage WebSite structured-data block.
+    (
+      re.compile(r'("url": ")' + re.escape(f"{SITE_URL}latest/")),
+      rf"\g<1>{own}",
+    ),
+  ]
+  for pattern, replacement in replacements:
+    text = pattern.sub(replacement, text)
+  return text
+
+
 def prepare_artifact(pages: Path) -> None:
-  """Add non-indexing metadata to version trees in the served artifact."""
+  """Rewrite version trees in the served artifact for non-indexing.
+
+  Storage is already committed when this runs (pages.yml orders the
+  branch commit before artifact preparation), so deletions and
+  rewrites here shape only what is served.
+  """
   for child in pages.iterdir():
     if child.name == "dev" or VERSION_NAME.fullmatch(child.name):
       if not child.is_dir():
         raise PublicationError(f"version path is not a directory: {child}")
+      for name in TREE_UNSERVED:
+        _remove(child / name)
+      numeric = VERSION_NAME.fullmatch(child.name) is not None
       for page in child.rglob("*.html"):
         _insert_noindex(page)
+        text = page.read_text()
+        if numeric:
+          text = _repair_stale_head(text, child)
+        page.write_text(_localize_tree_anchors(text, child))
+  # `latest/` is redirects: its HTML (and root-absolute fallback
+  # anchors) stays untouched, but the unserved resources go here too.
+  latest = pages / "latest"
+  if latest.is_dir():
+    for name in TREE_UNSERVED:
+      _remove(latest / name)
 
 
 def _assert_contains(path: Path, needle: str) -> None:
@@ -386,9 +494,50 @@ def check(pages: Path) -> None:
     pages / "latest" / "index.html",
     f'content="0; url={SITE_URL}"',
   )
-  for child in pages.iterdir():
+  # Root copies of the indexable resources must exist -- the version
+  # trees defer to them.
+  for name in ("llms.txt", "sitemap.xml", "sitemap.xml.gz"):
+    if not (pages / name).is_file():
+      raise PublicationError(f"root {name} is missing")
+  gz_urls = set(
+    re.findall(
+      r"<loc>([^<]+)</loc>",
+      gzip.decompress((pages / "sitemap.xml.gz").read_bytes()).decode(),
+    )
+  )
+  xml_urls = set(re.findall(r"<loc>([^<]+)</loc>", sitemap))
+  if gz_urls != xml_urls:
+    raise PublicationError(
+      "root sitemap.xml.gz does not list the same URLs as sitemap.xml"
+    )
+  # Every page in every version tree, not just each tree's index: a
+  # faulty traversal that noindexed only index.html would leave hundreds
+  # of nested pages indexable while an index-only check passed. Each
+  # walk also proves it saw at least one page, so an empty or mislaid
+  # tree cannot pass vacuously.
+  for child in sorted(pages.iterdir()):
     if child.name == "dev" or VERSION_NAME.fullmatch(child.name):
-      _assert_contains(child / "index.html", NOINDEX)
+      pages_seen = 0
+      for page in child.rglob("*.html"):
+        _assert_contains(page, NOINDEX)
+        pages_seen += 1
+      if pages_seen == 0:
+        raise PublicationError(f"version tree {child.name} has no HTML")
+      for name in TREE_UNSERVED:
+        if (child / name).exists():
+          raise PublicationError(
+            f"served version tree {child.name} still contains {name}"
+          )
+  latest_seen = 0
+  for page in (pages / "latest").rglob("*.html"):
+    _assert_contains(page, NOINDEX)
+    _assert_contains(page, 'content="0; url=')
+    latest_seen += 1
+  if latest_seen == 0:
+    raise PublicationError("latest tree has no redirect HTML")
+  for name in TREE_UNSERVED:
+    if (pages / "latest" / name).exists():
+      raise PublicationError(f"served latest tree still contains {name}")
 
 
 def parse_args() -> argparse.Namespace:
