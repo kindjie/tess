@@ -1,3 +1,9 @@
+---
+description: >-
+  Block kernel layer of the tess C++20 library: resolved lazy pipelines,
+  fused terminals, and allocation-free span queries.
+---
+
 # Block Foundation
 
 The current block layer is a minimal serial domain executor over always-resident

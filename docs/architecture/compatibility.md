@@ -1,3 +1,9 @@
+---
+description: >-
+  Evidence layers behind the tess 1.x source-compatibility contract:
+  snapshots, frozen consumers, and archive format v2 fixtures.
+---
+
 # Compatibility evidence
 
 Tess uses several independent evidence layers for the 1.x source-compatibility

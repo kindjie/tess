@@ -1,3 +1,9 @@
+---
+description: >-
+  Congestion pricing over the tess cost-field surface: the validated
+  two-field recipe, scoped replanning, and its measured boundary.
+---
+
 # Congestion pricing
 
 Congestion pricing makes crowded tiles more expensive to weighted

@@ -1,3 +1,9 @@
+---
+description: >-
+  What the tess C++20 library has released, what remains release-gated,
+  and what it deliberately will not become.
+---
+
 # Scope and roadmap
 
 What is released, what remains release-gated, and what tess will not become.

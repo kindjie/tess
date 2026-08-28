@@ -1,3 +1,9 @@
+---
+description: >-
+  Queued operations in tess: typed intent batches, versioned
+  invalidation, result channels, and cooperative tickets.
+---
+
 # Queued Operations Foundation
 
 The queued-operations layer combines deterministic chunk planning with typed,

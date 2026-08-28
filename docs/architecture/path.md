@@ -1,3 +1,9 @@
+---
+description: >-
+  The tess pathfinding core: unit-cost and weighted A*, route caches,
+  batches, distance fields, and retained route products.
+---
+
 # Path Foundation
 
 The current path layer is a synchronous pathfinding foundation with

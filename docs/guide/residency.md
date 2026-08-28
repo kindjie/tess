@@ -1,3 +1,9 @@
+---
+description: >-
+  Choosing tess world storage: always-resident versus sparse residency
+  under a fixed memory budget, and what each supports.
+---
+
 # Residency
 
 **The decision:** can every chunk of the world stay allocated within your

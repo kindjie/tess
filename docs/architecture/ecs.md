@@ -1,3 +1,9 @@
+---
+description: >-
+  ECS integration in tess: EnTT, Flecs, and custom adapters over one
+  agent batch, occupancy index, and deterministic tick pipeline.
+---
+
 # ECS Integration
 
 The ECS layer binds path agents to entity-component stores without

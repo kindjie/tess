@@ -1,3 +1,9 @@
+---
+description: >-
+  Topology in tess: region graphs, movement classes, passability and
+  cost expressions, and the reachability precheck.
+---
+
 # Topology Foundation
 
 The current topology layer is a local chunk-region foundation. It lives under

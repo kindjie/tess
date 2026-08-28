@@ -156,6 +156,14 @@ jobs:
       - name: Build site
         run: .venv-docs/bin/mkdocs build --strict
 
+      # Source front matter alone cannot prove what ships -- mkdocs
+      # falls back to the generic site description silently -- so the
+      # requirement is checked on the built pages. Runs before the
+      # generated api/ and demo/ trees exist; those carry their own
+      # stamped contract.
+      - name: Check maintained page descriptions
+        run: python3 tools/check_page_descriptions.py build/site
+
       - name: Build API reference
         run: |
           cmake -S . -B build/docs-api \

@@ -173,6 +173,30 @@ def test_docs_search_metadata_establishes_tess_site_identity():
       f"---\ntitle: {title}\ndescription: >-\n"
     )
 
+  # Beyond the eight titled entry pages, every maintained indexable
+  # page carries its own description; the built-site checker
+  # (tools/check_page_descriptions.py) proves what ships, and this
+  # source-side sweep catches the regression before a site build.
+  historical = {"decisions", "planning", "tdd", "doxygen-awesome"}
+  # Only the TOP-LEVEL docs/README.md is unpublished (exclude_docs
+  # anchors it with a leading slash); section README files render as
+  # their directory's index page -- the built-site checker caught
+  # exactly this hole in the first draft of this sweep.
+  unpublished = {
+    "api-main.md", "dependencies.md", "git-hooks.md",
+    "history.md", "hosting.md", "releasing.md", "style.md",
+  }
+  undescribed = [
+    str(page.relative_to(ROOT))
+    for page in sorted(ROOT.glob("docs/**/*.md"))
+    if not historical.intersection(page.relative_to(ROOT / "docs").parts)
+    and page.relative_to(ROOT / "docs").as_posix() != "README.md"
+    and page.name not in unpublished
+    and not page.relative_to(ROOT / "docs").as_posix().startswith("assets/")
+    and "description:" not in page.read_text()[:400]
+  ]
+  assert undescribed == [], undescribed
+
   assert readme.startswith("<p align=\"center\">")
   assert (
     "# Pathfinding and Simulation for 2D and 3D Grid Worlds" in readme

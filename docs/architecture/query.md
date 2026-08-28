@@ -1,3 +1,9 @@
+---
+description: >-
+  Spatial span queries in tess: exact box, Euclidean-radius, and
+  chunk-local scans emitting allocation-free x-runs.
+---
+
 # Span Queries
 
 `include/tess/query/span.h` provides exact, allocation-free spatial span
