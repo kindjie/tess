@@ -8,3 +8,8 @@
   a path. A crawler forbidden to fetch a page never reads that page's
   `noindex`, so disallowing a version tree pins whatever is already
   indexed instead of retiring it, which is the opposite of the intent.
+- The published root `robots.txt` is now written by the publication tool
+  rather than inherited from the released tree the root is derived from.
+  The live file still carried `Disallow: /dev/` from before the version
+  trees switched to `noindex, follow`, which kept crawlers from reading
+  the very noindex meant to retire them.

@@ -188,6 +188,28 @@ def test_prepare_and_check_final_artifact_enforce_indexing_contract(
     assert 'content="noindex, follow"' in html
 
 
+def test_sync_writes_the_root_robots_instead_of_inheriting_it(
+  tmp_path: Path,
+):
+  """A released tree's robots directives must not pin the root.
+
+  The root is derived from `latest/`, which belongs to a released tag.
+  Inheriting its robots file is how `Disallow: /dev/` outlived the
+  switch to `noindex, follow`: a crawler forbidden to fetch `/dev/`
+  never reads the noindex that was meant to retire it.
+  """
+  _make_pages_tree(tmp_path)
+  assert LEGACY_ROBOTS in (tmp_path / "latest" / "robots.txt").read_text()
+
+  assert _run_tool("sync", tmp_path).returncode == 0
+
+  robots = (tmp_path / "robots.txt").read_text()
+  assert "Disallow:" not in robots
+  assert f"Sitemap: {SITE}sitemap.xml" in robots
+  # The source tree keeps its own file; only the root is rewritten.
+  assert "Disallow: /dev/" in (tmp_path / "latest" / "robots.txt").read_text()
+
+
 def test_sync_rejects_unowned_root_collisions(tmp_path: Path):
   """A bootstrap never overwrites an unowned root path."""
   _make_pages_tree(tmp_path)

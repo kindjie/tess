@@ -41,6 +41,17 @@ Allow: /
 Disallow: /dev/
 Sitemap: https://tess.owx.dev/latest/sitemap.xml
 """
+# The root robots file is written here rather than inherited from the
+# version tree the root is derived from. That tree belongs to a released
+# tag, so whatever robots directives were correct at that release stay
+# pinned at the root until the next one -- which is how the legacy
+# `Disallow: /dev/` above outlived the switch to `noindex, follow` on
+# the version trees, and kept crawlers from reading the very noindex
+# that was meant to retire them.
+ROOT_ROBOTS = """User-agent: *
+Allow: /
+Sitemap: https://tess.owx.dev/sitemap.xml
+"""
 
 
 class PublicationError(RuntimeError):
@@ -180,6 +191,9 @@ def _sync_root(pages: Path, source: Path) -> None:
     for item in items:
       _copy_item(item, staged / item.name)
     _rewrite_root_copy(staged, _latest_version(pages))
+    (staged / "robots.txt").write_text(ROOT_ROBOTS)
+    if "robots.txt" not in incoming:
+      incoming.append("robots.txt")
 
     previous = set(owned or [])
     for name in incoming:
