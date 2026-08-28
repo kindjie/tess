@@ -41,6 +41,17 @@ Allow: /
 Disallow: /dev/
 Sitemap: https://tess.owx.dev/latest/sitemap.xml
 """
+# The root robots file is written here rather than inherited from the
+# version tree the root is derived from. That tree belongs to a released
+# tag, so whatever robots directives were correct at that release stay
+# pinned at the root until the next one -- which is how the legacy
+# `Disallow: /dev/` above outlived the switch to `noindex, follow` on
+# the version trees, and kept crawlers from reading the very noindex
+# that was meant to retire them.
+ROOT_ROBOTS = """User-agent: *
+Allow: /
+Sitemap: https://tess.owx.dev/sitemap.xml
+"""
 
 
 class PublicationError(RuntimeError):
@@ -180,6 +191,9 @@ def _sync_root(pages: Path, source: Path) -> None:
     for item in items:
       _copy_item(item, staged / item.name)
     _rewrite_root_copy(staged, _latest_version(pages))
+    (staged / "robots.txt").write_text(ROOT_ROBOTS)
+    if "robots.txt" not in incoming:
+      incoming.append("robots.txt")
 
     previous = set(owned or [])
     for name in incoming:
@@ -310,6 +324,17 @@ def check(pages: Path) -> None:
   if f"{SITE_URL}latest/" in sitemap or f"{SITE_URL}dev/" in sitemap:
     raise PublicationError("root sitemap contains a noncanonical version URL")
   _assert_contains(pages / "robots.txt", f"Sitemap: {SITE_URL}sitemap.xml")
+  # A crawler that is forbidden to fetch a page never reads its
+  # `noindex`, so disallowing a version tree pins whatever is already
+  # indexed instead of retiring it. The version trees carry `noindex,
+  # follow` and must stay crawlable for that to take effect.
+  robots = (pages / "robots.txt").read_text()
+  for line in robots.splitlines():
+    stripped = line.strip()
+    if stripped.startswith("Disallow:") and stripped != "Disallow:":
+      raise PublicationError(
+        f"root robots.txt disallows a path, blocking noindex: {stripped}"
+      )
   _assert_contains(pages / "latest" / "index.html", NOINDEX)
   _assert_contains(
     pages / "latest" / "index.html",

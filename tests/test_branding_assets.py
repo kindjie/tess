@@ -3,16 +3,30 @@
 from __future__ import annotations
 
 import json
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "docs" / "assets"
+SITE_HOST = "tess.owx.dev"
+URL_PATTERN = re.compile(r"\bhttps?://[^\s<>\"')\]]+")
 
 
 def read(path: str) -> str:
   return (ROOT / path).read_text(encoding="utf-8")
+
+
+def same_origin(url: str) -> bool:
+  """Whether a URL points at the documentation site itself.
+
+  Compares the parsed host rather than searching for the site name as a
+  substring, so a third-party URL that merely mentions the host in a
+  path or query is not mistaken for one of ours.
+  """
+  return (urlsplit(url).hostname or "").lower() == SITE_HOST
 
 
 def contrast_ratio(foreground: str, background: str) -> float:
@@ -193,6 +207,32 @@ def test_current_public_links_use_stable_root_urls():
     if historical_parts.intersection(path.parts):
       continue
     assert "https://tess.owx.dev/latest/" not in path.read_text(), path
+
+
+def test_versioned_pages_do_not_link_out_of_their_own_version():
+  """Documentation under `docs/` is published into every version tree.
+
+  An absolute same-origin link inside it escapes that tree: a reader on
+  `/dev/` who clicks one silently lands on released content, and a link
+  to a page that exists only in the newer tree 404s until a release
+  catches up. That is how the tower demo's link broke. Relative links
+  resolve within whichever tree served the page, so they cannot.
+
+  The README is excluded deliberately: it is read on GitHub, outside any
+  version tree, where a relative documentation link has no meaning.
+  """
+  offenders: list[str] = []
+  for path in sorted(ROOT.glob("docs/**/*.md")):
+    if {"decisions", "planning", "tdd"}.intersection(path.parts):
+      continue
+    for number, line in enumerate(path.read_text().splitlines(), start=1):
+      urls: list[str] = URL_PATTERN.findall(line)
+      if any(same_origin(url) for url in urls):
+        offenders.append(f"{path.relative_to(ROOT)}:{number}")
+  assert not offenders, (
+    "use a relative link inside versioned documentation; these escape "
+    "their own version tree: " + ", ".join(offenders)
+  )
 
 
 def test_docs_lazy_loads_the_self_hosted_mermaid_runtime():
