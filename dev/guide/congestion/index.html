@@ -2130,38 +2130,42 @@ predate the pricing engine's relocation into the current lab model,
 which is the successor measurement surface.</p>
 <h2 id="the-mechanism-all-policies-share-it">The mechanism (all policies share it)</h2>
 <ol>
-<li>Give your <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> a cost term over an ordinary cost field
-   (<code>tess::movement::FieldCost&lt;CostTag&gt;</code>).</li>
+<li>Give congestion its own field, separate from terrain, and have the
+   <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> read their sum:
+   <code>OverlayCost&lt;FieldCost&lt;TerrainTag&gt;, FieldCost&lt;SurchargeTag&gt;&gt;</code>.
+   Pricing then owns one field outright and never writes the caller's
+   terrain.</li>
 <li>Every four fixed ticks, compute a per-tile <strong>signal</strong> and write
-   <code>price = 1 + min(3, signal)</code> into the field. In the
-   single-platform screen, four ticks produced a lower aggregate
-   <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr>-tick ratio than eight or sixteen for both cooling policies,
-   and a cap of 3 likewise produced a lower aggregate ratio than a
-   cap of 7.</li>
+   <code>min(3, signal)</code> into the surcharge field. In the single-platform
+   screen, four ticks produced a lower aggregate <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr>-tick ratio than
+   eight or sixteen for both cooling policies, and a cap of 3 likewise
+   produced a lower aggregate ratio than a cap of 7.</li>
 <li>Publish the writes as versioned edits: <code>mark_content_changed</code> on
    every chunk you touched. Do <strong>not</strong> raise the global pathing-dirty
    flag; request replans only for affected retained routes, as
    described below.</li>
-<li>When pricing turns off, restore the field to its unpriced values
-   and only then force one full replan: every retained route was
-   planned against prices, so this single global replan is correct.</li>
+<li>When pricing turns off, clear the surcharge field and only then
+   force one full replan: every retained route was planned against
+   prices, so this single global replan is correct.</li>
 </ol>
 <p>Pricing changes route cost, not passability. An existing route
 remains valid, although it may no longer be the lowest-cost route.</p>
-<p><strong>If your world has terrain costs, do not follow step 2 literally.</strong>
-The recipe below writes the price into the same field the movement
-class reads, and restores it by writing 1 everywhere. That is correct
-only because the demo's terrain is uniformly 1
-(<code>world.fill_field&lt;CostTag&gt;(1)</code>), and every experiment in this stream
-was screened on such a world. A caller whose field already carries
-terrain weight would overwrite it when pricing turns on and erase it
-when pricing turns off. Give congestion its own field instead and have
-the <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> read the sum, so terrain and price stay separable
-and restoring means clearing the price field alone. Two consequences
-follow: the maximum cost your planner is configured for must cover
-terrain plus the price cap, and the passability term must keep reading
-terrain only — a price must never be able to make impassable ground
-passable.</p>
+<p>Two consequences of the separate field. The maximum cost your planner
+is configured for must cover terrain plus the surcharge cap, not the
+cap alone. And if you encode impassable terrain as cost zero, say so in the
+passability term as well — <code>AllOf&lt;Field&lt;PassableTag&gt;,
+NotZero&lt;TerrainTag&gt;&gt;</code>. <code>OverlayCost</code> is zero exactly when terrain is
+zero, so a surcharge cannot make impassable ground enterable in the
+weighted search, but that absorption is a backstop rather than the
+whole guard: region labelling and the minimum-step APIs consult the
+passability predicate alone, and would otherwise disagree with the
+search about the same tile.</p>
+<p>A single cost field, with the price written as <code>1 + min(3, signal)</code> and
+restored by writing 1 everywhere, is a valid shortcut <strong>only</strong> on
+uniformly unit terrain — which is what every experiment in this stream
+was screened on. On any other map it destroys terrain when pricing
+turns on and cannot restore it when pricing turns off, because the
+restoring code knows only the uniform value, not the map.</p>
 <p>Note also that the cap and the price magnitudes are expressed in your
 cost units. All the measured results here come from unit terrain, so
 <code>min(3, signal)</code> was a detour budget of three unit steps. On a map

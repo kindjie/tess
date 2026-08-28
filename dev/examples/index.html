@@ -2159,7 +2159,9 @@ additionally need their ECS gates, which the <code>dev</code> preset turns on):<
   congestion-pricing recipe against public APIs only: it computes tile
   prices, marks the changed chunks, requests replans for affected
   retained routes through the experimental route-crossing helper, and
-  restores unit costs when disabled. Snippet-synced into the
+  clears the surcharge when disabled. Terrain and congestion live in
+  separate fields summed by the <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>, so pricing never
+  overwrites the caller's terrain. Snippet-synced into the
   <a href="../guide/congestion/">congestion pricing guide</a>.</li>
 <li><a href="https://github.com/kindjie/tess/tree/main/examples/web_congestion"><code>web_congestion</code></a> — the source of the
   <a href="../demo/congestion/">congestion lab</a>: wraps
