@@ -623,3 +623,29 @@ def test_check_rejects_a_diverged_gzip_sitemap(tmp_path: Path):
 
   assert result.returncode != 0
   assert "same URLs" in result.stderr
+
+
+def test_root_copy_keeps_noindex_on_canonical_less_utility_pages(
+  tmp_path: Path,
+):
+  """The root strip must not declassify generated utility pages.
+
+  Stripping noindex at root assembly exists for authored pages, which
+  carry a canonical. A generated utility page (functions/globals/member
+  indexes) carries noindex INSTEAD of a canonical -- that is its
+  classification -- and stripping it would put those pages on the
+  production root with neither.
+  """
+  _make_pages_tree(tmp_path)
+  noindex = '<meta name="robots" content="noindex, follow">'
+  _write(
+    tmp_path / "latest" / "api" / "functions_b.html",
+    f"<html><head>{noindex}</head><body>index</body></html>",
+  )
+
+  assert _run_tool("sync", tmp_path).returncode == 0
+
+  utility = (tmp_path / "api" / "functions_b.html").read_text()
+  assert noindex in utility
+  # An authored page (canonical present) still sheds its tree noindex.
+  assert "noindex" not in (tmp_path / "index.html").read_text()

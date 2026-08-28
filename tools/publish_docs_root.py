@@ -147,7 +147,14 @@ def _rewrite_text(
     replacements.append((f"{SITE_URL}{version}/", SITE_URL))
   for old, new in replacements:
     text = text.replace(old, new)
-  if strip_noindex:
+  if strip_noindex and 'rel="canonical"' in text:
+    # Stripping exists so authored version-tree pages become indexable
+    # at the root. The stamped-XOR-listed partition tells the two page
+    # kinds apart here: an authored (or stamped generated) page carries
+    # a canonical and sheds its tree noindex; a generated utility page
+    # carries no canonical and its noindex IS its classification --
+    # stripping it would put functions/globals/member indexes on the
+    # production root with neither noindex nor canonical.
     text = text.replace(NOINDEX, "")
   return text
 
