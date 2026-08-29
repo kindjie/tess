@@ -234,11 +234,11 @@ jobs:
             echo "::endgroup::"
             ran=$((ran + 1))
           done
-          # EXACT, not a floor: the dev preset builds 19 examples, and a
+          # EXACT, not a floor: the dev preset builds 22 examples, and a
           # floor of 13 passed while one of them silently stopped building.
           # Bump this when adding an example -- a failure here means either
           # a new example or a missing one, and both want a human.
-          test "$ran" -eq 19
+          test "$ran" -eq 22
 
       # Documented example output is copied from real program runs; drift
       # between the docs and the compiled quickstart fails the build.
@@ -475,8 +475,8 @@ jobs:
             ran=$((ran + 1))
           done
           # This preset disables the two optional ECS integrations, so its
-          # controlled inventory is the other 17 example executables.
-          test "$ran" -eq 17
+          # controlled inventory is the other 20 example executables.
+          test "$ran" -eq 20
 
       - name: Exception-free installed consumer
         env:
@@ -534,6 +534,7 @@ jobs:
           tests/test_clang_tidy_changed.py
           tests/test_no_exceptions_manifest.py
           tests/test_paired_bench.py
+          tests/test_path_strategy_campaign.py
           tests/test_maintenance_campaign.py
           tests/test_maintenance_evidence_archive.py
           tests/test_check_counter_goldens.py
@@ -544,6 +545,9 @@ jobs:
           tests/test_portable_headers.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
+          tests/test_publish_docs_root.py
+          tests/test_finalize_generated_pages.py
+          tests/test_check_page_descriptions.py
           tests/test_measure_traffic_lab.py
           tests/test_browser_demo_resources.py
           tests/test_compatibility_snapshots.py
@@ -616,7 +620,9 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: Quality Gates (${{ matrix.preset }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # 75: a cold clang-tidy sweep after a core header change exceeds 45,
+    # and a cancelled job saves no cache, so the low limit deadlocked.
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -1696,8 +1702,7 @@ jobs:
       - windows
       - windows-noexceptions
       - bench
-      - long-seed-properties
-      - coverage
+      - scheduled-sweeps
       - ci-gate
       - release-linux-floors
       - release-macos-floor
@@ -1717,6 +1722,17 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      # Fragment-syntax validity is checked on every run; it says
+      # nothing about whether the release records were assembled. RC1's
+      # first release-mode run reported success with 24 valid fragments
+      # pending beside an already-dated release heading.
+      - name: Require assembled release records
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          python3 tools/assemble_changelog.py \
+            --require-released "$EXPECTED_VERSION"
+
       - name: Require every release gate
         env:
           DEV: ${{ needs.dev.result }}
@@ -1729,8 +1745,7 @@ jobs:
           WINDOWS: ${{ needs.windows.result }}
           WINDOWS_NO_EXCEPTIONS: ${{ needs.windows-noexceptions.result }}
           BENCH: ${{ needs.bench.result }}
-          LONG_SEED: ${{ needs.long-seed-properties.result }}
-          COVERAGE: ${{ needs.coverage.result }}
+          SCHEDULED_SWEEPS: ${{ needs.scheduled-sweeps.result }}
           CI_GATE: ${{ needs.ci-gate.result }}
           LINUX_FLOORS: ${{ needs.release-linux-floors.result }}
           MACOS_FLOOR: ${{ needs.release-macos-floor.result }}
@@ -1744,8 +1759,8 @@ jobs:
         run: |
           for result in "$DEV" "$GCC" "$LIBCXX" "$NO_EXCEPTIONS" \
               "$HOOKS" "$QUALITY" "$MACOS" "$WINDOWS" \
-              "$WINDOWS_NO_EXCEPTIONS" "$BENCH" "$LONG_SEED" \
-              "$COVERAGE" "$CI_GATE" "$LINUX_FLOORS" "$MACOS_FLOOR" \
+              "$WINDOWS_NO_EXCEPTIONS" "$BENCH" \
+              "$SCHEDULED_SWEEPS" "$CI_GATE" "$LINUX_FLOORS" "$MACOS_FLOOR" \
               "$WINDOWS_FLOOR" "$CMAKE_FLOOR" "$FUZZ" "$PACKAGES" \
               "$PORTABLE_HEADERS" "$COMPATIBILITY" "$DOCS"; do
             test "$result" = success
@@ -2082,245 +2097,15 @@ jobs:
           echo "error: could not publish after 3 attempts" >&2
           exit 1
 
-  # Long-seed property sweeps (redesign section 3.4), weekly tier only.
-  # The pull-request tier runs 24 seeds so it stays inside the PR time
-  # budget; that is enough to catch a broken invariant but not enough to
-  # reach the rarer interleavings. This job raises both seeds and steps
-  # through the environment.
-  #
-  # The counts are exported, never defaulted silently: the harness
-  # treats a malformed or zero value as an ERROR rather than falling
-  # back, because a weekly run that quietly executed the pull-request
-  # workload would report a long-seed pass it never performed. The step
-  # below asserts the raised budget was actually applied rather than
-  # trusting that exporting a variable had an effect.
-  long-seed-properties:
-    name: Long-Seed Property Sweeps
+  # Long-seed property sweeps and advisory coverage live in
+  # scheduled-sweeps.yml; see that file for why they are called rather
+  # than moved. This job's result stands in for both.
+  scheduled-sweeps:
+    name: Scheduled Sweeps
     if: >-
       ${{ github.event_name == 'schedule' ||
           github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      CC: clang
-      CXX: clang++
-      TESS_PROPERTY_SEEDS: "400"
-      TESS_PROPERTY_STEPS: "192"
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-
-      # The workflow-level CMAKE_CXX_COMPILER_LAUNCHER points at ccache,
-      # which ubuntu-24.04 runners do not ship. Without this the very
-      # first try-compile dies with "ccache: No such file or directory"
-      # and the job fails at configure, before a single sweep runs. It
-      # only shows up here because this job runs on the schedule and on
-      # manual dispatch, never on a pull request. Every other Linux job
-      # installs ccache; Windows is unaffected because the Visual Studio
-      # generator ignores the launcher variable.
-      - name: Install ccache
-        run: tools/install_ci_ccache.sh
-
-      - name: Restore compiler cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .ccache
-          key: ccache-long-seed--${{ github.sha }}
-          restore-keys: ccache-long-seed--
-
-      - name: Configure
-        run: cmake --preset dev
-
-      - name: Build property suites
-        run: >-
-          cmake --build build/dev --parallel
-          --target tess_property_test tess_queued_property_test
-          tess_cache_property_test tess_dirty_property_test
-
-      - name: Report compiler cache effectiveness
-        if: always()
-        run: tools/report_ccache_stats.sh
-
-      - name: Confirm the raised budget is in effect
-        run: |
-          # A zero budget must be rejected, which proves a sweep really
-          # reads these variables. Point this at an actual SWEEP, not at
-          # the budget unit test: that test unsets and replaces the
-          # variables around every call, so it passes under an inherited
-          # zero and would invert this check into an unconditional
-          # failure.
-          if TESS_PROPERTY_SEEDS=0 \
-              ./build/dev/tests/tess_dirty_property_test \
-              --gtest_filter='*MergeInvariants*' >/dev/null 2>&1; then
-            echo "error: a sweep ignored a zero seed budget, so the" \
-              "long-seed configuration is not actually applied" >&2
-            exit 1
-          fi
-          echo "seeds=$TESS_PROPERTY_SEEDS steps=$TESS_PROPERTY_STEPS"
-
-      - name: Run long-seed sweeps
-        run: ctest --test-dir build/dev -R 'Property' --output-on-failure
-
-  # Advisory coverage reports (redesign sections 3.6 and 4.5), weekly
-  # tier only. Two reports, both diagnostic and never gating (this job
-  # is deliberately NOT in ci-gate's needs; a coverage-percentage gate
-  # is section 3.6's explicit non-goal): an llvm-cov summary of the
-  # full test suite, and the benchmark gap-finder — a smoke-mode run of
-  # every registration in both bench binaries reporting which public
-  # headers no benchmark executes. Toolchain pins: the runner image
-  # ships clang without a matching bare llvm-cov/llvm-profdata, so the
-  # versioned clang-18 + llvm-18 pair is installed and used explicitly.
-  # tess is header-only, so coverage mappings live in the consuming
-  # binaries: llvm-cov must receive EVERY instrumented executable via
-  # -object or headers silently vanish from the report.
-  coverage:
-    name: Advisory Coverage
-    if: >-
-      ${{ github.event_name == 'schedule' ||
-          github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    env:
-      CC: clang-18
-      CXX: clang++-18
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-
-      - name: Install toolchain
-        run: |
-          tools/install_ci_ccache.sh
-          tools/ci_apt_install.sh llvm-18
-
-      - name: Show tool versions
-        run: |
-          cmake --version
-          clang++-18 --version
-          clang++-18 --version | grep -Eq 'clang version 18\.'
-          llvm-profdata-18 show --version
-          llvm-cov-18 --version
-          llvm-cov-18 --version | grep -Eq 'LLVM version 18\.'
-
-      - name: Restore compiler cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .ccache
-          key: ccache-coverage--${{ github.sha }}
-          restore-keys: ccache-coverage--
-
-      - name: Configure test suite
-        run: cmake --preset dev-coverage
-
-      - name: Build test suite
-        run: cmake --build --preset dev-coverage
-
-      - name: Run tests with profiling
-        # %m disambiguates by binary signature and %p by process, so
-        # parallel ctest and PRE_TEST discovery processes cannot
-        # clobber each other's profiles.
-        env:
-          LLVM_PROFILE_FILE: >-
-            ${{ github.workspace }}/build/dev-coverage/test-profiles/tess-%m-%p.profraw
-        run: |
-          mkdir -p build/dev-coverage/test-profiles
-          ctest --preset dev-coverage
-
-      - name: Test-suite coverage report
-        run: |
-          ls build/dev-coverage/test-profiles/*.profraw > /dev/null
-          llvm-profdata-18 merge \
-            build/dev-coverage/test-profiles/*.profraw \
-            -o build/dev-coverage/tests.profdata
-          ctest --test-dir build/dev-coverage --show-only=json-v1 \
-            > build/dev-coverage/ctest-tests.json
-          # A plain file indirection (not process substitution) so a
-          # ctest-objects failure stops the step here, at the true
-          # cause, instead of surfacing later as an empty llvm-cov
-          # argument.
-          python3 tools/coverage_gaps.py ctest-objects \
-            --ctest-json build/dev-coverage/ctest-tests.json \
-            --build-dir build/dev-coverage \
-            > build/dev-coverage/coverage-objects.txt
-          mapfile -t objects < build/dev-coverage/coverage-objects.txt
-          args=("${objects[0]}")
-          for object in "${objects[@]:1}"; do
-            args+=(-object "$object")
-          done
-          {
-            echo '## Test-suite coverage (advisory)'
-            echo '```'
-            llvm-cov-18 report "${args[@]}" \
-              -instr-profile build/dev-coverage/tests.profdata \
-              "$PWD/include/tess"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          llvm-cov-18 export -summary-only "${args[@]}" \
-            -instr-profile build/dev-coverage/tests.profdata \
-            > build/dev-coverage/test-coverage-export.json
-
-      - name: Configure benchmarks
-        run: cmake --preset bench-coverage
-
-      - name: Build benchmarks
-        run: cmake --build --preset bench-coverage
-
-      - name: Report compiler cache effectiveness
-        if: always()
-        run: tools/report_ccache_stats.sh
-
-      - name: Benchmark gap-finder
-        # Smoke mode runs every registration in both binaries; timing
-        # distortion from instrumentation is irrelevant to a
-        # coverage-only run (section 4.5). The binaries compile shared
-        # sources under different definitions, so each gets its own
-        # profile set and export — a combined export produces
-        # mismatched-data warnings and unreliable per-file numbers —
-        # and the gap-finder merges best-coverage across the exports.
-        run: |
-          run_bench() {
-            mkdir -p "build/bench-coverage/profiles-$1"
-            LLVM_PROFILE_FILE="$PWD/build/bench-coverage/profiles-$1/%m-%p.profraw" \
-              "./build/bench-coverage/bench/$1" \
-              --benchmark_min_time=0.001s > /dev/null
-            llvm-profdata-18 merge \
-              "build/bench-coverage/profiles-$1"/*.profraw \
-              -o "build/bench-coverage/$1.profdata"
-            llvm-cov-18 export -summary-only \
-              "build/bench-coverage/bench/$1" \
-              -instr-profile "build/bench-coverage/$1.profdata" \
-              > "build/bench-coverage/$1-coverage-export.json"
-          }
-          run_bench tess_bench
-          run_bench tess_bench_diagnostics
-          python3 tools/coverage_gaps.py \
-            --export build/bench-coverage/tess_bench-coverage-export.json \
-            --export build/bench-coverage/tess_bench_diagnostics-coverage-export.json \
-            --include-root include/tess \
-            --headers-manifest cmake/tess-headers.json \
-            --known-gaps tools/coverage_known_gaps.json \
-            --out-markdown build/bench-coverage/coverage-gaps.md \
-            --out-json build/bench-coverage/coverage-gaps.json
-          cat build/bench-coverage/coverage-gaps.md \
-            >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload coverage reports
-        # upload-artifact v7.0.1.
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: coverage-reports-${{ github.run_id }}
-          path: |
-            build/dev-coverage/test-coverage-export.json
-            build/bench-coverage/tess_bench-coverage-export.json
-            build/bench-coverage/tess_bench_diagnostics-coverage-export.json
-            build/bench-coverage/coverage-gaps.md
-            build/bench-coverage/coverage-gaps.json
-          retention-days: 90
+    uses: ./.github/workflows/scheduled-sweeps.yml
 
   # Reports non-PR failures serially without running repository code.
   report-failure:
@@ -2359,8 +2144,7 @@ jobs:
       - release-evidence
       - change-point
       - publish-benchmark-history
-      - coverage
-      - long-seed-properties
+      - scheduled-sweeps
     permissions:
       actions: read
       contents: read

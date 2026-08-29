@@ -75,6 +75,16 @@ using DiagonalEither =
     mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>,
                       mv::DiagonalSteps<mv::CornerRule::RequireOneClear>>;
 
+// A cost expression with no CostExpressionMaximum specialization and no
+// maximum_entry_cost member, so its bound is unknown.
+struct UnknownCost {
+  template <typename Page>
+  [[nodiscard]] static constexpr std::uint32_t eval(
+      const Page&, tess::LocalTileId) noexcept {
+    return 1;
+  }
+};
+
 struct UnknownCostClass : mv::movement_class_tag {
   template <typename Page>
   static auto passable(const Page&, tess::LocalTileId) noexcept -> bool {
@@ -166,6 +176,85 @@ TEST(TessTransitionModel, DependencyChunksRejectOutOfWorldOrigins) {
   model.for_each_forward(world, tess::Coord3{-1, 0, 0}, 0,
                          [&](auto) { ++forward; });
   EXPECT_EQ(forward, 0u);
+}
+
+TEST(TessTransitionModel, OverlayCostAbsorbsAnImpassableBase) {
+  // The overlay field doubles as the surcharge; StairTag is unused here.
+  struct SurchargeTag {};
+  using OverlaySchema =
+      tess::FieldSchema<tess::Field<PassableTag, bool>,
+                        tess::Field<CostTag, std::uint32_t>,
+                        tess::Field<SurchargeTag, std::uint32_t>>;
+  using OverlayWorld = tess::AlwaysResidentWorld<Square, OverlaySchema>;
+  // Passability reads the boolean ONLY. If it also read NotZero<CostTag>
+  // the predicate would reject the zero-base tile and this test would
+  // pass with absorption removed.
+  using Overlaid = mv::MovementClass<
+      mv::Field<PassableTag>,
+      mv::OverlayCost<mv::FieldCost<CostTag>, mv::FieldCost<SurchargeTag>>>;
+
+  OverlayWorld world;
+  world.fill_field<PassableTag>(true);
+  world.fill_field<CostTag>(1U);
+  world.fill_field<SurchargeTag>(0U);
+  constexpr auto wall = tess::Coord3{4, 3, 0};
+  // A zero base is the impassable sentinel; a positive surcharge must
+  // not resurrect it.
+  world.field<CostTag>(wall) = 0U;
+  world.field<SurchargeTag>(wall) = 2U;
+
+  const auto resolved = world.resolve(wall);
+  const auto* page = world.try_chunk(resolved.chunk_key);
+  ASSERT_NE(page, nullptr);
+  EXPECT_TRUE(Overlaid::passable(*page, resolved.local_tile_id));
+  EXPECT_EQ(Overlaid::entry_cost(*page, resolved.local_tile_id), 0U);
+
+  // No transition may reach it, even though the predicate admits it.
+  std::size_t reached = 0;
+  tess::ResolvedTransitionModel<OverlayWorld, Overlaid>{}.for_each_forward(
+      world, tess::Coord3{3, 3, 0}, 0, [&](auto probe) {
+        if (probe.to == wall) {
+          ++reached;
+        }
+      });
+  EXPECT_EQ(reached, 0U);
+
+  // The asymmetry: a zero overlay leaves the base alone.
+  constexpr auto plain = tess::Coord3{2, 2, 0};
+  const auto plain_resolved = world.resolve(plain);
+  const auto* plain_page = world.try_chunk(plain_resolved.chunk_key);
+  ASSERT_NE(plain_page, nullptr);
+  EXPECT_EQ(Overlaid::entry_cost(*plain_page, plain_resolved.local_tile_id),
+            1U);
+
+  // And an ordinary priced tile sums.
+  constexpr auto priced = tess::Coord3{5, 5, 0};
+  world.field<SurchargeTag>(priced) = 3U;
+  const auto priced_resolved = world.resolve(priced);
+  const auto* priced_page = world.try_chunk(priced_resolved.chunk_key);
+  ASSERT_NE(priced_page, nullptr);
+  EXPECT_EQ(Overlaid::entry_cost(*priced_page, priced_resolved.local_tile_id),
+            4U);
+
+  // Saturation clamps rather than wrapping.
+  constexpr auto huge = tess::Coord3{6, 6, 0};
+  world.field<CostTag>(huge) = std::numeric_limits<std::uint32_t>::max();
+  world.field<SurchargeTag>(huge) = 5U;
+  const auto huge_resolved = world.resolve(huge);
+  const auto* huge_page = world.try_chunk(huge_resolved.chunk_key);
+  ASSERT_NE(huge_page, nullptr);
+  EXPECT_EQ(Overlaid::entry_cost(*huge_page, huge_resolved.local_tile_id),
+            std::numeric_limits<std::uint32_t>::max());
+
+  // The maximum trait is known only when both operands are known, and
+  // sums saturating.
+  using Max = tess::detail::CostExpressionMaximum<
+      mv::OverlayCost<mv::ConstantCost<3>, mv::ConstantCost<4>>, OverlaySchema>;
+  static_assert(Max::known);
+  static_assert(Max::value == 7U);
+  using UnknownMax = tess::detail::CostExpressionMaximum<
+      mv::OverlayCost<mv::ConstantCost<3>, UnknownCost>, OverlaySchema>;
+  static_assert(!UnknownMax::known);
 }
 
 TEST(TessTransitionModel, AssessesCompactCostRangeConservatively) {

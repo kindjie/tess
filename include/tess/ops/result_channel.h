@@ -12,7 +12,7 @@
 #include <vector>
 
 // A ResultChannel<T> is caller-owned queued-operation result scratch
-// scratch delivering one typed payload plus an OpCompletion per queued
+// delivering one typed payload plus an OpCompletion per queued
 // operation, keyed by OpHandle. Publication is synchronous and
 // executor-agnostic: each op's executing thread writes only its own dense
 // slot (the same per-operation-slot discipline the partitioned dirty scratch

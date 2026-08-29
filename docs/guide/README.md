@@ -1,3 +1,10 @@
+---
+description: >-
+  The tess decision guides: residency, writes, path strategy,
+  topology, entities, congestion, presentation, and diagnostics --
+  choose an architecture before writing code.
+---
+
 # Choose your architecture
 
 The [getting-started ladder](../getting-started.md) teaches the concepts

@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 #include <vector>
@@ -76,6 +77,31 @@ auto legacy(World& world, std::vector<tess::PathAgentState>& agents,
                                                  OccupancyTag, ReservationTag>(
       world, std::span<tess::PathAgentState>(agents), routes,
       tess::PathAgentAdvanceOptions{});
+}
+
+TEST(TessJointMovement, SaturatedCursorDoesNotRestartAConsumedRoute) {
+  // `path_index` is public with no enforced range; at the maximum,
+  // `path_index + 1` wraps to zero, selects route[0], and -- because the
+  // agent stands adjacent to it -- the joint admission would commit the
+  // backwards move and then wrap the cursor to zero, restarting the
+  // route.
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world);
+  const auto i =
+      add_agent(world, agents, routes, {{1, 1, 0}, {2, 1, 0}, {3, 1, 0}});
+  agents[i].position = tess::Coord3{2, 1, 0};
+  world.field<OccupancyTag>(tess::Coord3{1, 1, 0}) = false;
+  world.field<OccupancyTag>(agents[i].position) = true;
+  agents[i].path_index = std::numeric_limits<std::size_t>::max();
+
+  tess::JointMoveScratch scratch;
+  const auto stats = joint(world, agents, routes, scratch);
+
+  EXPECT_EQ(stats.frame.advanced, 0u);
+  EXPECT_EQ(agents[i].position, (tess::Coord3{2, 1, 0}));
+  EXPECT_EQ(agents[i].path_index, std::numeric_limits<std::size_t>::max());
 }
 
 TEST(TessJointMovement, ChainDrainsInOneTickWherePerAgentCommitCannot) {

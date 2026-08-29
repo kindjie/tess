@@ -1,3 +1,9 @@
+---
+description: >-
+  Compile-gated diagnostics in tess: counters, trace buffers, and
+  allocation instrumentation with zero cost when disabled.
+---
+
 # Diagnostics Foundation
 
 The diagnostics layer provides opt-in, compile-time-gated counters for path

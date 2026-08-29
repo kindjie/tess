@@ -1,3 +1,9 @@
+---
+description: >-
+  Spatial coordination in tess: tactical assignment, local move
+  arbitration, congestion summaries, and the pricing recipe.
+---
+
 # Spatial Coordination
 
 The spatial-coordination layer provides game-agnostic derived indexes and
@@ -122,28 +128,52 @@ The conservative caller predicate can reject currently occupied destinations,
 which also rejects swaps and move-through cycles under the existing movement
 commit contract.
 
-## Dynamic congestion pricing (validated caller recipe)
+## Dynamic congestion pricing
 
-Congestion pricing needs no library mechanism: give the movement class
-a `FieldCost` term over an ordinary cost field, then periodically write
-per-tile prices from observed local demand through the versioned edit
-channel (`mark_content_changed` plus a pathing-dirty mark), and every
-planner and cache sees a legitimate edit. One bounded policy of this
-shape -- cost `1 + min(3, live agents within Manhattan distance 1)`,
-repriced every 4 ticks -- was validated against the web_colony demo's
-recovery classifier over all seven scenario geometries and all 64
-supported populations: terminal classification retained or improved on
-every cell on both tested platforms, and settle ticks improved on six
-of the seven geometries
-(per-scenario geometric means 0.20-0.90, including the demo's
-progressive wall-admission flow at 0.21; the canonical tier's 41
-arrival-incomplete tip cells all complete under pricing). The measured
-boundary: on the goal-wall geometry -- detour-shaped, walls never
-contended -- pricing REGRESSES settle time (geometric mean 1.49x, up
-to +89%) while classification holds, and on the C0 fixpoint substrate
-17 of 132 marginal seeds reclassify chaotically, so callers needing
-seed-stable per-agent terminal classification under a fixpoint-style
-settle should not arm it. These are outcome-level measurements on the
-tested geometries and populations; contention mechanics were not
-instrumented. Evidence and programs:
-`docs/planning/evidence/v1.0/c5-congestion/`.
+**The shape.** tess does not ship a congestion field. A caller keeps
+terrain and price in two fields and composes them in the movement
+class — `OverlayCost<FieldCost<TerrainTag>, FieldCost<SurchargeTag>>` —
+writing only the surcharge field, then publishing the changed chunks
+with `mark_content_changed`; weighted planners using that class read
+the updated prices. Where zero terrain means impassable, say so in the
+passability term as well (`AllOf<Field<PassableTag>,
+NotZero<TerrainTag>>`): `OverlayCost` absorbs a zero base, but region
+labelling and the minimum-step APIs consult the predicate alone.
+
+Pricing into the terrain field itself is a shortcut valid only on
+uniformly unit terrain; on any other map it destroys terrain when
+pricing turns on and cannot restore it when pricing turns off. The
+[congestion pricing guide](../guide/congestion.md) states the
+condition and the failure.
+
+**Validated policy.** The label below covers the pricing policy on the
+terrain it was measured on — every scenario in this stream used unit
+terrain — not the field layout, which no experiment varied.
+
+The validated nearby-agent policy writes
+`1 + min(3, live agents within Manhattan distance 1)` every four
+ticks. Across seven scenarios, all 64 supported populations, and two
+platforms, terminal classification was retained or improved in every
+cell. Six of the seven geometries improved, with per-scenario
+settle-tick ratios from 0.20 to 0.90, and the unpriced baseline failed
+to complete 41 tip cells within the 5,000-tick cap while pricing
+completed them all.
+
+**Screened, not promoted.** Price changes never make a retained route
+impassable, so replanning can be limited to agents whose remaining
+route crosses a price increase. The experimental
+`request_replans_for_route_crossings` helper performs exactly that
+selection. In one recorded 1,024-agent case, scoped replanning reduced
+per-tick compute from about 84 ms to 1.6 ms — about 53x. The
+[congestion pricing guide](../guide/congestion.md) carries the full
+protocol, the screened signal alternatives, and the evidence tier of
+each claim.
+
+**What this does not claim.** The experiments measured settle ticks
+and terminal classifications, not contention mechanics. The goal-wall
+geometry regressed by a geometric mean of 1.49x, reaching +89%, with
+classification unchanged; and on the fixpoint substrate, 17 of 132
+marginal seeds changed terminal classification in both directions.
+Consumers requiring stable per-seed classification under that settle
+rule should leave pricing disabled. Evidence and programs are retained
+under `docs/planning/evidence/v1.0/c5-congestion/`.

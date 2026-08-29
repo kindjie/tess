@@ -893,6 +893,7 @@
       "MovementClassFor",
       "Not",
       "NotZero",
+      "OverlayCost",
       "PositiveCostFieldMovement",
       "SelectCost",
       "UnitCost",

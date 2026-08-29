@@ -358,11 +358,12 @@ internal data structure is not a rejection of the broader research idea.
   The screen cost 30–90x the cheap resolver per tick and degraded at dense
   bottlenecks beyond its horizon ([screening study][movement-screening]).
 
-Pre-RC screens also rejected gated 4-connected JPS on dense rubble maps
+The pre-RC screens in the [execution plan][execution-plan] rejected all three
+remaining classical candidates: gated 4-connected JPS on dense rubble maps
 ([evidence][jps-rejection]), whole-query bidirectional A* on five of eight
 cells ([evidence][bidir-rejection]), and goal-keyed D* Lite at feasibility
 ([evidence][dstar-rejection]). Each record has a scoped reconsideration
-condition; none is a verdict on other domains. Theta* remains deferred until
+condition; none is a verdict on other domains. Theta\* remains deferred until
 its supporting contracts exist.
 
 </details>

@@ -88,7 +88,7 @@ struct PathAgentTickOptions {
   /// Budget of consecutive ticks spent retrying a Blocked agent.
   ///
   /// Occupied and reserved destinations retry the retained step without an
-  /// occupancy-blind search; route-invalidating failures re-path. The first
+  /// occupancy-blind search; route-invalidating failures re-search. The first
   /// movement failure records the block, and each following tick consumes one
   /// attempt until a successful move resets the count. At exhaustion the
   /// policy below either keeps the agent blocked without further path
@@ -372,6 +372,18 @@ class PathAgentReplanQueue {
     return indices_.size() - head_;
   }
 
+  /// Whether `index` is currently waiting in this queue.
+  ///
+  /// Membership is what makes `request` idempotent: a second request for
+  /// a pending agent is refused. Exposing it lets a caller skip work it
+  /// would otherwise do to build a request that is certain to be
+  /// refused -- selecting over long routes, for instance. Membership
+  /// begins at an accepted `request` and ends at the matching
+  /// `pop_front` or at `clear`.
+  [[nodiscard]] auto contains(std::size_t index) const noexcept -> bool {
+    return index < queued_.size() && queued_[index] != 0;
+  }
+
   [[nodiscard]] auto front() const noexcept -> std::optional<std::size_t> {
     if (empty()) {
       return std::nullopt;
@@ -450,6 +462,7 @@ template <typename Search>
     const auto result = search(index, PathRequest{agent.position, agent.goal});
     ++stats.submitted;
     ++stats.completed;
+    stats.expanded_nodes += result.expanded_nodes;
     record_path_agent_status(stats, result.status);
     if (result.status == PathStatus::Found) {
       // Assign first: if allocation throws, the pending queue item and agent
@@ -603,7 +616,7 @@ inline void observe_path_agent_flow_tick(PathAgentTickState& state,
 // Scans agents ahead of a tick's path processing. NeedsPath agents request
 // processing with no manual dirty mark. Blocked agents consume one retry per
 // following tick. A retained Found route waits without path processing for
-// occupancy/reservations; invalid routes request a re-path. Exhausted agents
+// occupancy/reservations; invalid routes request a re-search. Exhausted agents
 // stop path processing at exhaustion; the configured policy decides whether
 // they remain honestly Blocked or become terminally Unreachable.
 /// Advances retry accounting and reports whether any agent needs planning.

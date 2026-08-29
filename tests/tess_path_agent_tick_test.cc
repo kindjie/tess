@@ -828,6 +828,9 @@ TEST(TessPathAgentTick, ReplanQueueBoundsExactPlanningAcrossTicks) {
       world, agents, routes, queue, scratch, options);
   EXPECT_EQ(stats.submitted, 2u);
   EXPECT_EQ(stats.found, 2u);
+  // The drain meters search work: every Found result expanded at least
+  // its own route, so the two searches must report nonzero expansions.
+  EXPECT_GT(stats.expanded_nodes, 0u);
   EXPECT_EQ(queue.pending(), 1u);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Following);
   EXPECT_EQ(agents[1].phase, tess::PathAgentPhase::Following);
@@ -1461,7 +1464,7 @@ TEST(TessPathAgentTick, WallInsertedMidRouteRepathsAroundAndArrives) {
   ASSERT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
 
   // The wall lands on the cached route. Even without a manual dirty mark
-  // the blocked step must trigger a re-path on the next tick.
+  // the blocked step must trigger a re-search on the next tick.
   mark_movement_passable(world, tess::Coord3{2, 0, 0}, false);
   stats = tick_movement(tick_state, world, agents, runtime);
   EXPECT_EQ(stats.movement.movement_failures.impassable, 1u);
@@ -1525,7 +1528,7 @@ TEST(TessPathAgentTick, BoxedInGoalExhaustsRepathsAndStopsProcessing) {
     exhausted_total += stats.repath_exhausted;
   }
 
-  // Retries are bounded: three re-path attempts, then the agent becomes
+  // Retries are bounded: three re-search attempts, then the agent becomes
   // terminally unreachable and stops consuming processing entirely.
   EXPECT_EQ(processed_ticks, 3u);
   EXPECT_EQ(repaths_total, 3u);

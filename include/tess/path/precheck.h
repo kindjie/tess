@@ -77,7 +77,10 @@ enum class PrecheckStatus : std::uint8_t {
 // movement class (or predating any stamp) reports GraphStale via
 // is_region_graph_fresh_for, so it degrades to running A* rather than letting
 // `Unreachable` prune a route the search's own class could walk. Cost
-// weighting remains irrelevant (weights only order passable tiles).
+// weighting does not change that conclusion, though note a zero weight
+// removes a tile rather than ordering it: the graph's labelled set is a
+// superset of what the search traverses, and a superset can only cost a
+// wasted search, never prune a reachable route.
 /// Runs a provider-aware conservative reachability check before grid search.
 ///
 /// Only `Unreachable` proves failure. Every other result requires the caller

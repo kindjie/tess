@@ -1,3 +1,9 @@
+---
+description: >-
+  Enabling tess diagnostics: compile gates, counters, traces, and
+  reading instrumentation without paying for it in release builds.
+---
+
 # Diagnostics
 
 **The decision:** which build configurations compile the instrumentation
@@ -18,7 +24,7 @@ the provided macros rather than `#ifdef`ing ad hoc. tess never links or
 fetches Dear ImGui itself — the panels are headers your ImGui-enabled
 host compiles.
 
-The [live diagnostics demo](https://tess.owx.dev/latest/demo/diagnostics/) shows the
+The [live diagnostics demo](../../demo/diagnostics/) shows the
 complete integration: scoped counters and timers around real A* and queued
 work, snapshot capture on the recording thread, and the reference panels in a
 Dear ImGui GLFW/WebGL2 host. Its allocation panel is explicitly

@@ -17,6 +17,14 @@ CHANGELOG_RELEASE_RE = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\]", re.MULTILINE)
 FIND_PACKAGE_RE = re.compile(r"find_package\(tess\s+([0-9][0-9.]*)")
 FETCH_TAG_TOKEN_RE = re.compile(r"\bGIT_TAG\b")
 FETCH_TAG_VALUE_RE = re.compile(r"\bGIT_TAG\b[ \t]+([^\s`]+)")
+PRE_1_0_RE = re.compile(r"pre-1\.0", re.IGNORECASE)
+
+# Trees recording historical intent, and the one guide whose subject is
+# what applications built before 1.0 must do. Everywhere else, "pre-1.0"
+# describes the present and stops being true at the 1.0 release.
+PRE_1_0_EXEMPT_PARTS = frozenset({"decisions", "planning", "tdd"})
+PRE_1_0_EXEMPT_PATHS = frozenset({"docs/upgrade-1.0.md"})
+PRE_1_0_SCANNED = ("docs/**/*.md", "include/**/*.h", "README.md")
 
 
 @dataclass(frozen=True, order=True)
@@ -52,6 +60,32 @@ def _required_version(
   return Version.from_match(match), []
 
 
+def _stale_pre_1_0_claims(repo_root: Path) -> list[str]:
+  """Report maintained text still calling the current state pre-1.0.
+
+  These are not version banners the release process rewrites; they sit
+  in shipped headers and architecture prose, where they simply stop
+  being true once 1.0 is out and nothing else would catch them.
+  """
+  failures: list[str] = []
+  seen: set[Path] = set()
+  for pattern in PRE_1_0_SCANNED:
+    for path in sorted(repo_root.glob(pattern)):
+      relative = path.relative_to(repo_root)
+      if path in seen or PRE_1_0_EXEMPT_PARTS.intersection(relative.parts):
+        continue
+      if relative.as_posix() in PRE_1_0_EXEMPT_PATHS:
+        continue
+      seen.add(path)
+      for number, line in enumerate(_read(path).splitlines(), start=1):
+        if PRE_1_0_RE.search(line):
+          failures.append(
+            f"{relative.as_posix()}:{number}: 1.x is released; say what "
+            "the scope is rather than calling it pre-1.0"
+          )
+  return failures
+
+
 def check_repository(repo_root: Path = REPO_ROOT) -> list[str]:
   """Return development/release version documentation failures."""
   source_text = _read(repo_root / "cmake" / "tess-version.cmake")
@@ -69,6 +103,9 @@ def check_repository(repo_root: Path = REPO_ROOT) -> list[str]:
   failures.extend(release_failures)
   if source is None or release is None:
     return failures
+
+  if release.major >= 1:
+    failures.extend(_stale_pre_1_0_claims(repo_root))
 
   changelog_versions = [
     Version.from_match(match)

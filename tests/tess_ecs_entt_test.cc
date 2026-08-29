@@ -301,7 +301,7 @@ TEST(TessEcsEntt, TicketsSurviveQuietTicksAndReprocessOnlyOnRearm) {
   const auto ticket_after_processing =
       sim.registry.get<tess::PathState>(agent).agent.ticket;
 
-  // Quiet ticks keep advancing on the same ticket without re-pathing.
+  // Quiet ticks keep advancing on the same ticket without re-searching.
   for (int tick = 0; tick < 3; ++tick) {
     stats = sim.tick();
     EXPECT_FALSE(stats.processed_paths);

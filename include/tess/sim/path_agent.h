@@ -17,8 +17,8 @@ namespace tess {
 // - Idle: no goal (or arrived); the agent does not consume processing.
 // - NeedsPath: a goal was assigned and no route has been computed yet.
 // - Following: a Found route is being walked tile by tile.
-// - Blocked: the last step or path attempt hit a transient failure; the agent
-//   retries a retained occupancy-blocked step or re-paths an invalid route
+// - Blocked: the last step or search hit a transient failure; the agent
+//   retries a retained occupancy-blocked step or re-searches an invalid route
 //   until its shared retry budget runs out, then follows the tick policy.
 // - Unreachable: a structural movement failure or an explicit compatibility
 //   exhaustion policy terminalized the goal until a new one is assigned.
@@ -64,6 +64,10 @@ struct PathAgentFrameStats {
   // Agents whose goal an optional topology precheck proved unreachable before
   // A* (a subset of no_path). See PathRuntimeStats::precheck_ruled_out.
   std::size_t precheck_ruled_out = 0;
+  // Total search nodes expanded by the completed results this call applied.
+  // A deterministic work meter: callers can bound planning per tick by
+  // expansion count where a wall-clock budget would break replay.
+  std::size_t expanded_nodes = 0;
   std::size_t advanced = 0;
   std::size_t arrived = 0;
   std::size_t blocked_waits = 0;
@@ -148,6 +152,17 @@ inline void resume_path_agent(PathAgentState& agent) noexcept {
   return agent.phase == PathAgentPhase::Following ||
          (agent.phase == PathAgentPhase::Blocked &&
           agent.last_result == PathStatus::Found);
+}
+
+// Whether a cursor at `path_index` has a step left in a route of `size`.
+//
+// Spelled without addition on purpose. `PathAgentState::path_index` is a
+// public field with no enforced range, so `path_index + 1` wraps to 0 at
+// the maximum -- and a wrapped cursor compares as in-range, which would
+// advance a fully consumed route from its first step.
+[[nodiscard]] constexpr bool has_next_step(std::size_t path_index,
+                                           std::size_t size) noexcept {
+  return size > 0 && path_index < size - 1;
 }
 
 }  // namespace detail
@@ -325,6 +340,7 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
       }
     }
     ++stats.completed;
+    stats.expanded_nodes += result.expanded_nodes;
     record_path_agent_status(stats, result.status);
   }
 
@@ -366,7 +382,7 @@ inline auto advance_path_agents(
     }
 
     for (std::size_t step = 0; step < max_steps; ++step) {
-      if (agent.path_index + 1 >= result.path.size()) {
+      if (!detail::has_next_step(agent.path_index, result.path.size())) {
         break;
       }
       ++agent.path_index;
@@ -423,7 +439,7 @@ inline auto advance_path_agents_with_movement(
     }
 
     for (std::size_t step = 0; step < options.max_steps; ++step) {
-      if (agent.path_index + 1 >= result.path.size()) {
+      if (!detail::has_next_step(agent.path_index, result.path.size())) {
         break;
       }
 
@@ -510,7 +526,8 @@ inline auto advance_path_agents_with_movement(
     }
     const auto& route = routes.routes[agent_index];
     for (std::size_t step = 0;
-         step < options.max_steps && agent.path_index + 1 < route.size();
+         step < options.max_steps &&
+         detail::has_next_step(agent.path_index, route.size());
          ++step) {
       const auto from = agent.position;
       const auto to = route[agent.path_index + 1];
@@ -575,7 +592,7 @@ inline auto advance_path_agents(
     }
 
     for (std::size_t step = 0; step < max_steps; ++step) {
-      if (agent.path_index + 1 >= route.size()) {
+      if (!detail::has_next_step(agent.path_index, route.size())) {
         break;
       }
       ++agent.path_index;
@@ -623,7 +640,7 @@ inline auto advance_path_agents_with_movement(
     }
 
     for (std::size_t step = 0; step < options.max_steps; ++step) {
-      if (agent.path_index + 1 >= route.size()) {
+      if (!detail::has_next_step(agent.path_index, route.size())) {
         break;
       }
 
@@ -692,6 +709,7 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
   lhs.indeterminate += rhs.indeterminate;
   lhs.cost_overflow += rhs.cost_overflow;
   lhs.precheck_ruled_out += rhs.precheck_ruled_out;
+  lhs.expanded_nodes += rhs.expanded_nodes;
   lhs.advanced += rhs.advanced;
   lhs.arrived += rhs.arrived;
   lhs.blocked_waits += rhs.blocked_waits;

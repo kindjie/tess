@@ -1,3 +1,9 @@
+---
+description: >-
+  Maintenance scheduling in tess: registered tasks, deterministic
+  budgets, handles, and the experimental scheduler backends.
+---
+
 # Maintenance Scheduling
 
 `include/tess/maintenance.h` and the narrow headers under

@@ -63,6 +63,84 @@ def write_release_fixture(root: Path) -> None:
   )
 
 
+def write_ga_fixture(root: Path) -> None:
+  (root / "cmake").mkdir()
+  (root / "docs").mkdir()
+  (root / "include").mkdir()
+  (root / "cmake" / "tess-version.cmake").write_text(
+    "set(TESS_VERSION 1.0.0)\n", encoding="utf-8"
+  )
+  (root / "CHANGELOG.md").write_text(
+    "## [Unreleased]\n\n## [1.0.0] - 2026-09-01\n", encoding="utf-8"
+  )
+  (root / "README.md").write_text(
+    "The latest release is `v1.0.0`. This checkout documents the "
+    "`v1.0.0` release.\n\n"
+    "find_package(tess 1.0 CONFIG REQUIRED)\n\n"
+    "GIT_TAG v1.0.0\n",
+    encoding="utf-8",
+  )
+  (root / "docs" / "index.md").write_text(
+    "This site documents the `v1.0.0` release.\n", encoding="utf-8"
+  )
+  (root / "docs" / "packaging.md").write_text(
+    "Release: `find_package(tess 1.0 CONFIG REQUIRED)`.\n"
+    "Source: `GIT_TAG v1.0.0`.\n",
+    encoding="utf-8",
+  )
+
+
+def test_check_repository_accepts_a_clean_ga_checkout(tmp_path):
+  write_ga_fixture(tmp_path)
+
+  assert cdv.check_repository(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+  "relative",
+  ["docs/architecture.md", "include/schedule.h", "README.md"],
+)
+def test_check_repository_rejects_pre_1_0_claims_after_ga(
+  tmp_path, relative
+):
+  write_ga_fixture(tmp_path)
+  path = tmp_path / relative
+  path.write_text(
+    path.read_text(encoding="utf-8") if path.exists() else "",
+    encoding="utf-8",
+  )
+  with path.open("a", encoding="utf-8") as handle:
+    handle.write("\nThis is the current pre-1.0 scope.\n")
+
+  assert any(
+    failure.startswith(f"{relative}:") and "pre-1.0" in failure
+    for failure in cdv.check_repository(tmp_path)
+  )
+
+
+def test_check_repository_allows_pre_1_0_history_after_ga(tmp_path):
+  write_ga_fixture(tmp_path)
+  (tmp_path / "docs" / "upgrade-1.0.md").write_text(
+    "Applications holding pre-1.0 archives must re-export them.\n",
+    encoding="utf-8",
+  )
+  (tmp_path / "docs" / "tdd").mkdir()
+  (tmp_path / "docs" / "tdd" / "plan.md").write_text(
+    "The pre-1.0 staging plan is recorded here.\n", encoding="utf-8"
+  )
+
+  assert cdv.check_repository(tmp_path) == []
+
+
+def test_check_repository_ignores_pre_1_0_claims_before_ga(tmp_path):
+  write_fixture(tmp_path)
+  (tmp_path / "docs" / "architecture.md").write_text(
+    "This is the current pre-1.0 scope.\n", encoding="utf-8"
+  )
+
+  assert cdv.check_repository(tmp_path) == []
+
+
 def test_check_repository_accepts_separate_development_and_release_versions(
   tmp_path,
 ):

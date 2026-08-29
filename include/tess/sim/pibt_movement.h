@@ -573,8 +573,9 @@ auto advance_path_agents_with_pibt(
                          Box3{to, Extent3{1, 1, 1}});
       }
       const auto& route = routes.routes[i];
-      const bool on_route = agent.path_index + 1 < route.size() &&
-                            route[agent.path_index + 1] == to;
+      const bool on_route =
+          detail::has_next_step(agent.path_index, route.size()) &&
+          route[agent.path_index + 1] == to;
       agent.position = to;
       if (on_route) {
         ++agent.path_index;

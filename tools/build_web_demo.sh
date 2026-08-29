@@ -132,6 +132,97 @@ em++ \
   -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","HEAP16"]' \
   -o "$colony/tess-colony.js"
 
+# Tower: a six-floor tess world, published under $output/tower/. The
+# demo is deliberately mobile-first, so it ships a 2D-canvas isometric
+# view rather than a WebGL renderer.
+tower="$output/tower"
+mkdir -p "$tower"
+cp "$root/examples/web_tower/site/index.html" "$tower/"
+cp "$root/examples/web_tower/site/style.css" "$tower/"
+cp "$root/examples/web_tower/site/app.js" "$tower/"
+cp "$root/examples/web_colony/site/favicon.svg" "$tower/"
+cp "$root/docs/assets/tess-logo-dark.svg" "$tower/logo.svg"
+
+tower_exports='["_tess_tower_width","_tess_tower_depth"'
+tower_exports+=',"_tess_tower_floors","_tess_tower_max_agents"'
+tower_exports+=',"_tess_tower_reset","_tess_tower_tick"'
+tower_exports+=',"_tess_tower_relaunch","_tess_tower_set_stairwell"'
+tower_exports+=',"_tess_tower_stairwell_count","_tess_tower_stairwell_open"'
+tower_exports+=',"_tess_tower_stairwell_x","_tess_tower_stairwell_y"'
+tower_exports+=',"_tess_tower_agent_count","_tess_tower_arrived"'
+tower_exports+=',"_tess_tower_crowd_blocked","_tess_tower_unreachable"'
+tower_exports+=',"_tess_tower_climbing","_tess_tower_leg"'
+tower_exports+=',"_tess_tower_completed_legs","_tess_tower_turnaround_ready"'
+tower_exports+=',"_tess_tower_advanced_last_tick","_tess_tower_tiles"'
+tower_exports+=',"_tess_tower_agents","_tess_tower_previous_agents"'
+tower_exports+=',"_tess_tower_interpolation_alpha"]'
+
+em++ \
+  -std=c++20 \
+  -O3 \
+  -DNDEBUG \
+  -I"$root/include" \
+  -I"$config/generated/include" \
+  "$root/examples/web_tower/tower_model.cc" \
+  "$root/examples/web_tower/tower_wasm.cc" \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sENVIRONMENT=web \
+  -sFILESYSTEM=0 \
+  -sMODULARIZE=1 \
+  -sEXPORT_NAME=createTessTower \
+  -sEXPORTED_FUNCTIONS="$tower_exports" \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","HEAP16"]' \
+  -o "$tower/tess-tower.js"
+
+# Congestion lab: the pricing-policy laboratory over the colony
+# simulation, published under $output/congestion/.
+congestion="$output/congestion"
+mkdir -p "$congestion"
+cp "$root/examples/web_congestion/site/index.html" "$congestion/"
+cp "$root/examples/web_congestion/site/style.css" "$congestion/"
+cp "$root/examples/web_congestion/site/app.js" "$congestion/"
+cp "$root/examples/web_congestion/site/favicon.svg" "$congestion/"
+cp "$root/docs/assets/tess-logo-dark.svg" "$congestion/logo.svg"
+
+congestion_exports='["_main","_tess_congestion_width","_tess_congestion_height"'
+congestion_exports+=',"_tess_congestion_reset","_tess_congestion_set_wall"'
+congestion_exports+=',"_tess_congestion_set_strategy","_tess_congestion_tick"'
+congestion_exports+=',"_tess_congestion_set_spread"'
+congestion_exports+=',"_tess_congestion_set_pricing"'
+congestion_exports+=',"_tess_congestion_set_budget"'
+congestion_exports+=',"_tess_congestion_prices"'
+congestion_exports+=',"_tess_congestion_scoped_replans"'
+congestion_exports+=',"_tess_congestion_stalled_ticks"'
+congestion_exports+=',"_tess_congestion_planning_pending"'
+congestion_exports+=',"_tess_congestion_advanced_last_tick"'
+congestion_exports+=',"_tess_congestion_movement_waits_last_tick"'
+congestion_exports+=',"_tess_congestion_tiles","_tess_congestion_agents"'
+congestion_exports+=',"_tess_congestion_previous_agents"'
+congestion_exports+=',"_tess_congestion_interpolation_alpha"'
+congestion_exports+=',"_tess_congestion_agent_count","_tess_congestion_arrived"'
+congestion_exports+=',"_tess_congestion_unreachable","_tess_congestion_crowd_blocked"'
+congestion_exports+=',"_tess_congestion_turnaround_ready","_tess_congestion_leg"'
+congestion_exports+=',"_tess_congestion_completed_legs","_tess_congestion_aborted_legs"'
+congestion_exports+=',"_tess_congestion_relaunch"]'
+
+em++ \
+  -std=c++23 \
+  -O3 \
+  -DNDEBUG \
+  -I"$root/include" \
+  -I"$config/generated/include" \
+  "$root/examples/web_colony/colony_model.cc" \
+  "$root/examples/web_congestion/congestion_model.cc" \
+  "$root/examples/web_congestion/congestion_wasm.cc" \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sENVIRONMENT=web \
+  -sFILESYSTEM=0 \
+  -sMODULARIZE=1 \
+  -sEXPORT_NAME=createTessColony \
+  -sEXPORTED_FUNCTIONS="$congestion_exports" \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","HEAP16"]' \
+  -o "$congestion/tess-congestion.js"
+
 # Traffic Lab: a separate large-grid specialization with static scenario
 # terrain and 1,024 moving agents, published under $output/traffic/.
 traffic="$output/traffic"

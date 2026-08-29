@@ -124,15 +124,15 @@
     },
     "path/weighted_batch_planner_100_multigoal_sparse_resident_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 182000000,
+      "max_cpu_time_ns": 358000000,
       "note":
-          "2026-07-12 10-run median: 90,594,312 ns; provisional 2x ceiling"
+          "2026-08-28 local arm64 median: 59,604,003 ns (cv 0.78%); 6x"
     },
     "path/weighted_batch_planner_100_neargoal_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 101000,
+      "max_cpu_time_ns": 320000,
       "note":
-          "2026-07-12 10-run median: 50,096 ns; provisional 2x ceiling"
+          "2026-08-28 local arm64 median: 53,316 ns (cv 0.32%); 6x. The 2x ceiling it replaces sat below this gate's own CI medians (68,331..101,147 ns) and cancelled two main runs."
     },
     "path/weighted_batch_planner_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,

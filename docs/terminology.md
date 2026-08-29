@@ -1,3 +1,9 @@
+---
+description: >-
+  The reserved vocabulary of tess: search, path, route, tile, chunk,
+  field, and the other terms the documentation holds fixed.
+---
+
 # Terminology
 
 Tess uses a small domain language so that API names, diagnostics, and

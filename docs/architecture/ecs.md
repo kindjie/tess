@@ -1,3 +1,9 @@
+---
+description: >-
+  ECS integration in tess: EnTT, Flecs, and custom adapters over one
+  agent batch, occupancy index, and deterministic tick pipeline.
+---
+
 # ECS Integration
 
 The ECS layer binds path agents to entity-component stores without
@@ -63,7 +69,7 @@ lifecycle.
   debug-asserted, never rehashes), `entity_at(tile)`, `size`, and
   `clear`. Steady state performs no allocation; growth beyond the
   reserved capacity rehashes as a setup-time event. Box/radius queries
-  and per-chunk buckets are deferred beyond the current pre-1.0 scope: an
+  and per-chunk buckets are outside this index's scope: an
   open-addressing table
   answers area queries only by probing every coordinate in the box, which
   is not a useful spatial query, and `entity_at` is the primitive
@@ -225,7 +231,7 @@ system), extending the standing one-runtime-per-(world, class) contract.
 
 ## Planning Cost
 
-World-scoped invalidation re-paths every active agent. The raw-span tick
+World-scoped invalidation re-searches for every active agent. The raw-span tick
 drivers retain routes and use `PathSubmitScope::NeedsOnly`, but the current ECS
 drivers intentionally use runtime-owned paths and an all-agent processing pass
 whenever collection reports a changed goal. They therefore do not inherit

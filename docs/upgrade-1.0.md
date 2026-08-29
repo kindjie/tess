@@ -1,3 +1,9 @@
+---
+description: >-
+  Migrating applications to tess 1.0: renamed spellings, archive format
+  v2, and the compatibility surface the 1.x promise covers.
+---
+
 # Upgrade to tess 1.0
 
 Version 0.13 is the final breaking-change release before 1.0. Update code to

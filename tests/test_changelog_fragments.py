@@ -647,3 +647,97 @@ def test_check_counts_optimization_log_fragments(
   assert ac.main(["--check"]) == 0
 
   assert "1 fragments valid" in capsys.readouterr().out
+
+
+def test_require_released_passes_on_an_assembled_clean_tree(
+  tmp_path, monkeypatch, _isolate_optimization_log
+):
+  changelog = tmp_path / "CHANGELOG.md"
+  changelog.write_text(
+    "# Changelog\n\n## [Unreleased]\n\n## [1.0.0-rc.1] - 2026-08-28\n\n"
+    "- Entry.\n",
+    encoding="utf-8",
+  )
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", tmp_path / "none")
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "none")
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+
+  assert ac.main(["--require-released", "1.0.0-rc.1"]) == 0
+
+
+def test_require_released_rejects_pending_fragments(
+  capsys, tmp_path, monkeypatch, _isolate_optimization_log
+):
+  """Fragment-syntax validity must not stand in for assembly.
+
+  Release mode reported success for RC1 while 24 valid fragments sat
+  unassembled beside an already-dated release heading; this mode exists
+  so that cannot recur.
+  """
+  release_dir = tmp_path / "changelog.d"
+  release_dir.mkdir()
+  changelog = tmp_path / "CHANGELOG.md"
+  changelog.write_text(
+    "# Changelog\n\n## [Unreleased]\n\n## [1.0.0-rc.1] - 2026-08-28\n",
+    encoding="utf-8",
+  )
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", release_dir)
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "none")
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+  _write(release_dir, "late.fixed.md", "- Late.\n")
+
+  assert ac.main(["--require-released", "1.0.0-rc.1"]) == 1
+  assert "not assembled" in capsys.readouterr().err
+
+
+def test_require_released_rejects_a_missing_version_section(
+  capsys, tmp_path, monkeypatch, _isolate_optimization_log
+):
+  changelog = tmp_path / "CHANGELOG.md"
+  changelog.write_text("# Changelog\n\n## [Unreleased]\n", encoding="utf-8")
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", tmp_path / "none")
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "none")
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+
+  assert ac.main(["--require-released", "1.0.0-rc.1"]) == 1
+  assert "no released section" in capsys.readouterr().err
+
+
+def test_release_rejects_a_rerun_with_a_different_date(
+  tmp_path, monkeypatch, _isolate_optimization_log
+):
+  """A version gets one section; a redate must fold back, not append."""
+  release_dir = tmp_path / "changelog.d"
+  release_dir.mkdir()
+  changelog = tmp_path / "CHANGELOG.md"
+  changelog.write_text(
+    "# Changelog\n\n## [Unreleased]\n\n## [1.0.0-rc.1] - 2026-08-25\n\n"
+    "- Early.\n",
+    encoding="utf-8",
+  )
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", release_dir)
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "none")
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+  _write(release_dir, "late.fixed.md", "- Late.\n")
+
+  assert ac.release("1.0.0-rc.1", "2026-08-28", dry_run=False) == 1
+  # Nothing was consumed and no second section appeared.
+  assert len(ac._fragment_files(release_dir)) == 1
+  assert changelog.read_text(encoding="utf-8").count("[1.0.0-rc.1]") == 1
+
+
+def test_require_released_rejects_duplicate_version_sections(
+  capsys, tmp_path, monkeypatch, _isolate_optimization_log
+):
+  changelog = tmp_path / "CHANGELOG.md"
+  changelog.write_text(
+    "# Changelog\n\n## [Unreleased]\n\n## [1.0.0-rc.1] - 2026-08-28\n\n"
+    "- New.\n\n## [1.0.0-rc.1] - 2026-08-25\n\n- Old.\n",
+    encoding="utf-8",
+  )
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", tmp_path / "none")
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "none")
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+
+  assert ac.main(["--require-released", "1.0.0-rc.1"]) == 1
+  assert "2 released sections" in capsys.readouterr().err

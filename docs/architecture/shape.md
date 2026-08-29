@@ -1,3 +1,9 @@
+---
+description: >-
+  Compile-time world shapes in tess: extents, chunking, coordinates,
+  tile keys, and the traits that bound every spatial computation.
+---
+
 # Shape, Coordinate, and Key Foundation
 
 The shape layer defines the compile-time world geometry plus the coordinate

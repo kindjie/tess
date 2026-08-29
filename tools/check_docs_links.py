@@ -16,7 +16,7 @@ class DocumentParser(HTMLParser):
 
   def __init__(self) -> None:
     super().__init__(convert_charrefs=True)
-    self.links: list[str] = []
+    self.links: list[tuple[str, str]] = []
     self.anchors: set[str] = set()
 
   def handle_starttag(
@@ -31,7 +31,7 @@ class DocumentParser(HTMLParser):
     for attribute in ("href", "src"):
       target = values.get(attribute)
       if target:
-        self.links.append(target)
+        self.links.append((tag, target))
 
 
 @lru_cache(maxsize=None)
@@ -68,10 +68,21 @@ def check_site(
   failures: list[str] = []
   for source in sorted(site.rglob("*.html")):
     source_label = source.relative_to(site).as_posix()
-    for raw_target in parse_document(source).links:
+    for tag, raw_target in parse_document(source).links:
       parsed = urlsplit(raw_target)
       if parsed.scheme or parsed.netloc:
-        continue
+        # A same-origin absolute URL is an internal link wearing the
+        # site's own hostname; skipping it is how the tower demo's
+        # broken link passed CI. Validate it as the root-relative path
+        # it is. Genuinely external hosts stay out of scope, and so do
+        # `<link>` elements: a canonical or og URL names where a page
+        # will be PUBLISHED (a version tree this build directory does
+        # not contain), not a document the reader can navigate to here.
+        if tag == "link" or (parsed.hostname or "").lower() != "tess.owx.dev":
+          continue
+        parsed = parsed._replace(scheme="", netloc="")
+        if not parsed.path.startswith("/"):
+          parsed = parsed._replace(path="/" + parsed.path)
       target = resolve_target(site, source, parsed.path)
       try:
         target.relative_to(site)

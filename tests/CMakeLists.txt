@@ -1038,6 +1038,18 @@ tess_apply_project_options(tess_pibt_movement_test)
 tess_discover_tests(tess_pibt_movement_test LABELS core path sim storage topology)
 
 add_executable(
+  tess_replan_selection_test
+  tess_replan_selection_test.cc
+)
+target_link_libraries(
+  tess_replan_selection_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_replan_selection_test)
+
+tess_discover_tests(tess_replan_selection_test LABELS core path sim)
+
+add_executable(
   tess_movement_scenarios_test
   tess_movement_scenarios_test.cc
 )

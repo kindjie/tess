@@ -48,10 +48,7 @@ plugins:
   # Declaring any plugin replaces mkdocs' default list, so search is named
   # explicitly here rather than inherited.
   - search
-  - mike:
-      # Canonical URLs point at the release tree, never at /dev/, so search
-      # engines do not index the development snapshot as the real thing.
-      canonical_version: latest
+  - mike
 
 markdown_extensions:
   - admonition
@@ -92,6 +89,7 @@ nav:
       - Residency: guide/residency.md
       - Writes: guide/writes.md
       - Pathfinding strategy: guide/pathfinding.md
+      - Congestion pricing: guide/congestion.md
       - Interactive comparison: pathfinding-strategy-comparison.md
       - Topology and precheck: guide/topology.md
       - Entities and ECS: guide/entities.md
@@ -116,7 +114,7 @@ nav:
       - ECS integration: architecture/ecs.md
       - Diagnostics architecture: architecture/diagnostics.md
       - GPU interface: architecture/gpu.md
-  - API reference: https://tess.owx.dev/latest/api/
+  - API reference: https://tess.owx.dev/api/
   - Performance: performance.md
   - Use cases: use-cases.md
   - Project:

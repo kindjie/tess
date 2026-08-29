@@ -1,3 +1,10 @@
+---
+description: >-
+  The tess architecture reference: storage, topology, pathfinding,
+  simulation, queued operations, persistence, ECS, GPU, and
+  diagnostics, one maintained page per subsystem.
+---
+
 # Architecture
 
 This directory contains maintained architecture documentation for the current

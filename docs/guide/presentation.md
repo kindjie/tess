@@ -1,3 +1,9 @@
+---
+description: >-
+  Presenting tess worlds: DeltaFrame render bridging, versioned change
+  sets, and keeping the renderer outside the simulation.
+---
+
 # Presentation
 
 **The decision:** does anything observe the world on a different cadence,

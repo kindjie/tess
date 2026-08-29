@@ -1,3 +1,9 @@
+---
+description: >-
+  The tess pathfinding core: unit-cost and weighted A*, route caches,
+  batches, distance fields, and retained route products.
+---
+
 # Path Foundation
 
 The current path layer is a synchronous pathfinding foundation with
@@ -371,7 +377,7 @@ flowchart TB
   inventing `NoPath`; `MarkUnreachable` explicitly selects the historical
   terminal transition. Occupied/reserved destinations retry the retained step
   without processing because occupancy is intentionally absent from planning
-  passability; other transient failures request a re-path. Ticks with
+  passability; other transient failures request a re-search. Ticks with
   `max_steps == 0` pause the retry budget without attempting movement.
   Successful movement resets the consecutive-block count.
   `mark_pathing_dirty(state)` remains the hook -- and the only correct one --
@@ -819,7 +825,7 @@ with optional bounded-cost bucket construction, weighted batch grouping, exact
 unit-cost and weighted distance-field products with explicit LRU caching,
 coarse region paths and chunk corridors, weighted route products,
 supplied-waypoint and chunk-boundary portal route products, and weighted A*
-for positive integral entry costs; it is still a pre-1.0 path core.
+for positive integral entry costs.
 
 The unit-cost A* API is suitable for individual point-to-point queries and
 regression coverage. Weighted A* is suitable for correctness-first weighted
@@ -834,7 +840,9 @@ starts do not span enough distinct chunks. Route caches are suitable for unchang
 maps with repeated exact routes or starts that lie on cached same-goal paths.
 Local crowd coordination, tactical target assignment, hierarchical corridor
 selection, and persistent shared-goal fields now cover the broad many-agent
-routing substrate. The path core remains pre-1.0 while those layers mature.
+routing substrate. The path core keeps growing under those layers; the
+stability of what it already exposes is the [support
+policy](../support.md)'s subject, not this page's.
 
 ## Current Profiling Notes
 

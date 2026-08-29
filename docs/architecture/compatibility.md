@@ -1,3 +1,9 @@
+---
+description: >-
+  Evidence layers behind the tess 1.x source-compatibility contract:
+  snapshots, frozen consumers, and archive format v2 fixtures.
+---
+
 # Compatibility evidence
 
 Tess uses several independent evidence layers for the 1.x source-compatibility
@@ -12,7 +18,7 @@ each stable minor release. They record:
 - documented public namespace-scope and `TESS_*` macro names per header;
 - one canonical installed-package consumer project with distinct source and
   archive-loader executables; and
-- archive-v1 fixtures with strict producer and schema metadata.
+- archive format v2 fixtures with strict producer and schema metadata.
 
 The snapshot checker confines portable POSIX-relative paths to their snapshot,
 requires the canonical CMake project byte-for-byte, and compares released

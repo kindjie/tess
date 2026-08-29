@@ -1,3 +1,9 @@
+---
+description: >-
+  The tess simulation loop: schedules, movement commit, joint admission,
+  and the opt-in PIBT tier for contested moves.
+---
+
 # Simulation and Scheduling
 
 The current simulation integration layer lives under `include/tess/sim/` and
@@ -22,7 +28,7 @@ deltas.
   coordinates.
 - `is_transient_movement_failure(status)` classifies failures: blocked,
   occupied, reserved, and stale statuses are transient (the world can
-  legitimately change under a routed agent; re-path and retry), while
+  legitimately change under a routed agent; re-search and retry), while
   invalid endpoints and non-adjacent steps indicate a caller bug and are
   terminal.
 - `MovementFailureCounts` aggregates failures into `invalid`, `impassable`,
@@ -387,7 +393,8 @@ stateDiagram-v2
   search result: `Idle` (no goal or arrived), `NeedsPath` (goal assigned, no
   route yet), `Following` (walking a `Found` route), `Blocked` (transient
   failure; retained-step contention waits, while route-invalidating failures
-  re-path until the shared retry budget and exhaustion policy take effect),
+  re-search until the shared retry budget and exhaustion policy take
+  effect),
   and `Unreachable` (structural failure or explicitly terminal exhaustion;
   terminal until a new goal is assigned).
 - `set_path_agent_goal(agent, goal)` arms the lifecycle (`NeedsPath`, retry
@@ -395,8 +402,13 @@ stateDiagram-v2
 - `PathAgentFrameStats` counts submitted and completed work; every
   `PathStatus` outcome (`found`, `invalid_start`, `invalid_goal`, `no_path`,
   `indeterminate`, `cost_overflow`, `not_computed`, and `no_candidate`);
-  `precheck_ruled_out`; advanced steps; arrivals; blocked waits; and a
-  `MovementFailureCounts`.
+  `precheck_ruled_out`; `expanded_nodes`; advanced steps; arrivals; blocked
+  waits; and a `MovementFailureCounts`.
+  `expanded_nodes` totals the search nodes expanded by the completed results a
+  call applied. A replan budget still bounds the number of searches rather than
+  the work inside one, so this counter is what a caller reads to bound planning
+  by search effort instead: it is deterministic, so a budget derived from it
+  replays exactly, which a wall-clock budget would not.
   `precheck_ruled_out` is the number of agents whose goal an optional topology
   precheck proved unreachable before A* (a subset of `no_path`; see the path
   runtime's `precheck_ruled_out`). `add_path_agent_stats(lhs, rhs)` accumulates
@@ -440,7 +452,10 @@ stateDiagram-v2
   proves unreachable are resolved without A* and surfaced in
   `PathAgentFrameStats::precheck_ruled_out`.
 - `PathAgentReplanQueue` is an opt-in, caller-owned FIFO for replans. Pending
-  agent indices deduplicate. `process_path_agent_replans` invokes a synchronous
+  agent indices deduplicate, and `contains(index)` reports that pending set —
+  membership begins at an accepted `request` and ends at the matching
+  `pop_front` or at `clear`, so a caller can skip building a request that
+  would only be refused. `process_path_agent_replans` invokes a synchronous
   caller planner at most its supplied request count and copies each borrowed
   result into retained routes; the generic drain deliberately does not certify
   path legality or optimality. `process_unit_path_agent_replans` and
@@ -755,13 +770,13 @@ without a world edit. Planner failures and transient movement failures both
 land in `Blocked`; each following tick consumes one of
 `max_blocked_retries` when movement is enabled; `max_steps == 0` pauses the
 budget. Occupancy and reservations retry the retained step, while
-route-invalidating failures re-path. Successful movement resets the
+route-invalidating failures re-search. Successful movement resets the
 consecutive-block count. Exhaustion remains `Blocked` by default; callers that
 need the historical terminal timeout select `MarkUnreachable` explicitly.
 Structural movement failures (invalid endpoints, non-adjacent steps) skip the
 retry budget entirely. A missing edge under a special-transition provider is
 `StaleTopology`, because a provider revision can legitimately remove it, and
-therefore requests a bounded re-path. Only a new goal re-arms an
+therefore requests a bounded re-search. Only a new goal re-arms an
 `Unreachable` agent.
 Clearing a goal returns any active lifecycle state to `Idle`; those equivalent
 edges are omitted from the diagram to keep the failure paths legible.

@@ -1,0 +1,30 @@
+cell,tip,256,canonical,256,0,0,3362,1,-,5104
+cell,tip,256,cool,256,0,0,402,1,pass,52224
+cell,tip,256,stallcool,256,0,0,406,1,pass,16308
+cell,tip,256,queue2,256,0,0,1061,1,pass,7920
+cell,tip,256,spreadonly,256,0,0,577,1,pass,8986
+cell,tip,256,coolS,256,0,0,409,1,pass,56419
+cell,tip,256,stallcoolS,256,0,0,405,1,pass,23488
+cell,tip,256,queue2S,256,0,0,401,1,pass,9233
+cell,tip,256,cool8,256,0,0,394,1,pass,45542
+cell,tip,256,cool16,256,0,0,433,1,pass,36526
+cell,tip,256,stallcool8,256,0,0,409,1,pass,13408
+cell,tip,256,stallcool16,256,0,0,430,1,pass,9880
+cell,tip,256,cool7,256,0,0,389,1,pass,52159
+cell,tip,256,stallcool7,256,0,0,545,1,pass,19569
+cell,tip,1024,canonical,505,0,0,5000,0,-,69246
+cell,tip,1024,cool,1024,0,0,850,1,pass,418713
+cell,tip,1024,stallcool,1024,0,0,997,1,pass,424396
+cell,tip,1024,queue2,503,0,0,5000,0,NOWORSE-FAIL,69309
+cell,tip,1024,spreadonly,1024,0,0,1323,1,pass,120320
+cell,tip,1024,coolS,1024,0,0,754,1,pass,439564
+cell,tip,1024,stallcoolS,1024,0,0,973,1,pass,433083
+cell,tip,1024,queue2S,1024,0,0,1043,1,pass,123562
+cell,tip,1024,cool8,1024,0,0,930,1,pass,435237
+cell,tip,1024,cool16,1024,0,0,945,1,pass,430897
+cell,tip,1024,stallcool8,1024,0,0,1133,1,pass,440519
+cell,tip,1024,stallcool16,1024,0,0,1389,1,pass,443322
+cell,tip,1024,cool7,1024,0,0,834,1,pass,433666
+cell,tip,1024,stallcool7,1024,0,0,944,1,pass,376533
+mechanical checks: clean (0)
+safety gates: DISQUALIFICATIONS (see cells)

@@ -707,6 +707,10 @@ ADVISORY_CI_JOBS = {
   "publish-benchmark-history": "publishes baselines after a main push",
   "long-seed-properties": "scheduled deep sweep, far longer than a gate allows",
   "coverage": "weekly advisory gap-finder, not a threshold",
+  "scheduled-sweeps": (
+    "caller for the two scheduled sweeps above; release-evidence gates "
+    "on its aggregate result"
+  ),
   "release-linux-floors": "main/release floor; release-evidence governs RCs",
   "release-macos-floor": "main/release floor; release-evidence governs RCs",
   "release-windows-floor": "main/release floor; release-evidence governs RCs",
@@ -729,8 +733,14 @@ def test_every_ci_job_is_gated_or_explicitly_waived():
   """
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
-  body = workflow.split("\njobs:\n", 1)[1]
-  jobs = re.findall(r"^  ([a-z0-9][a-z0-9_-]*):$", body, flags=re.M)
+  # Jobs ci.yml calls out to are still ci.yml's jobs for this purpose:
+  # moving one into a reusable workflow must not drop it out of the
+  # waiver ledger, which is the exact hole this test exists to close.
+  jobs = []
+  for name in ("ci.yml", "scheduled-sweeps.yml"):
+    text = (root / ".github" / "workflows" / name).read_text()
+    body = text.split("\njobs:\n", 1)[1]
+    jobs.extend(re.findall(r"^  ([a-z0-9][a-z0-9_-]*):$", body, flags=re.M))
 
   assert len(jobs) >= 15, jobs
   ci_gate = _job_body(workflow, "ci-gate")
@@ -788,8 +798,7 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
     "windows",
     "windows-noexceptions",
     "bench",
-    "long-seed-properties",
-    "coverage",
+    "scheduled-sweeps",
     "ci-gate",
   ) + release_jobs
 
@@ -801,8 +810,17 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert 'test "$EVENT_SHA" = "$EXPECTED_SHA"' in changes
   assert 'test "$WORKFLOW_SHA" = "$EXPECTED_SHA"' in changes
   assert 'test "$version" = "$EXPECTED_VERSION"' in changes
+  sweeps = (
+    root / ".github" / "workflows" / "scheduled-sweeps.yml"
+  ).read_text()
   assert "ref: ${{ inputs." not in workflow
-  assert workflow.count("ref: ${{ github.sha }}") == 27
+  assert "ref: ${{ inputs." not in sweeps
+  # Every checkout across both files pins the tested commit. Counting
+  # only ci.yml would let a checkout in the called workflow float.
+  assert (
+    workflow.count("ref: ${{ github.sha }}")
+    + sweeps.count("ref: ${{ github.sha }}")
+  ) == 27
   assert "needs.changes.outputs.release_mode == 'true'" in evidence
   for job in always_required:
     assert f"      - {job}\n" in evidence
@@ -1270,7 +1288,56 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   assert "set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)" in cmake
   assert "set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)" in cmake
   assert '"tess::detail::*"' in cmake
-  assert "API reference: https://tess.owx.dev/latest/api/" in mkdocs
+  assert "API reference: https://tess.owx.dev/api/" in mkdocs
+
+
+def test_pages_publication_serializes_and_checks_the_uploaded_tree():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "pages.yml").read_text()
+
+  assert "&& github.ref || github.run_id" in workflow
+  assert "group: pages-${{ github.ref }}" not in workflow
+  wait = "python3 tools/wait_for_publish_turn.py"
+  assert "name: built-documentation" in workflow
+  # Generated-page finalization must run before the link check and the
+  # artifact upload, on every build: located later, a wrong hook point
+  # or an unclassified page shape would only fail after merge.
+  finalize = "python3 tools/finalize_generated_pages.py build/site"
+  link_check = "python3 tools/check_docs_links.py build/site"
+  assert finalize in workflow
+  assert workflow.index("cp -R build/docs-api/docs/html build/site/api") < (
+    workflow.index(finalize)
+  )
+  assert workflow.index(finalize) < workflow.index(link_check)
+  sync = (
+    "python3 tools/publish_docs_root.py sync \\\n"
+    '            build/pages "${root_args[@]}"'
+  )
+  prepare = "python3 tools/publish_docs_root.py prepare-artifact build/pages"
+  check = "python3 tools/publish_docs_root.py check build/pages"
+  push = "git -C build/pages push origin HEAD:gh-pages"
+  upload = "- name: Upload Pages artifact"
+  assert wait in workflow
+  assert sync in workflow
+  assert prepare in workflow
+  assert check in workflow
+  assert push in workflow
+  assert workflow.index(wait) < workflow.index("mike deploy --update-aliases")
+  assert workflow.index(sync) < workflow.index(prepare)
+  assert workflow.index(prepare) < workflow.index(check)
+  assert workflow.index(check) < workflow.index(push)
+  assert workflow.index(push) < workflow.index(upload)
+  # The storage commit must precede artifact preparation: prepare now
+  # DELETES per-tree sitemaps, llms.txt, and nested robots.txt and
+  # rewrites frozen-tree metadata for the served artifact only. Staged
+  # after preparation, those deletions would silently persist to
+  # gh-pages, and the next root assembly would lose its inputs.
+  commit = '"docs: assemble stable root publication"'
+  assert commit in workflow
+  assert workflow.index(commit) < workflow.index(prepare)
+  assert "cp docs/robots.txt build/pages/robots.txt" not in workflow
+  assert "mike deploy --push" not in workflow
+  assert "mike set-default" not in workflow
 
 
 def test_webgpu_smoke_only_adapter_unavailable_is_unsupported():

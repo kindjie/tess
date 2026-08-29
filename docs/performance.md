@@ -15,14 +15,27 @@ without machine-specific calibration.
 For paired A*, route-cache, batch, and distance-field workloads, start with the
 [C++ grid pathfinding benchmark comparison](pathfinding-strategy-comparison.md).
 
-Representative medians from the benchmark suite on an Apple M3 Max
-(single-threaded):
+Representative single-threaded medians from the benchmark suite:
 
-- A* across an open 512x512 grid, corner to corner (a 1,022-step path,
-  ~1,023 nodes expanded): ~2.1 us; the weighted variant: ~2.4 us.
-- One clean tick of 100 path agents with retained routes: ~330 ns.
-- One `weighted_path_batch` plan of 100 near-goal requests on a 512x512
-  grid: ~50 us.
+| Workload | Median |
+| --- | ---: |
+| A* across an open 512x512 grid, corner to corner (1,022 steps, 1,023 nodes expanded) | 2.21 us |
+| The weighted variant of the same query | 2.66 us |
+| One clean tick of 100 path agents with retained routes | 354 ns |
+| One `weighted_path_batch` plan of 100 near-goal requests on a 512x512 grid | 53.6 us |
+
+| | |
+| --- | --- |
+| CPU | Apple M3 Max |
+| Toolchain | Apple Clang 21.0.0, `bench-only` preset (Release) |
+| Commit | `6b0f3c22cb66` |
+| Method | 15 repetitions, 0.5 s minimum per repetition |
+| Quality | CV 0.69-0.76%; work counters identical across repetitions |
+| Measured | 2026-08-27, developer workstation under light load |
+
+These are one machine's numbers, not portable ceilings. The CI gates use
+per-benchmark thresholds calibrated on their own runners, and the
+handheld baseline below is a separate campaign.
 
 Memory, not time, but enforced the same way: `examples/sparse_stream.cc`
 self-checks a 1,024-chunk world held to a 16-page residency budget — 64x

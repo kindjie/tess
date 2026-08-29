@@ -79,6 +79,7 @@
   "experimental": [
     "include/tess/experimental/chunk_maintenance.h",
     "include/tess/experimental/maintenance.h",
+    "include/tess/experimental/path_agent_replan_selection.h",
     "include/tess/experimental/registered_maintenance.h"
   ],
   "implementation-only": [

@@ -11,10 +11,10 @@ The site publishes one tree per documented version, managed by
 
 | URL | Content |
 | --- | --- |
-| `/` | Redirect to the default version |
-| `/latest/` | Newest release; every documented deep link points here |
-| `/<major>.<minor>/` | That release, kept as it was published |
-| `/dev/` | `main`, republished on every push |
+| `/` | Newest stable release and the canonical public URL |
+| `/latest/` | Compatibility redirects plus retained non-HTML assets (served without its own `sitemap.xml`, `llms.txt`, or `robots.txt`) |
+| `/<major>.<minor>/` | Immutable, non-indexed release archive |
+| `/dev/` | Non-indexed development snapshot from `main` |
 
 Each tree is self-contained: its own pages, its own `api/` reference, and its
 own `demo/` builds. The version selector in the header comes from Material and
@@ -24,25 +24,55 @@ Two choices in that pipeline are load-bearing and should not be changed
 casually:
 
 - **Aliases are copies, not symlinks** (`--alias-type copy`). GitHub Pages
-  does not serve symlinked directories, and `latest` is where every published
-  link resolves, so a symlink alias would return 404 for the whole site.
+  does not serve symlinked directories. After mike updates `latest`, the
+  publication helper replaces its HTML with exact root redirects but retains
+  copied Wasm, JavaScript, CSS, images, and other non-HTML resources so old
+  embeds do not break. Four per-tree resources are the exception: artifact
+  preparation removes each tree's `sitemap.xml`, `sitemap.xml.gz`,
+  `llms.txt`, and nested `robots.txt` from what is served (they remain in
+  storage), because each is an independently indexable resource inside a
+  tree whose HTML policy is retirement.
 - **The generated API and demo trees are staged into `docs/` before deploy.**
   mike runs mkdocs itself and has no prebuilt-directory mode, so anything that
   must appear inside a version tree has to be somewhere mkdocs copies. Both
   are generated and gitignored, matching the fetched Mermaid runtime.
 
 `gh-pages` is storage, not the served branch. The workflow commits each
-version tree there, then checks the whole branch out and uploads it as the
-Pages artifact, so the Pages source stays **GitHub Actions** and the custom
-domain keeps working from repository settings. Only the publish job holds a
-write token, and it never touches `main`.
+version tree there, assembles the stable root and compatibility redirects,
+then checks the whole branch out and uploads it as the Pages artifact. The
+assembler owns only paths in its manifest and fails closed before deleting
+version trees or unknown operator-owned files. The first deployment can
+bootstrap the root from the existing `latest` copy; later `main` deployments
+leave the stable root unchanged.
+
+The root `robots.txt` is the exception: the assembler writes it from its
+own constant on every run, including the runs that otherwise leave the
+established root alone. It is authored rather than inherited because the
+stable copy comes from a released version tree, so directives that were
+correct at that release would stay pinned at the root until the next one
+— which is how `Disallow: /dev/` outlived the switch to `noindex,
+follow` and kept crawlers from reading the very directive meant to
+retire those pages. A root `robots.txt` the manifest does not own is
+never rewritten; publication fails instead, so an operator edit is
+resolved deliberately.
+
+Before upload, the workflow prepares the ephemeral Pages artifact: it adds
+`noindex, follow` to `/dev/` and numeric archive HTML, removes each version
+tree's `sitemap.xml`, `sitemap.xml.gz`, `llms.txt`, and nested `robots.txt`
+(those URLs return 404 from the served site), localizes a tree's same-origin
+anchors onto its own pages where the target exists in-tree, and repoints a
+frozen numeric tree's stale `/latest/`-prefixed head metadata at the tree's
+own URL. None of that rewrites the stored archive -- the storage branch is
+committed before preparation runs, which the workflow-order tests pin. `/latest/` HTML has an immediate redirect, canonical root
+URL, and the same `noindex` policy. The root sitemap contains only canonical
+root URLs, and `robots.txt` names it so crawlers can read page directives.
 
 ### Publishing a version
 
 - Pushing to `main` publishes `/dev/`.
 - Pushing a stable `v<major>.<minor>.<patch>` tag publishes
-  `/<major>.<minor>/`; the `latest` alias and site default move only
-  when the tag's version is at least the currently defaulted one, so a
+  `/<major>.<minor>/`; the stable root and `latest` compatibility tree move
+  only when the tag's version is at least the currently aliased one, so a
   patch on an older minor line refreshes its own tree without pointing
   the site backward.
 - A prerelease tag (for example `v1.0.0-rc.1`) publishes nothing:
@@ -50,18 +80,28 @@ write token, and it never touches `main`.
   and `latest` keeps pointing at the newest stable release.
 - Accepted residual: the alias guard compares versions numerically, so
   a mistyped `publish_version` that is numerically newer than every
-  release (say `9.9`) would create a junk tree and take `latest`; no
-  guard can distinguish it from a legitimate retroactive publish of a
-  genuinely newer tag, so the dispatch input is the operator's
+  release (say `9.9`) would create a junk tree and take `latest` plus the
+  stable root; no guard can distinguish it from a legitimate retroactive
+  publish of a genuinely newer tag, so the dispatch input is the operator's
   responsibility.
 - Dispatching the workflow against a ref with `publish_version` set
   (validated as `<major>.<minor>`) does the same for that ref, which is
-  how an existing tag is published retroactively. Caveat: the run
-  stages that ref's `docs/robots.txt` at the site root, so a
-  retroactive publish of an older ref serves its stale copy until the
-  next `main` push restages the current one.
+  how an existing tag is published retroactively. A dispatch that moves the
+  stable root uses the complete verified build from the selected ref.
 
 Pull requests build and verify without publishing anything.
+
+Every publishing run receives its own concurrency identity. Before touching
+the storage branch, its publish job waits for every active non-PR attempt that
+started earlier. Attempt start time matters because rerunning an old workflow
+must queue behind a newer publication already in flight. Polling asks GitHub
+only for active statuses, so its API cost does not grow with workflow history.
+This FIFO turn preserves clustered main, tag, publishing-dispatch, and rerun
+attempts; unlike GitHub's native concurrency queue, it does not discard an
+existing pending run when a newer one arrives. The turn also covers Pages
+deployment, so storage and the served artifact move in the same order.
+Pull-request verification keeps a separate per-PR group and cancels only
+superseded runs of that PR.
 
 ## GitHub settings
 
@@ -120,4 +160,6 @@ real-time readiness, not just successful module loading. The workflow then
 copies the generated API
 HTML into `build/site/api`. Doxygen warnings, broken authored-site links, an
 invalid diagram, or a demo that does not reach its ready state block
-deployment.
+deployment. `tools/publish_docs_root.py check` then validates the final tree
+that is actually uploaded: stable root canonical and sitemap URLs,
+`/latest/` redirects, and non-indexing metadata on version trees.

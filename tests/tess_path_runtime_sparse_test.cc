@@ -343,8 +343,8 @@ TEST(TessSparsePathRuntime, EvictedRouteChunkReplansInsteadOfStranding) {
   // End-to-end strand repro: an agent Following a route has its own chunk
   // evicted by ordinary LRU pressure. Because the movement commit now reports a
   // TRANSIENT failure for a non-resident endpoint, the agent lifecycle parks it
-  // at Blocked (re-path/retry) rather than the terminal Unreachable that would
-  // permanently strand it. Budget 1 makes the eviction deterministic.
+  // at Blocked (re-search/retry) rather than the terminal Unreachable that
+  // would permanently strand it. Budget 1 makes the eviction deterministic.
   Sparse world{tess::ResidencyConfig{1 * Sparse::page_byte_size}};
   fill_chunk(world, tess::ChunkKey{0});
 
@@ -376,7 +376,7 @@ TEST(TessSparsePathRuntime, EvictedRouteChunkReplansInsteadOfStranding) {
   tick();
   EXPECT_NE(agents[0].phase, tess::PathAgentPhase::Unreachable);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
-  // The blocked step itself consumes no re-path budget; the next
+  // The blocked step itself consumes no re-search budget; the next
   // processed tick's prepare pass counts the retry attempt.
   EXPECT_EQ(agents[0].blocked_retries, 0u);
 
