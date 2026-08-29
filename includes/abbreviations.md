@@ -7,6 +7,7 @@
 *[residency generation]: The identity of one interval during which a sparse chunk remains resident.
 *[movement class]: A compile-time definition of passability, entry cost, and allowed steps.
 *[distance field]: Retained shortest-distance data built from one or more goals for repeated path reads.
+*[flow field]: Per-cell movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.
 *[route cache]: Capacity-bounded retained storage for reusable route results.
 *[settle]: A movement-tier run to a no-progress fixpoint, classified after termination.
 *[terminal classification]: The five-way per-agent outcome a settle assigns: arrived, goal-occupied, sealed, wedged, or censored.

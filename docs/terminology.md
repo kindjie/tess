@@ -46,6 +46,7 @@ remain authoritative for the full contracts.
 | **residency generation** | The identity of one interval during which a sparse chunk remains resident. |
 | **movement class** | A compile-time definition of passability, entry cost, and allowed steps. See [topology](architecture/topology.md). |
 | **distance field** | Retained shortest-distance data built from one or more goals for repeated path reads. See [pathfinding](architecture/path.md). |
+| **flow field** | Per-cell movement directions derived from distance-to-goal data so agents can choose local steps without reconstructing full paths. Designed, not currently shipped; see the [pathfinding comparison](pathfinding-strategy-comparison.md#distance-fields-and-flow-fields). |
 | **route cache** | Capacity-bounded retained storage for reusable route results. |
 
 ## Actions

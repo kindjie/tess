@@ -14,12 +14,14 @@ every path request genuinely independent? tess exposes a different call shape
 for each case, letting an application reuse only the work its own workload
 repeats.
 
-Here, a **request** is one path query: one start, one goal, and one resulting
-path or failure. It is not the same thing as an agent. One agent can issue many
-requests, and a benchmark can repeat the same request. A request count is the
-number of query entries handled by one measured operation. The evidence
-reports unique-start counts separately and, for weighted batches, unique-goal
-counts.
+!!! info "What a request means"
+
+    A **request** is one path query: one start, one goal, and one resulting
+    path or failure. It is not the same thing as an agent. One agent can issue
+    many requests, and a benchmark can repeat the same request. A request count
+    is the number of query entries handled by one measured operation. The
+    evidence reports unique-start counts separately and, for weighted batches,
+    unique-goal counts.
 
 This page connects those choices in three stages. First, a small 16x16 example
 makes the four call shapes visible on the same obstacle course. Next,
@@ -27,6 +29,10 @@ controlled 512x512 benchmarks measure when the cost of creating or retaining
 reusable work is repaid. Finally, self-checking C++ excerpts show how each call
 shape is expressed in code. The example teaches the choices; the
 benchmark campaign supplies the timing evidence.
+
+If you arrived looking for flow fields, jump to
+[how distance fields relate to them](#distance-fields-and-flow-fields) and what
+the benchmark does—and does not—measure.
 
 ## The short answer
 
@@ -371,6 +377,19 @@ verify that a real request set contains the reuse the batch was meant to find.
 
 A reverse distance field builds one goal-rooted search tree. Every matching
 start then reconstructs a path from that field instead of running another A*.
+
+<span id="distance-fields-and-flow-fields"></span>
+
+!!! info "Distance fields and flow fields"
+
+    A distance field gives each reachable cell its remaining cost to the goal.
+    A flow field adds a direction at each cell, usually pointing to a
+    neighboring cell with a lower remaining cost. An agent can repeatedly
+    sample those directions instead of requesting a complete path. Tess
+    provides the distance data and full-path reconstruction shown here; it does
+    not currently retain a separate direction field or run agents from one.
+    The benchmarked arm therefore measures one distance-field build plus one
+    full path reconstruction per request, not flow-field steering.
 
 <!-- tess-snippet: strategy-distance-field source=examples/pathfinding_strategies_model.cc -->
 ```cpp
