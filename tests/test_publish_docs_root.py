@@ -906,6 +906,18 @@ def test_historical_source_keeps_checks_at_the_correct_authority():
   )
 
 
+def test_historical_browser_smoke_only_passes_supported_arguments():
+  workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text()
+  build_job = workflow.split("  build:\n", 1)[1].split(
+    "  deploy:\n", 1
+  )[0]
+
+  assert "interaction_args=(" in build_job
+  assert "--help | grep -q -- '--docs-url'" in build_job
+  assert "interaction_args+=(--docs-url" in build_job
+  assert '"${interaction_args[@]}"' in build_job
+
+
 def test_sync_converts_dev_html_to_main_redirects_and_retains_assets(
   tmp_path: Path,
 ):
