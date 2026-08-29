@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Path strategy timing scaling</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #fff;
+      --foreground: #202124;
+      --muted: #5f6368;
+      --border: #d8dadd;
+      --baseline: #7357c9;
+      --reuse: #16825d;
+      --popover: #fff;
+      --popover-border: #c6c8cc;
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --background: #17181a;
+      --foreground: #eceff1;
+      --muted: #b0b5bd;
+      --border: #3a3d42;
+      --baseline: #b7a7ff;
+      --reuse: #66d3aa;
+      --popover: #2d2f33;
+      --popover-border: #555960;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      color: var(--foreground);
+      background: var(--background);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    body { padding: 1rem; }
+
+    h1,
+    h2,
+    p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 0.2rem;
+      font-size: 1.35rem;
+      line-height: 1.25;
+    }
+
+    h2 {
+      margin-bottom: 0.15rem;
+      font-size: 1.1rem;
+      line-height: 1.3;
+    }
+
+    .subtitle,
+    .platform-note,
+    .chart-note {
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem 1rem;
+      align-items: center;
+      margin: 0.8rem 0 1rem;
+      font-size: 0.88rem;
+    }
+
+    .legend button {
+      appearance: none;
+      padding: 0;
+      border: 0;
+      color: var(--foreground);
+      background: transparent;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .legend button[aria-pressed="false"] { opacity: 0.45; }
+
+    .swatch {
+      display: inline-block;
+      width: 0.6rem;
+      height: 0.6rem;
+      margin-right: 0.35rem;
+      vertical-align: middle;
+    }
+
+    .swatch--baseline {
+      border-radius: 50%;
+      background: var(--baseline);
+    }
+
+    .swatch--reuse {
+      background: var(--reuse);
+      transform: rotate(45deg);
+    }
+
+    .open-marker {
+      display: inline-block;
+      width: 0.55rem;
+      height: 0.55rem;
+      margin-right: 0.35rem;
+      border: 2px solid var(--muted);
+      border-radius: 50%;
+      vertical-align: middle;
+    }
+
+    .platform { margin-top: 1.25rem; }
+
+    .plots {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      margin-top: 0.75rem;
+    }
+
+    .plot-title {
+      margin-bottom: 0.2rem;
+      font-size: 0.9rem;
+      font-weight: 650;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      overflow: visible;
+    }
+
+    .plot-host { position: relative; }
+
+    svg text {
+      fill: var(--foreground);
+      font-size: 12px;
+    }
+
+    .chart-frame,
+    .axis-line,
+    .tick-line { stroke: var(--border); }
+
+    .grid-line {
+      stroke: var(--border);
+      stroke-opacity: 0.55;
+    }
+
+    .series-line {
+      fill: none;
+      stroke-width: 2;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+    }
+
+    .series--baseline .series-line,
+    .series--baseline .point { stroke: var(--baseline); }
+
+    .series--reuse .series-line,
+    .series--reuse .point { stroke: var(--reuse); }
+
+    .series--reuse .series-line { stroke-dasharray: 7 4; }
+
+    .series--baseline .point--accepted { fill: var(--baseline); }
+    .series--reuse .point--accepted { fill: var(--reuse); }
+
+    .point--rejected {
+      fill: var(--background);
+      stroke-width: 2;
+    }
+
+    .segment--rejected {
+      stroke-dasharray: 2 5 !important;
+      stroke-opacity: 0.55;
+    }
+
+    .cell-target {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: crosshair;
+      transform: translate(-16px, -16px);
+    }
+
+    .hover-guide {
+      stroke: var(--muted);
+      stroke-dasharray: 3 3;
+      pointer-events: none;
+    }
+
+    .hover-point {
+      fill: var(--background);
+      stroke-width: 2;
+      pointer-events: none;
+    }
+
+    .hover-point--baseline { stroke: var(--baseline); }
+    .hover-point--reuse { stroke: var(--reuse); }
+
+    .hover-target { cursor: crosshair; }
+
+    .tooltip {
+      position: absolute;
+      z-index: 5;
+      display: none;
+      min-width: 13rem;
+      max-width: 17rem;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--popover-border);
+      border-radius: 0.35rem;
+      color: var(--foreground);
+      background: var(--popover);
+      box-shadow: 0 0.25rem 0.8rem rgb(0 0 0 / 18%);
+      font-size: 0.82rem;
+      pointer-events: none;
+    }
+
+    .tooltip-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .chart-root { position: relative; }
+    .chart-note { margin-top: 0.7rem; }
+
+    @media (min-width: 35rem) {
+      .plots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (min-width: 53rem) {
+      .plots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <main id="path-strategy-scaling" class="chart-root">
+    <h1>How whole-operation time scales with requests</h1>
+    <p class="subtitle">
+      512x512 grid · median CPU time · logical setup included · reusable
+      storage pre-reserved · untimed harness warmup
+    </p>
+
+    <div class="legend" aria-label="Chart legend">
+      <button type="button" data-series-toggle="baseline" aria-pressed="true">
+        <span class="swatch swatch--baseline"></span>Independent A*
+      </button>
+      <button type="button" data-series-toggle="reuse" aria-pressed="true">
+        <span class="swatch swatch--reuse"></span>Compared strategy
+      </button>
+      <span><span class="open-marker"></span>Cell rejected: either arm exceeded 5% CV</span>
+    </div>
+
+    <div id="platforms"></div>
+
+    <p class="chart-note">
+      Logarithmic axes; each plot has its own time scale. Markers are measured
+      cells, while connecting lines are visual guides. Hollow M3 cells and
+      adjacent dotted segments do not establish crossover conclusions. Compare
+      strategies within one platform. Hover, focus, or tap for exact values;
+      tap or press Enter again to dismiss.
+    </p>
+
+    <div id="chart-tooltip" class="tooltip" role="tooltip"
+         aria-live="polite"></div>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const svgNamespace = "http://www.w3.org/2000/svg";
+      const root = document.getElementById("path-strategy-scaling");
+      const platforms = document.getElementById("platforms");
+      const tooltip = document.getElementById("chart-tooltip");
+      const visible = {baseline: true, reuse: true};
+      let activeSelection = null;
+      const rows = [
+        {p:"Apple M3 Max",w:"Room-portal field",d:[[1,.181365,2.187609,1],[2,.357957,2.200494,1],[4,.711041,2.211617,1],[8,1.425098,2.230929,1],[10,1.806367,2.244521,1],[16,2.84852,2.268176,1],[32,6.134196,2.380644,1],[64,12.608182,2.602146,1],[100,19.575786,2.83036,1],[128,24.689333,3.010979,1],[256,49.421,3.761484,1],[512,101.19975,5.316038,0],[1000,190.4685,8.176059,0]]},
+        {p:"Apple M3 Max",w:"Exact-repeat cache",d:[[1,.001292,.003556,0],[2,.002562,.003682,0],[4,.005169,.004017,1],[8,.010257,.004586,0],[10,.012726,.004926,0],[16,.020949,.005864,1],[32,.041707,.008315,1],[64,.084822,.013274,0],[100,.131739,.01883,0],[128,.168537,.023151,0],[256,.330042,.043473,0],[512,.612449,.08355,0],[1000,1.311689,.167088,0]]},
+        {p:"Apple M3 Max",w:"Weighted batch, one goal",d:[[1,2.164553,2.15713,1],[2,3.199271,5.198189,0],[4,5.254389,5.232815,0],[8,9.323733,5.231841,1],[10,11.378042,5.234692,1],[16,20.139143,5.439115,0],[32,43.060833,5.413947,1],[64,119.465,5.941761,1],[100,241.1195,6.356945,1],[128,275.3095,6.532381,1],[256,573.256,8.023743,0],[512,1225.3285,10.516538,1],[1000,2372.065,15.175444,1]]},
+        {p:"Steam Deck",w:"Room-portal field",d:[[1,.768723,4.696633,1],[2,1.534377,4.710989,1],[4,3.069637,4.820747,1],[8,6.149972,4.750792,1],[10,7.667933,4.792107,1],[16,12.294054,4.867357,1],[32,26.55082,5.055739,1],[64,53.029619,5.321229,1],[100,82.633155,5.637929,1],[128,106.024184,5.867685,1],[256,211.974439,6.894413,1],[512,424.625934,9.098439,1],[1000,812.893816,13.215535,1]]},
+        {p:"Steam Deck",w:"Exact-repeat cache",d:[[1,.002856,.010985,1],[2,.00572,.011189,1],[4,.011425,.011543,1],[8,.022847,.012135,1],[10,.028568,.012392,1],[16,.045697,.01322,1],[32,.091433,.015479,1],[64,.182699,.019874,1],[100,.28558,.025082,1],[128,.365647,.02938,1],[256,.73125,.047749,1],[512,1.463027,.084076,1],[1000,2.855408,.151745,1]]},
+        {p:"Steam Deck",w:"Weighted batch, one goal",d:[[1,4.208167,4.22622,1],[2,6.197662,9.480813,1],[4,10.271199,9.537994,1],[8,18.314897,9.589166,1],[10,22.303203,9.572564,1],[16,38.161134,9.699611,1],[32,82.361775,9.937141,1],[64,227.840166,10.381019,1],[100,457.319711,10.932133,1],[128,529.082271,11.300529,1],[256,1101.771787,13.029345,1],[512,2319.795131,16.517541,1],[1000,4580.777597,23.293019,1]]}
+      ];
+
+      function svgElement(name, attributes = {}) {
+        const element = document.createElementNS(svgNamespace, name);
+        Object.entries(attributes).forEach(([key, value]) => {
+          element.setAttribute(key, String(value));
+        });
+        return element;
+      }
+
+      function setTheme() {
+        let scheme = "";
+        try {
+          scheme = window.parent.document.body
+            .getAttribute("data-md-color-scheme") || "";
+        } catch (_error) {
+          scheme = "";
+        }
+        const dark = scheme === "slate" ||
+          (!scheme && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      }
+
+      function observeParentTheme() {
+        try {
+          const parentBody = window.parent.document.body;
+          new MutationObserver(setTheme).observe(parentBody, {
+            attributes: true,
+            attributeFilter: ["data-md-color-scheme"]
+          });
+        } catch (_error) {
+          window.matchMedia("(prefers-color-scheme: dark)")
+            .addEventListener("change", setTheme);
+        }
+      }
+
+      function formatTime(milliseconds) {
+        if (milliseconds < 1) {
+          return `${(milliseconds * 1000).toPrecision(3)} us`;
+        }
+        if (milliseconds < 1000) {
+          return `${milliseconds.toPrecision(3)} ms`;
+        }
+        return `${(milliseconds / 1000).toPrecision(3)} s`;
+      }
+
+      function logScale(domainMinimum, domainMaximum, rangeMinimum,
+                        rangeMaximum) {
+        const domainSpan = Math.log(domainMaximum) - Math.log(domainMinimum);
+        return value => rangeMinimum +
+          (Math.log(value) - Math.log(domainMinimum)) / domainSpan *
+          (rangeMaximum - rangeMinimum);
+      }
+
+      function inverseLogScale(position, domainMinimum, domainMaximum,
+                               rangeMinimum, rangeMaximum) {
+        const ratio = (position - rangeMinimum) /
+          (rangeMaximum - rangeMinimum);
+        return Math.exp(Math.log(domainMinimum) + ratio *
+          (Math.log(domainMaximum) - Math.log(domainMinimum)));
+      }
+
+      function nearestPoint(points, requestCount) {
+        return points.reduce((nearest, point) =>
+          Math.abs(Math.log(point[0]) - Math.log(requestCount)) <
+            Math.abs(Math.log(nearest[0]) - Math.log(requestCount))
+            ? point : nearest);
+      }
+
+      function appendText(svg, text, attributes) {
+        const element = svgElement("text", attributes);
+        element.textContent = text;
+        svg.appendChild(element);
+        return element;
+      }
+
+      function createChart(host, row) {
+        host.replaceChildren();
+        const width = Math.max(280, Math.floor(host.clientWidth));
+        const height = 240;
+        const margin = {top: 12, right: 14, bottom: 48, left: 78};
+        const plotWidth = width - margin.left - margin.right;
+        const plotHeight = height - margin.top - margin.bottom;
+        const values = row.d.flatMap(point => [point[1], point[2]]);
+        const measuredMinimum = Math.min(...values);
+        const measuredMaximum = Math.max(...values);
+        const yMinimum = measuredMinimum / 1.5;
+        const yMaximum = measuredMaximum * 1.5;
+        const x = logScale(1, 1000, margin.left, width - margin.right);
+        const y = logScale(yMinimum, yMaximum,
+          height - margin.bottom, margin.top);
+        const svg = svgElement("svg", {
+          viewBox: `0 0 ${width} ${height}`,
+          role: "group",
+          "aria-label": `${row.p}, ${row.w}: CPU time by request count`
+        });
+        const title = svgElement("title");
+        title.textContent = `${row.p}: ${row.w}`;
+        svg.appendChild(title);
+
+        svg.appendChild(svgElement("rect", {
+          class: "chart-frame",
+          x: margin.left,
+          y: margin.top,
+          width: plotWidth,
+          height: plotHeight,
+          fill: "none",
+          "data-chart-frame": ""
+        }));
+
+        const yTicks = [0, 1, 2, 3].map(index => Math.exp(
+          Math.log(yMinimum) + index / 3 *
+          (Math.log(yMaximum) - Math.log(yMinimum))
+        ));
+        yTicks.forEach(value => {
+          const position = y(value);
+          svg.appendChild(svgElement("line", {
+            class: "grid-line",
+            x1: margin.left,
+            x2: width - margin.right,
+            y1: position,
+            y2: position
+          }));
+          appendText(svg, formatTime(value), {
+            x: margin.left - 8,
+            y: position + 4,
+            "text-anchor": "end"
+          });
+        });
+
+        [1, 10, 100, 1000].forEach(value => {
+          const position = x(value);
+          svg.appendChild(svgElement("line", {
+            class: "tick-line",
+            x1: position,
+            x2: position,
+            y1: height - margin.bottom,
+            y2: height - margin.bottom + 5
+          }));
+          appendText(svg, value === 1000 ? "1k" : value, {
+            x: position,
+            y: height - margin.bottom + 20,
+            "text-anchor": "middle"
+          });
+        });
+
+        svg.appendChild(svgElement("line", {
+          class: "axis-line",
+          x1: margin.left,
+          x2: width - margin.right,
+          y1: height - margin.bottom,
+          y2: height - margin.bottom
+        }));
+        appendText(svg, "Requests", {
+          x: margin.left + plotWidth / 2,
+          y: height - 8,
+          "text-anchor": "middle",
+          "data-axis": "x"
+        });
+        const yTitle = appendText(svg, "CPU time", {
+          x: 11,
+          y: margin.top + plotHeight / 2,
+          "text-anchor": "middle",
+          "data-axis": "y"
+        });
+        yTitle.setAttribute("transform",
+          `rotate(-90 11 ${margin.top + plotHeight / 2})`);
+
+        [["baseline", 1], ["reuse", 2]].forEach(([name, valueIndex]) => {
+          const group = svgElement("g", {
+            class: `series series--${name}`,
+            "data-series": name
+          });
+          if (!visible[name]) group.style.display = "none";
+          row.d.slice(1).forEach((point, index) => {
+            const previous = row.d[index];
+            const accepted = previous[3] && point[3];
+            group.appendChild(svgElement("line", {
+              class: `series-line${accepted ? "" : " segment--rejected"}`,
+              x1: x(previous[0]),
+              y1: y(previous[valueIndex]),
+              x2: x(point[0]),
+              y2: y(point[valueIndex])
+            }));
+          });
+          row.d.forEach(point => {
+            const attributes = {
+              class: `point ${point[3] ? "point--accepted" : "point--rejected"}`,
+            };
+            let marker;
+            if (name === "baseline") {
+              marker = svgElement("circle", {
+                ...attributes,
+                cx: x(point[0]),
+                cy: y(point[valueIndex]),
+                r: 4
+              });
+            } else {
+              const markerX = x(point[0]);
+              const markerY = y(point[valueIndex]);
+              marker = svgElement("path", {
+                ...attributes,
+                d: `M ${markerX} ${markerY - 5} L ${markerX + 5} ${markerY} L ${markerX} ${markerY + 5} L ${markerX - 5} ${markerY} Z`
+              });
+            }
+            const pointTitle = svgElement("title");
+            const requestLabel = point[0] === 1 ? "request" : "requests";
+            pointTitle.textContent = `${point[0]} ${requestLabel}: ${formatTime(point[valueIndex])}. ${point[3] ? "Accepted cell" : "Cell rejected: either arm exceeded 5% CV"}`;
+            marker.appendChild(pointTitle);
+            group.appendChild(marker);
+          });
+          svg.appendChild(group);
+        });
+
+        const guide = svgElement("line", {
+          class: "hover-guide",
+          y1: margin.top,
+          y2: height - margin.bottom,
+          visibility: "hidden",
+          "data-chart-hover-guide": ""
+        });
+        svg.appendChild(guide);
+        const hoverPoints = {};
+        ["baseline", "reuse"].forEach(name => {
+          const marker = svgElement("circle", {
+            class: `hover-point hover-point--${name}`,
+            r: 5,
+            visibility: "hidden",
+            "data-chart-hover-marker": name
+          });
+          hoverPoints[name] = marker;
+          svg.appendChild(marker);
+        });
+
+        const overlay = svgElement("rect", {
+          class: "hover-target",
+          x: margin.left,
+          y: margin.top,
+          width: plotWidth,
+          height: plotHeight,
+          fill: "transparent",
+          "data-chart-hit": "",
+          "data-chart-hover-overlay": "cross-series"
+        });
+        let lockedPoint = null;
+        function cellLabel(point) {
+          const requestLabel = point[0] === 1 ? "request" : "requests";
+          const parts = [
+            `${row.p}, ${row.w}. ${point[0]} ${requestLabel}.`
+          ];
+          if (visible.baseline) {
+            parts.push(`Independent A*: ${formatTime(point[1])}.`);
+          }
+          if (visible.reuse) {
+            parts.push(`Compared strategy: ${formatTime(point[2])}.`);
+          }
+          parts.push(point[3] ? "Accepted cell." :
+            "Cell rejected: either arm exceeded 5% CV.");
+          return parts.join(" ");
+        }
+        function hideTooltip() {
+          guide.setAttribute("visibility", "hidden");
+          Object.values(hoverPoints).forEach(marker => {
+            marker.setAttribute("visibility", "hidden");
+          });
+          tooltip.style.display = "none";
+        }
+        function clearSelection() {
+          lockedPoint = null;
+          hideTooltip();
+          if (activeSelection === clearSelection) activeSelection = null;
+        }
+        function showMeasuredCell(point, clientX, clientY) {
+          const measuredX = x(point[0]);
+          guide.setAttribute("x1", measuredX);
+          guide.setAttribute("x2", measuredX);
+          guide.setAttribute("visibility", "visible");
+          const tooltipRows = [];
+          [["baseline", 1, "Independent A*"],
+           ["reuse", 2, "Compared strategy"]]
+            .forEach(([name, valueIndex, label]) => {
+              if (!visible[name]) {
+                hoverPoints[name].setAttribute("visibility", "hidden");
+                return;
+              }
+              const value = point[valueIndex];
+              hoverPoints[name].setAttribute("cx", measuredX);
+              hoverPoints[name].setAttribute("cy", y(value));
+              hoverPoints[name].setAttribute("visibility", "visible");
+              tooltipRows.push(
+                `<div class="tooltip-row"><span>${label}</span>` +
+                `<strong>${formatTime(value)}</strong></div>`
+              );
+            });
+          const requestLabel = point[0] === 1 ? "request" : "requests";
+          tooltip.innerHTML =
+            `<strong>Measured cell · ${point[0]} ${requestLabel}</strong>` +
+            tooltipRows.join("") +
+            `<div>${point[3] ? "Accepted cell" : "Cell rejected: either arm exceeded 5% CV"}</div>`;
+          tooltip.style.display = "block";
+          const rootBounds = root.getBoundingClientRect();
+          const tooltipBounds = tooltip.getBoundingClientRect();
+          const proposedLeft = clientX - rootBounds.left + 12;
+          const left = Math.max(4, Math.min(
+            root.clientWidth - tooltipBounds.width - 4, proposedLeft));
+          tooltip.style.left = `${left}px`;
+          tooltip.style.top = `${clientY - rootBounds.top + 12}px`;
+        }
+        function pointFromClientX(clientX) {
+          const bounds = svg.getBoundingClientRect();
+          const pointerX = (clientX - bounds.left) * width / bounds.width;
+          const clampedX = Math.max(margin.left,
+            Math.min(width - margin.right, pointerX));
+          const requestCount = inverseLogScale(clampedX, 1, 1000,
+            margin.left, width - margin.right);
+          return nearestPoint(row.d, requestCount);
+        }
+        overlay.addEventListener("pointermove", event => {
+          if (lockedPoint) return;
+          showMeasuredCell(pointFromClientX(event.clientX), event.clientX,
+            event.clientY);
+        });
+        overlay.addEventListener("pointerleave", () => {
+          if (!lockedPoint) hideTooltip();
+        });
+        overlay.addEventListener("click", event => {
+          const point = pointFromClientX(event.clientX);
+          if (lockedPoint && lockedPoint[0] === point[0]) {
+            clearSelection();
+            return;
+          }
+          if (activeSelection && activeSelection !== clearSelection) {
+            activeSelection();
+          }
+          lockedPoint = point;
+          activeSelection = clearSelection;
+          showMeasuredCell(point, event.clientX, event.clientY);
+        });
+        svg.appendChild(overlay);
+        const cellTargets = row.d.map(point => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "cell-target";
+          const buttonX = Math.max(16, Math.min(width - 16, x(point[0])));
+          button.style.left = `${buttonX}px`;
+          const buttonY = Math.max(16, Math.min(height - 16, y(point[1])));
+          button.style.top = `${buttonY}px`;
+          button.setAttribute("aria-label", cellLabel(point));
+          button.addEventListener("focus", () => {
+            const bounds = button.getBoundingClientRect();
+            showMeasuredCell(point, bounds.right, bounds.bottom);
+          });
+          button.addEventListener("blur", () => {
+            if (!lockedPoint) hideTooltip();
+          });
+          button.addEventListener("pointerenter", () => {
+            if (lockedPoint) return;
+            const bounds = button.getBoundingClientRect();
+            showMeasuredCell(point, bounds.right, bounds.bottom);
+          });
+          button.addEventListener("pointerleave", () => {
+            if (!lockedPoint) hideTooltip();
+          });
+          button.addEventListener("click", () => {
+            if (lockedPoint && lockedPoint[0] === point[0]) {
+              clearSelection();
+              button.blur();
+              return;
+            }
+            if (activeSelection && activeSelection !== clearSelection) {
+              activeSelection();
+            }
+            lockedPoint = point;
+            activeSelection = clearSelection;
+            const bounds = button.getBoundingClientRect();
+            showMeasuredCell(point, bounds.right, bounds.bottom);
+          });
+          button.addEventListener("keydown", event => {
+            if (event.key !== "Escape") return;
+            clearSelection();
+            button.blur();
+          });
+          return [button, point];
+        });
+        host.appendChild(svg);
+        cellTargets.forEach(([button]) => host.appendChild(button));
+        host.cellTargets = cellTargets;
+        host.updateCellLabels = () => {
+          cellTargets.forEach(([button, point]) => {
+            button.setAttribute("aria-label", cellLabel(point));
+            const targetValue = visible.baseline ? point[1] : point[2];
+            const buttonY = Math.max(16,
+              Math.min(height - 16, y(targetValue)));
+            button.style.top = `${buttonY}px`;
+          });
+        };
+        host.clearSelection = clearSelection;
+      }
+
+      function buildLayout() {
+        ["Apple M3 Max", "Steam Deck"].forEach(platformName => {
+          const section = document.createElement("section");
+          section.className = "platform";
+          const heading = document.createElement("h2");
+          heading.textContent = platformName;
+          section.appendChild(heading);
+          const note = document.createElement("div");
+          note.className = "platform-note";
+          note.textContent =
+            "Independent A* versus field, cold cache, or weighted batch";
+          section.appendChild(note);
+          const plotGrid = document.createElement("div");
+          plotGrid.className = "plots";
+          rows.filter(row => row.p === platformName).forEach(row => {
+            const plot = document.createElement("div");
+            plot.setAttribute("role", "group");
+            const title = document.createElement("h3");
+            title.className = "plot-title";
+            title.id = `plot-${platformName}-${row.w}`
+              .toLowerCase().replaceAll(/[^a-z0-9]+/g, "-");
+            title.textContent = row.w;
+            plot.setAttribute("aria-labelledby", title.id);
+            plot.appendChild(title);
+            const host = document.createElement("div");
+            host.className = "plot-host";
+            host.chartRow = row;
+            plot.appendChild(host);
+            plotGrid.appendChild(plot);
+          });
+          section.appendChild(plotGrid);
+          platforms.appendChild(section);
+        });
+      }
+
+      function resizeFrame() {
+        if (!window.frameElement) return;
+        try {
+          window.frameElement.style.height =
+            `${document.documentElement.scrollHeight + 4}px`;
+        } catch (_error) {
+          // The separate-page view has no same-origin parent frame to resize.
+        }
+      }
+
+      let drawing = false;
+      function drawAll() {
+        if (drawing) return;
+        drawing = true;
+        document.querySelectorAll(".plot-host").forEach(host => {
+          createChart(host, host.chartRow);
+        });
+        drawing = false;
+        requestAnimationFrame(resizeFrame);
+      }
+
+      document.querySelectorAll("[data-series-toggle]").forEach(button => {
+        button.addEventListener("click", () => {
+          const series = button.dataset.seriesToggle;
+          visible[series] = !visible[series];
+          button.setAttribute("aria-pressed", String(visible[series]));
+          document.querySelectorAll(`[data-series="${series}"]`)
+            .forEach(group => {
+              group.style.display = visible[series] ? "" : "none";
+            });
+          document.querySelectorAll(".plot-host").forEach(host => {
+            host.updateCellLabels();
+            host.clearSelection();
+          });
+          document.querySelectorAll("[data-series-toggle]").forEach(toggle => {
+            const toggleSeries = toggle.dataset.seriesToggle;
+            const otherSeries = toggleSeries === "baseline" ? "reuse" :
+              "baseline";
+            toggle.disabled = visible[toggleSeries] && !visible[otherSeries];
+          });
+        });
+      });
+
+      setTheme();
+      observeParentTheme();
+      buildLayout();
+      drawAll();
+      let resizeTimer = 0;
+      window.addEventListener("resize", () => {
+        window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(drawAll, 80);
+      });
+    })();
+  </script>
+</body>
+</html>
