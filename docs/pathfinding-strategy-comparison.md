@@ -1,8 +1,8 @@
 ---
 title: A* vs Route Caches, Batches, and Distance Fields
 description: >-
-  Compare C++ grid pathfinding workloads using A*, route caching, weighted
-  batches, and shared-goal distance fields in the tess C++20 library.
+  C++ grid pathfinding benchmark comparison of A*, cold route caches,
+  weighted batches, and shared-goal distance fields in tess.
 ---
 
 # A* vs route caches, batches, and distance fields
@@ -33,6 +33,77 @@ different, dense-only family. The
 [pathfinding decision guide](guide/pathfinding.md) covers that residency
 boundary and the full API selection tree.
 
+## Where reuse crosses over
+
+The campaign below measures cold end-to-end work. Route-cache population and
+distance-field construction stay inside the timed operation; no warm state is
+smuggled into the comparison. Every pair receives the same world and request
+array, and untimed checks require matching status, endpoints, legal steps, and
+path cost.
+
+The controlled Apple Silicon and Steam Deck campaign is pending. Results will
+be added only after the exact committed source is run on both hosts and the
+measurements and conclusions pass review. The benchmark method and decision
+table are available now so the eventual evidence has a reviewable contract.
+
+| Question | Cold comparison | Decision signal |
+| --- | --- | --- |
+| Many starts share one goal | independent unit A* vs one field build plus reconstruction | First measured count where the field wins on that map |
+| Exact requests repeat | independent unit A* vs a cleared route cache | First count that repays population and lookup cost |
+| Starts lie on one goal route | independent unit A* vs a cleared suffix cache | First count that repays population and suffix lookup cost |
+| Weighted requests arrive together | independent weighted A* vs one `weighted_path_batch` call | Whether grouping produces fields or A* fallbacks for the observed goal count |
+
+The established 100-request snapshot remains useful while the crossover
+campaign is pending. These are median single-threaded CPU times from a Release
+build on one Apple M3 Max, with at least one second per repetition across ten
+repetitions:
+
+| Workload | Independent searches | Reuse strategy | Relative time |
+| --- | ---: | ---: | ---: |
+| Shared unit-cost goal | 17.80 ms | 2.78 ms field | 6.4x faster |
+| Exact route repeats | 48.88 ms | 14.52 ms cache | 3.4x faster |
+| Same-goal suffixes | 113.08 us | 17.41 us cache | 6.5x faster |
+| Eight weighted goals | 441.16 ms | 42.29 ms batch | 10.4x faster |
+
+That run could not pin thread affinity and observed a load average near 4.0,
+so it establishes that reuse can win on these shapes, not where it first wins
+or what another machine will sustain.
+
+The primary 512x512 sweep uses request counts 1, 2, 4, 8, 10, 16, 32, 64,
+100, 128, 256, 512, and 1,000. After a bounded preflight established
+headroom, the opt-in capacity sweep was extended to 131,072 requests and
+grids through 16,384x16,384. Capacity cells identify the largest completed
+rung under a declared time and memory budget; they do not deliberately drive
+a machine into an out-of-memory failure.
+
+Timing is accompanied by A* and unit-field expansions, reconstruction nodes,
+field builds, A* fallbacks, cache hits, suffix hits, unique-goal counts,
+retained cache entries and path nodes, and dense field-page bytes. Weighted
+batches do not expose field expansions, so the comparison does not pretend
+that every arm has a common expansion counter. The report distinguishes
+requests from unique starts:
+high request counts are a throughput stress, not a claim that every request
+represents a distinct simulated agent. Field-product byte counts and warm
+replay remain in the existing product benchmarks because the transient
+two-call field and per-call batch API do not retain comparable products.
+
+Map edits have a separate lifecycle question, so the crossover matrix does not
+multiply every cell by invalidation policy:
+
+| Retained work | Edit behavior | Evidence reported |
+| --- | --- | --- |
+| Exact route cache | Any world change clears the cache | Clears, misses, entries, and retained path nodes |
+| Scoped-feasible route cache | Dense unit-cost worlds can preserve routes whose chunks did not change | Existing on-path and off-path edit benchmarks |
+| Field product/cache | Product dependencies decide whether replay remains valid | Exact product and cache bytes plus warm replay timings |
+| Transient field or batch | Nothing survives the call | No invalidation mode or invented retained-byte total |
+
+Scoped-feasible reuse guarantees a legal route with truthful cost, not fresh
+optimality: an unrelated edit that opens a shortcut can leave a previously
+optimal route suboptimal. Sparse worlds retain whole-world sensitivity.
+
+See the [campaign method and normalized evidence][crossover-evidence] before
+using a bracket for a production decision.
+
 ## Algorithm and strategy status
 
 The four choices in the short answer are not four peer algorithms. A* and the
@@ -57,53 +128,6 @@ conflicts after routes have been planned.
 The [path architecture](architecture/path.md) specifies the search and reuse
 contracts. The [simulation architecture](architecture/simulation.md) separates
 route planning from joint movement and PIBT.
-
-<details class="strategy-alternatives" markdown="1">
-<summary>Why some alternatives were not promoted</summary>
-
-These decisions are deliberately scoped. A rejected browser policy or
-internal data structure is not a rejection of the broader research idea.
-
-- **Four-ary open-list heap** —
-  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
-  It helped a few A* benchmark cases but substantially regressed weighted field builds
-  and failed the second-platform non-regression gate
-  ([evidence][quad-heap-rejection]).
-- **Dynamic congestion prices in the colony demo** —
-  <span class="strategy-status strategy-status--released">Validated caller recipe</span>
-  The original policies produced incomplete arrivals and were rejected
-  ([evidence][congestion-rejection]); a later revalidation on the corrected
-  topology superseded that result — a bounded demand-driven price policy
-  retained or improved terminal classification on every supported population
-  across all seven demo scenarios on two platforms, and is documented as a
-  caller recipe with its measured boundary
-  ([spatial coordination](architecture/spatial-coordination.md),
-  [evidence][congestion-revalidation]). No library mechanism was added.
-- **Balanced gate waypoints** —
-  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
-  Assigning equal cohorts to exact crossing tiles synchronized agents onto
-  capacity hotspots, increased waits, and lost arrivals
-  ([evidence][waypoint-rejection]).
-- **Eight-step WHCA-style space-time planning** —
-  <span class="strategy-status strategy-status--boundary">Not promoted</span>
-  The screening result was 30–90x the cheap resolver's per-tick cost and
-  degraded at dense bottlenecks whose queues exceeded the fixed horizon
-  ([screening study][movement-screening]).
-
-The pre-RC screens in the [execution plan][execution-plan] rejected all
-three of the remaining classical candidates on retained evidence:
-gated 4-connected JPS regressed dense rubble maps despite large
-structured-map wins ([evidence][jps-rejection]); whole-query
-bidirectional A\* confirmed material regressions on five of eight cells
-with correctness gates green ([evidence][bidir-rejection]); and goal-keyed
-D\* Lite rejected at feasibility once both arms were counted with the
-same ruler — its repair machinery does essentially the same abstract
-work as searching fresh against this incumbent
-([evidence][dstar-rejection]). Each record carries its scoped
-reconsideration condition; none is a verdict on other domains.
-Theta\* remains deferred until its supporting contracts exist.
-
-</details>
 
 ## See the call shapes
 
@@ -264,59 +288,67 @@ The field is tied to its goal and world snapshot. Rebuild it after relevant
 world or residency changes. For cross-frame, multi-goal retention on a dense
 world, use the separate `DistanceFieldProduct` and `FieldProductCache` family.
 
-## What the benchmarks compare
-
-The benchmark suite contains paired workloads rather than timing unrelated
-examples:
-
-| Question | Baseline | Reuse strategy |
-| --- | --- | --- |
-| 100 starts share one room-and-portal goal | independent A* | one distance field |
-| 100 requests contain exact repeats | independent A* | exact route cache |
-| 100 starts lie on one route to a goal | independent A* | suffix route cache |
-| 100 weighted requests share eight goals | weighted A* | weighted batch planner |
-
-The pairs use the same world and request arrays inside each question. They
-validate returned paths and expose counters such as unique goals, expanded
-nodes, cache hits, and misses outside the timed loops. See the
-[benchmark implementation][benchmark-source] and the
-[performance methodology](performance.md) before treating a result as a
-portable constant.
-
-For a concrete scale check, these are median CPU times from a Release build on
-one Apple M3 Max. Each benchmark ran single-threaded for at least one second
-per repetition across ten repetitions:
-
-| Workload | Independent searches | Reuse strategy | Relative time |
-| --- | ---: | ---: | ---: |
-| Shared unit-cost goal | 17.80 ms | 2.78 ms field | 6.4x faster |
-| Exact route repeats | 48.88 ms | 14.52 ms cache | 3.4x faster |
-| Same-goal suffixes | 113.08 us | 17.41 us cache | 6.5x faster |
-| Eight weighted goals | 441.16 ms | 42.29 ms batch | 10.4x faster |
-
-The run could not pin thread affinity and the system load average was about
-4.0, so use these numbers as workload evidence, not target-machine promises.
-The result that matters is the shape: reuse won substantially when the paired
-request set actually contained the structure each API is designed to share.
-
-Run the comparison on the target machine:
+Run the controlled comparison on a target machine with an environment metadata
+file and a memory limit appropriate to that host:
 
 ```sh
 cmake --preset bench
-cmake --build --preset bench --target tess_bench
-./build/bench/bench/tess_bench \
-  --benchmark_filter='path/.*batch(_planner)?_100_.*' \
-  --benchmark_min_time=1s \
-  --benchmark_repetitions=10 \
-  --benchmark_report_aggregates_only=true
+cmake --build --preset bench --target tess_bench_path_strategy_crossover
+python3 tools/path_strategy_campaign.py primary \
+  --binary build/bench/bench/tess_bench_path_strategy_crossover \
+  --source bench/tess_path_strategy_crossover_bench.cc \
+  --environment environment.json \
+  --output path-strategy-results.json \
+  --memory-limit-gib 12
 ```
 
-The decision is workload-specific: compare paired names with the same suffix,
-inspect their counters, and retain the simpler API when the measured benefit
-does not justify another invalidation or grouping lifecycle.
+The driver interleaves paired arms in fresh processes, checkpoints each cell,
+and rejects an unstable cell from crossover calculation. Its separate
+`capacity` mode runs ascending grid and request ladders with per-process time
+and address-space limits, then stops a ladder at its first incomplete rung.
+The decision remains workload-specific: inspect both timing and counters, and
+retain the simpler API when the measured benefit does not justify another
+invalidation or grouping lifecycle.
+
+<details class="strategy-alternatives" markdown="1">
+<summary>Why some alternatives were not promoted</summary>
+
+These decisions are deliberately scoped. A rejected browser policy or
+internal data structure is not a rejection of the broader research idea.
+
+- **Four-ary open-list heap** —
+  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
+  It helped a few A* benchmark cases but substantially regressed weighted
+  field builds and failed the second-platform non-regression gate
+  ([evidence][quad-heap-rejection]).
+- **Dynamic congestion prices in the colony demo** —
+  <span class="strategy-status strategy-status--released">Validated caller recipe</span>
+  The original policies produced incomplete arrivals and were rejected
+  ([evidence][congestion-rejection]); a later revalidation on the corrected
+  topology superseded that result. The bounded caller policy is documented
+  with its measured boundary in [spatial coordination][spatial-coordination]
+  and the [retained evidence][congestion-revalidation].
+- **Balanced gate waypoints** —
+  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
+  Equal cohorts synchronized agents onto capacity hotspots and lost arrivals
+  ([evidence][waypoint-rejection]).
+- **Eight-step WHCA-style space-time planning** —
+  <span class="strategy-status strategy-status--boundary">Not promoted</span>
+  The screen cost 30–90x the cheap resolver per tick and degraded at dense
+  bottlenecks beyond its horizon ([screening study][movement-screening]).
+
+Pre-RC screens also rejected gated 4-connected JPS on dense rubble maps
+([evidence][jps-rejection]), whole-query bidirectional A* on five of eight
+cells ([evidence][bidir-rejection]), and goal-keyed D* Lite at feasibility
+([evidence][dstar-rejection]). Each record has a scoped reconsideration
+condition; none is a verdict on other domains. Theta* remains deferred until
+its supporting contracts exist.
+
+</details>
 
 [strategy-main]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies.cc
 [benchmark-source]: https://github.com/kindjie/tess/tree/main/bench
+[crossover-evidence]: planning/evidence/v1.0/path-strategy-crossover/README.md
 [quad-heap-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-14.md
 [congestion-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-17.md
 [congestion-revalidation]: https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/c5-congestion/README.md
@@ -326,3 +358,4 @@ does not justify another invalidation or grouping lifecycle.
 [waypoint-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-17.md
 [movement-screening]: https://github.com/kindjie/tess/blob/main/docs/planning/local-movement-resolution.md#evidence
 [execution-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md
+[spatial-coordination]: architecture/spatial-coordination.md

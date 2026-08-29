@@ -1009,21 +1009,11 @@ jobs:
       - name: Test
         run: ctest --preset bench
 
-      # The compiled registration union is the authoritative workload
-      # universe (section 4.5): the static hooks-tier check covers
-      # threshold manifests and lab literals, but only the binaries
-      # know what is actually registered — and this survives the
-      # phase 4 threshold-manifest retirement.
-      #
-      # tess_bench_thread_scaling is listed but never executed here: it is
-      # a campaign-only worker-count sweep that builds pools far wider
-      # than a shared runner has cores. Listing it is what keeps it from
-      # rotting, since nothing else in CI runs it.
-      #
-      # --bench-sources additionally greps bench/*.cc for whole `lab/`
-      # name literals, so a name assembled from a macro or a
-      # concatenation -- which yields a fragment no family rule can
-      # classify -- fails here rather than at analysis time.
+      # The compiled registration union is authoritative (section 4.5).
+      # Listing the two campaign-only binaries keeps their registrations from
+      # rotting without executing costly thread or capacity sweeps. CTest runs
+      # only the crossover binary's smallest correctness cells. The source
+      # scan catches malformed assembled lab names before analysis.
       - name: Workload-matrix drift check
         run: |
           ./build/bench/bench/tess_bench --benchmark_list_tests \
@@ -1034,11 +1024,16 @@ jobs:
           ./build/bench/bench/tess_bench_thread_scaling \
             --benchmark_list_tests \
             > build/bench/registrations-thread-scaling.txt
+          ./build/bench/bench/tess_bench_path_strategy_crossover \
+            --benchmark_list_tests \
+            > build/bench/registrations-path-strategy-crossover.txt
           python3 tools/check_workload_matrix.py \
             --catalog bench/workload-matrix.json \
             --registrations build/bench/registrations-main.txt \
             --registrations build/bench/registrations-diagnostics.txt \
             --registrations build/bench/registrations-thread-scaling.txt \
+            --registrations \
+              build/bench/registrations-path-strategy-crossover.txt \
             --bench-sources bench
 
       # Release-configuration counter-golden drift (shadow mode).

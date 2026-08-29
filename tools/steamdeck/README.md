@@ -72,6 +72,23 @@ See the
 [maintenance promotion protocol](../../docs/planning/maintenance-promotion-campaign.md)
 for the frozen matrix, identity checks, stop rules, and retained artifacts.
 
+The advisory path-strategy characterization has a separate bundle so its
+capacity cells never join routine benchmark or promotion gates:
+
+```sh
+tools/steamdeck/deck path-campaign stage <empty-bundle-dir>
+tools/steamdeck/deck path-campaign run \
+  <bundle-dir> <run-id> <empty-results-dir>
+```
+
+Staging builds only `tess_bench_path_strategy_crossover` in the pinned
+steamrt4 image, requires a clean publication commit, and hashes the SDK/image
+identity, binary, source, controller, and remote runner.
+The device run verifies that inventory, requires external power, pins the CPU
+governors across both phases, checkpoints results on-device, restores every
+governor on exit, retrieves the results even after failure, and verifies their
+checksums.
+
 The benchmark command builds only the selected binary and defaults to one
 compiler job because the amd64 Steam Runtime is commonly emulated inside a
 memory-limited Docker Desktop VM. Set `TESS_STEAMRT_BUILD_JOBS=N` deliberately
