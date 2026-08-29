@@ -12,8 +12,8 @@ calibrated per-benchmark ceilings. Exploratory `lab/` families and controlled
 hardware campaigns are recorded separately and do not become portable gates
 without machine-specific calibration.
 
-For the paired A*, route-cache, batch, and distance-field workloads, start with
-the [pathfinding strategy comparison](pathfinding-strategy-comparison.md).
+For paired A*, route-cache, batch, and distance-field workloads, start with the
+[C++ grid pathfinding benchmark comparison](pathfinding-strategy-comparison.md).
 
 Representative single-threaded medians from the benchmark suite:
 

@@ -75,6 +75,19 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_bench_thread_scaling)
 
+# This request-count and world-size sweep is campaign-only. Keeping it out of
+# tess_bench prevents its capacity cells from joining routine unfiltered runs
+# or production timing gates. The lab/ registrations remain advisory.
+add_executable(
+  tess_bench_path_strategy_crossover
+  tess_path_strategy_crossover_bench.cc
+)
+target_link_libraries(
+  tess_bench_path_strategy_crossover
+  PRIVATE tess::tess benchmark::benchmark
+)
+tess_apply_project_options(tess_bench_path_strategy_crossover)
+
 # MNT-3's controlled promotion campaign is isolated from the permanent
 # threshold suite. Its complete cell registry and frozen decision policy live
 # in bench/maintenance-campaign.json; raw M3 and Steam Deck artifacts, rather
@@ -875,6 +888,20 @@ add_custom_target(
 )
 
 if(BUILD_TESTING)
+  # Exercise every comparison arm on the smallest world and request count.
+  # Larger cells are controlled hardware campaigns, not CI timing work.
+  add_test(
+    NAME tess_bench_path_strategy_crossover_smoke
+    COMMAND
+      tess_bench_path_strategy_crossover
+      --benchmark_filter=^lab/path_strategy_crossover/.*/128x128/1$
+      --benchmark_min_time=0.001s
+  )
+  set_tests_properties(
+    tess_bench_path_strategy_crossover_smoke
+    PROPERTIES TIMEOUT 120
+  )
+
   # Compile-and-run smoke for the budgeted-progress runner (design
   # section 14.2 CI scope: compile/smoke, correctness validation, and
   # artifact emission — never a timing gate). Smoke mode still runs

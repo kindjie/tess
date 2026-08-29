@@ -51,6 +51,9 @@ Run on the device:
                    evidence bundle locally; does not access the Deck.
   campaign run <bundle-dir> <calibration|candidate> <run-id> <results-dir>
                    Run one whole pinned evidence phase and retrieve artifacts.
+  path-campaign stage <bundle-dir>
+  path-campaign run <bundle-dir> <run-id> <results-dir>
+                   Stage or run the pinned path-strategy characterization.
 
 Env: DECK_HOST (default 'deck'), TESS_STEAMRT_IMAGE,
      TESS_STEAMRT_BUILD_IMAGE (build image, default 'tess-steamrt4:local'),
@@ -473,6 +476,9 @@ cmd_bench() {
 cmd_campaign() {
   exec "${HERE}/deck-maintenance-campaign.sh" "$@"
 }
+cmd_path_campaign() {
+  exec "${HERE}/deck-path-strategy-campaign.sh" "$@"
+}
 
 cmd="${1:-help}"; shift 2>/dev/null || true
 case "$cmd" in
@@ -485,5 +491,6 @@ case "$cmd" in
   watch)          cmd_watch "$@" ;;
   bench)          cmd_bench "$@" ;;
   campaign)       cmd_campaign "$@" ;;
+  path-campaign)  cmd_path_campaign "$@" ;;
   *)              die "unknown command '$cmd' — try: tools/steamdeck/deck help" ;;
 esac

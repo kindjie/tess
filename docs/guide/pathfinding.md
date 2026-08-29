@@ -87,16 +87,19 @@ The [interactive pathfinder](../../demo/) shows the basic A*
 query, while the [colony demo](../../demo/colony/) exercises
 retained routes and multi-agent movement. Reproducible timing and memory
 evidence lives on the [performance page](../performance.md).
-The [side-by-side strategy comparison](../pathfinding-strategy-comparison.md)
+The [C++ grid pathfinding benchmark comparison](../pathfinding-strategy-comparison.md)
 shows the four call shapes over one compiled, self-checking example.
 
 ## Thresholds
 
 A single A* across an open 512x512 grid measures a couple of
 microseconds, weighted or not — [performance](../performance.md) carries
-the current figures and the conditions they were measured under. Below a few hundred
-queries per tick, plain searches are rarely the bottleneck — measure
-before reaching for a sharing strategy. The
+the current figures and the conditions they were measured under. Plain
+searches can remain cheap in absolute terms even when a repeated-route cache
+or shared-goal batch has crossed over at a single-digit request count. Use the
+[C++ grid pathfinding benchmark comparison](../pathfinding-strategy-comparison.md)
+to identify the matching reuse shape, then measure the complete application
+before adding retained state. The
 [live colony demo](../../demo/colony/) makes the
 difference tangible: toggle retained routes off and watch the per-tick
 cost climb.

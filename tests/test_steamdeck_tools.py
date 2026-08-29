@@ -18,6 +18,9 @@ MAINTENANCE_CAMPAIGN = (
 MAINTENANCE_RUNNER = (
     REPO_ROOT / "tools" / "steamdeck" / "deck-run-maintenance-campaign.sh"
 )
+PATH_STRATEGY_RUNNER = (
+    REPO_ROOT / "tools" / "steamdeck" / "deck-run-path-strategy-campaign.sh"
+)
 
 
 def write_fake_docker(bin_dir: Path) -> None:
@@ -676,3 +679,20 @@ def test_deck_help_routes_maintenance_campaign_without_generic_bench():
   assert result.returncode == 0, result.stderr
   assert "campaign stage" in result.stdout
   assert "campaign run" in result.stdout
+
+
+def test_path_strategy_runner_avoids_redundant_privileged_governor_write():
+  """An already pinned Deck must not prompt merely to rewrite performance."""
+  runner = PATH_STRATEGY_RUNNER.read_text(encoding="utf-8")
+
+  assert "governors_changed=0" in runner
+  assert (
+      "if grep -qv ':performance$' "
+      '"$RESULTS/governor-before.txt"; then' in runner
+  )
+  assert 'if [ "$governors_changed" -eq 1 ]; then' in runner
+  assert runner.index("governors_changed=1") < runner.index(
+      "set_governors performance"
+  )
+  assert '--timeout 60' in runner
+  assert '--timeout 20' in runner

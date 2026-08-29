@@ -985,6 +985,58 @@
       }
     },
     {
+      "family": "lab/path_strategy_crossover_unit",
+      "pattern": "^lab/path_strategy_crossover/unit_shared/(open|room_portals)/(?:astar|distance_field)/(128x128|256x256|512x512|1024x1024|2048x2048|4096x4096|8192x8192|16384x16384)/(?:1|2|4|8|10|16|32|64|100|128|256|512|1000|2048|4096|8192|16384|32768|65536|131072)$",
+      "captures": {
+        "layout": 1,
+        "world_extent": 2
+      },
+      "composite": true,
+      "defaults": {
+        "world_extent": "512x512",
+        "chunk_extent": "32x32",
+        "layout": "open",
+        "storage": "always_resident",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "request-count crossover sweep"
+      }
+    },
+    {
+      "family": "lab/path_strategy_crossover_route_cache",
+      "pattern": "^lab/path_strategy_crossover/route_cache/(?:exact_repeats|same_goal_suffixes)/(?:astar|cold_route_cache)/(128x128|256x256|512x512|1024x1024|2048x2048|4096x4096|8192x8192|16384x16384)/(?:1|2|4|8|10|16|32|64|100|128|256|512|1000|2048|4096|8192|16384|32768|65536|131072)$",
+      "captures": {
+        "world_extent": 1
+      },
+      "composite": true,
+      "defaults": {
+        "world_extent": "512x512",
+        "chunk_extent": "32x32",
+        "layout": "open",
+        "storage": "always_resident",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "request-count crossover sweep"
+      }
+    },
+    {
+      "family": "lab/path_strategy_crossover_weighted",
+      "pattern": "^lab/path_strategy_crossover/weighted/(?:one_goal|eight_goals|all_distinct_goals)/(?:weighted_astar|weighted_batch)/(128x128|256x256|512x512|1024x1024|2048x2048|4096x4096|8192x8192|16384x16384)/(?:1|2|4|8|10|16|32|64|100|128|256|512|1000|2044|2048|4096|8192|16384|32768|65536|131072)$",
+      "captures": {
+        "world_extent": 1
+      },
+      "composite": true,
+      "defaults": {
+        "world_extent": "512x512",
+        "chunk_extent": "32x32",
+        "layout": "sparse_blockers",
+        "storage": "always_resident",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "request-count crossover sweep"
+      }
+    },
+    {
       "family": "lab/joint_movement",
       "pattern": "^lab/joint_(headon_denied|chain_reset)_(128x128)(?:/(\\d+))?$",
       "captures": {

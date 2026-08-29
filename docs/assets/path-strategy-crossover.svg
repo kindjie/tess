@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500"
+     width="960" height="500" role="img"
+     aria-labelledby="title desc">
+  <title id="title">Cold path-strategy crossover evidence</title>
+  <desc id="desc">Comparison table for Apple M3 Max and Steam Deck on a
+  512 by 512 grid. Room fields cross from A-star between 10 and 16 requests
+  on M3 and between 4 and 8 on Steam Deck. Deck route caches cross between 2
+  and 8 requests. Several M3 lower bounds are unresolved because timing cells
+  exceeded the variance limit.</desc>
+  <style>
+    .bg{fill:#fff}.head{fill:#f3f5f7}.alt{fill:#f8f9fa}
+    .line{stroke:#d8dadd;stroke-width:1}.fg{fill:#202124}
+    .muted{fill:#5f6368}.m3{fill:#7357c9}.deck{fill:#16825d}
+    text{font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:14px}
+    .title{font-size:20px;font-weight:650}.label{font-weight:600}
+    .small{font-size:12px}
+    @media (prefers-color-scheme: dark){
+      .bg{fill:#17181a}.head{fill:#24262a}.alt{fill:#1d1f22}
+      .line{stroke:#3a3d42}.fg{fill:#eceff1}.muted{fill:#b0b5bd}
+      .m3{fill:#b7a7ff}.deck{fill:#66d3aa}
+    }
+  </style>
+  <rect class="bg" width="960" height="500"/>
+  <text class="fg title" x="28" y="35">Cold crossover evidence on a 512x512 grid</text>
+  <text class="muted small" x="28" y="58">Logical setup remains timed; reusable storage is pre-reserved. Brackets are request counts; “by” means the lower boundary was not accepted.</text>
+
+  <rect class="head" x="20" y="78" width="920" height="44" rx="5"/>
+  <text class="fg label" x="36" y="106">Workload</text>
+  <text class="m3 label" x="386" y="106">Apple M3 Max</text>
+  <text class="deck label" x="672" y="106">Steam Deck</text>
+
+  <rect class="alt" x="20" y="122" width="920" height="46"/>
+  <text class="fg label" x="36" y="151">Open-map unit field</text>
+  <text class="fg" x="386" y="151">no field win through 512</text>
+  <text class="fg" x="672" y="151">no field win through 1,000</text>
+
+  <text class="fg label" x="36" y="197">Room-portal unit field</text>
+  <text class="m3" x="386" y="197">(10, 16]</text>
+  <text class="deck" x="672" y="197">(4, 8]</text>
+
+  <rect class="alt" x="20" y="214" width="920" height="46"/>
+  <text class="fg label" x="36" y="243">Exact-repeat route cache</text>
+  <text class="m3" x="386" y="243">cache win observed by 4*</text>
+  <text class="deck" x="672" y="243">(2, 8]</text>
+
+  <text class="fg label" x="36" y="289">Same-goal suffix cache</text>
+  <text class="m3" x="386" y="289">cache win observed by 8*</text>
+  <text class="deck" x="672" y="289">(2, 8]</text>
+
+  <rect class="alt" x="20" y="306" width="920" height="46"/>
+  <text class="fg label" x="36" y="335">Weighted batch, one goal</text>
+  <text class="m3" x="386" y="335">batch win observed by 8*</text>
+  <text class="deck" x="672" y="335">(2, 4]</text>
+
+  <text class="fg label" x="36" y="381">Weighted batch, eight goals</text>
+  <text class="m3" x="386" y="381">first material win at 10</text>
+  <text class="deck" x="672" y="381">first material win at 10</text>
+
+  <rect class="alt" x="20" y="398" width="920" height="46"/>
+  <text class="fg label" x="36" y="427">Weighted batch, distinct goals</text>
+  <text class="fg" x="386" y="427">no material winner through 1,000</text>
+  <text class="fg" x="672" y="427">no material winner through 1,000</text>
+
+  <line class="line" x1="370" y1="78" x2="370" y2="444"/>
+  <line class="line" x1="656" y1="78" x2="656" y2="444"/>
+  <text class="muted small" x="28" y="472">* Earlier M3 cells were rejected when either arm exceeded 5% CV; they cannot establish a lower bound.</text>
+  <text class="muted small" x="28" y="490">A bracket (a, b] means the baseline still won at a and reuse won at b; no intermediate count is implied.</text>
+</svg>
