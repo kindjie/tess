@@ -1,0 +1,2521 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+      
+      
+      
+        <link rel="canonical" href="https://tess.owx.dev/1.0.0-rc.1/architecture/storage/">
+      
+      
+        <link rel="prev" href="../shape/">
+      
+      
+        <link rel="next" href="../persistence/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/tess-symbol.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Storage - tess</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    <meta property="og:type" content="website">
+  <meta property="og:site_name" content="tess">
+  <meta property="og:title" content="Storage - tess">
+  <meta property="og:description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+  <meta property="og:url" content="https://tess.owx.dev/1.0.0-rc.1/architecture/storage/">
+  <meta property="og:image" content="https://tess.owx.dev/1.0.0-rc.1/assets/tess-social-preview.png">
+  <meta property="og:image:width" content="2560">
+  <meta property="og:image:height" content="1280">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Storage - tess">
+  <meta name="twitter:description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+  <meta name="twitter:image" content="https://tess.owx.dev/1.0.0-rc.1/assets/tess-social-preview.png">
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#storage-foundation" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="tess" class="md-header__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            tess
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Storage
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Decision guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://tess.owx.dev/api/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../performance/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Performance
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../use-cases/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Use cases
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../integration-policy/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="tess" class="md-nav__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    tess
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Decision guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/residency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Residency
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/writes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/pathfinding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding strategy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/congestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Congestion pricing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pathfinding-strategy-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology and precheck
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/entities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Entities and ECS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/presentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terminology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terminology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility evidence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shape/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shapes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#field-schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Field Schemas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chunk-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chunk Page
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metadata
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#always-resident-world" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Always-Resident World
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparse-resident-world" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sparse-Resident World
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chunk-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chunk Metadata
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#out-of-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Out Of Scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../persistence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Persistence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../block/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Block kernels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../no-exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exception-free builds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../query/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintenance experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spatial-coordination/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial coordination
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../queued-operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Queued operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../simulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation and scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ecs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ECS integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://tess.owx.dev/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../use-cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integration-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../upgrade-1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade to 1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../for-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    For agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#field-schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Field Schemas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chunk-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chunk Page
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metadata
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#always-resident-world" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Always-Resident World
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparse-resident-world" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sparse-Resident World
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chunk-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chunk Metadata
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#out-of-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Out Of Scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="storage-foundation">Storage Foundation</h1>
+<p>The implemented storage foundation covers typed compile-time field schemas,
+resident chunk pages, an always-resident dense world owner, and per-chunk
+metadata for dirty/active tracking. It implements the early storage slices of
+the historical <a href="https://github.com/kindjie/tess/blob/main/docs/tdd/core-chunk-storage.md">chunk storage TDD</a>.</p>
+<pre class="mermaid"><code>flowchart TB
+  accTitle: Compile-time storage composition
+  accDescr: A shape and typed field schema determine chunk-page layout, which a world owns through dense or sparse residency.
+
+  Shape["Shape: world and chunk extents"]
+  Schema["FieldSchema: typed tile fields"]
+  Page["ChunkPage: one chunk of SoA field arrays"]
+  Choice{"Residency policy"}
+  Dense["AlwaysResidentWorld: every chunk allocated"]
+  Sparse["SparseResidentWorld: fixed-budget LRU slots"]
+  Access["Resolve coordinates and access typed spans"]
+
+  Shape --&gt; Page
+  Schema --&gt; Page
+  Page --&gt; Choice
+  Choice --&gt;|AlwaysResident| Dense
+  Choice --&gt;|SparseResident| Sparse
+  Dense --&gt; Access
+  Sparse --&gt; Access</code></pre>
+<h2 id="field-schemas">Field Schemas</h2>
+<p>Tile fields are declared with <code>tess::Field&lt;Tag, Value&gt;</code>, where <code>Tag</code> is a
+user-defined type and <code>Value</code> is the stored tile value type. Tags are type
+handles; string or name lookup remains outside the current implementation.
+<code>Value</code> must satisfy <code>TileFieldValue</code>: it is an unqualified,
+nothrow-default-constructible object that is trivially copyable, trivially copy
+assignable, and trivially destructible. This keeps page reset deterministic and
+non-throwing. Persistability remains a narrower, separate archive contract.</p>
+<p><code>tess::FieldSchema&lt;Fields...&gt;</code> rejects duplicate tag types at compile time and
+exposes:</p>
+<ul>
+<li><code>field_count</code></li>
+<li><code>contains&lt;Tag&gt;</code></li>
+<li><code>value_type&lt;Tag&gt;</code></li>
+</ul>
+<p>The public <code>tess::is_valid_field_schema_v&lt;Fields...&gt;</code> helper detects duplicate
+tags without intentionally instantiating an invalid schema.</p>
+<h2 id="chunk-page">Chunk Page</h2>
+<p><code>tess::ChunkPage&lt;Shape, Schema&gt;</code> stores one resident chunk worth of tile data.
+Fields are owned directly by the page object as chunk-local SoA arrays:</p>
+<!-- tess-snippet: storage-field-array source=examples/documentation.cc -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">template</span><span class="w"> </span><span class="o">&lt;</span><span class="k">typename</span><span class="w"> </span><span class="nc">Value</span><span class="o">&gt;</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">using</span><span class="w"> </span><span class="n">ChunkFieldStorage</span><span class="w"> </span><span class="o">=</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">array</span><span class="o">&lt;</span><span class="n">Value</span><span class="p">,</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">ShapeTraits</span><span class="o">&lt;</span><span class="n">MyShape</span><span class="o">&gt;::</span><span class="n">local_tile_count</span><span class="o">&gt;</span><span class="p">;</span>
+</code></pre></div>
+<!-- /tess-snippet -->
+
+<p>The page owns inline, value-initialized storage and performs no Tess-owned
+runtime allocation. <code>reset()</code> value-initializes every field in place and cannot
+throw. Hot code can access each field through
+contiguous typed spans:</p>
+<!-- tess-snippet: storage-page-access source=examples/documentation.cc -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">auto</span><span class="w"> </span><span class="n">terrain</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">page</span><span class="p">.</span><span class="n">field_span</span><span class="o">&lt;</span><span class="n">TerrainTag</span><span class="o">&gt;</span><span class="p">();</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">page</span><span class="p">.</span><span class="n">field</span><span class="o">&lt;</span><span class="n">CostTag</span><span class="o">&gt;</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">LocalTileId</span><span class="p">{</span><span class="mi">42</span><span class="p">})</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">3.0F</span><span class="p">;</span>
+</code></pre></div>
+<!-- /tess-snippet -->
+
+<p>Const pages return <code>std::span&lt;const Value&gt;</code> and <code>const Value&amp;</code>.</p>
+<h2 id="metadata">Metadata</h2>
+<p>Each page stores the chunk identity passed at construction:</p>
+<ul>
+<li><code>ChunkKey</code></li>
+<li><code>ChunkCoord3</code></li>
+</ul>
+<p>The page type also exposes:</p>
+<ul>
+<li><code>local_tile_count</code></li>
+<li><code>field_count</code></li>
+<li><code>byte_size</code></li>
+</ul>
+<p><code>byte_size</code> reports the owned field-array storage, not object padding or
+metadata bytes.</p>
+<h2 id="always-resident-world">Always-Resident World</h2>
+<p><code>tess::World&lt;Shape, Schema, tess::AlwaysResident&gt;</code> owns one
+<code>tess::ChunkPage&lt;Shape, Schema&gt;</code> for every chunk in the shape. The convenience
+alias <code>tess::AlwaysResidentWorld&lt;Shape, Schema&gt;</code> names the same type.</p>
+<p>Pages live in a <code>std::vector</code> populated during world construction. Construction
+may allocate and throw. The vector is filled in <code>ChunkKey</code> order, and each page
+stores matching <code>ChunkKey</code> and <code>ChunkCoord3</code> metadata derived from the public
+shape key conversion helpers.</p>
+<p>The world type exposes static storage metadata:</p>
+<ul>
+<li><code>chunk_count</code></li>
+<li><code>local_tile_count</code></li>
+<li><code>field_count</code></li>
+<li><code>page_byte_size</code></li>
+<li><code>storage_byte_size</code></li>
+</ul>
+<p>These constants count Tess-owned inline page storage. They exclude dynamic
+storage and referenced objects managed by field values.</p>
+<p><code>fill_field&lt;Tag&gt;(value)</code> assigns one value to the selected field across every
+tile in a dense world. The traversal and <code>TileFieldValue</code> assignment perform
+no allocation and cannot throw. The method is intentionally absent from the
+sparse world: “every tile” would otherwise ambiguously mean every resident
+tile or materializing the complete bounded shape. Like direct <code>field()</code>
+writes, filling storage does not update dirty, active, topology, or
+content-version metadata.</p>
+<p>Hot accessors are explicitly <code>noexcept</code> and do not allocate after
+construction:</p>
+<!-- tess-snippet: storage-dense-world source=examples/documentation.cc -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">tess</span><span class="o">::</span><span class="n">AlwaysResidentWorld</span><span class="o">&lt;</span><span class="n">MyShape</span><span class="p">,</span><span class="w"> </span><span class="n">MySchema</span><span class="o">&gt;</span><span class="w"> </span><span class="n">dense_world</span><span class="p">;</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">auto</span><span class="w"> </span><span class="n">pages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dense_world</span><span class="p">.</span><span class="n">chunks</span><span class="p">();</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">page</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dense_world</span><span class="p">.</span><span class="n">chunk</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">ChunkKey</span><span class="p">{</span><span class="mi">3</span><span class="p">});</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="k">auto</span><span class="w"> </span><span class="n">resolved</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dense_world</span><span class="p">.</span><span class="n">resolve</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">Coord3</span><span class="p">{</span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">});</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">dense_world</span><span class="p">.</span><span class="n">field</span><span class="o">&lt;</span><span class="n">TerrainTag</span><span class="o">&gt;</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">Coord3</span><span class="p">{</span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">})</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">7</span><span class="p">;</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="k">auto</span><span class="w"> </span><span class="n">terrain</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dense_world</span><span class="p">.</span><span class="n">field_span</span><span class="o">&lt;</span><span class="n">TerrainTag</span><span class="o">&gt;</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">ChunkKey</span><span class="p">{</span><span class="mi">3</span><span class="p">});</span>
+</code></pre></div>
+<!-- /tess-snippet -->
+
+<p>Unchecked accessors require valid chunk keys, chunk coordinates, and tile
+coordinates. Checked <code>try_*</code> accessors return <code>nullptr</code> or <code>std::nullopt</code> for
+out-of-bounds input.</p>
+<h2 id="sparse-resident-world">Sparse-Resident World</h2>
+<p><code>tess::World&lt;Shape, Schema, tess::SparseResident&gt;</code> (alias
+<code>tess::SparseResidentWorld&lt;Shape, Schema&gt;</code>) materializes only a byte-budgeted
+subset of a bounded shape, so a world spanning trillions of chunks costs only
+its residency budget rather than <code>chunk_count</code> pages. It is constructed with a
+<code>tess::ResidencyConfig{byte_budget}</code>; the resident capacity is
+<code>byte_budget / page_byte_size</code> (at least one chunk). These byte counts cover
+Tess-owned inline page storage, not dynamic storage or referenced objects a
+field value manages. Construction allocates the fixed slot pool and directory
+once and never reallocates them.</p>
+<p>Residency is managed explicitly:</p>
+<!-- tess-snippet: storage-sparse-world source=examples/documentation.cc -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">tess</span><span class="o">::</span><span class="n">SparseResidentWorld</span><span class="o">&lt;</span><span class="n">HugeShape</span><span class="p">,</span><span class="w"> </span><span class="n">MySchema</span><span class="o">&gt;</span><span class="w"> </span><span class="n">sparse_world</span><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="n">tess</span><span class="o">::</span><span class="n">ResidencyConfig</span><span class="p">{</span><span class="n">budget</span><span class="p">}};</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">handle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sparse_world</span><span class="p">.</span><span class="n">ensure_resident</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">ChunkKey</span><span class="p">{</span><span class="mi">0</span><span class="p">});</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">sparse_world</span><span class="p">.</span><span class="n">chunk</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">ChunkKey</span><span class="p">{</span><span class="mi">0</span><span class="p">})</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="p">.</span><span class="n">field</span><span class="o">&lt;</span><span class="n">TerrainTag</span><span class="o">&gt;</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">LocalTileId</span><span class="p">{</span><span class="mi">0</span><span class="p">})</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">7</span><span class="p">;</span>
+</code></pre></div>
+<!-- /tess-snippet -->
+
+<ul>
+<li><code>ensure_resident(key)</code> materializes the chunk (evicting the
+  least-recently-used chunk when the budget is full), marks it
+  most-recently-used, and returns a <code>tess::ResidencyHandle</code>. It is idempotent:
+  an already resident chunk keeps its data and generation. An intrusive
+  doubly-linked LRU over slot indices makes victim selection and recency
+  updates O(1), independent of the resident capacity; its link arrays are
+  allocated with the fixed slot pool. A budget smaller than one page clamps
+  the capacity to one chunk rather than producing an unusable zero-capacity
+  world.</li>
+<li><code>touch(key)</code> refreshes recency; <code>evict(key)</code> releases a chunk immediately.</li>
+<li><code>is_resident(key)</code> distinguishes a resident chunk from a <code>Missing</code> one;
+  <code>contains(key)</code> reports only in-bounds-ness. Both differ from out-of-bounds.</li>
+<li>Unchecked <code>chunk</code>/<code>meta</code> accessors require residency; <code>try_chunk</code>/<code>try_meta</code>
+  and <code>try_field</code> return <code>nullptr</code> for a non-resident (or out-of-bounds) chunk.
+  Residency-tolerant path readers use these accessors to apply their selected
+  missing-chunk policy.</li>
+</ul>
+<p>Eviction and rematerialization are generation-safe. Each residency assigns a
+world-monotonic generation that is never reused, so a <code>ResidencyHandle</code> taken
+before an eviction never validates (<code>world.valid(handle)</code> returns <code>false</code>)
+against the rematerialized chunk, which reuses the key but receives a strictly
+greater generation. A rematerialized chunk is a fresh, value-initialized page — evicted data is
+ended. <code>residency_generation(key)</code> returns an invalid
+<code>ResidencyGeneration{}</code> for a non-resident chunk.</p>
+<p><code>resident_chunk_keys()</code> enumerates exactly the resident set, and the
+dirty- and active-mask queries and <code>mark_*</code> helpers behave identically to the dense world
+but iterate only resident chunks. No accessor or query scans <code>0..chunk_count</code>,
+preserving the "no hidden full-world scans" invariant at sparse scale. The
+directory uses a direct key-to-slot array when the residency capacity covers
+the bounded world's complete chunk key space. Larger key spaces use a
+fixed-capacity open-addressing map with backward-shift deletion. Both forms
+allocate once; long-lived eviction/rematerialization churn reallocates nothing, and the
+hashed form accumulates no tombstones. Both worlds share one <code>ChunkMeta</code>
+mutation implementation (<code>tess/storage/chunk_meta.h</code>), so dirty masks, active
+masks, and content-version semantics are identical.</p>
+<h2 id="chunk-metadata">Chunk Metadata</h2>
+<p>Each always-resident world owns one cold <code>tess::ChunkMeta</code> per resident page in
+matching <code>ChunkKey</code> order, plus world-owned parallel arrays for fields scanned
+frequently. A new chunk therefore has this combined state:</p>
+<ul>
+<li><code>world.chunk_activity(key) = tess::ChunkActivity::Sleeping</code></li>
+<li><code>content_version = tess::ContentVersion{}</code></li>
+<li><code>topology_version = tess::TopologyVersion{}</code></li>
+<li><code>world.active_category_count(key) = 0</code></li>
+<li><code>entity_count = 0</code></li>
+<li><code>world.dirty_mask(key) = tess::DirtyMask{}</code></li>
+<li><code>world.active_mask(key) = tess::ActiveMask{}</code></li>
+<li><code>world.dirty_bounds(key) = {}</code></li>
+</ul>
+<p>Direct metadata lookup mirrors page lookup:</p>
+<!-- tess-snippet: storage-metadata source=examples/documentation.cc -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dense_world</span><span class="p">.</span><span class="n">meta</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">ChunkKey</span><span class="p">{</span><span class="mi">3</span><span class="p">});</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">checked</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dense_world</span><span class="p">.</span><span class="n">try_meta</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">ChunkCoord3</span><span class="p">{</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">});</span>
+</code></pre></div>
+<!-- /tess-snippet -->
+
+<p>These direct accessors are <code>noexcept</code> and do not allocate, but a <code>ChunkMeta</code>
+reference does not contain the complete dirty/active state. Dirty masks, active
+masks, and dirty bounds must be read through the world accessors and mutated
+through its <code>mark_*</code>, <code>clear_*</code>, and observation APIs. Keeping those hot-scan
+columns out of <code>ChunkMeta</code> avoids pulling cold counters into bulk queries.</p>
+<p><code>DirtyMask</code> and <code>ActiveMask</code> are explicit 32-bit bit sets. <code>mark_dirty</code> unions
+dirty bounds and increments the <abbr title="A practically monotonic value that changes when authoritative chunk content changes.">content version</abbr>; <code>clear_dirty</code> clears selected
+bits and resets bounds when no dirty bits remain. <code>mark_active</code> and
+<code>clear_active</code> mutate the active mask; <code>chunk_activity</code> and
+<code>active_category_count</code> derive from that single authority.
+<code>mark_topology_dirty</code> applies dirty metadata and increments both the content
+version and <abbr title="A practically monotonic value that changes when topology-relevant state changes.">topology version</abbr>. <code>mark_topology_rebuilt</code> increments only the
+<abbr title="A practically monotonic value that changes when topology-relevant state changes.">topology version</abbr> so topology products can observe rebuild/replacement events.
+<code>mark_content_changed</code> increments only the <abbr title="A practically monotonic value that changes when authoritative chunk content changes.">content version</abbr>. It invalidates
+content-version-keyed caches and earlier <code>DirtyObservation</code>s without changing
+dirty masks or bounds, topology metadata, activity, or sparse residency state.
+Use <code>mark_dirty</code> when dirty-metadata consumers must observe the edit,
+<code>mark_topology_dirty</code> when topology freshness must change, and the schedule's
+notification protocol when an OnDirty task must run.</p>
+<p>Maintenance passes that rebuild derived state use the generation-stamped
+observe/clear pair instead of raw <code>clear_dirty</code>. <code>observe_dirty(key, mask)</code>
+snapshots the requested dirty subset, the dirty bounds, the <abbr title="A practically monotonic value that changes when authoritative chunk content changes.">content version</abbr>,
+and the <abbr title="The identity of one interval during which a sparse chunk remains resident.">residency generation</abbr> into a <code>DirtyObservation</code>.
+<code>clear_dirty_observed(key, observation)</code> clears exactly the observed mask bits
+only while both stamps still match; any <code>mark_dirty</code> or
+<code>mark_content_changed</code> that lands after the observation advances the version,
+so a stale clear leaves every mask bit and bound in place and returns <code>false</code>, and
+the caller re-observes before clearing. This prevents a serialized
+intervening change from being erased; it does not make simultaneous
+unsynchronized world mutation thread-safe. This is the dirty metadata
+protocol required before concurrent or budgeted maintenance may clear masks
+it did not fully rebuild.</p>
+<p>The <abbr title="The identity of one interval during which a sparse chunk remains resident.">residency generation</abbr> scopes an observation to a single residency
+interval. A sparse world assigns a fresh <code>ChunkMeta</code> when it rematerializes a
+chunk,
+restarting its <abbr title="A practically monotonic value that changes when authoritative chunk content changes.">content version</abbr> at zero, so content-version equality alone would let an
+observation taken before an eviction match a mark made after rematerialization and
+clear work it never saw. An always-resident world never evicts and carries
+zero on both sides.</p>
+<pre class="mermaid"><code>sequenceDiagram
+  accTitle: Lost-update-safe dirty maintenance
+  accDescr: A write during maintenance changes the version, so a stale clear fails and the maintenance pass observes and rebuilds again.
+
+  participant W as Writer
+  participant D as World dirty metadata
+  participant M as Maintenance pass
+
+  W-&gt;&gt;D: mark_dirty(mask, bounds)
+  D-&gt;&gt;D: union mask and bounds, then increment content version
+  M-&gt;&gt;D: observe_dirty(mask)
+  D--&gt;&gt;M: observation(mask, bounds, content version N)
+  M-&gt;&gt;M: rebuild derived state
+  W-&gt;&gt;D: mark_dirty(new mask, new bounds)
+  D-&gt;&gt;D: increment content version to N + 1
+  M-&gt;&gt;D: clear_dirty_observed(content version N)
+  D--&gt;&gt;M: false, preserve all dirty state
+  M-&gt;&gt;D: observe_dirty(mask)
+  D--&gt;&gt;M: observation at content version N + 1
+  M-&gt;&gt;M: rebuild again, then clear successfully</code></pre>
+<p><code>dirty_chunks(mask)</code> and <code>active_chunks(mask)</code> return matching <code>ChunkKey</code>
+values in key order. These query helpers allocate their returned vectors; they
+are intended for planner/domain construction, not inner tile loops.
+<code>collect_dirty_chunks(mask, out)</code> and <code>collect_active_chunks(mask, out)</code>
+append the same keys to a caller-owned vector and do not allocate when the
+caller has reserved enough capacity; the by-value queries are thin wrappers
+over them.</p>
+<h2 id="out-of-scope">Out Of Scope</h2>
+<p>Sparse residency, the <code>ChunkDirectory</code>, per-chunk generations, and byte-budget
+eviction are implemented (see Sparse-Resident World). The
+<a href="../topology/">topology</a> and <a href="../path/">path</a> layers build on the
+residency-tolerant <code>try_*</code> readers to run supported APIs natively over sparse
+worlds and report <code>Indeterminate</code> when non-resident space prevents a definitive
+answer. Still out of scope in this layer: typed dirty/active vocabularies, full
+lifecycle states beyond sleeping/active, on-demand chunk materialization
+policy, thread ownership policies, block generation, and planner domains.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../shape/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Shapes">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Shapes
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../persistence/" class="md-footer__link md-footer__link--next" aria-label="Next: Persistence">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Persistence
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; tess contributors
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.sections", "navigation.tabs", "navigation.top", "search.highlight", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+  <script>
+    (() => {
+      const searchDialog = document.querySelector(
+        ".md-search[role=\"dialog\"]",
+      );
+      searchDialog?.setAttribute(
+        "aria-label", "Search",
+      );
+
+      const mermaidRuntimeUrl = new URL(
+        "../../assets/javascripts/mermaid.min.js",
+        document.baseURI,
+      ).href;
+      let initializationOptions;
+      let runtimePromise;
+
+      const mermaidProxy = {
+        initialize(options) {
+          initializationOptions = options;
+        },
+        async render(...args) {
+          const mermaidRuntime = await loadMermaidRuntime();
+          return mermaidRuntime.render(...args);
+        },
+      };
+
+      function loadMermaidRuntime() {
+        if (!runtimePromise) {
+          runtimePromise = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = mermaidRuntimeUrl;
+            script.addEventListener("load", () => {
+              const mermaidRuntime = window.mermaid;
+              if (mermaidRuntime === mermaidProxy) {
+                reject(new Error("Mermaid runtime did not initialize"));
+                return;
+              }
+              mermaidRuntime.initialize(initializationOptions);
+              resolve(mermaidRuntime);
+            }, { once: true });
+            script.addEventListener("error", () => {
+              reject(new Error("Unable to load Mermaid runtime"));
+            }, { once: true });
+            document.head.append(script);
+          });
+        }
+        return runtimePromise;
+      }
+
+      window.mermaid = mermaidProxy;
+    })();
+  </script>
+  
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+
+  </body>
+</html>

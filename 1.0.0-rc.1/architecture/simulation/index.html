@@ -1,0 +1,3278 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+      
+      
+      
+        <link rel="canonical" href="https://tess.owx.dev/1.0.0-rc.1/architecture/simulation/">
+      
+      
+        <link rel="prev" href="../queued-operations/">
+      
+      
+        <link rel="next" href="../ecs/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/tess-symbol.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Simulation and scheduling - tess</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    <meta property="og:type" content="website">
+  <meta property="og:site_name" content="tess">
+  <meta property="og:title" content="Simulation and scheduling - tess">
+  <meta property="og:description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+  <meta property="og:url" content="https://tess.owx.dev/1.0.0-rc.1/architecture/simulation/">
+  <meta property="og:image" content="https://tess.owx.dev/1.0.0-rc.1/assets/tess-social-preview.png">
+  <meta property="og:image:width" content="2560">
+  <meta property="og:image:height" content="1280">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Simulation and scheduling - tess">
+  <meta name="twitter:description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+  <meta name="twitter:image" content="https://tess.owx.dev/1.0.0-rc.1/assets/tess-social-preview.png">
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#simulation-and-scheduling" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="tess" class="md-header__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            tess
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Simulation and scheduling
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Decision guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://tess.owx.dev/api/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../performance/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Performance
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../use-cases/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Use cases
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../integration-policy/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="tess" class="md-nav__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    tess
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Decision guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/residency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Residency
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/writes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/pathfinding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding strategy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/congestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Congestion pricing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pathfinding-strategy-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology and precheck
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/entities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Entities and ECS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/presentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terminology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terminology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility evidence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shape/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shapes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../persistence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Persistence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../block/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Block kernels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../no-exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exception-free builds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../query/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintenance experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spatial-coordination/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial coordination
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../queued-operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Queued operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation and scheduling
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation and scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#public-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public Surface
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Public Surface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#movement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Movement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#joint-movement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Joint Movement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pibt-movement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PIBT Movement
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PIBT Movement">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-settled-obstacle-recipe-is-a-consumer-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Settled-Obstacle Recipe Is a Consumer Contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#render-deltas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Render Deltas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deltaframe-render-bridge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DeltaFrame Render Bridge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-agent-batch-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path-Agent Batch Helpers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-agent-tick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path-Agent Tick
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schedule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schedule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-exec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Exec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scheduler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduler
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-step-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed-Step Time
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behavior
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#goal-lifecycle-flow-accounting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goal-Lifecycle Flow Accounting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deliberate-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deliberate Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ecs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ECS integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://tess.owx.dev/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../use-cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integration-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../upgrade-1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade to 1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../for-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    For agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#public-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public Surface
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Public Surface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#movement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Movement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#joint-movement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Joint Movement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pibt-movement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PIBT Movement
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PIBT Movement">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-settled-obstacle-recipe-is-a-consumer-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Settled-Obstacle Recipe Is a Consumer Contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#render-deltas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Render Deltas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deltaframe-render-bridge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DeltaFrame Render Bridge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-agent-batch-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path-Agent Batch Helpers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-agent-tick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path-Agent Tick
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schedule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schedule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-exec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Exec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scheduler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduler
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-step-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed-Step Time
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behavior
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#goal-lifecycle-flow-accounting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goal-Lifecycle Flow Accounting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deliberate-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deliberate Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="simulation-and-scheduling">Simulation and Scheduling</h1>
+<p>The current simulation integration layer lives under <code>include/tess/sim/</code> and
+is exported by <code>tess/tess.h</code>. It provides the caller-driven bridge
+over storage, queued operations, path requests, movement validation, and render
+deltas.</p>
+<h2 id="public-surface">Public Surface</h2>
+<h3 id="movement">Movement</h3>
+<ul>
+<li><code>MovementIntent</code> records one adjacent tile move from <code>from</code> to <code>to</code> plus
+  an optional <code>MovementVersionCheck</code>.</li>
+<li><code>MovementVersionCheck</code> carries optional expected <code>from</code>/<code>to</code> content
+  versions and <code>from</code>/<code>to</code> topology versions. Unset fields are not checked.</li>
+<li><code>MovementStatus</code> reports <code>Moved</code>, invalid endpoints (<code>InvalidFrom</code>,
+  <code>InvalidTo</code>, <code>NotAdjacent</code>), impassable endpoints (<code>ImpassableFrom</code>,
+  <code>ImpassableTo</code>), an unavailable transition (<code>Blocked</code>), <code>Occupied</code> or
+  <code>Reserved</code> destinations, and stale <code>StaleContent</code> / <code>StaleTopology</code>
+  version guards.</li>
+<li><code>MovementResult</code> returns the status plus the echoed <code>from</code>/<code>to</code>
+  coordinates.</li>
+<li><code>is_transient_movement_failure(status)</code> classifies failures: blocked,
+  occupied, reserved, and stale statuses are transient (the world can
+  legitimately change under a routed agent; re-search and retry), while
+  invalid endpoints and non-adjacent steps indicate a caller bug and are
+  terminal.</li>
+<li><code>MovementFailureCounts</code> aggregates failures into <code>invalid</code>, <code>impassable</code>,
+  <code>blocked</code>, <code>occupied</code>, <code>reserved</code>, <code>stale_content</code>, and <code>stale_topology</code>
+  buckets;
+  <code>record_movement_failure(counts, status)</code> maps each non-<code>Moved</code> status
+  into its bucket.</li>
+<li><code>movement_versions_match(world, intent)</code> checks only the optional version
+  guards (chunk content versions first, then topology versions) and returns <code>Moved</code>
+  when every set guard matches. It resolves both endpoints unchecked, so
+  callers must validate coordinates first.</li>
+<li><code>validate_movement_intent&lt;World, ClassOrTag, OccupancyTag,
+  ReservationTag&gt;(world, intent)</code> checks shape bounds and sparse residency,
+  passability of both endpoints, resolved transition legality, destination
+  occupancy, destination reservation, and the optional version guards, in
+  that order, without mutating the world. Regular transitions come from the
+  world's lattice and the <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>'s step policy, so diagonal and
+  axial-hex classes are not restricted to six-axis Manhattan adjacency. The
+  second template argument is a <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> OR a raw passable tag,
+  normalized exactly as in <code>astar_path</code>, so plan and commit share one
+  vocabulary: every step A* accepted for a class validates for that same
+  class. Validation checks both endpoints' passability predicates and rejects
+  a zero-entry-cost destination before classifying either a regular or
+  provider edge. This mirrors exact search's endpoint precheck: a cost field
+  dropping to zero after planning blocks the already-planned step as
+  <code>ImpassableTo</code>, so the agent can re-plan against the changed world.
+  A blocked diagonal-clearance or provider transition reports <code>Blocked</code>
+  because the destination tile itself remains passable. Missing provider
+  topology reports <code>StaleTopology</code>, not a content-version failure.
+  The from- and to-tiles may live on different pages; each endpoint's
+  predicate is evaluated on its own resolved page.</li>
+<li><code>commit_movement_intent&lt;World, ClassOrTag, OccupancyTag, ReservationTag&gt;(
+  world, intent, dirty_mask)</code> validates the same intent, clears source
+  occupancy, sets destination occupancy, clears destination reservation, and
+  marks source and destination tiles dirty when <code>dirty_mask</code> is nonzero.</li>
+<li>Provider-aware validation and commit overloads use a legal regular
+  transition as their fast path. When the regular transition is absent,
+  blocked, or missing topology, they enumerate the supplied provider before
+  mutation. A legal provider edge may deliberately parallel and override a
+  blocked regular edge, keeping planning and commit transition sets aligned.
+  Provider exceptions propagate whenever enumeration is required; the
+  provider contract does not require enumeration to be <code>noexcept</code>.</li>
+</ul>
+<h3 id="joint-movement">Joint Movement</h3>
+<p>The per-agent commit validates each destination against current occupancy, so
+a move into a tile being vacated in the same tick is unreachable by
+construction: chains ("everyone steps forward together"), rotations (a cycle
+of agents shifts one place), and swaps (the two-agent cycle) all fail
+<code>Occupied</code> under it. Joint movement decides one tick's moves as a set.</p>
+<ul>
+<li><code>SwapPolicy</code> selects whether a mutually blocked pair may exchange tiles:
+  <code>Forbid</code> (default; the standard multi-agent path finding constraint),
+  <code>Permit</code>, or <code>PermitOnDeadlock</code>, which admits the exchange only after both
+  members have been blocked for <code>JointMoveOptions::deadlock_ticks</code>
+  consecutive ticks. Permitting a swap means both agents traverse the same
+  edge in opposite directions for one tick — a semantic decision, not a
+  tuning knob. Cycles of length three or more involve no shared edge and are
+  admitted under every policy.</li>
+<li><code>JointMoveOptions</code> carries the swap policy and deadlock threshold;
+  <code>JointMoveStats</code> reports the standard movement frame stats plus chained
+  admissions, rotations, swaps, and denied swaps; <code>JointMoveScratch</code> is the
+  caller-owned workspace whose <code>reserve</code> keeps the warm path allocation-free.
+  <code>reserve</code> is its whole surface: the round buffers behind it are private and
+  no longer reachable through the type. Like every other internal in a
+  header-only library they remain spellable through <code>tess::detail</code>, which
+  <code>docs/style.md</code> excludes from source-compatibility — the change is what the
+  1.0 promise covers, not what a determined consumer can name.</li>
+<li><code>advance_path_agents_with_joint_movement&lt;World, ClassOrTag, OccupancyTag,
+  ReservationTag&gt;(world, agents, routes, scratch, options, max_steps,
+  dirty_mask)</code> validates every eligible agent's next route step exactly as
+  <code>commit_movement_intent</code> does, claims free destinations in span order,
+  admits moves whose destinations are vacated this tick to a fixpoint, then
+  admits the remaining wants-cycles by policy and applies the admitted set at
+  once (sources clear before destinations set). A destination that is both
+  occupied and reserved fails <code>Reserved</code> rather than joining admission, so a
+  reservation cannot vanish behind a vacating occupant. Failure handling,
+  route invalidation, arrival handling, reservation clearing on entry, and
+  per-move dirty marking all match the per-agent advance; outcomes are
+  deterministic given the caller's span order, and input-order invariance is
+  a non-goal, exactly as for <code>advance_path_agents_with_movement</code>. An
+  observer overload reports each committed move.</li>
+<li><code>tick_weighted_path_agents_with_joint_movement&lt;World, Class, MaxCost,
+  OccupancyTag, ReservationTag&gt;</code> mirrors
+  <code>tick_weighted_path_agents_with_movement</code> with the joint advance in place
+  of the per-agent one and optionally reports the joint stats.</li>
+</ul>
+<h3 id="pibt-movement">PIBT Movement</h3>
+<p>The joint commit only admits moves along retained routes: an agent whose
+route is blocked never considers stepping aside, so a head-on in a dead-end
+corridor under <code>SwapPolicy::Forbid</code> wedges forever even when a side pocket
+would let one agent yield. The PIBT tier (priority inheritance with
+backtracking, after Okumura et al.) closes that gap: each agent ranks
+staying put plus every legal transition of its <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>, the
+highest-priority agent decides first, an agent whose chosen tile is held by
+an undecided peer lends that peer its priority so the peer decides — and
+possibly yields off its route — immediately, and a peer that cannot place
+anywhere backtracks the chooser to its next candidate. It is an opt-in
+sibling of the joint advance, selected per population where contention
+justifies its cost, not a replacement.</p>
+<p>Agents outside an active goal lifecycle are immovable. One that has arrived
+(no goal) or ended at <code>Unreachable</code> is never asked to yield — not by the
+priority loop, the apply pass, or inheritance. Its tile is claimed so later
+deciders are turned away, and an agent that wanted that tile backtracks to
+its next candidate, exactly as it would for a peer standing on impassable
+terrain. Without this, passing traffic would restart a terminal lifecycle
+as <code>Blocked</code>, and a second failure against one admitted goal would break
+the flow-accounting retention identity.</p>
+<p><strong>This is a throughput trade, and on some maps a visible one.</strong> A terminal
+agent is now a wall: a one-wide corridor that used to clear because a
+passing agent shoved an arrived agent aside stays blocked until the caller
+does something about it. That is deliberate — the shove corrupted a
+lifecycle the library documents as terminal — and it matches how an
+occupant outside the agent span is already treated. A caller that wants
+arrived agents to move again must give them a new goal, drop them from the
+span, or make their tile impassable to the <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>, which is the
+<code>SettledTag</code> recipe the tier's own tests use.</p>
+<ul>
+<li><code>PibtPriorities</code> is caller-owned adaptive priority state, index-paired
+  with the agent span exactly like <code>PathAgentRoutes</code>: <code>elapsed</code> increments
+  each tick an agent is unarrived and resets on arrival, and higher elapsed
+  decides earlier (span index breaks ties). <code>elapsed</code> and <code>reserve</code> are the
+  whole surface; the decision order and inheritance stack are rebuilt every
+  pass and are private. Adaptive priorities are load-
+  bearing: PIBT's reachability guarantee (every agent reaches its goal in
+  finite time on graphs whose adjacent vertices share a cycle of length
+  three or more) depends on them.</li>
+<li><code>advance_path_agents_with_pibt&lt;World, ClassOrTag, OccupancyTag,
+  ReservationTag&gt;(world, agents, routes, priorities, scratch, rank,
+  options, dirty_mask)</code> decides one step per agent and applies the decided
+  configuration with the joint commit's semantics: sources clear before
+  destinations set, reservations clear on entry, a move off the retained
+  route drops it and clears <code>last_result</code> so scoped resubmission replans, and
+  observer
+  callbacks (overload) fire only after the whole configuration is applied.
+  Edge conflicts follow the shared <code>SwapPolicy</code> from <code>JointMoveOptions</code>;
+  vertex conflicts backtrack. The advance is dense-only (like the
+  distance-field product family) and reuses <code>JointMoveScratch</code>.</li>
+<li>The oracle's requirements are the <code>PibtRanking</code> concept: callable as
+  <code>rank(agent_index, coord)</code> returning something convertible to
+  <code>std::uint32_t</code>. It constrains the public entry points, so a caller whose
+  lambda is rejected sees the constraint named in the diagnostic — which
+  is why it is public rather than a <code>detail</code> name they could not spell.</li>
+<li><strong>The ranking oracle is the caller's, and it MUST share the agent's
+  movement-class passability.</strong> <code>rank(agent_index, coord)</code> returns lower
+  values for better tiles; a terrain-only oracle under a settled-aware
+  class rates standing beside an obstruction above any detour and parks the
+  agent there forever (proven in the tier's tests).
+  <code>DistanceFieldProduct::distance_at</code> provides an exact per-tile oracle
+  from <code>build_distance_field_product</code> over the same <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>; rebuild
+  the product when the class's inputs (for example a settled set) change.</li>
+<li><code>RouteAttachmentRanking</code> is the shipped oracle for route-following
+  populations: it scores a candidate by its best local attachment to the
+  agent's retained A* route (attachment hop plus remaining route length),
+  steering detached candidates back toward the corridor and falling back
+  to goal distance for routeless agents. The attachment radius defaults
+  to 1, the largest passability-safe radius — distance-1 tile pairs are
+  edge-adjacent, while wider radii can attach across a one-tile wall and
+  recreate exactly the wall-face parking the oracle exists to prevent
+  (pinned by the tier's lure regression test). Distance fields are exact
+  but per-goal; the route oracle serves populations with per-agent goals
+  at planning cost already paid.</li>
+<li><code>tick_weighted_path_agents_with_pibt&lt;World, Class, MaxCost, OccupancyTag,
+  ReservationTag&gt;</code> mirrors the joint tick driver with the PIBT advance in
+  place of the joint one.</li>
+</ul>
+<p>Selection guidance from the gate evidence: on thin cycle-rich maps the
+dominant stranding cause is <em>sealing</em> — settled arrivals cutting a live
+agent's goal off — which no movement tier can resolve; goal placement owns
+that hazard (see the settled recipe below). PIBT's measurable edge over the
+joint commit is live congestion: it eliminates most stranded-but-reachable
+residuals, resolves yield-requiring wedges under <code>Forbid</code>, and keeps
+populations moving so fewer seals form. Below that contention regime the
+joint commit is sufficient and cheaper to drive (no ranking oracle to
+maintain).</p>
+<h4 id="the-settled-obstacle-recipe-is-a-consumer-contract">The Settled-Obstacle Recipe Is a Consumer Contract</h4>
+<p>Any consumer that turns idle agents into obstacles (the colony's settled
+marking) must follow all three steps, for every movement tier:</p>
+<ol>
+<li>Mark the obstacle field only when an agent's settled state <em>changes</em>
+   (arrived or terminally unreachable), not every tick.</li>
+<li>Announce the content change with <code>mark_content_changed</code>, so route caches
+   observe the version bump. Plain field writes bump nothing and stale routes
+   reproduce the pre-settled deadlocks wholesale. This is content-only: use
+   <code>mark_dirty</code> for dirty metadata, <code>mark_topology_dirty</code> for topology
+   freshness, and the schedule's notification protocol for OnDirty tasks.</li>
+<li>Plan and rank with a <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> that excludes the obstacle field
+   (settled-aware), never the terrain-only class.</li>
+</ol>
+<p>Omitting any step reproduces the original colony deadlock; omitting step 3
+in a PIBT ranking oracle parks agents permanently beside obstructions.</p>
+<p>The browser colony scopes settled obstacles to one synchronized leg. A cheap
+terrain-graph precheck rejects obvious wall seals. Otherwise an exact search
+with the settled-aware class tests current reachability; if that fails, an
+exact terrain-only search distinguishes a durable wall failure from a goal
+blocked only by completed teammates. The latter outcome cancels the unfinished
+goal and is quiescent for the leg. Once every agent has arrived or reached that
+crowd-blocked outcome, the controller rearms the entire wave toward the
+opposite side. Wall edits on occupied tiles are rejected at admission,
+preserving <code>occupied =&gt; standable</code>.</p>
+<h3 id="render-deltas">Render Deltas</h3>
+<ul>
+<li><code>RenderTileDelta</code> records a changed tile coordinate, chunk key, local tile
+  id, matching dirty masks, and chunk <abbr title="A practically monotonic value that changes when authoritative chunk content changes.">content version</abbr>.</li>
+<li><code>collect_render_tile_deltas(out, world, dirty_mask)</code> appends one delta per
+  dirty tile in each matching chunk dirty bound. On a dense world it scans every
+  chunk; on a sparse world it scans only the resident set (a non-resident chunk
+  holds no data and cannot be dirty, so this misses no delta and never reads a
+  non-resident slot or runs a full <code>chunk_count</code> scan).</li>
+<li><code>render_tile_deltas(world, dirty_mask)</code> returns an owning vector of render
+  deltas for simple consumers.</li>
+<li><code>clear_render_delta_dirty(world, dirty_mask)</code> clears the render-relevant
+  dirty bits after a presentation layer has consumed them; it iterates the
+  resident set on a sparse world.</li>
+</ul>
+<p>The <code>RenderTileDelta</code> family above is the legacy per-tile seam; new
+consumers should use the versioned DeltaFrame bridge below.</p>
+<h3 id="deltaframe-render-bridge">DeltaFrame Render Bridge</h3>
+<p>The versioned frame protocol in <code>sim/delta_frame.h</code>. Tile deltas are
+invalidation records, not value payloads: the consumer re-reads the
+current world for covered tiles at apply time, which is idempotent and
+convergent. Chunk dirty metadata is already a cross-tick coalescer
+(mask union, bounds union), so tiles are collected once per published
+frame through the lost-update-safe observe/clear-observed protocol.</p>
+<pre class="mermaid"><code>stateDiagram-v2
+  accTitle: DeltaFrame application and resynchronization
+  accDescr: A consumer starts from a complete baseline, follows a continuous version chain, and returns to baseline recovery after a gap or truncation.
+
+  [*] --&gt; Uninitialized
+  Uninitialized --&gt; Synced: complete baseline, adopt to_version
+  Uninitialized --&gt; NeedsBaseline: delta or truncated frame
+  Synced --&gt; NeedsBaseline: version gap or truncation
+  NeedsBaseline --&gt; Synced: complete baseline, adopt to_version
+  note right of Synced: Apply matching deltas and adopt to_version
+  note right of NeedsBaseline: Reject deltas until a complete baseline arrives</code></pre>
+<ul>
+<li><code>RenderVersion</code> is the monotonic frame-chain version. Collectors start
+  at 1; value 0 is reserved for a consumer that has never applied a
+  frame, so a fresh consumer can only start from a baseline.</li>
+<li><code>TileChunkDelta</code> is one chunk's record: its <code>dirty_mask</code>, the
+  chunk-clipped bounds, and either <code>tile_count</code> per-tile entries starting
+  at <code>first_tile</code> in <code>frame.tiles</code>, or <code>tile_count == 0</code> meaning
+  box-granular (repaint every tile in <code>bounds</code>). <code>content_version</code> is
+  debugging only -- clears do not bump it and sparse rematerialization resets
+  it.
+  Chunk records are the only entry point; consumers never iterate
+  <code>frame.tiles</code> directly.</li>
+<li><code>TileDelta</code> is one changed tile (coordinate, local tile id, dirty mask).</li>
+<li><code>EntityDeltaKind</code> / <code>EntityDelta</code> record entity motion and lifecycle:
+  <code>Moved</code> (coalescible), and the barriers <code>Teleported</code>, <code>Spawned</code>,
+  <code>Despawned</code>, <code>Parked</code>, <code>Placed</code>. <code>from == to</code> for spawns/places; parks
+  and despawns carry the released tile. <code>last_tick</code> stamps the last
+  coalesced commit so renderers can tell moved-this-frame from resting.
+  Coalesced records are not a serializable per-record sequence: a
+  coalesced move sits at its first commit's position, so consumers key
+  presentation by entity and check tile exclusivity only at frame end.</li>
+<li><code>DeltaFrameHeader</code> carries <code>from_version</code>/<code>to_version</code> (equal on empty
+  frames; +1 on state-carrying ones), the folded tick range and count,
+  the union <code>dirty_mask</code>, and the <code>baseline</code>/<code>truncated</code> flags.
+  Truncation (capacity overflow or a hard <code>clear()</code>) is a structural
+  gap: entity loss is unrecoverable by the version chain.</li>
+<li><code>DeltaFrame</code> is an immutable view into collector-owned storage. Its
+  spans are valid until the next <code>publish()</code> or <code>reserve()</code>, and until the
+  collector is move-assigned to or moved from (it is not copyable) — not "until the next mutating
+  collector call", which this page said until 2026-08-09: <code>begin_tick</code>,
+  <code>record_*</code>, <code>collect_*</code> and <code>clear()</code> touch only the pending buffers, so
+  the next frame is recorded while the current one is applied, and
+  <code>reserve()</code> re-reserves the published vectors and was missing. <code>header</code>
+  is a value copy and outlives all of it. Holding a frame across a
+  <code>publish()</code> is outside the contract: the buffers it views become the
+  pending accumulator and are cleared and refilled. <code>empty()</code> ignores
+  overlays.</li>
+<li><code>delta_frame_applicable(header, consumer)</code> is the consumer's apply
+  gate: truncated frames never apply -- not even baselines, because a
+  baseline that overflowed chunk storage covers only part of the world
+  (size baseline consumers' chunk capacity to the whole world);
+  un-truncated baselines always apply (adopt <code>to_version</code>, re-snapshot
+  entity presentation); otherwise the chain must match exactly with
+  <code>consumer.value != 0</code>.</li>
+<li><code>PathOverlayDelta</code> is one agent's remaining route this frame
+  (<code>frame.overlay_nodes[first_node .. first_node + node_count)</code>).
+  Overlays are stateless, full-replacement decorations: every applied
+  frame replaces the consumer's whole overlay set (possibly with the
+  empty set), no create/update/remove lifecycle exists, they never
+  affect version semantics or <code>empty()</code>, and overflowing overlay storage
+  drops the overlay (counted in <code>overlay_truncations</code>), never the frame.
+  Nodes are copies, valid for the frame's lifetime.</li>
+<li><code>DeltaCollectorOptions</code> sets the per-chunk <code>sparse_tile_threshold</code>
+  (records per-tile up to it, box-granular above; 0 = always box) and
+  <code>coalesce_moves</code> (fold consecutive moves last-writer-wins; disable for
+  motion-interpolating renderers so each step spans one tile).</li>
+<li><code>DeltaCollectorStats</code> counts published frames, baselines, record kinds,
+  coalesced moves, and truncations, cumulatively.</li>
+<li><code>DeltaCollector</code> accumulates records and publishes frames: <code>reserve</code>
+  sizes every buffer once (steady state never allocates; records past
+  capacity are dropped and flagged, never grown mid-frame); <code>begin_tick</code>
+  stamps subsequent records; <code>record_move</code>/<code>record_teleport</code>/
+  <code>record_spawn</code>/<code>record_despawn</code>/<code>record_park</code>/<code>record_place</code> feed
+  entity deltas (the ECS pipeline hook and lifecycle intents call these
+  on success only); <code>append_chunk_record</code>/<code>append_tile_record</code>/
+  <code>pending_tile_count</code>/<code>note_collected_mask</code>/<code>mark_baseline_pending</code> are
+  the collection seams; <code>publish()</code> seals the frame, bumping the version
+  iff it carries state and dropping pending entity records on baselines
+  (consumers re-snapshot entities on every baseline apply); <code>clear()</code>
+  hard-resets pending state and poisons the stream -- the next publish
+  is forced truncated unless it is a baseline, and a world swap is
+  <code>clear()</code> followed by a full baseline collection. The collector must
+  be the sole clearing owner of every dirty bit it collects; shared
+  <code>dirty_bounds</code> across mask owners only widens boxes (conservative).</li>
+<li><code>collect_baseline(collector, world, dirty_mask)</code> is the full-scope
+  resync: one box record covering every chunk (dense) or resident chunk
+  (sparse), pending Dirty records dropped as superseded, the mask's
+  dirty bits plainly cleared, and the pending frame marked baseline
+  (which also drops pending entity records at publish). Scoped baselines
+  deliberately do not exist -- a partial baseline that adopts the frame
+  version would permanently lose out-of-scope invalidations from a gap.</li>
+<li><code>collect_path_overlays(collector, runtime, agents, handles[,
+  selection])</code> stages current runtime results. Its tickets must belong to the
+  runtime's current generation, as they do immediately after an <code>All</code>-scope
+  submission and processing pass. It is not valid after a <code>NeedsOnly</code>
+  submission clears the runtime but skips agents that need no new request.</li>
+<li><code>collect_path_overlays(collector, agents, routes, handles[, selection])</code>
+  instead reads authoritative <code>PathAgentRoutes</code>. Use it with <code>NeedsOnly</code>
+  submission and queue-produced routes: the copied ticket is identity/debug
+  metadata only and may be stale or value-zero; it is never dereferenced.
+  Both forms copy <code>path.suffix(path_index)</code>, gate on
+  <code>has_goal &amp;&amp; status == Found</code>, and require selected indices to be in range;
+  debug builds assert this precondition. Lifecycle intents run before the tick
+  and overlays collect after it; an intent squeezed between tick and
+  collection leaves that agent's overlay one frame stale while entity deltas
+  stay correct.</li>
+<li><code>collect_tile_deltas(collector, world, dirty_mask)</code> observes, records,
+  and clears (observed-generation-safe: a racing mark leaves the bits
+  set for a harmless duplicate next frame) every dirty chunk under the
+  mask; dense worlds scan chunk metadata, sparse worlds scan the
+  resident set. Per chunk it emits per-tile records up to the threshold
+  and a clipped box record otherwise, degrading to a box record when
+  tile storage cannot hold a chunk. Sparse residency change records are
+  deferred until a sparse render consumer exists; rematerialization resets
+  metadata, so such consumers must treat them as baseline triggers.</li>
+</ul>
+<h3 id="path-agent-batch-helpers">Path-Agent Batch Helpers</h3>
+<ul>
+<li><code>PathAgentState</code> stores an agent's position, goal, <code>PathTicket</code>, path index,
+  optional <code>last_result</code>, <code>PathAgentPhase</code>, active-goal flag, and
+  <code>blocked_retries</code> count. <code>last_result</code> is absent before a search and after a
+  route-invalidating movement failure; <code>NoPath</code> appears only after a search
+  actually returns that result.</li>
+<li><code>PathAgentPhase</code> is the agent lifecycle, decoupled from the optional last
+  search result: <code>Idle</code> (no goal or arrived), <code>NeedsPath</code> (goal assigned, no
+  route yet), <code>Following</code> (walking a <code>Found</code> route), <code>Blocked</code> (transient
+  failure; retained-step contention waits, while route-invalidating failures
+  re-search until the shared retry budget and exhaustion policy take
+  effect),
+  and <code>Unreachable</code> (structural failure or explicitly terminal exhaustion;
+  terminal until a new goal is assigned).</li>
+<li><code>set_path_agent_goal(agent, goal)</code> arms the lifecycle (<code>NeedsPath</code>, retry
+  count reset); <code>clear_path_agent_goal(agent)</code> returns the agent to <code>Idle</code>.</li>
+<li><code>PathAgentFrameStats</code> counts submitted and completed work; every
+  <code>PathStatus</code> outcome (<code>found</code>, <code>invalid_start</code>, <code>invalid_goal</code>, <code>no_path</code>,
+  <code>indeterminate</code>, <code>cost_overflow</code>, <code>not_computed</code>, and <code>no_candidate</code>);
+  <code>precheck_ruled_out</code>; <code>expanded_nodes</code>; advanced steps; arrivals; blocked
+  waits; and a <code>MovementFailureCounts</code>.
+  <code>expanded_nodes</code> totals the search nodes expanded by the completed results a
+  call applied. A replan budget still bounds the number of searches rather than
+  the work inside one, so this counter is what a caller reads to bound planning
+  by search effort instead: it is deterministic, so a budget derived from it
+  replays exactly, which a wall-clock budget would not.
+  <code>precheck_ruled_out</code> is the number of agents whose goal an optional topology
+  precheck proved unreachable before A* (a subset of <code>no_path</code>; see the path
+  runtime's <code>precheck_ruled_out</code>). <code>add_path_agent_stats(lhs, rhs)</code> accumulates
+  two frames; <code>record_path_agent_status(stats, status)</code> buckets one path result.</li>
+<li><code>submit_path_agents(agents, runtime)</code> starts a new runtime request set and
+  submits one request per agent with an active goal, skipping <code>Unreachable</code>
+  agents and clearing agents that already stand on their goal (counted as
+  arrived).</li>
+<li><code>apply_path_agent_results(agents, runtime)</code> copies ticketed results back:
+  <code>Found</code> enters <code>Following</code>. It resets the retry count for a new route, but
+  preserves the count when re-planning an already <code>Blocked</code> agent because an
+  occupancy-blind planner may return the same contested step; movement
+  progress is what resets that consecutive-block budget. Planner failures
+  enter <code>Blocked</code> so the tick driver's retry budget governs them.</li>
+<li><code>advance_path_agents(agents, runtime, max_steps)</code> walks agents with a
+  <code>Found</code> result up to <code>max_steps</code> nodes along runtime-owned paths without
+  touching world fields.</li>
+<li><code>advance_path_agents_with_movement&lt;World, ClassOrTag, OccupancyTag,
+  ReservationTag&gt;(world, agents, runtime, options)</code> accepts
+  <code>PathAgentAdvanceOptions{max_steps, movement_dirty_mask}</code> and commits each
+  step through <code>commit_movement_intent</code> (no version guards), validating with
+  the same <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> the plan used.
+  An occupied or reserved destination leaves the <code>Found</code> route intact so the
+  retained step can be retried; other transient failures invalidate the route
+  and request a re-plan. Either kind moves the agent to <code>Blocked</code> and counts a
+  blocked wait. The failed movement does not itself consume a retry: each
+  following movement-enabled tick consumes one bounded retry, while
+  <code>max_steps == 0</code> pauses the budget. A structural failure is terminal
+  <code>Unreachable</code>. Arrival clears the goal and counts an arrival. An observer
+  overload appends <code>on_commit(agent_index, from, to)</code>, invoked once per
+  successful commit (after position/occupancy update, before arrival handling)
+  and never on a failed validation, so external tile-to-entity mirrors updated
+  inside the callback stay synchronized with the occupancy field by
+  construction (the ECS adapter's hook point).</li>
+<li><code>process_unit_path_agents&lt;World, ClassOrTag&gt;(...)</code> and
+  <code>process_weighted_path_agents&lt;World, Class, MaxCost&gt;(...)</code>
+  run submit, runtime processing (cached unit or weighted batch), and result
+  application as one synchronous pass. Both take an optional trailing
+  <code>const RegionGraphT&lt;World::residency_type&gt;*</code> (default <code>nullptr</code>) that they
+  forward to the runtime's precheck gate; when supplied, goals the region graph
+  proves unreachable are resolved without A* and surfaced in
+  <code>PathAgentFrameStats::precheck_ruled_out</code>.</li>
+<li><code>PathAgentReplanQueue</code> is an opt-in, caller-owned FIFO for replans. Pending
+  agent indices deduplicate, and <code>contains(index)</code> reports that pending set —
+  membership begins at an accepted <code>request</code> and ends at the matching
+  <code>pop_front</code> or at <code>clear</code>, so a caller can skip building a request that
+  would only be refused. <code>process_path_agent_replans</code> invokes a synchronous
+  caller planner at most its supplied request count and copies each borrowed
+  result into retained routes; the generic drain deliberately does not certify
+  path legality or optimality. <code>process_unit_path_agent_replans</code> and
+  <code>process_weighted_path_agent_replans</code> retain exact-search semantics and pass
+  through <code>PathAgentReplanOptions</code>. This bounds request count, not one search's
+  expansions or wall time. Queue, agents, routes, and planner scratch are
+  externally synchronized; independent owners may run independently.</li>
+</ul>
+<h3 id="path-agent-tick">Path-Agent Tick</h3>
+<ul>
+<li><code>SimClock</code> holds the current tick; <code>advance_sim_tick(clock)</code> increments
+  and returns it.</li>
+<li><code>PathAgentTickState</code> owns the clock, the WORLD-scoped <code>pathing_dirty</code>
+  flag, and the per-agent retained routes (<code>PathAgentRoutes</code>, index-paired
+  with the agents span). <code>mark_pathing_dirty(state)</code> requests a full replan
+  of every agent on the next tick (required after world edits); the
+  three-argument <code>set_path_agent_goal(state, agent, goal)</code> arms a goal as
+  agent-scoped dirt -- only that agent replans (the drivers submit with
+  <code>PathSubmitScope::NeedsOnly</code>), everyone else keeps their retained route
+  (per-agent pathing dirt; pre-split, one re-arm replanned the whole batch
+  every tick). A NeedsOnly processing pass invalidates runtime tickets for
+  agents it skips, so callers that need those agents' paths must use the
+  tick-driver retained routes rather than reading old runtime tickets.</li>
+<li><code>PathAgentTickOptions</code> carries <code>max_steps</code> and <code>movement_dirty_mask</code> per tick,
+  the runtime <code>PathRuntimeCachePolicy</code>, <code>max_blocked_retries</code> (default 8), and
+  <code>blocked_exhaustion_policy</code>. <code>BlockedAgentExhaustionPolicy</code> defaults to
+  <code>RemainBlocked</code>, preserving the goal and optional last search result because
+  elapsed retries do not prove <code>NoPath</code>; <code>MarkUnreachable</code> selects terminal
+  exhaustion explicitly and clears the last result.</li>
+<li><code>PathAgentTickStats</code> reports the tick value, whether paths were processed,
+  separate pathing and movement <code>PathAgentFrameStats</code>, and the
+  <code>repaths_requested</code> count for actual searches plus <code>repath_exhausted</code> for
+  every exhausted blocked lifecycle (the historical field name also covers
+  retained-step waits).</li>
+<li><code>prepare_path_agent_processing(agents, options, stats)</code> scans agents ahead
+  of path processing: <code>NeedsPath</code> agents request processing with no manual
+  dirty mark. <code>Blocked</code> agents consume one retry on each following tick.
+  Occupied/reserved destinations retain <code>PathStatus::Found</code> and retry the
+  retained step without a search; route-invalidating transient failures clear
+  the obsolete result and request processing. At exhaustion the default
+  leaves the agent <code>Blocked</code> without further automatic path processing;
+  <code>MarkUnreachable</code> instead terminalizes it and clears the optional last
+  result.</li>
+<li><code>BlockedAgentRecoverySchedule</code> selects a deterministic, caller-bounded subset
+  of persistently blocked agents for expensive recovery checks. Exponential
+  delay with deterministic equal jitter spreads repeated checks across the full
+  <code>uint32_t</code> delay range. Position changes restart recovery even when the agent
+  remains blocked at the end of the tick; scheduling never decides
+  reachability. <code>BlockedAgentRecoveryOptions</code> controls its delay, cap, and salt;
+  <code>BlockedAgentRecoveryStats</code> reports blocked, due, selected, and deferred
+  counts. The caller owns exact search, sparse residency, movement-class,
+  result, and synchronization semantics.</li>
+<li><code>tick_unit_path_agents&lt;World, ClassOrTag&gt;(...)</code>,
+  <code>tick_weighted_path_agents&lt;World, Class, MaxCost&gt;(...)</code>,
+  <code>tick_unit_path_agents_with_movement&lt;World, ClassOrTag, OccupancyTag,
+  ReservationTag&gt;(...)</code>, and <code>tick_weighted_path_agents_with_movement&lt;...&gt;</code>
+  advance the clock, re-process paths when <code>pathing_dirty</code> is set or any
+  agent requested processing, then advance agents — either freely or
+  through movement commits with the supplied <code>movement_dirty_mask</code>. In the
+  class forms one <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> drives pathing, the precheck, and commit
+  validation, so plan and commit provably agree per class. Each
+  accepts an optional trailing <code>const RegionGraphT&lt;World::residency_type&gt;*</code>
+  (default <code>nullptr</code>) forwarded to the runtime precheck gate, so a caller that
+  maintains a region graph can skip A* for goals proven unreachable.</li>
+</ul>
+<h3 id="schedule">Schedule</h3>
+<p><code>include/tess/sim/schedule.h</code> is the schedule: ordered phases of
+type-erased tasks driven by cadences that are pure functions of the fixed
+<code>SimClock</code> tick counter and per-task pending dirty/event masks. The schedule
+never touches a world -- trigger bits are fed to it explicitly -- so the
+no-hidden-full-world-scans rule holds by
+construction. Type erasure is a function pointer plus a context pointer;
+world-typed work lives in task objects the caller owns and registers by
+reference. <code>ScheduleTaskFn</code> is the raw erased function-pointer form for callers
+that do not use the object-reference overload. <code>ScheduleNoThrowTaskFn</code>
+preserves an explicit <code>noexcept</code> contract through erasure; the object overload
+selects it automatically for a statically no-throw task.</p>
+<pre class="mermaid"><code>flowchart TB
+  accTitle: Fixed schedule phase order
+  accDescr: Every simulation tick traverses the complete phase list in declaration order and tasks retain registration order within a phase.
+
+  Early["Input → PreUpdate → AI"]
+  Agent["Pathing → Movement → Commit"]
+  Derived["Topology → Fields → Background"]
+  Output["RenderDelta → Diagnostics"]
+  Early --&gt; Agent --&gt; Derived --&gt; Output</code></pre>
+<p>Dirty and event results are merged immediately into every matching subscriber.</p>
+<pre class="mermaid"><code>flowchart TB
+  accTitle: Same-tick and next-tick dirty propagation
+  accDescr: A later matching task consumes dirty bits in the current tick, while an already-run task consumes them on the next tick.
+
+  Produced["Task returns dirty_mask"] --&gt; Remaining{"Target phase&lt;br/&gt;still ahead?"}
+  Remaining --&gt;|Yes| SameTick["Run later OnDirty task&lt;br/&gt;this tick"]
+  Remaining --&gt;|No| NextTick["Run matching task&lt;br/&gt;next tick"]</code></pre>
+<ul>
+<li><code>SimPhase</code> is the fixed phase list, executed in declaration order each
+  tick; tasks run in registration order within a phase. <code>SimClock</code> (hoisted
+  into <code>time.h</code>; the path-agent tick shares it) is the authoritative
+  fixed-tick counter every cadence derives from.</li>
+<li><code>Cadence</code> selects <code>every_tick()</code>, <code>every_ticks(n)</code> (exact: the countdown
+  advances once per <code>run_tick</code>, even while the task is disabled, so
+  re-enabling never shifts the lockstep phase; a due-while-disabled tick is
+  counted as skipped), <code>on_dirty(mask)</code> (fires iff bits of the task's OWN
+  mask are pending; firing consumes only those bits, so producers'
+  same-tick marks re-arm it for the next tick), <code>on_event(mask)</code> with the same
+  phase-aware coalescing rules, <code>background(budget)</code>, and <code>manual()</code>.</li>
+<li><code>CadenceKind</code> is the stored discriminator for those six cadence forms.
+  <code>ScheduleTaskDesc</code> combines a name, a phase, and a cadence -- the name is
+  required and must have static storage, the same rule diagnostics trace
+  labels follow, because the schedule stores the view rather than the
+  characters; <code>ScheduleTaskContext</code>
+  supplies the current clock, consumed dirty/event masks, and background
+  budget to <code>ScheduleTaskFn</code>; <code>ScheduleTaskResult</code> returns produced dirty/event
+  masks, completed items, and backlog state;
+  and <code>ScheduleTaskStats</code> exposes cumulative run, skip, and item counts.</li>
+<li><code>BackgroundBudget</code> is deliberately items-only: a due background task is
+  offered <code>max_items</code> units per run and reports <code>items_done</code> plus
+  <code>more_work</code> to continue next tick. A wall-clock valve would make tick
+  outcomes nondeterministic; it returns with its first real consumer.</li>
+<li><code>Schedule::add_task(desc, task)</code> registers a caller-owned task object
+  (or a raw fn-pointer + context); <code>seal()</code> freezes registration;
+  <code>request_run(id)</code> arms any task for the next tick (the Manual trigger and
+  the Background initial trigger); <code>notify_dirty(mask)</code> merges external
+  dirty bits (frame-owner thread only; never from an op callback --
+  worker-side dirty flows exclusively through the task-result mask);
+  <code>notify_events(mask)</code> coalesces event wakeups; and <code>publish_event</code> stores an
+  exact payload before notifying its mask;
+  <code>run_tick(clock)</code> advances the clock and dispatches, returning
+  <code>ScheduleTickStats</code>; <code>task_stats(id)</code> reports per-task counters.</li>
+<li>Lifecycle misuse that otherwise looks like an idle task fails fast in every
+  build: registration or capacity reservation after <code>seal()</code>, null callbacks,
+  invalid phase or cadence values, unknown task ids, running before <code>seal()</code>,
+  and reentrant ticks.
+  Background tasks may not report more items than their offered budget, and
+  non-background tasks must report zero <code>items_done</code>.</li>
+<li>In diagnostics builds, an active trace receives an inclusive
+  <code>Scheduler/schedule_tick</code> duration and one nested duration named after each
+  executed task. When allocation counters are active, those duration records
+  also attribute inclusive allocation/free byte deltas. All instrumentation
+  compiles out when diagnostics are disabled.</li>
+<li>A task result's <code>dirty_mask</code> merges into every task's pending mask
+  immediately: later-phase OnDirty tasks fire in the SAME tick,
+  earlier-phase tasks the next tick.</li>
+<li>If a task callback throws, <code>run_tick</code> propagates the exception after restoring
+  the dirty bits, event bits, and explicit run request consumed for that
+  invocation. Triggers raised during the failed callback are merged with the
+  restored values. The simulation clock and cadence countdown still advance;
+  task and world mutations are not rolled back.</li>
+<li><code>EventStream&lt;T&gt;</code> is caller-owned bounded storage for exact payloads with
+  monotonic sequence and simulation-tick stamps in <code>TickStampedEvent&lt;T&gt;</code>.
+  Overflow is rejected rather than overwritten. The scheduler mask is only a
+  coalesced wakeup; an OnEvent task drains the separate stream according to
+  application policy. Reserve and flow-accounting attachment are setup-only on
+  an empty stream; assignment cannot overwrite attached outstanding inventory.</li>
+<li><code>ResumableWorkTask&lt;T&gt;</code> maps <code>ScheduleTaskContext::budget_items</code> to a
+  <code>ResumableWorkQueue&lt;T&gt;</code> and maps remaining pending tickets back to
+  <code>more_work</code>, retaining deterministic cooperative jobs across ticks. When
+  the queue becomes empty the Background task disarms; a later queue
+  submission must be paired with <code>request_run(id)</code> to re-arm it. Queue mutation
+  and flow-tick observation during <code>advance()</code> fail fast in every build; a
+  callback that overreports completed items instead settles its ticket as
+  <code>Failed</code>, the queue's existing operation outcome.</li>
+<li>Allocation contract: <code>reserve_tasks</code> + registration happen at setup;
+  <code>run_tick</code>, trigger notification, and <code>request_run</code> never allocate after
+  <code>seal()</code>. Reserved event streams and resumable queues also perform no
+  container allocation on their warm paths; the stored payload type's own
+  copy, move, and callback operations must be allocation-free for the complete
+  operation to share that guarantee (pinned with allocation-free payloads).</li>
+<li><code>run_schedule_frame(schedule, clock, accumulator, real_delta_seconds,
+  control)</code> is the frame-to-ticks bridge: it consumes real frame time
+  through the <code>FixedStepAccumulator</code> (honoring <code>SimSpeed</code> and the per-frame
+  tick cap) and runs the schedule once per granted fixed tick, returning a
+  <code>ScheduleFrameSummary</code> (ticks, alpha, dropped seconds, last tick's
+  stats). Cadences therefore count FIXED TICKS, never frames: an EveryN
+  task at 4x fires four times as often in real time and exactly as often in
+  sim time, and a backlogged frame advances every cadence through each
+  granted tick.</li>
+</ul>
+<h3 id="auto-exec">Auto-Exec</h3>
+<p><code>include/tess/sim/auto_exec.h</code> closes the auto-exec gap: <code>AutoExecTask
+&lt;World, Policy, Ack, ChunkFn&gt;</code> is one schedule task running the whole
+queued-ops pipeline -- plan, parallel phase planning, execution (serial or
+worker pool, chosen per phase by an operation-count threshold), per-phase
+dirty apply, and ack drain -- over a caller-owned <code>OperationBatch</code> queue. Both the
+queue and the task's result channel are cleared together at the end of every
+successful run (the paired-clear discipline), and the run's <code>dirty_mask</code> union
+feeds the schedule so OnDirty tasks in later phases fire the same tick. The
+worker pool is the production parallel backend (see the
+<a href="../queued-operations/">queued-operations note</a>); the scoped-thread executor
+is the address-stable per-dispatch alternative. A
+planning or kernel exception preserves the caller-owned queue for inspection
+or replacement while the exception path clears transient result slots, so old
+completions cannot leak into a later run. Earlier writes may already have
+executed, so blindly retrying that queue is unsafe; chunk callbacks should not
+throw.</p>
+<ul>
+<li>Policy uniformity is PRE-VALIDATED (<code>AutoExecStatus::PolicyMismatch</code>
+  executes nothing; asserted in debug), which makes runtime aborts
+  unreachable -- serial and pool execution therefore can never diverge on
+  partially-applied plans, and the serial == pool golden compares whole
+  worlds, chunk metadata, and drained ack sequences byte-for-byte.</li>
+<li>Dirty records are merged after EACH phase: the partitioned scratch is
+  re-prepared per phase, so a single post-loop merge would silently drop
+  every phase's dirty but the last (pinned by a write-then-read
+  phase-split test).</li>
+<li><code>Policy</code> must be ReadOnly or UniquePerChunk (the parallel phase planner's
+  set) and the world dense (<code>merge_planned_dirty</code> is AlwaysResident-only).</li>
+<li>Planning reuses a task-owned <code>ExecutionReport</code>, and the result channel and
+  phase scratch retain capacity. After callers reserve or warm those buffers,
+  the synchronous planning/execution path is allocation-free for payload types
+  whose default construction and assignment are allocation-free.</li>
+<li>Result hooks have a <code>noexcept</code> function-pointer contract. The queue is
+  cleared before draining, so follow-up operations enqueued by a hook survive
+  for the next run.</li>
+<li><code>AutoExecRunStats</code> (<code>last_run()</code>) reports status, planned/rejected ops,
+  executed chunks, merged dirty chunks, drained acks, and phase/pool-phase
+  counts between ticks.</li>
+</ul>
+<h3 id="scheduler">Scheduler</h3>
+<ul>
+<li><code>SimSchedulerState</code> owns the scheduler-adjacent state currently needed by
+  the path-agent tick layer.</li>
+<li><code>SimSchedulerOptions</code> configures which dirty masks should trigger path
+  replanning, which dirty masks should produce render deltas, path-agent tick
+  options, whether render dirty bits should be cleared after collection, and
+  which movement commits should mark dirty tiles.</li>
+<li><code>SimSchedulerStats</code> reports one tick: the tick value, whether operations
+  were planned (<code>planned_ops</code>) and executed (<code>executed_ops</code>), the queued
+  <code>ExecutionReport</code> and <code>PlannedExecutionResult</code>, the variant's
+  <code>PathAgentTickStats</code>, and the number of render deltas appended this tick
+  (<code>render_delta_count</code>).</li>
+<li><code>run_queued_operations&lt;World, Policy&gt;(world, ops, fn)</code> is the shared
+  plan-then-execute step: it plans the frame's operations, returns without
+  executing when validation fails, and otherwise executes the plan through
+  the serial block bridge and reports whether execution completed.</li>
+<li><code>tick_unit_scheduler&lt;World, PassableTag, Policy&gt;(...)</code> executes planned
+  queued operations through the existing serial block bridge, marks pathing
+  dirty when planned work dirtied configured pathing fields, ticks unit-cost
+  path agents, and emits render deltas.</li>
+<li><code>tick_unit_movement_scheduler&lt;World, PassableTag, OccupancyTag,
+  ReservationTag, Policy&gt;(...)</code> runs the same sequence and commits agent
+  movement through <code>commit_movement_intent</code>, marking moved-agent chunks
+  dirty with the configured movement dirty mask.</li>
+<li><code>tick_weighted_scheduler&lt;World, Class, MaxCost, Policy&gt;(...)</code> runs the same
+  sequence through the weighted path-agent batch tick.</li>
+<li><code>tick_weighted_movement_scheduler&lt;World, Class, MaxCost,
+  OccupancyTag, ReservationTag, Policy&gt;(...)</code> combines the weighted batch
+  tick with movement commits and the movement dirty mask.</li>
+</ul>
+<p>All four scheduler variants share one internal tick sequence
+(<code>detail::tick_scheduler_core</code>); they differ only in the path-agent tick
+they run. When queued operations fail planning, the tick reports
+<code>planned_ops</code> without <code>executed_ops</code>, leaves the world untouched, and still
+ticks path agents.</p>
+<h3 id="fixed-step-time">Fixed-Step Time</h3>
+<ul>
+<li><code>SimSpeed</code> is <code>Paused</code>, <code>Speed1x</code>, <code>Speed2x</code>, or <code>Speed4x</code>;
+  <code>SimTimeControl</code> carries the current speed.</li>
+<li><code>sim_speed_multiplier(speed)</code> returns the integer multiplier (0/1/2/4) and
+  <code>effective_tps(base_tps, speed)</code> returns the multiplied tick rate,
+  saturating at the <code>std::uint32_t</code> maximum.</li>
+<li><code>FixedStepAccumulator(base_tps, max_ticks_per_frame)</code> converts variable
+  real frame deltas into whole simulation ticks. <code>consume(delta, control)</code>
+  banks speed-scaled time (paused, zero-tps, and zero-cap configurations
+  produce no ticks; NaN and negative deltas contribute nothing) and returns
+  a <code>FixedStepFrame</code>.</li>
+<li><code>FixedStepFrame</code> reports the <code>ticks</code> to run this frame, the
+  interpolation <code>alpha</code> (fraction of one step still banked, clamped to
+  [0, 1]), and <code>dropped_seconds</code> — sim-time seconds discarded because the
+  frame hit <code>max_ticks_per_frame</code> with more than one step of backlog
+  remaining. When the tick cap is hit, backlog beyond one step is dropped
+  instead of banked: retained debt would force max-tick catch-up frames or
+  an unrecoverable spiral, while one step of carry preserves alpha
+  continuity. Sim time slows instead, and a nonzero <code>dropped_seconds</code>
+  means the simulation is running behind real time.</li>
+</ul>
+<p>The scheduler does not consume <code>FixedStepAccumulator</code> itself; callers use
+it to decide how many scheduler ticks to run in one rendered frame.</p>
+<h2 id="behavior">Behavior</h2>
+<p>The scheduler is deterministic and synchronous at its caller boundary. It
+does not own worker threads or an event loop. Cooperative async tickets,
+continuations, and exact event payload streams remain caller-owned; the
+schedule only advances and wakes them. Callers also own entity storage,
+game-specific job logic, AI decisions, UI state, and content rules.</p>
+<p>The intended per-frame order for current consumers is:</p>
+<ol>
+<li>Enqueue field edits in <code>OperationBatch</code> with accurate <code>FieldAccessDesc</code> masks.</li>
+<li>Call a scheduler tick with a callback that applies each planned chunk view.</li>
+<li>Let the scheduler mark pathing dirty when executed operations dirtied
+   configured movement-relevant fields.</li>
+<li>Let the path-agent tick submit/process active requests only when dirty.</li>
+<li>Consume render deltas from dirty chunk bounds instead of full snapshots.</li>
+<li>Commit accepted movement intents through <code>commit_movement_intent</code> when a
+   game system needs occupancy and reservation validation.</li>
+</ol>
+<p>The <code>PathAgentPhase</code> lifecycle ties the layers together. Assigning a goal
+arms <code>NeedsPath</code>, which requests path processing on the next tick even
+without a world edit. Planner failures and transient movement failures both
+land in <code>Blocked</code>; each following tick consumes one of
+<code>max_blocked_retries</code> when movement is enabled; <code>max_steps == 0</code> pauses the
+budget. Occupancy and reservations retry the retained step, while
+route-invalidating failures re-search. Successful movement resets the
+consecutive-block count. Exhaustion remains <code>Blocked</code> by default; callers that
+need the historical terminal timeout select <code>MarkUnreachable</code> explicitly.
+Structural movement failures (invalid endpoints, non-adjacent steps) skip the
+retry budget entirely. A missing edge under a special-transition provider is
+<code>StaleTopology</code>, because a provider revision can legitimately remove it, and
+therefore requests a bounded re-search. Only a new goal re-arms an
+<code>Unreachable</code> agent.
+Clearing a goal returns any active lifecycle state to <code>Idle</code>; those equivalent
+edges are omitted from the diagram to keep the failure paths legible.</p>
+<pre class="mermaid"><code>stateDiagram-v2
+  accTitle: Path-agent lifecycle
+  accDescr: Goals arm pathfinding; transient failures retry through Blocked, while structural failures become Unreachable and an explicit compatibility policy may terminalize exhausted retries.
+
+  [*] --&gt; Idle
+  Idle --&gt; NeedsPath: assign goal
+  NeedsPath --&gt; Following: path found
+  NeedsPath --&gt; Blocked: planning fails
+  Following --&gt; Idle: arrive
+  Following --&gt; Blocked: transient move failure
+  Following --&gt; Unreachable: structural move failure
+  Blocked --&gt; Following: route found or retained step moves
+  Blocked --&gt; Blocked: retry exhausted (default sleep/recovery)
+  Blocked --&gt; Unreachable: retry exhausted (compatibility policy)
+  Unreachable --&gt; NeedsPath: assign new goal</code></pre>
+<p><code>MovementIntent</code> version guards are opt-in. They are useful when an external
+system collected path or move intents before queued world edits were applied.
+If a stored expected chunk <abbr title="A practically monotonic value that changes when authoritative chunk content changes.">content version</abbr> or <abbr title="A practically monotonic value that changes when topology-relevant state changes.">topology version</abbr> no longer matches, the
+move fails with <code>StaleContent</code> or <code>StaleTopology</code> before occupancy changes are
+committed. The scheduler's own movement ticks submit intents without version
+guards; their steps are validated against live world state instead.</p>
+<p>Render deltas are based on current chunk dirty bounds. If multiple dirty masks
+share a chunk, the current dirty bound is the union maintained by storage. A
+caller that needs per-field exact rectangles should keep its own field-level
+presentation data or drain deltas before broadening the chunk dirty bound with
+unrelated edits. Collection clips each chunk's dirty bounds to the chunk's
+own world-space box before visiting tiles, so bounds that span chunk borders
+or leave the shape emit deltas only for tiles the chunk owns.</p>
+<h2 id="goal-lifecycle-flow-accounting">Goal-Lifecycle Flow Accounting</h2>
+<p>The path-agent goal lifecycle participates in the diagnostics flow
+accounting: <code>PathAgentTickState</code> carries an optional caller-owned
+<code>FlowAccounting</code>, and every transition is counted where it happens.
+Arming a goal through the tick-state <code>set_path_agent_goal</code> is an
+admission; replacing a goal that <code>path_agent_goal_outstanding</code> still
+reports as live terminalizes it as superseded, while re-<abbr title="Enabling a mechanism or recipe for a run, as the armed arm against the canonical arm.">arming</abbr> after a
+terminal outcome is a fresh admission. The tick-state
+<code>clear_path_agent_goal</code> cancels a live goal. <code>arrive_path_agent</code>
+completes the lifecycle at the arrival transition inside the advance
+helpers — including the joint-movement and PIBT tiers — and
+<code>fail_path_agent_flow</code> terminalizes it as failed at every structural failure
+and explicit <code>MarkUnreachable</code> exhaustion transition.
+<code>observe_path_agent_flow_tick</code> drives the
+per-tick inventory weighting and refreshes the oldest outstanding goal
+age from per-agent admission stamps. The bare state-only goal helpers
+perform no accounting and say so.</p>
+<h2 id="deliberate-limits">Deliberate Limits</h2>
+<p>The public schedule remains synchronous at its caller boundary even when an
+auto-exec phase uses the worker pool. It does not own arbitrary queued
+kernels, nondeterministic completion threads, local avoidance, multi-agent
+collision resolution, permission layers, general doors, or region-selective
+cache invalidation.</p>
+<p>Movement validation currently uses a boolean-like passability field plus
+boolean-like occupancy and reservation fields. Weighted terrain remains part of
+path selection, not movement commit validation. Games with doors, factions,
+construction phases, vehicles, or multi-tile entities should layer those rules
+around this narrow helper until the movement vocabulary is expanded.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../queued-operations/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Queued operations">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Queued operations
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../ecs/" class="md-footer__link md-footer__link--next" aria-label="Next: ECS integration">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                ECS integration
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; tess contributors
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.sections", "navigation.tabs", "navigation.top", "search.highlight", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+  <script>
+    (() => {
+      const searchDialog = document.querySelector(
+        ".md-search[role=\"dialog\"]",
+      );
+      searchDialog?.setAttribute(
+        "aria-label", "Search",
+      );
+
+      const mermaidRuntimeUrl = new URL(
+        "../../assets/javascripts/mermaid.min.js",
+        document.baseURI,
+      ).href;
+      let initializationOptions;
+      let runtimePromise;
+
+      const mermaidProxy = {
+        initialize(options) {
+          initializationOptions = options;
+        },
+        async render(...args) {
+          const mermaidRuntime = await loadMermaidRuntime();
+          return mermaidRuntime.render(...args);
+        },
+      };
+
+      function loadMermaidRuntime() {
+        if (!runtimePromise) {
+          runtimePromise = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = mermaidRuntimeUrl;
+            script.addEventListener("load", () => {
+              const mermaidRuntime = window.mermaid;
+              if (mermaidRuntime === mermaidProxy) {
+                reject(new Error("Mermaid runtime did not initialize"));
+                return;
+              }
+              mermaidRuntime.initialize(initializationOptions);
+              resolve(mermaidRuntime);
+            }, { once: true });
+            script.addEventListener("error", () => {
+              reject(new Error("Unable to load Mermaid runtime"));
+            }, { once: true });
+            document.head.append(script);
+          });
+        }
+        return runtimePromise;
+      }
+
+      window.mermaid = mermaidProxy;
+    })();
+  </script>
+  
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+
+  </body>
+</html>

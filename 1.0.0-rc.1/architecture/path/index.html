@@ -1,0 +1,3108 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+      
+      
+      
+        <link rel="canonical" href="https://tess.owx.dev/1.0.0-rc.1/architecture/path/">
+      
+      
+        <link rel="prev" href="../maintenance/">
+      
+      
+        <link rel="next" href="../topology/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/tess-symbol.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Pathfinding - tess</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    <meta property="og:type" content="website">
+  <meta property="og:site_name" content="tess">
+  <meta property="og:title" content="Pathfinding - tess">
+  <meta property="og:description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+  <meta property="og:url" content="https://tess.owx.dev/1.0.0-rc.1/architecture/path/">
+  <meta property="og:image" content="https://tess.owx.dev/1.0.0-rc.1/assets/tess-social-preview.png">
+  <meta property="og:image:width" content="2560">
+  <meta property="og:image:height" content="1280">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Pathfinding - tess">
+  <meta name="twitter:description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+  <meta name="twitter:image" content="https://tess.owx.dev/1.0.0-rc.1/assets/tess-social-preview.png">
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#path-foundation" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="tess" class="md-header__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            tess
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Pathfinding
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Decision guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://tess.owx.dev/api/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../performance/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Performance
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../use-cases/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Use cases
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../integration-policy/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="tess" class="md-nav__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    tess
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Decision guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/residency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Residency
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/writes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/pathfinding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding strategy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/congestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Congestion pricing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pathfinding-strategy-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology and precheck
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/entities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Entities and ECS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/presentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terminology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terminology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility evidence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shape/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shapes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../persistence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Persistence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../block/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Block kernels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../no-exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exception-free builds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../query/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintenance experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-path-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a Path Strategy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choosing a Path Strategy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#unit-cost-workloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unit-Cost Workloads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#weighted-workloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Weighted Workloads
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public Surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behavior
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Behavior">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pre-a-scan-cost-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-A* scan cost model
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deliberate-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deliberate Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-profiling-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Profiling Notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spatial-coordination/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial coordination
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../queued-operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Queued operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../simulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation and scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ecs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ECS integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://tess.owx.dev/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../use-cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integration-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../upgrade-1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade to 1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../for-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    For agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-path-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a Path Strategy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choosing a Path Strategy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#unit-cost-workloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unit-Cost Workloads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#weighted-workloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Weighted Workloads
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public Surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behavior
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Behavior">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pre-a-scan-cost-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-A* scan cost model
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deliberate-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deliberate Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-profiling-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Profiling Notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="path-foundation">Path Foundation</h1>
+<p>The current path layer is a synchronous pathfinding foundation with
+sparse-resident support as detailed below. It lives under <code>include/tess/path/</code>
+and is exported by <code>tess/tess.h</code>.
+<code>tess/path/path.h</code> remains the public umbrella for core path APIs; larger
+implementation sections may live in <code>include/tess/path/detail/</code> and are
+included from that umbrella. The <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr> (<code>UnitRouteCache</code>,
+<code>cached_astar_path</code>) lives in <code>tess/path/route_cache.h</code>, which the umbrella
+includes, so including <code>tess/path/path.h</code> or <code>tess/tess.h</code> keeps compiling
+the full core path surface.</p>
+<p>A shared lifetime policy applies to every path cache: caches never hand out
+views into storage that can reallocate. Results are either copied into
+caller-supplied scratch/storage, or point at per-entry heap allocations that
+other entries cannot move.</p>
+<h2 id="choosing-a-path-strategy">Choosing a Path Strategy</h2>
+<p>Choose for the workload first; the optional region-graph precheck can guard
+any search and only skips it when connectivity is definitively unreachable.</p>
+<pre class="mermaid"><code>flowchart LR
+  accTitle: Optional topology precheck
+  accDescr: Only an Unreachable precheck result skips grid search; every other status continues conservatively.
+
+  Graph["Optional fresh RegionGraph"] --&gt; Precheck["precheck_path"]
+  Precheck --&gt;|Unreachable| Stop["Return without grid search"]
+  Precheck --&gt;|Every other status| Choose["Choose a search strategy"]</code></pre>
+<h3 id="unit-cost-workloads">Unit-Cost Workloads</h3>
+<pre class="mermaid"><code>flowchart TB
+  accTitle: Unit-cost pathfinding strategy
+  accDescr: Shared goals favor fields, retained route reuse favors the cache, and isolated requests use A star.
+
+  Unit["Unit-cost requests"] --&gt; Shared{"Many starts share goals?"}
+  Shared --&gt;|Yes| Field["Distance field or field product"]
+  Shared --&gt;|No| Stable{"Stable map and route reuse?"}
+  Stable --&gt;|Yes| Cached["cached_astar_path or runtime route cache"]
+  Stable --&gt;|No| AStar["astar_path"]</code></pre>
+<h3 id="weighted-workloads">Weighted Workloads</h3>
+<pre class="mermaid"><code>flowchart TB
+  accTitle: Weighted pathfinding strategy
+  accDescr: Isolated weighted requests use A star, while shared goals favor weighted fields or bounded batches.
+
+  Weighted["Weighted requests"] --&gt; Shared{"Many starts share goals?"}
+  Shared --&gt;|No| AStar["weighted_astar_path"]
+  Shared --&gt;|Yes| Bounded{"Small known maximum cost?"}
+  Bounded --&gt;|Yes| Batch["bounded field or weighted_path_batch"]
+  Bounded --&gt;|No| Field["weighted distance field"]</code></pre>
+<h2 id="public-surface">Public Surface</h2>
+<ul>
+<li><code>PathRequest</code> contains a start and goal <code>Coord3</code>.</li>
+<li><code>PathTieBreak</code> optionally seeds deterministic tertiary ordering among A*
+  nodes with equal search cost and progress. A zero seed preserves canonical
+  tile-index ordering; nonzero seeds can change route shape but not optimal
+  cost or passability.</li>
+<li><code>PathStatus</code> reports <code>NotComputed</code>, <code>Found</code>, <code>InvalidStart</code>, <code>InvalidGoal</code>,
+  <code>NoPath</code>, <code>Indeterminate</code>, <code>CostOverflow</code>, or <code>NoCandidate</code>. <code>NotComputed</code>
+  means a default, cleared, stale, or model-mismatched product has no current
+  result. <code>NoCandidate</code> means a bounded or heuristic strategy found no
+  candidate and an exact search is required for a reachability conclusion.
+  <code>Indeterminate</code> occurs only on sparse
+  worlds: the search
+  reached the edge of the resident set and could not rule out a route through a
+  non-resident chunk, so it is deliberately distinct from <code>NoPath</code>.
+  <code>NoPath</code> means no route exists in the graph considered under the selected
+  missing-chunk policy; it is a whole-world conclusion only when no unknown
+  boundary was assumed impassable. A caller that receives <code>Indeterminate</code> can
+  materialize the missing chunks and retry.
+  <code>CostOverflow</code> means every remaining realized route required a cost at or
+  above the reserved <code>uint32_t</code> infinity sentinel; it carries no usable path.</li>
+<li><code>MissingChunkPolicy</code> selects how a search treats a step into a non-resident
+  chunk of a sparse world: <code>AssumeImpassable</code> treats it as impassable (the search
+  stays within the resident set and may report <code>NoPath</code>), while
+  <code>ReportIndeterminate</code>
+  returns <code>PathStatus::Indeterminate</code> rather than a possibly-wrong <code>NoPath</code> when
+  the search exhausts the resident set having skipped a non-resident neighbor.
+  It is inert for dense (<code>AlwaysResident</code>) worlds, where every chunk is
+  resident.</li>
+<li><code>precheck_path&lt;ClassOrTag&gt;</code> (in <code>tess/path/precheck.h</code>) is a cheap pre-A<em>
+  topology gate: it consults a <code>RegionGraph</code> built over the world for whether
+  <code>start</code> can reach <code>goal</code> through region connectivity, without expanding the
+  grid, and returns a <code>PrecheckStatus</code>. The explicit first template argument
+  is the <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> the SEARCH uses (a raw passable tag normalizes to its
+  <code>UnitCostFieldMovement</code> identity, exactly as in <code>astar_path</code>). Only <code>Unreachable</code> --
+  the graph definitively rules out any route within known topology -- licenses
+  skipping A</em>, reported by <code>precheck_rules_out_path</code>. Every other status means
+  "run A<em>": <code>Reachable</code> (a region path exists; A</em> realizes it), <code>MissingChunk</code>
+  (the search reached a boundary exit into a non-resident chunk, so a route
+  through non-resident space cannot be ruled out -- sparse worlds only),
+  <code>InvalidStart</code> / <code>InvalidGoal</code> (A* is authoritative on tile validity),
+  <code>GraphStale</code> (the graph no longer matches the world OR was labeled for a
+  different <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> or provider instance/revision), and <code>NoGraph</code> (no
+  built graph supplied).
+  The overloads accept the same <code>MissingChunkPolicy</code> as authoritative search
+  and default to <code>ReportIndeterminate</code>. Under <code>AssumeImpassable</code>, a resident
+  search region cut off only by non-resident space is <code>Unreachable</code>, while a
+  non-resident endpoint is <code>InvalidStart</code> or <code>InvalidGoal</code>. The path runtime
+  forwards its selected policy to this precheck, so the optimization cannot
+  silently change the requested semantics.
+  Staleness is resolved conservatively and first: an empty graph is <code>NoGraph</code>
+  and a graph that fails <code>is_region_graph_fresh_for&lt;ClassOrTag&gt;</code> -- topology
+  versions, residency snapshot, or the movement-class stamp -- is
+  <code>GraphStale</code>. The provider-aware overload also requires
+  <code>matches_provider(provider)</code>. These checks happen before <code>reachable()</code>, so
+  neither a stale snapshot, wrong-class graph, nor equal-revision graph from
+  another provider object can yield a definitive but wrong <code>Unreachable</code>.
+  The query reuses a caller-owned <code>RegionGraphScratch</code> (allocation-free once
+  warm); the gate can only ever prune provably
+  unreachable goals, never turn a solvable query into a wrong failure.</li>
+<li>Sparse residency covers the single-shot searches -- <code>astar_path</code>,
+  <code>weighted_astar_path</code>, the unweighted <code>build_distance_field</code>, and the weighted
+  <code>build_weighted_distance_field</code>, <code>build_weighted_distance_field_in_box</code>, and
+  <code>build_bounded_weighted_distance_field</code>, plus their readers
+  <code>distance_field_path</code> and <code>weighted_distance_field_path</code> -- and the path
+  runtime built on them: <code>weighted_path_batch</code>, the unit <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr>
+  (<code>UnitRouteCache</code>, <code>cached_astar_path</code>), and
+  <code>PathRequestRuntime::process_unit_cached</code> / <code>process_weighted_batch</code>. The route
+  cache's world fingerprint is residency-aware -- it folds each resident chunk's
+  key, <abbr title="The identity of one interval during which a sparse chunk remains resident.">residency generation</abbr>, and <code>meta().content_version</code> through an
+  order-independent sum -- so any eviction, rematerialization, or in-place edit changes the
+  fingerprint and invalidates the whole cache before a stale route can be served.
+  The two-call builder/reader distance-field API stamps
+  <code>world.residency_fingerprint()</code> in <code>DistanceFieldScratch</code> at build time -- the
+  <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr>'s terms plus each chunk's resident slot, since a <abbr title="Retained shortest-distance data built from one or more goals for repeated path reads.">distance field</abbr> is
+  indexed by slot where the <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr> is keyed by coordinate; a reader whose
+  world changed residency between the paired calls -- or a scratch read against a
+  different/copied/swapped world -- returns <code>NotComputed</code> (forcing a rebuild)
+  rather than descending a slot-rebound stale field. Each single-shot
+  builder takes an optional trailing <code>MissingChunkPolicy</code> whose default is
+  <code>ReportIndeterminate</code>. Runtime, cache, batch, precheck, and path-agent layers
+  pass the selected policy through without substituting another value. Agent
+  movement commit is residency-safe
+  to match: <code>validate_movement_intent</code> and <code>movement_versions_match</code> reject a move
+  into or out of a non-resident chunk with the transient <code>StaleContent</code> (a
+  non-resident chunk is a recoverable, not terminal, condition), so an agent whose
+  route crosses a chunk evicted since planning re-plans against the changed
+  residency instead of stranding or walking into non-resident data. The readers are
+  pure readers (a non-resident start is <code>InvalidStart</code>). Still dense-only -- a
+  compile error to
+  instantiate on a sparse world -- are the distance-field product family
+  (<code>build_distance_field_product</code>, <code>distance_field_product_path</code>,
+  <code>nearest_target</code>), the unit field-product cache (<code>process_unit_cached</code>'s
+  repeated-goal pass, guarded out for sparse worlds), and the route/portal route
+  products. Those are retained artifacts indexed by raw tile ID and require an
+  <code>AlwaysResidentWorld</code>.</li>
+<li><code>PathResult</code> returns status, movement cost ticks, expanded-node count,
+  reached-node count, a <code>PathView</code>, and <code>cost_scale</code>. Default orthogonal and
+  axial-hex models use scale one. Diagonal models use scale 128: cardinal
+  steps cost 128 ticks and diagonal steps cost 181 ticks per destination
+  entry-cost unit; 181 is the nearest scale-128 integer approximation to
+  <code>sqrt(2)</code>. <code>NearestTargetResult</code> carries the same scale.</li>
+<li><code>CostRangeAssessment</code> and
+  <code>path_cost_range_assessment&lt;World, MovementClass, Provider&gt;</code> expose a
+  conservative compile-time classification of the compact <code>std::uint32_t</code>
+  cost domain. <code>ProvenSafe</code> means every simple path fits below the reserved
+  infinity sentinel, <code>PotentialOverflow</code> means the known conservative bound
+  does not, and <code>Unknown</code> means a cost expression or provider lacks a usable
+  maximum. <code>require_proven_path_cost_range</code> is the opt-in compile-time gate;
+  queries themselves remain available for every assessment and report a
+  realized overflow as <code>PathStatus::CostOverflow</code>.</li>
+<li><code>PathView</code> (in <code>tess/path/path_view.h</code>) is the non-owning view of a path that
+  <code>PathResult</code> and the runtime's ticket accessors hand out. It carries the same
+  lifetime contract as the underlying span -- valid only until the storage it
+  views is reused (A* scratch on the next query, the runtime's node buffer on
+  the next process/clear) -- and copying it never copies path data. It offers
+  read-only span parity (<code>size</code>, <code>empty</code>, <code>operator[]</code>, <code>front</code>, <code>back</code>,
+  <code>begin</code>/<code>end</code>, <code>data</code>), <code>span()</code> to recover the raw <code>std::span</code> where an API
+  needs it, and <code>suffix(offset)</code>: the remaining path from a walked index,
+  bounds-clamped (an offset at or past the end yields an empty view) and sharing
+  the same storage without copying. It is constructible from a <code>std::span</code> or a
+  <code>std::vector&lt;Coord3&gt;</code>, so existing result-construction sites are unchanged.</li>
+<li>The optional <code>tess/io.h</code> header provides human-readable stream insertion for
+  <code>PathStatus</code> and <code>PathView</code>. Streaming a path traverses its borrowed
+  coordinates without extending their lifetime. The text is diagnostic output,
+  not a supported serialization format.</li>
+<li><code>DistanceFieldResult</code> returns the status and node counts for a reverse
+  shared-goal field build.</li>
+<li><code>WeightedPathBatchStats</code> returns request count, unique-goal count, field
+  build count, A* fallback count, and copied path-node count for weighted batch
+  planning.</li>
+<li><code>PathScratch</code> owns reusable vectors for open nodes, visited records, and the
+  returned path. <code>reserve_nodes(count)</code> prepares storage for allocation-free
+  repeated queries when capacity is sufficient.</li>
+<li><code>DistanceFieldScratch</code> owns reusable vectors for reverse shared-goal fields
+  and reconstructed paths. <code>reserve_nodes(count)</code> also prepares weighted
+  bucket storage for allocation-free bounded weighted field rebuilds after
+  warmup.</li>
+<li><code>GoalSet</code>, <code>DistanceFieldProduct</code>, and <code>FieldProductCache</code> provide reusable
+  unit-cost and weighted distance-field products in
+  <code>tess/path/field_product_cache.h</code>.
+  Products copy retained dense field data out of scratch, track reached
+  transition and clearance content-version dependencies, stamp the resolved
+  lattice/class/step model, and can be stored in a byte-budgeted LRU cache.
+  Diagonal products use reverse Dijkstra for their non-unit geometric ticks;
+  axial products use the six-neighbor reverse flood.</li>
+<li><code>build_weighted_distance_field_product&lt;World, Class&gt;</code> runs reverse Dijkstra
+  from an ordered goal set through the resolved movement model, including
+  provider-composed edges. <code>weighted_distance_field_product_path</code> reconstructs
+  an exact path and <code>weighted_nearest_target</code> reports the selected lowest-cost
+  goal. These persistent products are explicitly dense-only, stamp every
+  model identity, stateful-provider object identity, and provider revision,
+  and use the same byte-budgeted cache through <code>lookup_weighted</code> /
+  <code>store_weighted</code>. Provider instances and revisions are exact cache-key
+  components: historical revisions remain reusable entries until ordinary LRU
+  eviction, so callers with continually changing provider state should
+  configure a finite byte budget. A stateful provider must stay at an address-stable
+  address while a product or cache can retain that identity, and callers must
+  clear those artifacts before destroying it. Moving a cache is safe because
+  the provider remains externally owned; moving the provider causes a
+  conservative miss/rebind at its new address.</li>
+<li>Unit products retain the BFS fast path only for regular unit-cost models.
+  Provider-composed products use reverse Dijkstra even when the regular step
+  scale is one, because a provider may attach a larger exact cost to a special
+  edge.</li>
+<li><code>UnitRouteCache</code> (in <code>tess/path/route_cache.h</code>) owns reusable
+  route-cache entries and cached path nodes for exact route and same-goal
+  suffix reuse. Exact <code>(start, goal)</code> lookups and suffix lookups are served
+  by open-addressed flat hash indexes (power-of-two capacity, linear
+  probing) instead of linear scans; the suffix index is populated per stored
+  Found-path node with first-write-wins, so the earliest stored entry
+  containing a queried node keeps winning deterministically. Cache hits copy
+  the cached route into the caller's <code>PathScratch</code> and return a span into
+  that scratch, so hit and miss results share one lifetime: valid until the
+  next path call that uses the same scratch. Later misses may grow
+  cache-internal storage without invalidating results returned through other
+  scratches. Storage is capped (<code>set_caps(UnitRouteCacheLimits)</code>; defaults 512
+  entries and 2^20
+  path nodes): an insert that would exceed either cap invalidates the whole
+  cache first and counts a <code>cap_invalidations</code> stat. Lowering either cap below
+  the live footprint applies the same invalidation immediately, including a
+  zero cap; existing entries can never remain readable above a new limit.
+  <code>stats()</code> reports the counters as <code>UnitRouteCacheStats</code>. <code>invalidate()</code> drops
+  cached route data and both indexes while preserving hit/miss counters;
+  <code>clear()</code> drops routes and resets counters. <code>capture_world_versions(world)</code>
+  and <code>invalidate_if_world_changed(world)</code> provide coarse whole-cache
+  invalidation from chunk content-version fingerprints.
+  The cache also binds the resolved lattice, step, cost scale, provider type,
+  live stateful-provider object, and provider revision. A provider rebind
+  invalidates entries and increments <code>provider_rebinds</code>. Non-unit models retain
+  exact hits but conservatively skip suffix reuse whose historical step-count
+  arithmetic cannot recover cost.</li>
+<li><code>ContentVersionDependencies</code> records explicit chunk/content-version pairs
+  and can validate whether those chunks are unchanged. It is supporting
+  infrastructure for retained route products; current unit-route-cache hits
+  use conservative whole-cache invalidation by default.</li>
+<li><code>WeightedRouteProduct</code> stores one verified weighted route plus the chunk
+  content versions touched by that route. Replaying it succeeds only while
+  those chunk content versions are unchanged.</li>
+<li><code>WeightedPortalRouteProduct</code> stores a supplied-waypoint weighted route
+  product. It stitches exact weighted A* segments through caller-provided
+  portal waypoints, stores the resulting path, and validates content versions
+  on replay. It also supports an automatic chunk-boundary portal builder and
+  reports candidate and boundary-scan counters for
+  that automatic builder.</li>
+<li><code>WeightedPortalSegmentCache</code> owns caller-managed weighted portal segment
+  entries for repeated builds with the same portal waypoints. Entries belong
+  to one <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>. <code>for_class&lt;ClassOrTag&gt;()</code> returns the required
+  lightweight view; binding a different class clears all entries, and each
+  view operation rechecks its class so an older retained view cannot alias
+  another class's paths. On a hit, the view's
+  <code>lookup_append(world, request, out_path)</code>
+  appends the cached segment path into caller-owned storage (deduplicating a
+  shared junction node when stitching consecutive segments) and returns a
+  <code>SegmentHit</code> with the found flag, status, and cost. The cache never returns
+  pointers or spans into its own storage, so <code>store()</code> growth cannot
+  invalidate a previous lookup. Found segments record content-version
+  dependencies for the chunks touched by the segment path; cache hits are
+  reused only while those versions still match. Failed segments are not
+  cached, and stale hits leave the output storage untouched. Storage is
+  bounded by a segment budget (<code>set_segment_budget</code>, default 256 entries).
+  Lowering the budget immediately evicts the oldest entries and reclaims their
+  path storage. At insertion time, a
+  store at budget first sweeps stale entries in one compaction pass that
+  also rebuilds the path-node arena, then evicts the oldest live entries in
+  insertion order if needed; a zero budget stores nothing. <code>stats()</code> reports
+  entries, path nodes, sweeps, evictions, and stale rejections as
+  <code>PortalSegmentCacheStats</code>. Segment construction and stale compaction commit
+  transactionally. If allocation fails, no partial dependency set becomes
+  visible, live entries and their path-node offsets remain unchanged,
+  observable statistics do not advance, and the operation can be retried.
+  <code>reserve_segments_checked</code> and <code>reserve_path_nodes_checked</code> report
+  deterministic pre-allocation capacity failure through <code>ReserveStatus</code>. The
+  class view's <code>store_checked</code> reports capacity failure through
+  <code>PortalSegmentStoreStatus</code>, but not before allocating: a store already at
+  its segment budget is bounded by how many entries survive compaction, which
+  is only known after a full dependency-validity sweep, so it rejects in
+  constant time where it can and otherwise captures the candidate entry's
+  dependencies first. That capture appends to an unreserved vector, so a path
+  crossing several chunks may reallocate more than once before the status
+  comes back. Cache storage is untouched either way. See the
+  <a href="../no-exceptions/">exception-free note</a>, which is authoritative here.
+  Oversized reserve and store calls preserve <code>std::length_error</code> with
+  exceptions enabled and fail
+  fast for the same detected error without exceptions.</li>
+<li><code>WeightedPathBatchScratch</code> owns reusable search scratch and retained copied
+  result paths for weighted batch planning.</li>
+<li><code>PathRequestRuntime</code> owns a small deterministic request/result lifecycle for
+  simulation callers. <code>submit(request)</code> returns a <code>PathTicket</code>, processing
+  methods copy completed paths into runtime-owned storage, and publish the
+  complete result batch only after every borrowed path span has been installed.
+  <code>try_result(ticket)</code> returns no value for a detectable stale, out-of-range,
+  or unpublished lookup; <code>result(ticket)</code> fails fast for those same conditions
+  rather than manufacturing <code>NoPath</code>. A throwing provider leaves the new batch
+  unpublished, including its result-status and path-node counters. Cache
+  counters continue to describe the retained cache state. Tickets remain valid
+  until <code>clear_requests()</code> starts a new request set. Tickets do not carry
+  runtime identity, so passing a ticket from another runtime remains an
+  unenforceable precondition when its index and generation happen to match.
+  <code>clear_requests()</code> starts a new request set without dropping long-lived
+  caches; <code>clear_caches()</code> drops the owned unit <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr>, shared
+  unit/weighted field-product cache, and weighted portal segment cache.
+  <code>PathRuntimeCachePolicy::clear_every_world_change</code> lets long-lived callers
+  reclaim caller-managed cache storage after repeated world edits, and the
+  policy also carries the route-cache caps (<code>max_route_entries</code>,
+  <code>max_route_path_nodes</code>) and the portal segment budget
+  (<code>portal_segment_budget</code>), applied to the owned caches at the start of
+  each processing pass. Reducing a policy budget therefore takes effect before
+  any lookup in that pass.</li>
+<li><code>PathAgentState</code> and the path-agent helper functions provide the first
+  simulation-facing path wrapper. Agents store position, goal, path ticket,
+  path index, an optional <code>last_result</code>, active-goal state, and an explicit
+  <code>PathAgentPhase</code>
+  lifecycle (<code>Idle</code>, <code>NeedsPath</code>, <code>Following</code>, <code>Blocked</code>, <code>Unreachable</code>)
+  with a <code>blocked_retries</code> budget. The helpers submit active agents into a
+  <code>PathRequestRuntime</code>, apply ticketed results, and advance agents along
+  returned paths. Occupied or reserved destinations keep the <code>Found</code> route
+  and enter <code>Blocked</code> so the retained step can be retried; other transient
+  failures invalidate the route and enter <code>Blocked</code> for replanning.
+  Structural failures (invalid endpoints, non-adjacent steps) are terminal
+  <code>Unreachable</code> until a new goal is assigned.</li>
+<li><code>process_unit_path_agents&lt;World, ClassOrTag&gt;(world, agents, runtime,
+  policy)</code> and <code>process_weighted_path_agents&lt;World, Class, MaxCost&gt;(world,
+  agents, runtime, policy)</code> run the current conservative synchronous agent
+  pathing loop. They resubmit active agents each processing
+  pass, so stale <code>PathTicket</code> values do not survive runtime request clears.
+  Provider-aware trailing overloads bind runtime planning and retained-route
+  movement commits to the same provider instance and revision.</li>
+<li><code>SimClock</code>, <code>PathAgentTickState</code>, <code>PathAgentTickOptions</code>, and
+  <code>PathAgentTickStats</code> provide the first minimal path-agent tick wrapper.
+  <code>tick_unit_path_agents&lt;World, ClassOrTag&gt;(state, world, agents, runtime,
+  options)</code> and <code>tick_weighted_path_agents&lt;World, Class, MaxCost&gt;(state,
+  world, agents, runtime, options)</code> and the <code>_with_movement</code> variants advance
+  the clock, process paths when <code>state.pathing_dirty</code> is set or when any agent is
+  in <code>NeedsPath</code> or has a route-invalidated <code>Blocked</code> state (with retry budget
+  remaining), then move agents
+  up to <code>options.max_steps</code> path nodes. Processing is SCOPED (per-agent
+  pathing dirt): <code>state.pathing_dirty</code> is world-scoped and replans every
+  agent, while agent-scoped needs (a newly armed goal, a Blocked retry)
+  replan only those agents -- <code>Following</code> agents keep walking routes
+  retained in <code>state.routes</code> (<code>PathAgentRoutes</code>; index-paired with the
+  agents span, so reordering or removing agents requires a
+  <code>mark_pathing_dirty</code> -- see the struct comment). In the class forms ONE
+  <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> drives pathing, the precheck, and (for the
+  <code>_with_movement</code> variants) commit validation, so plan and commit provably
+  agree per class. Goals assigned through either <code>set_path_agent_goal</code>
+  overload are picked up on the next tick. <code>Blocked</code> agents consume one retry
+  per following movement-enabled tick until <code>options.max_blocked_retries</code> runs
+  out. The default <code>RemainBlocked</code> exhaustion policy then sleeps without
+  inventing <code>NoPath</code>; <code>MarkUnreachable</code> explicitly selects the historical
+  terminal transition. Occupied/reserved destinations retry the retained step
+  without processing because occupancy is intentionally absent from planning
+  passability; other transient failures request a re-search. Ticks with
+  <code>max_steps == 0</code> pause the retry budget without attempting movement.
+  Successful movement resets the consecutive-block count.
+  <code>mark_pathing_dirty(state)</code> remains the hook -- and the only correct one --
+  for replans after world edits.</li>
+<li><code>BlockedAgentRecoverySchedule</code> is caller-owned scheduling scratch for
+  persistently blocked checks. It applies deterministic exponential backoff,
+  equal jitter, round-robin fairness, and a per-call selection cap, but never
+  claims reachability. A position change starts a fresh recovery episode even
+  when an agent moves and becomes blocked again within one tick.
+  <code>PathAgentReplanQueue</code> separately deduplicates replan requests in FIFO order.
+  <code>process_path_agent_replans</code> composes that lifecycle with a synchronous
+  caller callback, immediately copying its borrowed <code>PathResult</code> into retained
+  routes. It does not validate the callback's route. The exact unit and
+  weighted helpers build on this generic drain and perform no more than the
+  configured request count. A successful blocked-agent replan keeps the retry
+  streak until movement proves progress. Both mechanisms are externally
+  synchronized and index-paired with the agent span. The replan budget does
+  not bound work within one synchronous callback or A*.</li>
+<li><code>astar_path&lt;World, PassableTag&gt;(world, request, scratch, policy)</code> runs
+  optimized unit-cost deterministic pathfinding. The passability field is
+  treated as boolean-like. It runs natively on sparse worlds, honoring
+  <code>MissingChunkPolicy</code> (the pre-A* fast-path scan is compiled out there).
+  The tag parameter also accepts a <code>tess::movement</code> class: a raw tag
+  normalizes to the byte-identical <code>UnitCostFieldMovement</code> identity class, and a
+  composed class contributes its passability predicate (unit search ignores
+  entry cost).
+  A trailing provider overload composes allocation-free special edges and
+  disables regular direct-route shortcuts that could miss a cheaper special
+  route.</li>
+<li><code>weighted_astar_path&lt;World, Class&gt;(world, request, scratch, policy)</code> runs
+  deterministic weighted A* over ONE <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> fusing the passability
+  predicate and the u32-saturated entry-cost expression (0 = impassable). It
+  includes exact unit-cost direct and blocked-axis detour fast paths when
+  their local optimality proofs apply. Like <code>astar_path</code>, it is
+  sparse-capable and honors <code>MissingChunkPolicy</code> (the fast paths are compiled
+  out for sparse worlds). Weighted APIs require one explicit <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>,
+  normally
+  <code>movement::PositiveCostFieldMovement&lt;PassableTag, CostTag&gt;</code>. They reject raw
+  tags at compile time — a raw tag
+  would normalize to the unit-cost identity class and silently discard the
+  cost field.
+  The class-typed path, field, product, batch, cache, and runtime families
+  accept matching trailing provider overloads. Reverse operations require the
+  provider's reverse-enumeration contract. Reverse enumeration independently
+  rejects a missing or impassable forward destination rather than relying on a
+  field builder to prevalidate its frontier. Persistent products capture model
+  identity plus provider instance and revision; until a generic provider
+  dependency index exists, provider-composed dense products conservatively
+  depend on every world chunk.</li>
+<li><code>build_weighted_route_product&lt;World, Class&gt;(world, request,
+  scratch, product)</code> builds and stores a weighted route product.</li>
+<li><code>weighted_route_product_path(world, product)</code> replays a stored weighted
+  route product if its chunk dependencies are still valid.</li>
+<li><code>build_weighted_portal_route_product&lt;World, Class&gt;(world,
+  request, waypoints, scratch, product)</code> builds a supplied-waypoint portal
+  route product.</li>
+<li><code>build_weighted_portal_route_product&lt;World, Class&gt;(world,
+  request, waypoints, scratch, segment_cache, product)</code> builds the same
+  supplied-waypoint route product while reusing cached segment results.</li>
+<li><code>build_weighted_chunk_portal_route_product&lt;World, Class&gt;(
+  world, request, scratch, product)</code> derives adjacent chunk-boundary portal
+  route candidates, chooses the lowest-score candidate, then builds the same
+  weighted portal route product.</li>
+<li><code>weighted_portal_route_product_path(world, product)</code> replays a stored portal
+  route product if its chunk dependencies are still valid.</li>
+<li><code>weighted_path_batch&lt;World, Class, MaxCost&gt;(world, requests,
+  scratch)</code> groups weighted requests by goal, builds bounded weighted fields
+  for repeated goals, uses weighted A<em> for singleton goals, and returns borrowed
+  result spans backed by <code>WeightedPathBatchScratch</code> until its next mutation. A
+  shared reverse field's
+  <code>CostOverflow</code> is global rather than start-specific, so every member in that
+  group retries through weighted A</em> to preserve exact per-request statuses.</li>
+<li><code>PathRequestRuntime::process_unit_cached&lt;World, ClassOrTag&gt;(world, policy)</code>
+  processes the current request set through <code>cached_astar_path</code>, optionally
+  reuses unit distance-field products for repeated goals when
+  <code>policy.use_unit_field_product_cache</code> is set, invalidates the unit route
+  cache when chunk content versions change, and returns borrowed result spans
+  backed by the runtime until the next processing pass or request reset. The
+  opt-in field-product pass only considers repeated
+  single-goal groups, requires at least
+  <code>unit_field_product_min_start_chunks</code> distinct start chunks by default, and
+  reports candidate, used, and skipped group counts in <code>PathRuntimeStats</code>.
+  Before building, the runtime verifies that the configured byte budget can
+  hold the product's mandatory world-sized distance labels. An undersized
+  budget skips directly to exact per-request search, avoiding a doomed build
+  and an over-budget store.
+  Invalid out-of-shape starts are resolved to <code>InvalidStart</code> during the
+  existing grouping pass before any unchecked tile-key conversion. This adds
+  no second validation pass and no duplicate passability read.
+  The unit <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr> keys entries on <code>(start, goal)</code> plus a content-version
+  fingerprint and nothing on the <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>, so each unit process call
+  binds the runtime to its (normalized) class: a rebind clears the unit
+  caches -- correct even on misuse -- and counts in
+  <code>PathRuntimeStats::class_cache_invalidations</code>. One runtime per
+  (world, class) is therefore the PERF contract, not a correctness
+  precondition. Weighted portal-route builders bind the owned portal segment
+  cache through the same normalized movement-class identity. Reusing one
+  runtime across classes is therefore safe but clears both unit and portal
+  entries; one runtime per <code>(world, class)</code> avoids those conservative drops.</li>
+<li><code>PathRequestRuntime::process_weighted_batch&lt;World, Class, MaxCost&gt;(world,
+  policy)</code> processes the current request set through <code>weighted_path_batch</code>.
+  When <code>use_weighted_field_product_cache</code> is enabled on a dense world,
+  repeated goals spanning the configured number of start chunks first use a
+  persistent weighted product; remaining requests retain the bounded-field or
+  A* batch fallback. The product cache survives processing calls and uses the
+  same world-change cadence for invalidation. Unit and weighted products share
+  that one runtime-owned cache. Whichever processing pass runs most recently
+  applies its corresponding policy byte budget to the combined footprint and
+  may therefore evict products retained by the other pass.
+  One <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> drives both the search and the precheck.</li>
+<li>Both <code>process_unit_cached</code> and <code>process_weighted_batch</code> take an optional
+  trailing <code>const RegionGraphT&lt;World::residency_type&gt;*</code> (default <code>nullptr</code>).
+  When a graph is supplied, a pre-A* pass runs <code>precheck_path</code> for each request
+  and resolves the ones it proves <code>Unreachable</code> to <code>NoPath</code> (zero expanded
+  nodes) without searching, counting them in <code>PathRuntimeStats::precheck_ruled_out</code>
+  -- a subset of <code>no_path</code>, so aggregate failure counts are unchanged. The unit
+  path skips ruled-out requests in its search loop; the weighted path runs the
+  batch over only the survivors and scatters results back to their original
+  slots. Passing <code>nullptr</code> (the default) is byte-identical to the un-gated path.
+  Class and provider agreement are enforced through the graph's stamps
+  (<code>is_region_graph_fresh_for</code> and <code>matches_provider</code>): a graph labeled for a
+  different class or provider than the call searches with degrades to
+  <code>GraphStale</code> (nothing ruled out) rather than pruning a route the exact search
+  can walk. The gate can only prune provably unreachable goals, never turn a
+  solvable query into a failure.</li>
+<li><code>cached_astar_path&lt;World, PassableTag&gt;(world, request, scratch, cache)</code>
+  checks the <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr> before falling back to <code>astar_path</code>. Hits copy the
+  cached route into <code>scratch</code> and return a span with the same lifetime
+  contract as a miss.</li>
+<li><code>build_distance_field&lt;World, PassableTag&gt;(world, goal, scratch, policy)</code>
+  builds a unit-cost reverse <abbr title="Retained shortest-distance data built from one or more goals for repeated path reads.">distance field</abbr> from one passable goal. On a sparse
+  world it floods only the resident set; under
+  <code>MissingChunkPolicy::ReportIndeterminate</code> a field truncated by a
+  non-resident chunk reports
+  <code>PathStatus::Indeterminate</code> instead of <code>Found</code>.</li>
+<li><code>distance_field_path&lt;World, PassableTag&gt;(world, request, scratch)</code>
+  reconstructs a start-to-goal path from the most recent matching field. It is
+  a pure reader. A reached start can still return <code>Found</code> from a field whose
+  build reported <code>Indeterminate</code>; an unreached or non-resident start preserves
+  that <code>Indeterminate</code> outcome. Under <code>AssumeImpassable</code>, the corresponding
+  outcomes are <code>NoPath</code> and <code>InvalidStart</code>. Mismatched scratch or an
+  inconsistent descent gradient is <code>NotComputed</code>, never a reachability claim.</li>
+<li><code>build_distance_field_product&lt;World, PassableTag&gt;(world, goals, product,
+  scratch)</code> builds a multi-source unit-cost product for an ordered <code>GoalSet</code>.</li>
+<li><code>distance_field_product_path&lt;World, PassableTag&gt;(world, start, product,
+  scratch)</code> replays a path from a valid product; <code>nearest_target</code> follows
+  decreasing distances and returns a <code>NearestTargetResult</code> with the status,
+  cost, reached goal coordinate, node counts, and path span.</li>
+<li><code>build_weighted_distance_field&lt;World, Class&gt;(world, goal,
+  scratch, policy = ReportIndeterminate)</code> builds a weighted reverse Dijkstra field
+  for positive integral entry costs. On a sparse world it honors
+  <code>MissingChunkPolicy</code>: a field truncated by a non-resident chunk is <code>Found</code>
+  under <code>AssumeImpassable</code> and <code>Indeterminate</code> under <code>ReportIndeterminate</code>.</li>
+<li><code>build_weighted_distance_field_in_box&lt;World, Class&gt;(world,
+  goal, domain, scratch, policy = ReportIndeterminate)</code> builds the same exact
+  weighted reverse field, but only inside the supplied <code>Box3</code> domain. The
+  domain filter runs ahead of the residency check, so a tile outside the box is
+  never reached even when its chunk is resident.</li>
+<li><code>build_bounded_weighted_distance_field&lt;World, Class, MaxCost&gt;(world, goal,
+  scratch, policy = ReportIndeterminate)</code> builds the same exact
+  weighted reverse field through a bounded bucket queue when all reached entry
+  costs are between 1 and <code>MaxCost</code>. If it encounters a higher positive entry
+  cost, it falls back to the general weighted field builder, forwarding the
+  missing-chunk policy.</li>
+<li><code>weighted_distance_field_path&lt;World, Class&gt;(world, request,
+  scratch)</code> reconstructs a weighted start-to-goal path from the most
+  recent matching weighted field and follows the same retained
+  <code>Indeterminate</code>, <code>InvalidStart</code>, <code>NoPath</code>, and <code>NotComputed</code> rules as the
+  unit-cost reader.</li>
+</ul>
+<h2 id="behavior">Behavior</h2>
+<p>The unit-cost raw-tag/default-step APIs on an orthogonal shape use six
+axis-adjacent candidates in fixed order:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>+x, -x, +y, -y, +z, -z
+</code></pre></div>
+<p>Resolved movement-class APIs instead use their shared transition model.
+Diagonal policies add four clearance-checked planar diagonals after the face
+steps; axial-hex shapes use their six fixed axial directions; providers append
+their special transitions after regular steps. Candidates outside the
+compile-time shape are rejected through the existing shape containment
+helpers. Degenerate axes naturally reject out-of-bounds neighbors.</p>
+<p>The default orthogonal <code>astar_path</code> costs are unit-weighted and use Manhattan
+distance. Resolved models use Manhattan distance for orthogonal default steps,
+fixed-point octile distance for diagonal steps, and axial distance for hex
+steps. A model with special provider transitions uses a zero heuristic because
+an extra edge may make geometric progress more cheaply than the regular
+lattice. Tie-breaking is deterministic by lower total score, then higher path
+cost for equal-score nodes, then tile-key order. Preferring higher path cost
+on equal-score nodes avoids open-grid wavefront expansion while preserving
+shortest paths.</p>
+<p><code>weighted_astar_path</code> charges the destination tile's positive integral
+entry cost for each move. The start tile's cost is not charged, but start and
+goal costs must be positive. Zero-cost and negative signed-cost tiles are
+treated as blocked, and oversized integral costs saturate to the public
+32-bit path-cost range. Weighted A* uses a binary heap and the resolved
+model's admissible heuristic in model ticks, so it preserves optimal weighted
+paths while skipping the unit-cost-only bucket queue and <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr>. The
+default orthogonal model also includes an exact direct Manhattan fast path
+when every entered tile on a probed route has cost 1; no positive-cost path
+can beat that Manhattan lower bound. For axis-aligned routes where the
+straight line is blocked, it can also return a one-tile parallel detour when
+every entered detour tile has cost 1; any positive-cost path around the
+blocked line needs at least Manhattan+2 moves.</p>
+<p>Before entering open-set A<em>, the implementation probes direct Manhattan
+paths in the shape-relevant axis orders. If any route is fully passable, it
+returns that direct shortest path immediately. If a direct probe hits a blocked
+tile whose axis plane is fully blocked, it returns <code>NoPath</code> immediately because
+the plane separates start from goal under the current axis-adjacent movement
+model. For axis-aligned requests, a clear one-tile parallel detour is also
+returned before A</em> because its Manhattan+2 cost is optimal when the straight
+line is blocked. For top-down 2D requests blocked by a non-separating axis
+plane, the implementation can scan that plane for the cheapest passable gap and
+return a verified Manhattan route through it; the same logic applies to
+vertical 2D layouts. It also handles 2D forced-gap sequences by walking toward
+the goal, scanning a barrier line only when the next progress step is blocked,
+and accepting only fully open lines or lines with exactly one passable gap. In
+3D, a blocked direct route can scan the blocked axis plane for the cheapest
+passable crossing and return a verified Manhattan route through it. Other
+non-separating blockers fall back to normal A*.</p>
+<h3 id="pre-a-scan-cost-model">Pre-A* scan cost model</h3>
+<p>The fast paths above are accepted with an O(world-slice) worst case
+(decision logged in <code>docs/planning/optimization-log.md</code>, 2026-07-06). The
+direct probes walk up to the Manhattan distance per axis order. A blocked
+probe triggers <code>is_full_axis_barrier</code>, which scans the impassable tile's full
+axis plane: one extent line in 2D, <code>size.y * size.z</code> (or the matching pair)
+tiles in 3D. The 2D plane-gap and forced-gap scans each walk one extent
+line per blocked step, and the 3D plane-gap scan walks the whole blocked
+plane. Every scan runs before any A<em> node is expanded, so a miss — the
+scans all fail and the query still floods A</em> — pays the full scan cost as
+pure overhead on top of the search. Two worst-case benchmarks pin this
+cost: <code>path/astar_plane_gap_miss_512x512</code> (direct blocked, sealed wall gap,
+falls through every 2D scan into a full-flood NoPath A<em>) and
+<code>path/astar_plane_gap_miss_3d_64x64x16</code> (the best-scoring 3D plane gap is
+sealed, so segment stitching fails and A</em> routes through a second gap).
+Their thresholds in <code>bench/thresholds/path.json</code> are deliberately generous
+(10x measured) documentation ceilings, not tuned gates: the scans stay
+accepted because hit rates on real layouts dwarf the miss cost, and a miss
+is bounded by one world slice per failed scan.</p>
+<p>The returned path span points into the supplied <code>PathScratch</code> and remains valid
+until the next path query or scratch clear/reserve operation. Scratch keeps
+dense per-tile state arrays and clears only nodes touched by the previous
+query, so repeated queries avoid full-world scratch resets when the search
+visits a small fraction of the world.</p>
+<p>For many agents repeating unit-cost point-to-point routes, <code>UnitRouteCache</code>
+can amortize complete path searches. Exact <code>(start, goal)</code> hits return the
+cached path without expanding nodes. Same-goal suffix hits are also supported
+when the new start already appears inside a cached optimal path; with unit
+positive edge costs, that suffix is also optimal. Both hit forms copy the
+cached route into the supplied <code>PathScratch</code> before returning, so a returned
+span never points into cache-owned storage that a later miss could
+reallocate; warm hits stay allocation-free when the scratch is pre-reserved.
+The cache assumes the caller runs its staleness entry point
+(<code>refresh_if_world_changed</code>, or the exact-mode
+<code>invalidate_if_world_changed</code>) when passability or movement rules change.</p>
+<p>Staleness has two modes (<code>UnitRouteStaleness</code>). The default,
+<code>WholeWorldExact</code>, is deliberately conservative: when any chunk <abbr title="A practically monotonic value that changes when authoritative chunk content changes.">content version</abbr>
+changes the whole cache drops, and every served route is identical to fresh
+recomputation. The opt-in <code>ScopedFeasible</code> mode records each stored route's
+chunk footprint with captured content versions and validates it lazily at serve
+time: entries whose crossed chunks are unchanged survive edits elsewhere.
+Surviving routes are guaranteed legal with a truthful cost and were optimal
+when stored, but an edit that opens a shortcut elsewhere can leave a served
+route suboptimal until it is retired; under blocking-only edit sequences
+survivors remain optimal. The mode applies to unit-cost models without
+special transitions on dense worlds (the same condition as suffix reuse —
+those are the models whose accepted steps read only tiles on the path);
+other models' entries, and all sparse-world entries, keep whole-world
+sensitivity.</p>
+<p>Weighted route products are narrower than the <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr>: they store one
+weighted path and the chunk content versions for chunks touched by that path.
+They are safe for replaying that exact product while those chunks are
+unchanged. They do not prove that unrelated obstacle removals could not create
+a shorter route, so they support portal-route products rather than acting as a
+general optimality-preserving weighted <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr>.</p>
+<p>Weighted portal route products are also exact for the supplied waypoint route,
+not for arbitrary routing. The caller provides portal waypoints from a topology
+or room graph; the product verifies each segment with weighted A<em>, concatenates
+the segment paths, and records content-version dependencies. This makes topology
+evidence measurable before the repository owns a full portal graph builder.
+The automatic chunk-boundary builder uses a deliberately bounded candidate
+set. It tries the
+six axis-order permutations plus one greedy monotone candidate, walks from the
+start chunk to the goal chunk through adjacent chunks for each candidate,
+scans each adjacent chunk boundary for passable crossings, chooses the
+crossing with the lowest Manhattan score to the current point and final goal,
+then keeps the lowest-scoring waypoint candidate and verifies every resulting
+segment with weighted A</em>. The greedy candidate can interleave progress axes
+instead of exhausting one axis before the next. The builder still does not
+search non-Manhattan chunk routes or prove global portal optimality.</p>
+<p>The seven candidates overlap: they re-walk the same chunk seams from the
+same tile, measured at roughly two thirds of all seam queries in the
+profiled portal workloads. Selection therefore memoizes each query for
+the duration of one selection, keyed on the tile the walk arrives from
+and the signed direction of the step. The goal is not part of the key
+because it is invariant across a selection, so a generation stamp
+retires every entry when the next selection begins, and a nested
+selection — reachable when a caller supplies its own passability
+predicate — bypasses the memo rather than sharing that generation. The
+memo retains nothing between selections and needs no invalidation: the
+world cannot change while one runs. It changes no route, but
+<code>portal_scan_tiles</code> falls accordingly, because the skipped scans do not
+happen.</p>
+<p><code>WeightedPortalSegmentCache</code> can reuse previously verified segment paths for
+repeated supplied-waypoint portal builds. Cached hits avoid A* expansion for
+the segment, but still rebuild the route-product path and dependencies.
+Every lookup and store goes through a movement-class-bound view. A class rebind
+clears the cache, is counted in <code>class_rebinds</code>, and makes stale retained views
+rebind safely on their next use.
+Segments carry content-version dependencies and stale entries are rejected on
+lookup (counted as stale rejections). Recomputing a stale segment appends the
+new entry next to the rejected stale one until the segment budget is reached;
+the budget-triggered sweep then compacts stale entries and their path storage
+away in one pass, and insertion-order eviction of live entries keeps the
+cache at budget in fully live worlds. Lowering the budget evicts immediately,
+using the same oldest-first order. The cache stays caller-managed for
+retention (budget choice and <code>clear()</code>), and it does not imply
+region-selective optimality before the topology layer exists.</p>
+<p>For many agents sharing a goal, <code>DistanceFieldScratch</code> can amortize search
+work. A unit-cost field build visits reachable passable tiles once from the
+goal, and each path query follows decreasing distances back to that goal. A
+weighted field uses reverse Dijkstra: when expanding backward from tile <code>c</code>,
+the reverse edge to predecessor <code>n</code> costs <code>entry_cost(c)</code>, matching the
+forward move from <code>n</code> into <code>c</code>. Weighted reconstruction follows neighbors
+where <code>distance(current) == entry_cost(neighbor) + distance(neighbor)</code>. The
+scratch remembers the field goal and rejects path reconstruction for a
+different goal instead of returning a path to stale field data.
+<code>build_weighted_distance_field_in_box</code> applies the same weighted model inside
+one explicit domain box. It is useful for local products, such as finding many
+starts inside one room to the same portal, while starts outside the box remain
+unreached.</p>
+<p><code>DistanceFieldProduct</code> is the reusable unit-cost or weighted product form. It
+builds from one or more goals, stores an ordered goal list, copies the dense
+distance array out of scratch, and captures chunk content versions for chunks reached
+by the field.
+Replay and nearest-target queries reject stale products before returning a
+path. <code>distance_at&lt;World&gt;(coord)</code> reads one tile's distance-to-nearest-goal
+in O(1), returning <code>DistanceFieldProduct::unreachable_distance</code> for
+unreached tiles, coordinates outside the shape, products whose shape
+identity does not match <code>World</code>, and unbuilt products; it guards only those
+O(1) identity checks — content freshness against a mutated world stays the
+caller's job, exactly as for the <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr>. Its primary consumer is a
+PIBT ranking oracle built over the same <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> the agents move
+with. <code>FieldProductCache</code> is caller-owned and exact-match only: lookup keys
+include the passability tag identity, shape-compatible tile/chunk metadata,
+and ordered goals. Products are world-sized, so the cache stores each one
+behind address-stable per-entry heap storage and takes ownership on
+<code>store(DistanceFieldProduct&amp;&amp;)</code> by move; the moved-from argument is left
+empty but reusable, and no world-sized copy happens. A <code>lookup()</code> pointer
+stays valid only while its entry remains cached. Any store that replaces or
+evicts that entry invalidates the pointer, including a store for another key
+that causes least-recently-used eviction. <code>clear()</code> also invalidates every
+borrowed pointer. A product whose entry exceeds the byte budget on its own
+cannot be cached: that store returns false without disturbing existing
+entries or borrowed pointers; a zero byte budget therefore caches nothing.
+The cache evicts least-recently-used entries
+(by lookup/store recency, not insertion order) to a byte budget and reports
+entries, bytes, hits, misses, evictions, and stale rejections as
+<code>FieldProductCacheStats</code>. <code>PathRequestRuntime</code> owns one such cache and uses it
+only when the matching <code>PathRuntimeCachePolicy</code> unit or weighted product flag
+is set. Runtime use is conservative: only repeated single-goal groups at or
+above the configured reuse threshold are candidates, starts must span the
+configured number of chunks, and stale products are rejected through their
+content-version dependencies before replay. Unit leftovers use route/suffix
+caching; weighted leftovers use the established bounded-field/A* batch.</p>
+<p>When weighted entry costs are known to be small bounded positive integers,
+<code>build_bounded_weighted_distance_field</code> avoids binary heap traffic with a
+Dial-style bucket queue. The result is still exact, because nodes are expanded
+in nondecreasing distance order. The bounded builder is an optimization of
+weighted field construction, not a different path model. An entry cost above
+the declared bound or a realized accumulated-cost saturation rebuilds through
+the unbounded heap implementation so neither condition is silently discarded.</p>
+<p><code>weighted_path_batch</code> makes the current weighted reuse policy explicit for
+callers. Repeated goals use one bounded weighted field per unique goal;
+singleton goals use normal weighted A*. Returned paths are copied into batch
+scratch so all result spans remain valid until the next batch call or scratch
+clear.</p>
+<p>The runtime adds an opt-in strategy on top of that fallback
+(<code>WeightedReplanStrategy</code>). The default, <code>ExactAStar</code>, leaves singleton
+goals on normal weighted A* and is optimal. <code>PortalFirst</code> first tries a
+chunk-portal route stitched through the runtime's segment cache for
+eligible singletons (dense orthogonal-lattice worlds, default adjacent
+transitions, and explicit movement classes): accepted routes are verified and
+legal but may
+exceed the optimal cost, bounded by a premium cap relative to the
+Manhattan lower bound, and every other outcome — no candidate, a failed
+segment, a cap rejection, or an ineligible request — leaves the request
+to the untouched exact fallback with byte-identical results. The cap is
+a route-quality contract, not a latency bound: a rejection pays the
+portal work and then the exact search. Per-outcome counters are reported
+in the runtime stats as <code>WeightedPortalReplanStats</code>, and a new
+cache-aware builder, <code>build_weighted_chunk_portal_route_product_cached</code>,
+exposes the same waypoint-selection-plus-segment-cache composition to
+direct callers.</p>
+<p>The path-agent tick wrapper is intentionally small and synchronous. The
+simulation scheduler in <code>include/tess/sim/scheduler.h</code> layers queued
+operation execution and render deltas around it, but the path tick itself only
+centralizes the common path-agent order: advance the <abbr title="One fixed traversal of the sealed simulation schedule.">simulation tick</abbr>,
+optionally rebuild active paths after a dirty event, then move agents along
+runtime-owned result paths whose validity covers the tick.
+It does not observe world mutations on its own. Any edit to passability,
+movement costs, or topology-relevant movement rules must call
+<code>mark_pathing_dirty(state)</code> before the next tick that should replan (goal
+assignments need no mark: an armed goal is agent-scoped and replans just
+that agent). If a stateful transition provider stops emitting a retained
+special edge before that mark, commit validation reports <code>StaleTopology</code>
+rather than terminal <code>NotAdjacent</code>, so the bounded retry lifecycle can recover
+by re-planning.</p>
+<h2 id="deliberate-limits">Deliberate Limits</h2>
+<p>This path core implements a topology precheck (<code>precheck_path</code>, wired into the
+runtime and agent ticks) and runs natively over sparse-resident worlds, but does
+not implement async tickets or rich path diagnostics. Movement commit validation,
+reservation checks, queued-operation-driven path dirtying, and render deltas
+live in the simulation integration layer, but pathfinding does not
+automatically infer every dirty cause. Callers must mark the path-agent tick
+state dirty directly or run through the scheduler with accurate dirty masks
+when world movement data or agent goals change. The implementation uses
+reusable dense per-tile scratch arrays, a two-bucket monotone open set for the
+current unit-cost Manhattan A<em> fallback, exact route/suffix caches, dense
+reverse distance fields for shared-goal batches, weighted shared-goal fields
+with optional bounded-cost bucket construction, weighted batch grouping, exact
+unit-cost and weighted distance-field products with explicit LRU caching,
+coarse region paths and chunk corridors, weighted route products,
+supplied-waypoint and chunk-boundary portal route products, and weighted A</em>
+for positive integral entry costs.</p>
+<p>The unit-cost A<em> API is suitable for individual point-to-point queries and
+regression coverage. Weighted A</em> is suitable for correctness-first weighted
+terrain queries, and weighted distance fields are suitable for weighted
+batches with substantial goal reuse. Shared-goal distance fields are suitable
+for batches with substantial goal reuse. Unit-cost and weighted distance-field
+products are suitable when an unchanged map can reuse a multi-goal field across
+frames or query batches. Runtime field-product reuse is opt-in because route
+suffix caching can be faster when many starts lie on already-cached paths; the
+runtime therefore skips opt-in product use for repeated-goal groups whose
+starts do not span enough distinct chunks. Route caches are suitable for unchanged
+maps with repeated exact routes or starts that lie on cached same-goal paths.
+Local crowd coordination, tactical target assignment, hierarchical corridor
+selection, and persistent shared-goal fields now cover the broad many-agent
+routing substrate. The path core keeps growing under those layers; the
+stability of what it already exposes is the <a href="../../support/">support
+policy</a>'s subject, not this page's.</p>
+<h2 id="current-profiling-notes">Current Profiling Notes</h2>
+<p>Large open-grid benchmarks currently expand one node per path coordinate, but
+reach roughly 2.5x more nodes because neighbor candidates are discovered around
+the corridor. On a 1024x1024 open 2D world from corner to corner, the Release
+benchmark reports a 2,046 unit path, 2,047 expanded nodes, and 5,112 reached
+nodes.</p>
+<p>Sampling the 1024x1024 query shows time concentrated in neighbor processing:
+open-set maintenance, passability/world lookup for each accepted neighbor
+candidate, and fixed six-axis neighbor generation even for degenerate 2D
+shapes. Those are the first optimization targets before treating this A* path
+as suitable for hundreds of independent agents per tick.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../maintenance/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Maintenance experiments">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Maintenance experiments
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../topology/" class="md-footer__link md-footer__link--next" aria-label="Next: Topology">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Topology
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; tess contributors
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.sections", "navigation.tabs", "navigation.top", "search.highlight", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+  <script>
+    (() => {
+      const searchDialog = document.querySelector(
+        ".md-search[role=\"dialog\"]",
+      );
+      searchDialog?.setAttribute(
+        "aria-label", "Search",
+      );
+
+      const mermaidRuntimeUrl = new URL(
+        "../../assets/javascripts/mermaid.min.js",
+        document.baseURI,
+      ).href;
+      let initializationOptions;
+      let runtimePromise;
+
+      const mermaidProxy = {
+        initialize(options) {
+          initializationOptions = options;
+        },
+        async render(...args) {
+          const mermaidRuntime = await loadMermaidRuntime();
+          return mermaidRuntime.render(...args);
+        },
+      };
+
+      function loadMermaidRuntime() {
+        if (!runtimePromise) {
+          runtimePromise = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = mermaidRuntimeUrl;
+            script.addEventListener("load", () => {
+              const mermaidRuntime = window.mermaid;
+              if (mermaidRuntime === mermaidProxy) {
+                reject(new Error("Mermaid runtime did not initialize"));
+                return;
+              }
+              mermaidRuntime.initialize(initializationOptions);
+              resolve(mermaidRuntime);
+            }, { once: true });
+            script.addEventListener("error", () => {
+              reject(new Error("Unable to load Mermaid runtime"));
+            }, { once: true });
+            document.head.append(script);
+          });
+        }
+        return runtimePromise;
+      }
+
+      window.mermaid = mermaidProxy;
+    })();
+  </script>
+  
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+
+  </body>
+</html>

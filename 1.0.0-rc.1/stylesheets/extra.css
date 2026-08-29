@@ -1,0 +1,336 @@
+/**
+ * tess site overrides for mkdocs-material.
+ *
+ * Headings use Fraunces (vendored, docs/assets/fonts/), a close open
+ * match for the Sirenia Light logo wordmark; body text stays on the
+ * system stack (theme.font is false, so no web-font fetch).
+ */
+
+.strategy-demo-frame {
+  display: block;
+  width: 100%;
+  height: 86rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.7rem;
+  background: #0d0c13;
+}
+
+@media (max-width: 40rem) {
+  .strategy-demo-frame { height: 160rem; }
+}
+
+.strategy-status {
+  display: inline-block;
+  white-space: nowrap;
+  margin-right: 0.2rem;
+  padding: 0.08rem 0.42rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1.55;
+  vertical-align: 0.08em;
+}
+
+.strategy-status--released {
+  color: #1b5e20;
+  background: #e8f5e9;
+  border-color: #81c784;
+}
+
+.strategy-status--designed {
+  color: #754600;
+  background: #fff8e1;
+  border-color: #d6a53b;
+}
+
+.strategy-status--boundary {
+  color: #37474f;
+  background: #eceff1;
+  border-color: #90a4ae;
+}
+
+.strategy-status--rejected {
+  color: #8e1b13;
+  background: #fce8e6;
+  border-color: #e69a94;
+}
+
+[data-md-color-scheme="slate"] .strategy-status--released {
+  color: #b9f6ca;
+  background: #163820;
+  border-color: #4f8a5b;
+}
+
+[data-md-color-scheme="slate"] .strategy-status--designed {
+  color: #ffe082;
+  background: #3d2f0a;
+  border-color: #9a741e;
+}
+
+[data-md-color-scheme="slate"] .strategy-status--boundary {
+  color: #eceff1;
+  background: #2f3338;
+  border-color: #66727a;
+}
+
+[data-md-color-scheme="slate"] .strategy-status--rejected {
+  color: #ffcdd2;
+  background: #4b1e1b;
+  border-color: #99544f;
+}
+
+.strategy-alternatives {
+  margin: 1rem 0;
+  padding: 0.15rem 0.8rem 0.5rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.35rem;
+  background: var(--md-code-bg-color);
+}
+
+.strategy-alternatives > summary {
+  margin: -0.15rem -0.8rem -0.5rem;
+  padding: 0.65rem 0.8rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.strategy-alternatives[open] > summary {
+  margin-bottom: 0.65rem;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.strategy-alternatives > summary:focus-visible {
+  outline: 0.15rem solid var(--md-accent-fg-color);
+  outline-offset: 0.12rem;
+}
+
+@media (max-width: 40rem) {
+  .md-typeset .strategy-status-table .md-typeset__scrollwrap,
+  .md-typeset .strategy-status-table .md-typeset__table {
+    width: 100%;
+    margin: 0;
+  }
+
+  .md-typeset .strategy-status-table table,
+  .md-typeset .strategy-status-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .md-typeset .strategy-status-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .md-typeset .strategy-status-table tr {
+    display: block;
+    margin: 0 0 0.75rem;
+    overflow: hidden;
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 0.35rem;
+  }
+
+  .md-typeset .strategy-status-table td {
+    display: block;
+    width: auto;
+    padding: 0.35rem 0.65rem;
+    border: 0;
+  }
+
+  .md-typeset .strategy-status-table td:first-child {
+    padding-top: 0.65rem;
+    color: var(--md-default-fg-color--light);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .md-typeset .strategy-status-table td:nth-child(2) {
+    font-weight: 700;
+  }
+
+  .md-typeset .strategy-status-table td:last-child {
+    padding-bottom: 0.65rem;
+  }
+}
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("../assets/fonts/fraunces-latin.woff2") format("woff2");
+  font-weight: 300 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4,
+.md-typeset h5,
+.md-typeset h6 {
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.md-typeset h1 {
+  font-weight: 340;
+}
+
+.md-typeset h2 {
+  font-weight: 380;
+}
+
+.md-header__topic,
+.md-tabs__link {
+  font-family: "Fraunces", Georgia, serif;
+}
+
+/* Landing-page hero: center the logo, tagline, and action row. */
+.tess-hero {
+  text-align: center;
+  margin: 1.5rem 0 2.5rem;
+}
+
+.tess-hero img {
+  max-width: min(520px, 90%);
+}
+
+.tess-hero h1 {
+  margin: 0.6rem 0 0.8rem;
+}
+
+.tess-hero p {
+  max-width: 38rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.tess-hero .md-button {
+  margin: 0.25rem 0.35rem;
+}
+
+.tess-hero .md-button:not(.md-button--primary) {
+  border-color: #512da8;
+  color: #512da8;
+}
+
+.tess-hero
+  .md-button:not(.md-button--primary):is(:hover, :focus) {
+  background-color: #512da8;
+  border-color: #512da8;
+  color: #ffffff;
+}
+
+/* Inline links remain identifiable when color perception is limited. */
+.md-typeset a:not(.md-button):not(.headerlink) {
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.15em;
+}
+
+/* Version pill under the tagline. */
+.tess-version {
+  font-size: 0.72rem;
+  color: #3f3f46;
+}
+
+.tess-version a {
+  color: #512da8;
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.15em;
+}
+
+.tess-version a:is(:hover, :focus) {
+  color: #512da8;
+}
+
+.tess-version code {
+  border-radius: 1em;
+  padding: 0.15em 0.7em;
+  background-color: #ede7f6;
+  color: #4527a0;
+}
+
+[data-md-color-scheme="slate"] .tess-version {
+  color: #e2e4e9;
+}
+
+[data-md-color-scheme="slate"] .tess-version a {
+  color: #d1b3ff;
+}
+
+[data-md-color-scheme="slate"]
+  .tess-version a:is(:hover, :focus) {
+  color: #d1b3ff;
+}
+
+[data-md-color-scheme="slate"]
+  .tess-hero .md-button:not(.md-button--primary) {
+  border-color: #d1b3ff;
+  color: #d1b3ff;
+}
+
+[data-md-color-scheme="slate"]
+  .tess-hero
+  .md-button:not(.md-button--primary):is(:hover, :focus) {
+  background-color: #d1b3ff;
+  border-color: #d1b3ff;
+  color: #1e2129;
+}
+
+[data-md-color-scheme="slate"] .tess-version code {
+  background-color: #4527a0;
+  color: #ffffff;
+}
+
+/* Material's default comment and footer text miss 4.5:1 at this size. */
+[data-md-color-scheme="default"] .highlight :is(
+  .c,
+  .ch,
+  .cm,
+  .cpf,
+  .c1,
+  .cs
+) {
+  color: #455a64;
+}
+
+[data-md-color-scheme="slate"] .highlight :is(
+  .c,
+  .ch,
+  .cm,
+  .cpf,
+  .c1,
+  .cs
+) {
+  color: #b0bec5;
+}
+
+[data-md-color-scheme="slate"] .highlight :is(
+  .m,
+  .mb,
+  .mf,
+  .mh,
+  .mi,
+  .il,
+  .mo
+) {
+  color: #ff8a80;
+}
+
+[data-md-color-scheme="slate"] .highlight .nb {
+  color: #b39ddb;
+}
+
+.md-copyright {
+  color: #ffffff;
+}
