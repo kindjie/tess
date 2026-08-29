@@ -34,8 +34,8 @@ The four choices differ in where repeated work appears:
 
 <picture>
   <source media="(max-width: 600px)"
-          srcset="assets/path-strategy-workload-shapes-mobile.svg">
-  <img src="assets/path-strategy-workload-shapes.svg"
+          srcset="../assets/path-strategy-workload-shapes-mobile.svg">
+  <img src="../assets/path-strategy-workload-shapes.svg"
        alt="Four pathfinding workload shapes: one independent request, a
             repeated route or shared-goal suffix, weighted requests arriving
             as a batch, and many starts sharing one goal">
@@ -101,8 +101,8 @@ accepted, while a gray lane means that no material winner was established.
 
 <picture>
   <source media="(max-width: 600px)"
-          srcset="assets/path-strategy-crossover-mobile.svg">
-  <img src="assets/path-strategy-crossover.svg"
+          srcset="../assets/path-strategy-crossover-mobile.svg">
+  <img src="../assets/path-strategy-crossover.svg"
        alt="Cold path-strategy results across increasing request counts on
             Apple M3 Max and Steam Deck">
 </picture>
