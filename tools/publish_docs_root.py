@@ -24,7 +24,20 @@ RESERVED_NAMES = {
   "latest",
   "versions.json",
 }
-VERSION_NAME = re.compile(r"^[0-9]+\.[0-9]+$")
+NUMBER = r"(?:0|[1-9][0-9]*)"
+STABLE_LINE = re.compile(rf"^({NUMBER})\.({NUMBER})$")
+STABLE_VERSION = re.compile(rf"^({NUMBER})\.({NUMBER})\.({NUMBER})$")
+RC_VERSION = re.compile(rf"^({NUMBER})\.({NUMBER})\.({NUMBER})-rc\.({NUMBER})$")
+VERSION_NAME = re.compile(
+  rf"(?:{NUMBER}\.{NUMBER}|"
+  rf"{NUMBER}\.{NUMBER}\.{NUMBER}-rc\.{NUMBER})$"
+)
+TAG_VERSION = re.compile(
+  rf"^v({NUMBER})\.({NUMBER})\.({NUMBER})(?:-rc\.({NUMBER}))?$"
+)
+DOC_VERSION_LABEL = re.compile(
+  rf"(?:{NUMBER}\.{NUMBER}\.{NUMBER}(?:-rc\.{NUMBER})?|main \(unreleased\))$"
+)
 TEXT_SUFFIXES = {
   ".css",
   ".html",
@@ -56,6 +69,63 @@ Sitemap: https://tess.owx.dev/sitemap.xml
 
 class PublicationError(RuntimeError):
   """A publication tree violated the fail-closed contract."""
+
+
+def _verification_selection() -> dict[str, str]:
+  return {
+    "version": "",
+    "alias": "",
+    "title": "main (unreleased)",
+    "docs_path": "main",
+    "version_label": "main (unreleased)",
+    "source_ref": "",
+    "expected_version": "",
+  }
+
+
+def _tag_selection(tag: str, *, source_ref: str = "") -> dict[str, str]:
+  match = TAG_VERSION.fullmatch(tag)
+  if match is None:
+    raise PublicationError(
+      "documentation tags must be v<major>.<minor>.<patch> or an exact "
+      f"-rc.<number> prerelease, got {tag!r}"
+    )
+  major, minor, patch, rc = match.groups()
+  stable = f"{major}.{minor}.{patch}"
+  version = stable if rc is None else f"{stable}-rc.{rc}"
+  return {
+    "version": f"{major}.{minor}" if rc is None else version,
+    "alias": "latest" if rc is None else "",
+    "title": version,
+    "docs_path": f"{major}.{minor}" if rc is None else version,
+    "version_label": version,
+    "source_ref": source_ref,
+    "expected_version": version,
+  }
+
+
+def select_publication(
+  *, event: str, ref: str, requested_tag: str
+) -> dict[str, str]:
+  """Select one exact source and destination for a Pages workflow run."""
+  if requested_tag:
+    if event != "workflow_dispatch" or ref != "refs/heads/main":
+      raise PublicationError(
+        "manual documentation republishing must be dispatched from main"
+      )
+    return _tag_selection(
+      requested_tag, source_ref=f"refs/tags/{requested_tag}"
+    )
+  if event != "push":
+    return _verification_selection()
+  if ref == "refs/heads/main":
+    selected = _verification_selection()
+    selected["version"] = "main"
+    return selected
+  prefix = "refs/tags/"
+  if ref.startswith(prefix):
+    return _tag_selection(ref.removeprefix(prefix))
+  raise PublicationError(f"push ref is not publishable: {ref}")
 
 
 def _reserved(name: str) -> bool:
@@ -147,6 +217,11 @@ def _rewrite_text(
     replacements.append((f"{SITE_URL}{version}/", SITE_URL))
   for old, new in replacements:
     text = text.replace(old, new)
+  text = re.sub(
+    re.escape(f"{SITE_URL}latest") + r"(?=[\"'<\s?#]|$)",
+    SITE_URL,
+    text,
+  )
   if strip_noindex and 'rel="canonical"' in text:
     # Stripping exists so authored version-tree pages become indexable
     # at the root. The stamped-XOR-listed partition tells the two page
@@ -162,7 +237,8 @@ def _rewrite_text(
 def _rewrite_root_copy(
   root: Path, version: str | None, *, strip_noindex: bool = True
 ) -> None:
-  for path in root.rglob("*"):
+  paths = [root] if root.is_file() else root.rglob("*")
+  for path in paths:
     if not path.is_file():
       continue
     if path.name == "sitemap.xml.gz":
@@ -224,9 +300,7 @@ def _sync_root(pages: Path, source: Path) -> None:
         and destination.read_text() == LEGACY_ROOT_ROBOTS
       ):
         continue
-      raise PublicationError(
-        f"unowned root path would be overwritten: {name}"
-      )
+      raise PublicationError(f"unowned root path would be overwritten: {name}")
     if owned is None:
       owned = []
 
@@ -324,16 +398,255 @@ def _normalize_root_robots(pages: Path, owned: list[str]) -> None:
   robots.write_text(ROOT_ROBOTS)
 
 
+def _normalize_root_metadata(pages: Path, owned: list[str]) -> None:
+  """Repair stale version-prefixed identity metadata in the owned root."""
+  for name in owned:
+    path = pages / name
+    if path.exists() and name != "robots.txt":
+      _rewrite_root_copy(path, None, strip_noindex=False)
+
+
+def _redirect_target(relative: Path, prefix: str) -> str:
+  if relative.name == "index.html":
+    parent = relative.parent.as_posix().rstrip(".")
+    suffix = f"{parent}/" if parent else ""
+  else:
+    suffix = relative.as_posix()
+  base = f"{SITE_URL}{prefix}/" if prefix else SITE_URL
+  return f"{base}{suffix}"
+
+
+def _sync_dev_redirects(pages: Path) -> None:
+  """Keep `/dev/` assets while redirecting its HTML exactly to `/main/`."""
+  main = pages / "main"
+  if not main.is_dir():
+    return
+  dev = pages / "dev"
+  dev.mkdir(exist_ok=True)
+
+  for source in main.rglob("*"):
+    if source.is_symlink():
+      raise PublicationError(f"main tree contains a symlink: {source}")
+    if not source.is_file() or source.suffix == ".html":
+      continue
+    destination = dev / source.relative_to(main)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+
+  html_paths = {path.relative_to(main) for path in main.rglob("*.html")}
+  html_paths.update(path.relative_to(dev) for path in dev.rglob("*.html"))
+  if not html_paths:
+    raise PublicationError("main tree has no HTML for dev redirects")
+  for relative in sorted(html_paths):
+    destination = dev / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(_redirect_html(_redirect_target(relative, "main")))
+
+
 def sync(pages: Path, root_source: Path | None) -> None:
   """Publish a stable root tree and exact latest-HTML redirects."""
   pages = pages.resolve()
+  _sync_dev_redirects(pages)
   owned = _read_manifest(pages)
   if root_source is None and owned is not None:
     _normalize_root_robots(pages, owned)
+    _normalize_root_metadata(pages, owned)
     return
   source = root_source.resolve() if root_source else pages / "latest"
   _sync_root(pages, source)
   _redirect_latest(pages)
+
+
+def _entry_parts(
+  entry: object,
+) -> tuple[dict[str, object], str, str, list[str], dict[str, object]]:
+  if not isinstance(entry, dict):
+    raise PublicationError("versions.json entries must be objects")
+  version = entry.get("version")
+  title = entry.get("title", version)
+  aliases = entry.get("aliases", [])
+  properties = entry.get("properties", {})
+  if not isinstance(version, str) or not isinstance(title, str):
+    raise PublicationError("versions.json version and title must be strings")
+  if not isinstance(aliases, list) or not all(
+    isinstance(alias, str) for alias in aliases
+  ):
+    raise PublicationError("versions.json aliases must be strings")
+  if not isinstance(properties, dict):
+    raise PublicationError("versions.json properties must be an object")
+  return entry, version, title, aliases, properties
+
+
+def _stable_key(version: str, title: str) -> tuple[int, int, int] | None:
+  line = STABLE_LINE.fullmatch(version)
+  if line is None:
+    return None
+  exact = STABLE_VERSION.fullmatch(title)
+  if exact is None:
+    if title != version:
+      raise PublicationError(
+        f"stable documentation title {title!r} does not match {version!r}"
+      )
+    return int(line[1]), int(line[2]), 0
+  exact_groups = exact.groups()
+  line_groups = line.groups()
+  if exact_groups[:2] != line_groups:
+    raise PublicationError(
+      f"stable documentation title {title!r} does not match {version!r}"
+    )
+  return tuple(int(part) for part in exact_groups)
+
+
+def _set_hidden(entry: dict[str, object], hidden: bool) -> None:
+  properties = dict(entry.get("properties", {}))
+  if hidden:
+    properties["hidden"] = True
+  else:
+    properties.pop("hidden", None)
+  if properties:
+    entry["properties"] = properties
+  else:
+    entry.pop("properties", None)
+
+
+def stable_alias(raw: object, *, version: str, title: str) -> str:
+  """Return `latest` unless a stored stable version must retain the root."""
+  requested = _stable_key(version, title)
+  if requested is None:
+    raise PublicationError("stable alias policy requires a release-line path")
+  if not isinstance(raw, list):
+    raise PublicationError("versions.json must be an array")
+
+  stable: list[tuple[tuple[int, int, int], str]] = []
+  for item in raw:
+    _, stored_version, stored_title, _, _ = _entry_parts(item)
+    key = _stable_key(stored_version, stored_title)
+    if key is not None:
+      stable.append((key, stored_version))
+  same_line = [key for key, line in stable if line == version]
+  if same_line and max(same_line) > requested:
+    raise PublicationError(
+      f"{version} already contains a newer patch than {title}"
+    )
+  if stable and max(key for key, _ in stable) > requested:
+    return ""
+  return "latest"
+
+
+def _validate_doc_version_label(label: str) -> None:
+  if DOC_VERSION_LABEL.fullmatch(label) is None:
+    raise PublicationError(f"invalid documentation version label: {label!r}")
+
+
+def stamp_doxygen_config(config: Path, *, label: str) -> None:
+  """Override Doxygen's project number in new and historical builds."""
+  _validate_doc_version_label(label)
+  try:
+    text = config.read_text()
+  except OSError as error:
+    raise PublicationError(f"cannot read Doxygen config: {error}") from error
+  pattern = re.compile(r"^PROJECT_NUMBER\s*=.*$", re.MULTILINE)
+  if len(pattern.findall(text)) != 1:
+    raise PublicationError(
+      "Doxygen config must contain exactly one PROJECT_NUMBER assignment"
+    )
+  config.write_text(pattern.sub(f"PROJECT_NUMBER = {label}", text))
+
+
+def check_doxygen_label(index: Path, *, label: str) -> None:
+  """Verify the built Doxygen header carries the exact selected label."""
+  _validate_doc_version_label(label)
+  try:
+    text = index.read_text()
+  except OSError as error:
+    raise PublicationError(f"cannot read Doxygen index: {error}") from error
+  match = re.search(
+    r'<span\s+id="projectnumber"[^>]*>(.*?)</span>',
+    text,
+    re.DOTALL | re.IGNORECASE,
+  )
+  if match is None:
+    raise PublicationError("Doxygen project number is missing")
+  rendered = html.unescape(re.sub(r"<[^>]+>", "", match[1])).strip()
+  if rendered != label:
+    raise PublicationError(
+      f"Doxygen project number is {rendered!r}, expected {label!r}"
+    )
+
+
+def _normalized_versions(pages: Path, raw: object) -> list[dict[str, object]]:
+  if not isinstance(raw, list):
+    raise PublicationError("versions.json must be an array")
+
+  stable: list[tuple[tuple[int, int, int], dict[str, object]]] = []
+  rcs: list[tuple[tuple[int, int, int, int], dict[str, object]]] = []
+  main: dict[str, object] | None = None
+  for item in raw:
+    entry, version, title, aliases, _ = _entry_parts(item)
+    if version == "dev":
+      continue
+    if not (pages / version).is_dir():
+      raise PublicationError(f"versions.json tree is missing: {version}")
+    entry = dict(entry)
+    entry["aliases"] = [alias for alias in aliases if alias != "latest"]
+    stable_version = _stable_key(version, title)
+    if stable_version is not None:
+      stable.append((stable_version, entry))
+      continue
+    rc = RC_VERSION.fullmatch(version)
+    if rc is not None and title == version:
+      rcs.append((tuple(int(part) for part in rc.groups()), entry))
+      continue
+    if version == "main":
+      if main is not None:
+        raise PublicationError("versions.json contains duplicate main")
+      entry["title"] = "main (unreleased)"
+      _set_hidden(entry, False)
+      main = entry
+      continue
+    raise PublicationError(f"unsupported versions.json entry: {version}")
+
+  stable.sort(key=lambda item: item[0], reverse=True)
+  rcs.sort(key=lambda item: item[0], reverse=True)
+  ga_patch_by_line: dict[tuple[int, int], int] = {}
+  for key, _ in stable:
+    line = key[:2]
+    ga_patch_by_line[line] = max(ga_patch_by_line.get(line, -1), key[2])
+  visible_rc: list[dict[str, object]] = []
+  hidden_rc: list[dict[str, object]] = []
+  newest_by_base: dict[tuple[int, int, int], int] = {}
+  for key, _ in rcs:
+    base = key[:3]
+    newest_by_base[base] = max(newest_by_base.get(base, -1), key[3])
+  for key, entry in rcs:
+    ga_patch = ga_patch_by_line.get(key[:2], -1)
+    hidden = ga_patch >= key[2] or key[3] != newest_by_base[key[:3]]
+    _set_hidden(entry, hidden)
+    (hidden_rc if hidden else visible_rc).append(entry)
+
+  ordered: list[dict[str, object]] = []
+  if stable:
+    stable[0][1]["aliases"] = ["latest"]
+    ordered.append(stable[0][1])
+  ordered.extend(visible_rc)
+  if main is not None:
+    ordered.append(main)
+  ordered.extend(entry for _, entry in stable[1:])
+  ordered.extend(hidden_rc)
+  if not ordered:
+    raise PublicationError("versions.json has no selectable versions")
+  return ordered
+
+
+def normalize_versions(pages: Path) -> None:
+  """Normalize selector order while retaining hidden immutable RC trees."""
+  inventory = pages / "versions.json"
+  try:
+    raw = json.loads(inventory.read_text())
+  except (FileNotFoundError, json.JSONDecodeError, OSError) as error:
+    raise PublicationError(f"invalid versions.json: {error}") from error
+  ordered = _normalized_versions(pages, raw)
+  inventory.write_text(json.dumps(ordered, indent=2) + "\n")
 
 
 def _insert_noindex(path: Path) -> None:
@@ -380,6 +693,7 @@ def _localize_tree_anchors(text: str, tree: Path) -> str:
   or points at a page this release never had, and the stable site is
   the right destination for both.
   """
+
   def replace(match: re.Match[str]) -> str:
     path = match.group(2)
     candidate = path
@@ -413,15 +727,13 @@ def _repair_stale_head(text: str, tree: Path) -> str:
     ),
     (
       re.compile(
-        r'(<link rel="canonical" href=")'
-        + re.escape(f"{SITE_URL}latest/")
+        r'(<link rel="canonical" href=")' + re.escape(f"{SITE_URL}latest/")
       ),
       rf"\g<1>{own}",
     ),
     (
       re.compile(
-        r'(<meta property="og:url" content=")'
-        + re.escape(f"{SITE_URL}latest/")
+        r'(<meta property="og:url" content=")' + re.escape(f"{SITE_URL}latest/")
       ),
       rf"\g<1>{own}",
     ),
@@ -444,16 +756,16 @@ def prepare_artifact(pages: Path) -> None:
   rewrites here shape only what is served.
   """
   for child in pages.iterdir():
-    if child.name == "dev" or VERSION_NAME.fullmatch(child.name):
+    if child.name in {"dev", "main"} or VERSION_NAME.fullmatch(child.name):
       if not child.is_dir():
         raise PublicationError(f"version path is not a directory: {child}")
       for name in TREE_UNSERVED:
         _remove(child / name)
-      numeric = VERSION_NAME.fullmatch(child.name) is not None
+      repair_head = child.name != "dev"
       for page in child.rglob("*.html"):
         _insert_noindex(page)
         text = page.read_text()
-        if numeric:
+        if repair_head:
           text = _repair_stale_head(text, child)
         page.write_text(_localize_tree_anchors(text, child))
   # `latest/` is redirects: its HTML (and root-absolute fallback
@@ -469,6 +781,65 @@ def _assert_contains(path: Path, needle: str) -> None:
     raise PublicationError(f"{path} does not contain {needle!r}")
 
 
+ROOT_IDENTITY_PATTERNS = (
+  re.compile(r'<link\b[^>]*\brel="canonical"[^>]*>', re.IGNORECASE),
+  re.compile(r'<meta\b[^>]*\bproperty="og:[^"]+"[^>]*>', re.IGNORECASE),
+  re.compile(r'<meta\b[^>]*\bname="twitter:[^"]+"[^>]*>', re.IGNORECASE),
+  re.compile(
+    r'<script\b[^>]*\btype="application/ld\+json"[^>]*>.*?</script>',
+    re.IGNORECASE | re.DOTALL,
+  ),
+)
+
+
+def _check_root_identity_metadata(pages: Path) -> None:
+  owned = _read_manifest(pages)
+  if owned is None:
+    raise PublicationError("root ownership manifest is missing")
+  stale = f"{SITE_URL}latest"
+  pages_seen = 0
+  for name in owned:
+    root = pages / name
+    candidates = [root] if root.is_file() else root.rglob("*.html")
+    for page in candidates:
+      if not page.is_file() or page.suffix != ".html":
+        continue
+      text = page.read_text(errors="replace")
+      for pattern in ROOT_IDENTITY_PATTERNS:
+        if any(stale in match.group(0) for match in pattern.finditer(text)):
+          raise PublicationError(
+            f"root identity metadata still names /latest: {page}"
+          )
+      pages_seen += 1
+  if pages_seen == 0:
+    raise PublicationError("root ownership manifest contains no HTML")
+
+
+def _check_versions(pages: Path) -> None:
+  inventory = pages / "versions.json"
+  try:
+    raw = json.loads(inventory.read_text())
+  except (FileNotFoundError, json.JSONDecodeError, OSError) as error:
+    raise PublicationError(f"invalid versions.json: {error}") from error
+  if raw != _normalized_versions(pages, raw):
+    raise PublicationError("versions.json is not normalized")
+
+
+def _check_redirect_tree(tree: Path, prefix: str) -> int:
+  pages_seen = 0
+  for page in tree.rglob("*.html"):
+    expected = _redirect_target(page.relative_to(tree), prefix)
+    marker = f'content="0; url={expected}"'
+    if marker not in page.read_text(errors="replace"):
+      raise PublicationError(
+        f"{tree.name} redirect does not preserve its path: {page}"
+      )
+    pages_seen += 1
+  if pages_seen == 0:
+    raise PublicationError(f"{tree.name} redirect tree has no HTML")
+  return pages_seen
+
+
 def check(pages: Path) -> None:
   """Fail unless the final Pages artifact has the intended URL contract."""
   root_html = (pages / "index.html").read_text()
@@ -478,8 +849,8 @@ def check(pages: Path) -> None:
     raise PublicationError("root index must be indexable")
   if f'content="{SITE_URL}assets/' not in root_html:
     raise PublicationError("root index has no root-relative social image")
-  if not (pages / "versions.json").is_file():
-    raise PublicationError("version-selector inventory is missing")
+  _check_root_identity_metadata(pages)
+  _check_versions(pages)
   _assert_contains(pages / "sitemap.xml", f"<loc>{SITE_URL}</loc>")
   sitemap = (pages / "sitemap.xml").read_text()
   if f"{SITE_URL}latest/" in sitemap or f"{SITE_URL}dev/" in sitemap:
@@ -523,25 +894,24 @@ def check(pages: Path) -> None:
   # walk also proves it saw at least one page, so an empty or mislaid
   # tree cannot pass vacuously.
   for child in sorted(pages.iterdir()):
-    if child.name == "dev" or VERSION_NAME.fullmatch(child.name):
+    if child.name in {"dev", "main"} or VERSION_NAME.fullmatch(child.name):
       pages_seen = 0
       for page in child.rglob("*.html"):
         _assert_contains(page, NOINDEX)
         pages_seen += 1
       if pages_seen == 0:
         raise PublicationError(f"version tree {child.name} has no HTML")
+      if child.name == "dev":
+        _check_redirect_tree(child, "main")
       for name in TREE_UNSERVED:
         if (child / name).exists():
           raise PublicationError(
             f"served version tree {child.name} still contains {name}"
           )
-  latest_seen = 0
-  for page in (pages / "latest").rglob("*.html"):
+  latest = pages / "latest"
+  _check_redirect_tree(latest, "")
+  for page in latest.rglob("*.html"):
     _assert_contains(page, NOINDEX)
-    _assert_contains(page, 'content="0; url=')
-    latest_seen += 1
-  if latest_seen == 0:
-    raise PublicationError("latest tree has no redirect HTML")
   for name in TREE_UNSERVED:
     if (pages / "latest" / name).exists():
       raise PublicationError(f"served latest tree still contains {name}")
@@ -554,6 +924,23 @@ def parse_args() -> argparse.Namespace:
   sync_parser = subparsers.add_parser("sync")
   sync_parser.add_argument("pages", type=Path)
   sync_parser.add_argument("--root-source", type=Path)
+  normalize_parser = subparsers.add_parser("normalize-versions")
+  normalize_parser.add_argument("pages", type=Path)
+  select_parser = subparsers.add_parser("select")
+  select_parser.add_argument("--event", required=True)
+  select_parser.add_argument("--ref", required=True)
+  select_parser.add_argument("--requested-tag", default="")
+  select_parser.add_argument("--output", type=Path)
+  alias_parser = subparsers.add_parser("stable-alias")
+  alias_parser.add_argument("inventory", type=Path)
+  alias_parser.add_argument("--version", required=True)
+  alias_parser.add_argument("--title", required=True)
+  stamp_parser = subparsers.add_parser("stamp-doxygen")
+  stamp_parser.add_argument("config", type=Path)
+  stamp_parser.add_argument("--label", required=True)
+  label_parser = subparsers.add_parser("check-doxygen-label")
+  label_parser.add_argument("index", type=Path)
+  label_parser.add_argument("--label", required=True)
   for command in ("prepare-artifact", "check"):
     child = subparsers.add_parser(command)
     child.add_argument("pages", type=Path)
@@ -566,6 +953,27 @@ def main() -> int:
   try:
     if args.command == "sync":
       sync(args.pages, args.root_source)
+    elif args.command == "normalize-versions":
+      normalize_versions(args.pages.resolve())
+    elif args.command == "select":
+      selected = select_publication(
+        event=args.event, ref=args.ref, requested_tag=args.requested_tag
+      )
+      output = "".join(f"{key}={value}\n" for key, value in selected.items())
+      if args.output is None:
+        print(output, end="")
+      else:
+        args.output.write_text(output)
+    elif args.command == "stable-alias":
+      try:
+        inventory = json.loads(args.inventory.read_text())
+      except (json.JSONDecodeError, OSError) as error:
+        raise PublicationError(f"invalid versions.json: {error}") from error
+      print(stable_alias(inventory, version=args.version, title=args.title))
+    elif args.command == "stamp-doxygen":
+      stamp_doxygen_config(args.config, label=args.label)
+    elif args.command == "check-doxygen-label":
+      check_doxygen_label(args.index, label=args.label)
     elif args.command == "prepare-artifact":
       prepare_artifact(args.pages)
     else:

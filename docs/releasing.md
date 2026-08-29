@@ -79,6 +79,13 @@ new RC and restarts the observation window. A documentation-only correction
 does not restart the time window, but its new GA commit must still pass release
 mode.
 
+The RC tag publishes documentation at its exact SemVer path without moving the
+stable root. If an already-created RC predates that publication behavior,
+dispatch `.github/workflows/pages.yml` from `main` with `publish_tag` set to the
+exact tag. Verify the deployed RC homepage, API reference, demos, `noindex`
+metadata, selector title, and that `/`, `/latest/`, and `/main/` remain on their
+respective stable, compatibility, and development content.
+
 ## 1.0 general availability
 
 For GA, clear `TESS_VERSION_PRERELEASE`, assemble all three fragment streams,
@@ -86,6 +93,13 @@ and run the exact GA commit through release mode. Before tagging, verify there
 is no open, untriaged correctness, security, performance-gate, or
 release-process incident. Preserve the successful evidence artifact with the
 release records, then tag `v1.0.0`.
+
+The stable tag replaces the `/<major>.<minor>/` line and the canonical root,
+and refreshes `/latest/` as exact redirects. Before tagging, run the publication
+fixture that proves the matching RC becomes selector-hidden while its exact
+tree remains served. After deployment, verify root canonical, social, and
+JSON-LD URLs; the root-only sitemap and `robots.txt`; selector order; RC
+preservation; API links and demos; and path-preserving `/latest/` redirects.
 
 The vcpkg overlay remains checkout-based through GA. Publish a central-registry
 recipe and its release-archive hash only after the archive exists; neither is a
