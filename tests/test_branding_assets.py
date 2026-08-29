@@ -600,6 +600,10 @@ def test_path_strategy_scaling_chart_matches_accepted_evidence():
   assert re.search(r"reusable\s+storage pre-reserved", chart)
   assert "untimed harness warmup" in chart
   assert 'window.frameElement.style.height' in chart
+  assert 'root.getBoundingClientRect().height' in chart
+  assert 'document.documentElement.scrollHeight' not in chart
+  assert 'Math.abs(frameHeight - contentHeight) <= 1' in chart
+  assert '.chart-note { margin: 0.7rem 0 0; }' in chart
   assert 'document.body' in chart
   assert 'attributeFilter: ["data-md-color-scheme"]' in chart
   assert 'class="strategy-scaling-frame"' in article
