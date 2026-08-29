@@ -15,6 +15,15 @@
   background: #0d0c13;
 }
 
+.strategy-scaling-frame {
+  display: block;
+  width: 100%;
+  height: 58rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.7rem;
+  background: var(--md-default-bg-color);
+}
+
 @media (max-width: 40rem) {
   .strategy-demo-frame { height: 160rem; }
 }
