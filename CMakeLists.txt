@@ -49,6 +49,12 @@ option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
 option(TESS_BUILD_FUZZING "Build libFuzzer archive targets" OFF)
 option(TESS_BUILD_DOCS "Build the tess API reference with Doxygen" OFF)
+set(
+  TESS_DOC_VERSION_LABEL
+  "${TESS_VERSION_STRING}"
+  CACHE STRING
+  "Exact version label shown in generated documentation"
+)
 option(
   TESS_EXAMPLES_NO_EXCEPTIONS
   "Compile examples with language exceptions disabled"
@@ -360,6 +366,7 @@ endif()
 
 if(TESS_BUILD_DOCS)
   find_package(Doxygen REQUIRED)
+  set(DOXYGEN_PROJECT_NUMBER "${TESS_DOC_VERSION_LABEL}")
   # Keep implementation namespaces out of the published reference. The
   # repository's own gate enforces namespace-scope public API comments;
   # Doxygen can still list public members without requiring one comment each.

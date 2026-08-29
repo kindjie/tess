@@ -28,6 +28,10 @@ QUEUE_SPEC = importlib.util.spec_from_file_location(
 assert QUEUE_SPEC is not None and QUEUE_SPEC.loader is not None
 QUEUE = importlib.util.module_from_spec(QUEUE_SPEC)
 QUEUE_SPEC.loader.exec_module(QUEUE)
+PUBLISH_SPEC = importlib.util.spec_from_file_location("publish_docs_root", TOOL)
+assert PUBLISH_SPEC is not None and PUBLISH_SPEC.loader is not None
+PUBLISH = importlib.util.module_from_spec(PUBLISH_SPEC)
+PUBLISH_SPEC.loader.exec_module(PUBLISH)
 
 
 def _write(path: Path, text: str) -> None:
@@ -63,8 +67,12 @@ def _make_pages_tree(root: Path) -> None:
   _write(
     root / "versions.json",
     json.dumps([
-      {"version": "0.13", "aliases": ["latest"]},
-      {"version": "dev", "aliases": []},
+      {"version": "0.13", "title": "0.13", "aliases": ["latest"]},
+      {
+        "version": "main",
+        "title": "main (unreleased)",
+        "aliases": [],
+      },
     ]),
   )
   _write(root / "latest" / "index.html", _version_page("latest"))
@@ -103,6 +111,17 @@ def _make_pages_tree(root: Path) -> None:
     "</body></html>",
   )
   _write(root / "0.13" / "api" / "index.html", _version_page("0.13", "api/"))
+  _write(root / "main" / "index.html", _version_page("main"))
+  _write(
+    root / "main" / "guide" / "index.html",
+    "<html><head>"
+    f'<link rel="canonical" href="{SITE}main/guide/">'
+    "</head><body>"
+    f'<a href="{SITE}api/">API</a>'
+    f'<a href="{SITE}root-only/">root only</a>'
+    "</body></html>",
+  )
+  _write(root / "main" / "api" / "index.html", _version_page("main", "api/"))
   _write(root / "dev" / "index.html", _version_page("dev"))
   # dev carries correct tree-local metadata; its escapes are the mkdocs
   # nav api link and one link to a page that only exists at the root.
@@ -119,7 +138,7 @@ def _make_pages_tree(root: Path) -> None:
   sitemap = (
     f'<?xml version="1.0"?><urlset><url><loc>{SITE}latest/</loc></url></urlset>'
   )
-  for tree in ("latest", "0.13", "dev"):
+  for tree in ("latest", "0.13", "main", "dev"):
     _write(root / tree / "sitemap.xml", sitemap)
     (root / tree / "sitemap.xml.gz").write_bytes(
       gzip.compress(sitemap.encode(), mtime=0)
@@ -537,9 +556,9 @@ def test_prepare_localizes_resolvable_anchors_and_preserves_escapes(
   """
   _prepared_tree(tmp_path)
 
-  dev_guide = (tmp_path / "dev" / "guide" / "index.html").read_text()
-  assert 'href="/dev/api/"' in dev_guide
-  assert f'href="{SITE}root-only/"' in dev_guide
+  main_guide = (tmp_path / "main" / "guide" / "index.html").read_text()
+  assert 'href="/main/api/"' in main_guide
+  assert f'href="{SITE}root-only/"' in main_guide
 
   frozen = (tmp_path / "0.13" / "index.html").read_text()
   assert 'href="/0.13/api/"' in frozen
@@ -567,7 +586,7 @@ def test_prepare_repairs_stale_latest_head_metadata_in_numeric_trees(
   assert f"{SITE}latestassets/" not in frozen
 
   dev_guide = (tmp_path / "dev" / "guide" / "index.html").read_text()
-  assert f'<link rel="canonical" href="{SITE}dev/guide/">' in dev_guide
+  assert f'<link rel="canonical" href="{SITE}main/guide/">' in dev_guide
 
 
 def test_check_walks_every_page_not_just_tree_indexes(tmp_path: Path):
@@ -578,9 +597,11 @@ def test_check_walks_every_page_not_just_tree_indexes(tmp_path: Path):
   """
   _prepared_tree(tmp_path)
   nested = tmp_path / "dev" / "guide" / "index.html"
-  nested.write_text(nested.read_text().replace(
-    '<meta name="robots" content="noindex, follow">', "", 1
-  ))
+  nested.write_text(
+    nested.read_text().replace(
+      '<meta name="robots" content="noindex, follow">', "", 1
+    )
+  )
 
   result = _run_tool("check", tmp_path)
 
@@ -649,3 +670,324 @@ def test_root_copy_keeps_noindex_on_canonical_less_utility_pages(
   assert noindex in utility
   # An authored page (canonical present) still sheds its tree noindex.
   assert "noindex" not in (tmp_path / "index.html").read_text()
+
+
+def test_selection_publishes_main_under_its_canonical_snapshot_name():
+  selected = PUBLISH.select_publication(
+    event="push", ref="refs/heads/main", requested_tag=""
+  )
+
+  assert selected == {
+    "version": "main",
+    "alias": "",
+    "title": "main (unreleased)",
+    "docs_path": "main",
+    "version_label": "main (unreleased)",
+    "source_ref": "",
+    "expected_version": "",
+  }
+
+
+@pytest.mark.parametrize(
+  ("tag", "version", "alias", "title"),
+  [
+    ("v1.0.0", "1.0", "latest", "1.0.0"),
+    ("v1.0.0-rc.1", "1.0.0-rc.1", "", "1.0.0-rc.1"),
+  ],
+)
+def test_selection_publishes_stable_and_rc_tags_exactly(
+  tag: str, version: str, alias: str, title: str
+):
+  selected = PUBLISH.select_publication(
+    event="push", ref=f"refs/tags/{tag}", requested_tag=""
+  )
+
+  assert selected["version"] == version
+  assert selected["alias"] == alias
+  assert selected["title"] == title
+  assert selected["docs_path"] == version
+  assert selected["version_label"] == title
+  assert selected["expected_version"] == title
+
+
+def test_manual_republish_selects_the_exact_tag_from_main():
+  selected = PUBLISH.select_publication(
+    event="workflow_dispatch",
+    ref="refs/heads/main",
+    requested_tag="v1.0.0-rc.1",
+  )
+
+  assert selected["version"] == "1.0.0-rc.1"
+  assert selected["source_ref"] == "refs/tags/v1.0.0-rc.1"
+  assert selected["expected_version"] == "1.0.0-rc.1"
+
+
+@pytest.mark.parametrize(
+  ("ref", "tag"),
+  [
+    ("refs/heads/topic", "v1.0.0-rc.1"),
+    ("refs/heads/main", "1.0.0-rc.1"),
+    ("refs/heads/main", "v1.0"),
+    ("refs/heads/main", "v1.0.0-beta.1"),
+  ],
+)
+def test_manual_republish_rejects_untrusted_or_malformed_selection(
+  ref: str, tag: str
+):
+  with pytest.raises(PUBLISH.PublicationError):
+    PUBLISH.select_publication(
+      event="workflow_dispatch", ref=ref, requested_tag=tag
+    )
+
+
+def test_plain_manual_and_pull_request_runs_verify_main_without_publishing():
+  for event, ref in (
+    ("workflow_dispatch", "refs/heads/main"),
+    ("pull_request", "refs/pull/1/merge"),
+  ):
+    selected = PUBLISH.select_publication(
+      event=event, ref=ref, requested_tag=""
+    )
+    assert selected["version"] == ""
+    assert selected["docs_path"] == "main"
+    assert selected["version_label"] == "main (unreleased)"
+
+
+def _version_entry(
+  version: str,
+  title: str,
+  *,
+  aliases: list[str] | None = None,
+  hidden: bool = False,
+) -> dict[str, object]:
+  entry: dict[str, object] = {
+    "version": version,
+    "title": title,
+    "aliases": aliases or [],
+  }
+  if hidden:
+    entry["properties"] = {"hidden": True}
+  return entry
+
+
+def test_normalize_versions_orders_selector_and_hides_superseded_rcs(
+  tmp_path: Path,
+):
+  entries = [
+    _version_entry("dev", "dev"),
+    _version_entry("1.0.0-rc.1", "1.0.0-rc.1"),
+    _version_entry("0.13", "0.13.2", aliases=["latest"]),
+    _version_entry("main", "main"),
+    _version_entry("1.0.0-rc.2", "1.0.0-rc.2"),
+    _version_entry("0.12", "0.12.4"),
+  ]
+  _write(tmp_path / "versions.json", json.dumps(entries))
+  for version in ("dev", "main", "0.13", "0.12", "1.0.0-rc.1", "1.0.0-rc.2"):
+    (tmp_path / version).mkdir()
+
+  result = _run_tool("normalize-versions", tmp_path)
+
+  assert result.returncode == 0, result.stderr
+  normalized = json.loads((tmp_path / "versions.json").read_text())
+  assert [entry["version"] for entry in normalized] == [
+    "0.13",
+    "1.0.0-rc.2",
+    "main",
+    "0.12",
+    "1.0.0-rc.1",
+  ]
+  assert normalized[0]["aliases"] == ["latest"]
+  assert normalized[1].get("properties", {}).get("hidden") is not True
+  assert normalized[-1]["properties"]["hidden"] is True
+  assert normalized[2]["title"] == "main (unreleased)"
+  assert (tmp_path / "1.0.0-rc.1").is_dir()
+
+
+def test_ga_transition_hides_rc_but_preserves_exact_tree_and_latest_redirect(
+  tmp_path: Path,
+):
+  _make_pages_tree(tmp_path)
+  _write(tmp_path / "1.0.0-rc.1" / "index.html", _version_page("1.0.0-rc.1"))
+  _write(tmp_path / "main" / "index.html", _version_page("main"))
+  _write(tmp_path / "1.0" / "index.html", _version_page("1.0"))
+  _write(
+    tmp_path / "versions.json",
+    json.dumps([
+      _version_entry("1.0.0-rc.1", "1.0.0-rc.1"),
+      _version_entry("0.13", "0.13.2"),
+      _version_entry("main", "main"),
+      _version_entry("1.0", "1.0.0", aliases=["latest"]),
+    ]),
+  )
+
+  assert _run_tool("normalize-versions", tmp_path).returncode == 0
+  assert _run_tool("sync", tmp_path).returncode == 0
+  assert _run_tool("prepare-artifact", tmp_path).returncode == 0
+
+  entries = json.loads((tmp_path / "versions.json").read_text())
+  assert [entry["version"] for entry in entries[:3]] == ["1.0", "main", "0.13"]
+  rc = next(entry for entry in entries if entry["version"] == "1.0.0-rc.1")
+  assert rc["properties"]["hidden"] is True
+  assert (tmp_path / "1.0.0-rc.1" / "index.html").is_file()
+  latest = (tmp_path / "latest" / "guide" / "index.html").read_text()
+  assert f'content="0; url={SITE}guide/"' in latest
+  assert _run_tool("check", tmp_path).returncode == 0
+
+
+def test_sync_converts_dev_html_to_main_redirects_and_retains_assets(
+  tmp_path: Path,
+):
+  _make_pages_tree(tmp_path)
+  _write(tmp_path / "main" / "index.html", _version_page("main"))
+  _write(
+    tmp_path / "main" / "guide" / "index.html",
+    _version_page("main", "guide/"),
+  )
+  _write(tmp_path / "main" / "assets" / "new.js", "new")
+  _write(tmp_path / "dev" / "assets" / "legacy.js", "legacy")
+
+  assert _run_tool("sync", tmp_path).returncode == 0
+
+  redirect = (tmp_path / "dev" / "guide" / "index.html").read_text()
+  assert PUBLISH.NOINDEX in redirect
+  assert f'content="0; url={SITE}main/guide/"' in redirect
+  assert (tmp_path / "dev" / "assets" / "new.js").read_text() == "new"
+  assert (tmp_path / "dev" / "assets" / "legacy.js").read_text() == "legacy"
+  assert (
+    "Redirecting"
+    not in (tmp_path / "main" / "guide" / "index.html").read_text()
+  )
+
+
+def test_ordinary_sync_repairs_both_latest_spellings_in_root_metadata(
+  tmp_path: Path,
+):
+  _make_pages_tree(tmp_path)
+  assert _run_tool("sync", tmp_path).returncode == 0
+  _write(
+    tmp_path / "index.html",
+    "<html><head>"
+    f'<link rel="canonical" href="{SITE}latest">'
+    f'<meta property="og:url" content="{SITE}latest/">'
+    f'<meta property="og:image" content="{SITE}latestassets/card.png">'
+    f'<meta name="twitter:image" content="{SITE}latest/assets/card.png">'
+    '<script type="application/ld+json">'
+    f'{{"@type": "WebSite", "url": "{SITE}latest"}}</script>'
+    "</head></html>",
+  )
+
+  assert _run_tool("sync", tmp_path).returncode == 0
+
+  root = (tmp_path / "index.html").read_text()
+  assert f"{SITE}latest" not in root
+  assert f'<link rel="canonical" href="{SITE}">' in root
+  assert f'"url": "{SITE}"' in root
+
+
+@pytest.mark.parametrize(
+  "metadata",
+  [
+    '<link rel="canonical" href="https://tess.owx.dev/latest/">',
+    '<meta property="og:url" content="https://tess.owx.dev/latest/">',
+    '<meta property="og:image" content="https://tess.owx.dev/latest/a.png">',
+    '<meta name="twitter:image" content="https://tess.owx.dev/latest/a.png">',
+    '<script type="application/ld+json">'
+    '{"url": "https://tess.owx.dev/latest"}</script>',
+  ],
+)
+def test_check_rejects_latest_in_any_root_identity_metadata(
+  tmp_path: Path, metadata: str
+):
+  _prepared_tree(tmp_path)
+  page = tmp_path / "guide" / "index.html"
+  _write(page, f"<html><head>{metadata}</head></html>")
+
+  result = _run_tool("check", tmp_path)
+
+  assert result.returncode != 0
+  assert "latest" in result.stderr
+
+
+def test_prepare_and_check_cover_main_and_exact_rc_trees(tmp_path: Path):
+  _make_pages_tree(tmp_path)
+  for version in ("main", "1.0.0-rc.1"):
+    _write(tmp_path / version / "index.html", _version_page(version))
+    _write(
+      tmp_path / version / "guide" / "index.html",
+      _version_page(version, "guide/"),
+    )
+
+  assert _run_tool("sync", tmp_path).returncode == 0
+  assert _run_tool("prepare-artifact", tmp_path).returncode == 0
+  assert _run_tool("check", tmp_path).returncode == 0
+  for version in ("main", "1.0.0-rc.1"):
+    assert (
+      PUBLISH.NOINDEX
+      in (tmp_path / version / "guide" / "index.html").read_text()
+    )
+
+
+def test_stable_alias_policy_rejects_older_patch_in_the_same_line():
+  entries = [
+    _version_entry("1.0", "1.0.1", aliases=["latest"]),
+    _version_entry("main", "main (unreleased)"),
+  ]
+
+  with pytest.raises(PUBLISH.PublicationError, match="newer patch"):
+    PUBLISH.stable_alias(entries, version="1.0", title="1.0.0")
+
+
+def test_stable_alias_policy_refreshes_older_line_without_moving_root():
+  entries = [
+    _version_entry("1.0", "1.0.1", aliases=["latest"]),
+    _version_entry("0.13", "0.13.2"),
+  ]
+
+  assert PUBLISH.stable_alias(entries, version="0.13", title="0.13.3") == ""
+
+
+def test_stable_alias_policy_moves_root_for_newest_patch():
+  entries = [_version_entry("0.13", "0.13.2", aliases=["latest"])]
+
+  assert (
+    PUBLISH.stable_alias(entries, version="0.13", title="0.13.3") == "latest"
+  )
+
+
+@pytest.mark.parametrize("tree", ["latest", "dev"])
+def test_check_rejects_a_wrong_compatibility_redirect(
+  tmp_path: Path, tree: str
+):
+  _make_pages_tree(tmp_path)
+  _write(tmp_path / "main" / "index.html", _version_page("main"))
+  _write(
+    tmp_path / "main" / "guide" / "index.html", _version_page("main", "guide/")
+  )
+  assert _run_tool("sync", tmp_path).returncode == 0
+  assert _run_tool("prepare-artifact", tmp_path).returncode == 0
+  page = tmp_path / tree / "guide" / "index.html"
+  page.write_text(page.read_text().replace("guide/", "wrong/"))
+
+  result = _run_tool("check", tmp_path)
+
+  assert result.returncode != 0
+  assert "redirect" in result.stderr
+
+
+def test_check_rejects_selector_order_drift(tmp_path: Path):
+  _make_pages_tree(tmp_path)
+  _write(tmp_path / "main" / "index.html", _version_page("main"))
+  _write(
+    tmp_path / "versions.json",
+    json.dumps([
+      _version_entry("main", "main (unreleased)"),
+      _version_entry("0.13", "0.13.2", aliases=["latest"]),
+    ]),
+  )
+  assert _run_tool("sync", tmp_path).returncode == 0
+  assert _run_tool("prepare-artifact", tmp_path).returncode == 0
+
+  result = _run_tool("check", tmp_path)
+
+  assert result.returncode != 0
+  assert "versions.json is not normalized" in result.stderr

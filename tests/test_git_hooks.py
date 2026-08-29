@@ -1287,6 +1287,8 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   )
   assert "set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)" in cmake
   assert "set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)" in cmake
+  assert 'set(DOXYGEN_PROJECT_NUMBER "${TESS_DOC_VERSION_LABEL}")' in cmake
+  assert '-DTESS_DOC_VERSION_LABEL="$SELECTED_VERSION_LABEL"' in workflow
   assert '"tess::detail::*"' in cmake
   assert "API reference: https://tess.owx.dev/api/" in mkdocs
 
@@ -1299,6 +1301,26 @@ def test_pages_publication_serializes_and_checks_the_uploaded_tree():
   assert "group: pages-${{ github.ref }}" not in workflow
   wait = "python3 tools/wait_for_publish_turn.py"
   assert "name: built-documentation" in workflow
+  assert "publish_tag:" in workflow
+  assert "publish_version:" not in workflow
+  assert "python3 tools/publish_docs_root.py select" in workflow
+  assert "ref: ${{ needs.select.outputs.source_ref || github.sha }}" in workflow
+  publish_job = workflow.split("  publish:\n", 1)[1].split(
+    "  deploy:\n", 1
+  )[0]
+  assert "path: build/source" in publish_job
+  assert "working-directory: build/source" in publish_job
+  assert 'PUBLICATION_TOOL="$GITHUB_WORKSPACE/tools/publish_docs_root.py"' in (
+    publish_job
+  )
+  assert 'export PATH="$GITHUB_WORKSPACE/.venv-docs/bin:$PATH"' in publish_job
+  assert 'export PATH="$PWD/.venv-docs/bin:$PATH"' not in publish_job
+  assert 'python3 "$PUBLICATION_TOOL" normalize-versions build/pages' in (
+    publish_job
+  )
+  assert "path: build/source/build/pages" in workflow
+  assert "mike deploy --update-aliases \\\n" in workflow
+  assert '--title "$TITLE"' in workflow
   # Generated-page finalization must run before the link check and the
   # artifact upload, on every build: located later, a wrong hook point
   # or an unclassified page shape would only fail after merge.
@@ -1310,19 +1332,25 @@ def test_pages_publication_serializes_and_checks_the_uploaded_tree():
   )
   assert workflow.index(finalize) < workflow.index(link_check)
   sync = (
-    "python3 tools/publish_docs_root.py sync \\\n"
+    'python3 "$PUBLICATION_TOOL" sync \\\n'
     '            build/pages "${root_args[@]}"'
   )
-  prepare = "python3 tools/publish_docs_root.py prepare-artifact build/pages"
-  check = "python3 tools/publish_docs_root.py check build/pages"
+  prepare = 'python3 "$PUBLICATION_TOOL" prepare-artifact build/pages'
+  check = 'python3 "$PUBLICATION_TOOL" check build/pages'
+  normalize = 'python3 "$PUBLICATION_TOOL" normalize-versions build/pages'
   push = "git -C build/pages push origin HEAD:gh-pages"
   upload = "- name: Upload Pages artifact"
   assert wait in workflow
   assert sync in workflow
+  assert normalize in workflow
   assert prepare in workflow
   assert check in workflow
   assert push in workflow
   assert workflow.index(wait) < workflow.index("mike deploy --update-aliases")
+  assert workflow.index("mike deploy --update-aliases") < workflow.index(
+    normalize
+  )
+  assert workflow.index(normalize) < workflow.index(sync)
   assert workflow.index(sync) < workflow.index(prepare)
   assert workflow.index(prepare) < workflow.index(check)
   assert workflow.index(check) < workflow.index(push)

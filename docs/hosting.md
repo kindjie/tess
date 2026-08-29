@@ -12,9 +12,11 @@ The site publishes one tree per documented version, managed by
 | URL | Content |
 | --- | --- |
 | `/` | Newest stable release and the canonical public URL |
-| `/latest/` | Compatibility redirects plus retained non-HTML assets (served without its own `sitemap.xml`, `llms.txt`, or `robots.txt`) |
-| `/<major>.<minor>/` | Immutable, non-indexed release archive |
-| `/dev/` | Non-indexed development snapshot from `main` |
+| `/latest/` | Exact redirects; compatibility assets retained |
+| `/<major>.<minor>/` | Latest patch in that release line; noindexed archive |
+| `/<major>.<minor>.<patch>-rc.<n>/` | Immutable, noindexed RC archive |
+| `/main/` | Non-indexed development snapshot, titled `main (unreleased)` |
+| `/dev/` | Redirects to `/main/`; legacy assets retained |
 
 Each tree is self-contained: its own pages, its own `api/` reference, and its
 own `demo/` builds. The version selector in the header comes from Material and
@@ -42,12 +44,15 @@ version tree there, assembles the stable root and compatibility redirects,
 then checks the whole branch out and uploads it as the Pages artifact. The
 assembler owns only paths in its manifest and fails closed before deleting
 version trees or unknown operator-owned files. The first deployment can
-bootstrap the root from the existing `latest` copy; later `main` deployments
-leave the stable root unchanged.
+bootstrap the root from the existing `latest` copy; later `main` and RC
+deployments leave the stable root unchanged.
 
 The root `robots.txt` is the exception: the assembler writes it from its
-own constant on every run, including the runs that otherwise leave the
-established root alone. It is authored rather than inherited because the
+own constant on every run, including runs that otherwise leave the established
+root alone. Those ordinary runs also repair legacy root identity metadata that
+names either `/latest` or `/latest/`; the final artifact check rejects stale
+root canonical, Open Graph, Twitter, and JSON-LD URLs. The root policy is
+authored rather than inherited because the
 stable copy comes from a released version tree, so directives that were
 correct at that release would stay pinned at the root until the next one
 — which is how `Disallow: /dev/` outlived the switch to `noindex,
@@ -57,37 +62,40 @@ never rewritten; publication fails instead, so an operator edit is
 resolved deliberately.
 
 Before upload, the workflow prepares the ephemeral Pages artifact: it adds
-`noindex, follow` to `/dev/` and numeric archive HTML, removes each version
+`noindex, follow` to `/main/`, `/dev/`, stable archives, and exact RC HTML,
+removes each version
 tree's `sitemap.xml`, `sitemap.xml.gz`, `llms.txt`, and nested `robots.txt`
 (those URLs return 404 from the served site), localizes a tree's same-origin
 anchors onto its own pages where the target exists in-tree, and repoints a
-frozen numeric tree's stale `/latest/`-prefixed head metadata at the tree's
+frozen version tree's stale `/latest/`-prefixed head metadata at the tree's
 own URL. None of that rewrites the stored archive -- the storage branch is
-committed before preparation runs, which the workflow-order tests pin. `/latest/` HTML has an immediate redirect, canonical root
-URL, and the same `noindex` policy. The root sitemap contains only canonical
-root URLs, and `robots.txt` names it so crawlers can read page directives.
+committed before preparation runs, which the workflow-order tests pin.
+`/latest/` HTML has an immediate redirect, canonical root URL, and the same
+`noindex` policy. The root sitemap contains only canonical root URLs, and
+`robots.txt` names it so crawlers can read page directives.
 
 ### Publishing a version
 
-- Pushing to `main` publishes `/dev/`.
+- Pushing to `main` publishes `/main/`. The publisher refreshes `/dev/` as a
+  path-preserving HTML redirect tree and retains its non-HTML compatibility
+  assets.
 - Pushing a stable `v<major>.<minor>.<patch>` tag publishes
   `/<major>.<minor>/`; the stable root and `latest` compatibility tree move
   only when the tag's version is at least the currently aliased one, so a
   patch on an older minor line refreshes its own tree without pointing
   the site backward.
-- A prerelease tag (for example `v1.0.0-rc.1`) publishes nothing:
-  `/dev/` already tracks the candidate during its observation window,
-  and `latest` keeps pointing at the newest stable release.
-- Accepted residual: the alias guard compares versions numerically, so
-  a mistyped `publish_version` that is numerically newer than every
-  release (say `9.9`) would create a junk tree and take `latest` plus the
-  stable root; no guard can distinguish it from a legitimate retroactive
-  publish of a genuinely newer tag, so the dispatch input is the operator's
-  responsibility.
-- Dispatching the workflow against a ref with `publish_version` set
-  (validated as `<major>.<minor>`) does the same for that ref, which is
-  how an existing tag is published retroactively. A dispatch that moves the
-  stable root uses the complete verified build from the selected ref.
+- Pushing an RC tag such as `v1.0.0-rc.1` publishes its exact, immutable
+  `/1.0.0-rc.1/` tree without moving the stable root or `/latest/`.
+- To republish an existing tag, dispatch the workflow from `main` with
+  `publish_tag` set to the exact stable or RC tag. The build and Mike source
+  come from that tag; selection, artifact assembly, validation, and deployment
+  use the current trusted workflow commit. A source whose CMake version does
+  not match the requested tag fails before publication.
+- The selector inventory is normalized after every Mike deployment. The
+  newest stable release comes first, followed by the highest unsuperseded RCs,
+  `main`, and older stable lines. A newer RC hides earlier candidates for the
+  same base version; GA hides all candidates for that base. Hidden RC entries
+  and their exact directories remain available.
 
 Pull requests build and verify without publishing anything.
 
@@ -162,4 +170,6 @@ HTML into `build/site/api`. Doxygen warnings, broken authored-site links, an
 invalid diagram, or a demo that does not reach its ready state block
 deployment. `tools/publish_docs_root.py check` then validates the final tree
 that is actually uploaded: stable root canonical and sitemap URLs,
-`/latest/` redirects, and non-indexing metadata on version trees.
+`/latest/` and `/dev/` redirects, selector ordering, root identity metadata,
+and non-indexing metadata on every version tree. Doxygen's project number and
+generated canonical paths use the exact selected label and publication path.
