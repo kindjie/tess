@@ -691,5 +691,8 @@ def test_path_strategy_runner_avoids_redundant_privileged_governor_write():
       '"$RESULTS/governor-before.txt"; then' in runner
   )
   assert 'if [ "$governors_changed" -eq 1 ]; then' in runner
+  assert runner.index("governors_changed=1") < runner.index(
+      "set_governors performance"
+  )
   assert '--timeout 60' in runner
   assert '--timeout 20' in runner

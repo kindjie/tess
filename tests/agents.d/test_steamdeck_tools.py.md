@@ -10,4 +10,5 @@
 - Deck campaign staging requires a completely pristine source worktree and
   performs its fresh cross-build outside a read-only source mount.
 - The path-strategy runner avoids privileged governor writes when every CPU is
-  already pinned to `performance`, while retaining restoration after changes.
+  already pinned to `performance`, and arms restoration before the first
+  privileged write so partial pinning failures are rolled back.

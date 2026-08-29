@@ -78,8 +78,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if grep -qv ':performance$' "$RESULTS/governor-before.txt"; then
-  set_governors performance
   governors_changed=1
+  set_governors performance
 fi
 snapshot_governors "$RESULTS/governor-during.txt"
 grep -qv ':performance$' "$RESULTS/governor-during.txt" \
