@@ -230,7 +230,7 @@
     }
 
     .chart-root { position: relative; }
-    .chart-note { margin-top: 0.7rem; }
+    .chart-note { margin: 0.7rem 0 0; }
 
     @media (min-width: 35rem) {
       .plots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -727,8 +727,17 @@
       function resizeFrame() {
         if (!window.frameElement) return;
         try {
-          window.frameElement.style.height =
-            `${document.documentElement.scrollHeight + 4}px`;
+          const bodyStyle = window.getComputedStyle(document.body);
+          const verticalPadding =
+            Number.parseFloat(bodyStyle.paddingTop) +
+            Number.parseFloat(bodyStyle.paddingBottom);
+          const contentHeight = Math.ceil(
+            root.getBoundingClientRect().height + verticalPadding);
+          const frameHeight = Number.parseFloat(
+            window.frameElement.style.height);
+          if (Number.isFinite(frameHeight) &&
+              Math.abs(frameHeight - contentHeight) <= 1) return;
+          window.frameElement.style.height = `${contentHeight}px`;
         } catch (_error) {
           // The separate-page view has no same-origin parent frame to resize.
         }
