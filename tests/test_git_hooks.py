@@ -1258,7 +1258,9 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   stamp = 'python3 "$PUBLICATION_TOOL" stamp-doxygen'
   check_label = 'python3 "$PUBLICATION_TOOL" check-doxygen-label'
   publish = "cp -R build/docs-api/docs/html build/site/api"
-  link_check = "python3 tools/check_docs_links.py build/site"
+  link_check = (
+    "python3 build/publication/tools/check_docs_links.py build/site"
+  )
 
   assert "DOXYGEN_VERSION: 1.17.0" in workflow
   assert (
@@ -1337,8 +1339,8 @@ def test_pages_publication_serializes_and_checks_the_uploaded_tree():
   # Generated-page finalization must run before the link check and the
   # artifact upload, on every build: located later, a wrong hook point
   # or an unclassified page shape would only fail after merge.
-  finalize = "python3 tools/finalize_generated_pages.py build/site"
-  link_check = "python3 tools/check_docs_links.py build/site"
+  finalize = "build/publication/tools/finalize_generated_pages.py"
+  link_check = "build/publication/tools/check_docs_links.py"
   assert finalize in workflow
   assert workflow.index("cp -R build/docs-api/docs/html build/site/api") < (
     workflow.index(finalize)

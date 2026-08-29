@@ -158,7 +158,17 @@ jobs:
       # generated api/ and demo/ trees exist; those carry their own
       # stamped contract.
       - name: Check maintained page descriptions
-        run: python3 tools/check_page_descriptions.py build/site
+        env:
+          SELECTED_SOURCE_REF: ${{ needs.select.outputs.source_ref }}
+        run: |
+          if [ -f tools/check_page_descriptions.py ]; then
+            python3 tools/check_page_descriptions.py build/site
+          elif [ -n "$SELECTED_SOURCE_REF" ]; then
+            echo "Selected source predates the maintained-description check"
+          else
+            echo "Current source lacks check_page_descriptions.py" >&2
+            exit 1
+          fi
 
       - name: Build API reference
         env:
@@ -207,14 +217,15 @@ jobs:
         env:
           SELECTED_DOCS_PATH: ${{ needs.select.outputs.docs_path }}
         run: |
-          python3 tools/finalize_generated_pages.py build/site \
+          python3 build/publication/tools/finalize_generated_pages.py \
+            build/site \
             --version "$SELECTED_DOCS_PATH"
 
       - name: Check generated documentation links
         run: |
           # Doxygen 1.17.0 emits these quick-index links without anchors. Keep
           # each exception target-specific so every other missing anchor fails.
-          python3 tools/check_docs_links.py build/site \
+          python3 build/publication/tools/check_docs_links.py build/site \
             --ignore-missing-anchor api/functions_vars.html#index_b \
             --ignore-missing-anchor api/functions_vars.html#index_c \
             --ignore-missing-anchor api/functions_vars.html#index_d \
