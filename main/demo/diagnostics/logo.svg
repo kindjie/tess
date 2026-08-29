@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="396"
+     height="104"
+     viewBox="0 0 396 104"
+     role="img"
+     aria-labelledby="title description">
+  <title id="title">Tess project logo for dark backgrounds</title>
+  <desc id="description">
+    Lowercase Tess lettering in Sirenia Light beside four violet tiles and
+    one raised amber tile.
+  </desc>
+
+  <defs>
+    <linearGradient id="violet"
+                    x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7f6dbc"/>
+      <stop offset="1" stop-color="#6755a7"/>
+    </linearGradient>
+    <linearGradient id="amber"
+                    x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7bd5f"/>
+      <stop offset="1" stop-color="#efaa48"/>
+    </linearGradient>
+  </defs>
+
+  <!--
+    Native Sirenia Light outlines. Glyph positions use the font's shaped
+    advances: t=311, e=459, s=422, s=431 units.
+  -->
+  <g transform="translate(-1.4 98) scale(.17 -.17)"
+     fill="#f5f2ff">
+    <path d="M193 -11
+             C272 -11 308 50 308 69
+             C308 79 303 84 293 84
+             C278 84 260 51 222 51
+             C188 51 171 74 171 130
+             V384
+             C171 391 175 395 183 395
+             H281
+             C296 395 305 406 305 425
+             C305 438 300 446 288 446
+             C270 446 218 445 183 445
+             C175 445 171 449 171 456
+             V549
+             C171 558 166 562 158 562
+             H152
+             C134 562 125 553 116 497
+             C104 469 92 452 59 440
+             C29 430 20 429 20 415
+             C20 397 30 395 72 395
+             C83 395 86 391 86 384
+             V128
+             C86 43 114 -11 193 -11Z"/>
+
+    <path transform="translate(311)"
+          d="M240 -10
+             C357 -10 418 61 418 92
+             C418 102 413 106 404 106
+             C382 106 349 49 258 49
+             C191 49 130 96 130 180
+             C130 185 133 187 139 187
+             C332 187 427 238 427 330
+             C427 399 374 456 262 456
+             C133 456 40 362 40 213
+             C40 76 123 -10 240 -10Z
+             M140 227
+             C133 227 129 231 129 243
+             C129 346 182 411 256 411
+             C317 411 340 376 340 329
+             C340 269 292 227 140 227Z"/>
+
+    <path transform="translate(770)"
+          d="M215 -10
+             C330 -10 391 45 391 118
+             C391 189 335 229 247 260
+             C157 293 127 315 127 352
+             C127 390 163 411 211 411
+             C312 411 319 326 346 326
+             C362 326 379 364 379 385
+             C379 409 317 456 213 456
+             C108 456 47 404 47 336
+             C47 266 106 227 193 196
+             C280 164 309 140 309 101
+             C309 62 273 36 222 36
+             C111 36 99 136 68 136
+             C51 136 35 98 35 79
+             C35 55 98 -10 215 -10Z"/>
+
+    <path transform="translate(1192)"
+          d="M215 -10
+             C330 -10 391 45 391 118
+             C391 189 335 229 247 260
+             C157 293 127 315 127 352
+             C127 390 163 411 211 411
+             C312 411 319 326 346 326
+             C362 326 379 364 379 385
+             C379 409 317 456 213 456
+             C108 456 47 404 47 336
+             C47 266 106 227 193 196
+             C280 164 309 140 309 101
+             C309 62 273 36 222 36
+             C111 36 99 136 68 136
+             C51 136 35 98 35 79
+             C35 55 98 -10 215 -10Z"/>
+  </g>
+
+  <rect x="359" y="5"
+        width="30" height="30" rx="4"
+        fill="url(#amber)"/>
+
+  <g fill="url(#violet)">
+    <rect x="324" y="38" width="30" height="30" rx="4"/>
+    <rect x="359" y="38" width="30" height="30" rx="4"/>
+    <rect x="324" y="72" width="30" height="30" rx="4"/>
+    <rect x="359" y="72" width="30" height="30" rx="4"/>
+  </g>
+</svg>

@@ -1,0 +1,2788 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Topology in tess: region graphs, movement classes, passability and cost expressions, and the reachability precheck.">
+      
+      
+      
+        <link rel="canonical" href="https://tess.owx.dev/main/architecture/topology/">
+      
+      
+        <link rel="prev" href="../path/">
+      
+      
+        <link rel="next" href="../spatial-coordination/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/tess-symbol.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Topology - tess</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    <meta property="og:type" content="website">
+  <meta property="og:site_name" content="tess">
+  <meta property="og:title" content="Topology - tess">
+  <meta property="og:description" content="Topology in tess: region graphs, movement classes, passability and cost expressions, and the reachability precheck.">
+  <meta property="og:url" content="https://tess.owx.dev/main/architecture/topology/">
+  <meta property="og:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
+  <meta property="og:image:width" content="2560">
+  <meta property="og:image:height" content="1280">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Topology - tess">
+  <meta name="twitter:description" content="Topology in tess: region graphs, movement classes, passability and cost expressions, and the reachability precheck.">
+  <meta name="twitter:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#topology-foundation" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="tess" class="md-header__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            tess
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Topology
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Decision guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://tess.owx.dev/api/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../performance/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Performance
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../use-cases/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Use cases
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../integration-policy/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="tess" class="md-nav__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    tess
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Decision guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/residency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Residency
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/writes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/pathfinding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding strategy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/congestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Congestion pricing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pathfinding-strategy-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology and precheck
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/entities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Entities and ECS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/presentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terminology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terminology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility evidence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shape/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shapes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../persistence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Persistence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../block/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Block kernels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../no-exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exception-free builds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../query/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintenance experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#region-graph-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Region Graph Pipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Region Graph Pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#construction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Construction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#incremental-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Incremental Updates
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public Surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behavior
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#movement-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Movement Vocabulary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resolved-transitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resolved Transitions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transition-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transition Providers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stairs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stairs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deliberate-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deliberate Limits
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deliberate Limits">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#field-edits-do-not-make-a-graph-stale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Field edits do not make a graph stale
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spatial-coordination/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial coordination
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../queued-operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Queued operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../simulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation and scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ecs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ECS integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://tess.owx.dev/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../use-cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integration-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../upgrade-1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade to 1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../for-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    For agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#region-graph-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Region Graph Pipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Region Graph Pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#construction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Construction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#incremental-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Incremental Updates
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public Surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behavior
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#movement-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Movement Vocabulary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resolved-transitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resolved Transitions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transition-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transition Providers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stairs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stairs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deliberate-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deliberate Limits
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deliberate Limits">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#field-edits-do-not-make-a-graph-stale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Field edits do not make a graph stale
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="topology-foundation">Topology Foundation</h1>
+<p>The current topology layer is a local chunk-region foundation. It lives under
+<code>include/tess/topology/</code> and is exported by <code>tess/tess.h</code>.</p>
+<h2 id="region-graph-pipeline">Region Graph Pipeline</h2>
+<h3 id="construction">Construction</h3>
+<p>Local labeling depends only on resident chunks and the normalized movement
+class predicate.</p>
+<pre class="mermaid"><code>flowchart TB
+  accTitle: Local topology construction
+  accDescr: A movement predicate labels connected regions inside each resident chunk and records exits at chunk boundaries.
+
+  Inputs["Resident chunks plus movement class"]
+  Local["Flood-fill local regions per chunk"]
+  Exits["Record boundary exits"]
+  Inputs --&gt; Local --&gt; Exits</code></pre>
+<p>The graph builder then combines ordinary boundary adjacency with optional
+provider transitions.</p>
+<pre class="mermaid"><code>flowchart TB
+  accTitle: Region-graph assembly
+  accDescr: Boundary exits and provider transitions become portals, a dense region index, and CSR adjacency used by reachability queries.
+
+  Sources["Boundary exits plus transition provider"]
+  Portals["Pair exits and add provider transitions"]
+  Index["Build dense region index and CSR adjacency"]
+  Graph["Stamped RegionGraph"]
+  Query["reachable and precheck_path"]
+  Sources --&gt; Portals --&gt; Index --&gt; Graph --&gt; Query</code></pre>
+<p>Long-distance queries can reconstruct a coarse region route and its chunk
+corridor without touching tile-scale search.</p>
+<pre class="mermaid"><code>flowchart LR
+  Graph["Fresh RegionGraph"] --&gt; Route["coarse_path BFS"]
+  Route --&gt; Regions["Ordered regions and portals"]
+  Route --&gt; Corridor["Unique corridor chunks and clipped bounds"]</code></pre>
+<h3 id="incremental-updates">Incremental Updates</h3>
+<pre class="mermaid"><code>stateDiagram-v2
+  accTitle: Region-graph incremental update
+  accDescr: Dirty chunks are patched only while graph stamps match; otherwise the builder performs a full rebuild.
+
+  [*] --&gt; CheckStamps: dirty chunks plus face neighbors
+  CheckStamps --&gt; Patch: stamps match
+  CheckStamps --&gt; FullRebuild: stamp mismatch
+  Patch --&gt; Reindex: relabel and replace affected portals
+  Reindex --&gt; [*]: rebuild dense index and CSR adjacency
+  FullRebuild --&gt; [*]</code></pre>
+<h2 id="public-surface">Public Surface</h2>
+<ul>
+<li><code>LocalRegionId</code> identifies one passable connected component inside one
+  chunk. Ids are 1-based: <code>invalid_local_region</code> (value 0) is used for
+  impassable tiles and invalid lookups, and id N maps to <code>regions()[N - 1]</code>.</li>
+<li><code>LocalRegion</code> summarizes one local region with tile count, world-space
+  bounds, and boundary-exit count.</li>
+<li><code>LocalBoundaryExit</code> records one passable local boundary tile that has an
+  adjacent resident chunk in the compile-time shape, including which
+  <code>BoundaryFace</code> it crosses (six orthogonal faces plus the two axial-hex
+  diagonal seams) and the target <code>ChunkKey</code>.</li>
+<li><code>LocalChunkTopology</code> owns local region labels, region summaries, boundary
+  exits, the chunk key, and the captured chunk <abbr title="A practically monotonic value that changes when topology-relevant state changes.">topology version</abbr>.
+  <code>region(LocalRegionId)</code> is the checked accessor for the 1-based id
+  convention; it returns <code>nullptr</code> for invalid or out-of-range ids.</li>
+<li><code>LocalTopologyScratch</code> owns reusable flood-fill stack storage.</li>
+<li><code>RegionRef</code> identifies a local region in a specific chunk.</li>
+<li><code>RegionPortal</code> records one directed passable transition between neighboring
+  chunk-local regions.</li>
+<li><code>CoarsePathResult</code> returns a deterministic shortest ordered region path,
+  its connecting portals, the unique chunk corridor in route order, clipped
+  corridor bounds, and the number of visited regions. All spans borrow the
+  supplied <code>RegionGraphScratch</code> until its next traversal.</li>
+<li><code>RegionGraphT&lt;Residency&gt;</code> owns all local chunk topologies, paired directed
+  portals, and a global region index with a CSR portal adjacency.
+  <code>region_count()</code> reports the index size and <code>region_index(RegionRef)</code> maps a
+  region reference to its index (<code>invalid_region_index</code> for invalid or
+  out-of-range references). It is a class template on the world residency
+  policy: <code>RegionGraph</code> (the alias <code>RegionGraphT&lt;AlwaysResident&gt;</code>) is the dense
+  graph and indexes its containers directly by chunk key; <code>SparseRegionGraph</code>
+  (<code>RegionGraphT&lt;SparseResident&gt;</code>) is built only over a world's resident chunk
+  set, sized by the resident count rather than the total chunk count, and
+  resolves a chunk key to a local index through a frozen, sorted key table
+  (<code>std::lower_bound</code>) so the graph is self-contained and cannot be invalidated
+  by later eviction. All existing dense call sites are unchanged via the alias,
+  and dense codegen is byte-identical (every sparse branch is behind
+  <code>if constexpr</code>; the sparse-only state is empty for a dense graph).</li>
+<li><code>RegionGraphScratch</code> owns reusable reachability traversal storage with
+  epoch-stamped visited marks.</li>
+<li><code>TopologyBuildResult</code> summarizes a local build or graph update that can fail:
+  a
+  <code>TopologyStatus</code> (<code>Built</code>, <code>InvalidChunk</code> for an out-of-range chunk key,
+  or <code>MissingChunk</code> when a sparse local build names a valid non-resident
+  chunk), region count, passable tile count, boundary exit count, and the
+  sum of the captured chunk topology versions. The sum is an aggregate
+  comparison value, not itself a <code>TopologyVersion</code>.
+  <code>build_local_chunk_topology</code> and <code>update_region_graph</code> return it.</li>
+<li><code>RegionGraphBuildResult</code> is the same counts and topology-version sum
+  <strong>without</strong> a status, and
+  <code>build_region_graph</code> returns it. That build cannot fail: the dense
+  branch iterates keys <code>0..chunk_count</code>, so <code>InvalidChunk</code> cannot arise
+  and <code>MissingChunk</code> does not exist under <code>AlwaysResident</code>; the sparse
+  branch builds from <code>resident_chunk_keys()</code>, which are in-world and
+  resident by construction. Sharing a status-bearing type with the
+  operations that can fail invited callers to branch on a value that is
+  invariantly <code>Built</code>, and 45 assertions across six test files did
+  exactly that. An update that falls back to a full rebuild converts the
+  result, reporting <code>Built</code>.</li>
+<li><code>build_local_chunk_topology&lt;World, ClassOrTag&gt;(world, chunk, scratch,
+  topology)</code> labels passable connected components for one chunk and records
+  boundary exits. A sparse build rejects a non-resident chunk before accessing
+  page storage and returns <code>MissingChunk</code> with an empty topology. The second
+  template argument is a <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> OR a raw passable tag: a raw tag
+  normalizes to the <code>UnitCostFieldMovement</code> identity class,
+  whose flood stays the byte-identical legacy <code>field_span</code> scan; a composed
+  class evaluates its predicate on the resolved page per tile.</li>
+<li><code>build_region_graph&lt;World, ClassOrTag&gt;(world, scratch, graph, provider =
+  AdjacentTransitions{})</code> rebuilds local topology, pairs boundary exits whose
+  neighbor tile is passable, appends the transition provider's extra directed
+  portals (see Transition Providers below), and rebuilds the region index and
+  CSR adjacency. It also stamps the graph with the normalized movement-class
+  identity (see <code>matches_class</code> below) and the provider type, live stateful
+  instance, and revision.
+  Portal
+  pairing needs no class awareness: it queries labels, so per-class labels
+  yield per-class portals automatically. The graph type is deduced from
+  the world's residency: a dense world rebuilds every chunk; a sparse world
+  builds only its resident chunks (sorted ascending) and freezes their keys and
+  residency generations onto the graph. Construction publishes directly into
+  caller storage; if an allocation or provider exception interrupts the full
+  build, it clears the partial graph and advances its revision so freshness
+  checks cannot accept torn labels, portals, or CSR adjacency.</li>
+<li><code>update_region_graph&lt;World, ClassOrTag&gt;(world, scratch, graph,
+  dirty_chunks, provider = AdjacentTransitions{})</code> incrementally patches a
+  built graph after passability edits
+  confined to the dirty chunks and returns the same aggregate result a full
+  rebuild would. On a sparse world it first checks the frozen residency
+  snapshot (resident count plus per-key generation); any residency change since
+  the build forces a full rebuild rather than trusting a stale graph. A
+  movement-class mismatch (the graph was built for a different class) likewise
+  forces a full rebuild with the requested class's labels, as does a
+  transition-provider type, live instance, or revision mismatch
+  (<code>matches_provider</code>).</li>
+<li><code>RegionGraphT::matches_class&lt;ClassOrTag&gt;()</code> reports whether the graph was
+  built for the given class (normalized, so a raw tag and its <code>UnitCostFieldMovement</code>
+  identity agree). The stamp is a runtime class-identity token captured at
+  build time, mirroring the shape binding: the graph type encodes neither, so
+  a graph labeled for one class must never answer reachability for another.
+  False until the first build.</li>
+<li><code>reachable&lt;Shape&gt;(graph, request, scratch)</code> checks whether two
+  coordinates are connected through local regions and paired portals. It
+  returns a <code>ReachabilityResult</code>: a <code>ReachabilityStatus</code> (<code>Reachable</code>,
+  <code>Unreachable</code>, <code>InvalidStart</code>, or <code>InvalidGoal</code>) plus the number of visited
+  regions. On a sparse graph it also returns <code>Indeterminate</code>: a non-resident
+  endpoint, or a BFS that exhausts without reaching the goal while touching a
+  region that exits into a non-resident chunk, yields <code>Indeterminate</code> rather
+  than a wrong <code>Unreachable</code>. A route found within the resident set still wins
+  (<code>Reachable</code>), and a component fully enclosed by resident walls is a definite
+  <code>Unreachable</code>.</li>
+<li><code>coarse_path&lt;Shape&gt;(graph, request, scratch)</code> uses the same stamped
+  region graph but retains BFS parents to reconstruct a shortest coarse route.
+  Dense and sparse graphs share the API. A sparse route found entirely in the
+  resident set is returned normally; an exhausted component touching missing
+  topology is <code>Indeterminate</code> and returns no partial corridor.</li>
+<li><code>is_region_graph_fresh(world, graph)</code> reports, without mutating anything,
+  whether a built graph still matches the world: every chunk's stored topology
+  version is current (dense and sparse) and, on a sparse world, the frozen
+  residency snapshot still holds (resident count plus per-key generation). It
+  recomputes the same staleness test <code>update_region_graph</code> applies internally,
+  so a reachability precheck can consult it and fall back to A* on a stale
+  graph rather than trust a definitive but outdated <code>Unreachable</code>. Allocation-
+  free; O(chunk_count) dense, O(resident_count) sparse.</li>
+<li><code>is_region_graph_fresh_for&lt;ClassOrTag&gt;(world, graph)</code> is the class-aware
+  form: additionally requires <code>matches_class&lt;ClassOrTag&gt;()</code>, so a graph
+  labeled for another <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> is not fresh for this one even when every
+  <abbr title="A practically monotonic value that changes when topology-relevant state changes.">topology version</abbr> is current — its labels answer a different passability
+  question. The class is the explicit first template argument; <code>World</code> stays
+  deduced.</li>
+</ul>
+<h2 id="behavior">Behavior</h2>
+<p>Orthogonal local topology uses six axis-adjacent movement inside one chunk:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>+x, -x, +y, -y, +z, -z
+</code></pre></div>
+<p>Degenerate axes naturally have no local neighbor candidates. Boundary exits
+are emitted only when the passable boundary tile has a neighboring chunk inside
+the compile-time shape, so single-chunk and degenerate-axis worlds do not
+create synthetic exits.</p>
+<p>Axial-hex topology instead uses its six regular axial directions, including
+the two cross-axis chunk seams. Diagonal policies retain orthogonal local
+components because every legal diagonal has a clear face-connected route;
+this projection preserves reachability while exact path costs still use the
+diagonal model.</p>
+<p>The builder treats the passability field as boolean-like. Impassable tiles keep
+<code>invalid_local_region</code>. Region IDs are assigned deterministically in increasing
+local tile order, then depth-first flood fill order. The result captures
+<code>world.meta(chunk).topology_version</code>; the build does not mutate dirty masks,
+content versions, or topology versions.</p>
+<p><code>RegionGraph</code> pairs exits by looking at the adjacent world coordinate across
+each boundary exit. If that tile belongs to a passable local region in the
+neighboring chunk, a directed <code>RegionPortal</code> is emitted. Portals are stored
+in canonical build order: ascending from-chunk, then boundary-exit order
+within the chunk. After pairing, the builder assigns every region a dense
+global index (per-chunk prefix sums over 1-based local ids) and fills a CSR
+adjacency over portals, preserving portal order within each from-region
+bucket for deterministic traversal.</p>
+<p>Reachability first maps endpoints to local regions, rejects blocked or
+out-of-shape endpoints, and then runs the traversal over the CSR adjacency
+using dense region indices and epoch-stamped visited marks, which makes one
+query O(regions + portals) instead of rescanning the portal array per
+frontier pop. Visited-region counts are unchanged from the portal-scan
+implementation because the CSR buckets preserve portal order.</p>
+<p>Coarse path traversal preserves that CSR order, so ties resolve
+deterministically. Its corridor is the first-occurrence order of chunks on the
+region route; bounds cover those complete chunks and clip partial edge chunks
+to the compile-time shape. Callers may use the exact chunk list for corridor
+selection or its conservative bounding box to bound an existing field query.</p>
+<p><code>update_region_graph</code> patches a built graph in place. It re-runs
+<code>build_local_chunk_topology</code> for each dirty chunk, drops every portal
+originating from a dirty chunk or one of its face neighbors in one filtered
+pass, re-derives those chunks' portals from their boundary exits, and
+stable-sorts portals by from-chunk to restore canonical build order before
+rebuilding the dense index and CSR adjacency. The result is identical to a
+fresh <code>build_region_graph</code> over the edited world, including portal order.
+Dense and sparse incremental patches retain locality rather than copying every
+unchanged tile label. If an exception occurs before local mutation, the graph
+is untouched. If it occurs after mutation begins, the graph is cleared and its
+revision advances, so consumers must rebuild and can never observe mixed
+labels, portals, CSR adjacency, or sparse missing-region flags.
+An empty dirty set is a no-op; a dirty set covering all chunks is
+equivalent to a full build. Passing a graph that was never built for the
+world shape falls back to a full build, and an out-of-range dirty chunk is
+rejected with <code>InvalidChunk</code> before any mutation.</p>
+<h2 id="movement-vocabulary">Movement Vocabulary</h2>
+<p><code>include/tess/topology/movement_class.h</code> (namespace <code>tess::movement</code>) defines a
+compile-time DSL for describing how a class of agent moves, so labeling,
+pathfinding, and commit validation can share ONE vocabulary. A
+<code>MovementClass&lt;PassExpr, CostExpr, StepPolicy&gt;</code> fuses a passability predicate,
+an entry-cost expression, and a regular-step policy. <code>StepPolicy</code> defaults to
+<code>DefaultSteps</code>, so existing two-argument declarations retain their type and
+behavior. Each expression is composed from typed-field leaves that read the
+constexpr <code>ChunkPage::field&lt;Tag&gt;(LocalTileId)</code> at the <code>(page, tile)</code> seam
+(world-scope accessors are not constexpr). The whole predicate inlines to the
+same <code>&amp;&amp;</code>/<code>||</code>/<code>!</code> a hand-written cast emits, so threading a class through the
+hot paths keeps single-field codegen.</p>
+<p>Every <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> derives from <code>movement_class_tag</code>; the tag is the public
+marker used by compile-time validation and normalization.</p>
+<ul>
+<li>Step policies: <code>DefaultSteps</code> selects the lattice default;
+  <code>DiagonalSteps&lt;CornerRule&gt;</code> selects clearance-preserving diagonals with
+  <code>RequireBothClear</code> or <code>RequireOneClear</code>. <code>step_policy_of&lt;Class&gt;</code> supplies
+  <code>DefaultSteps</code> for legacy custom classes without a member, while
+  <code>StepPolicyFor&lt;Policy, Shape&gt;</code> rejects diagonals unless the shape is an
+  orthogonal lattice with exactly two effective axes. Policy types expose
+  fixed <code>StepPolicyIdentity</code> and positive fixed-point cost scales;
+  <code>ValidCornerRule</code> closes the diagonal rules, while
+  <code>step_policy_identity</code>, <code>step_policy_identity_of</code>, and <code>step_policy_of</code>
+  expose their normalized identities.</li>
+<li>Boolean terms: <code>Field&lt;Tag&gt;</code> (truthy), <code>NotZero&lt;Tag&gt;</code> (non-zero integral),
+  <code>Not&lt;Term&gt;</code>, <code>AllOf&lt;Terms...&gt;</code>, <code>AnyOf&lt;Terms...&gt;</code>.</li>
+<li>Cost expressions (0 == impassable, u32-saturated): <code>UnitCost</code>,
+  <code>ConstantCost&lt;N&gt;</code>, <code>FieldCost&lt;CostTag&gt;</code>, <code>SelectCost&lt;SelTag, WhenSet,
+  WhenClear&gt;</code>, <code>OverlayCost&lt;Base, Overlay&gt;</code>. <code>normalize_cost</code> is
+  byte-exact with the weighted A* leaf. All of them are stable
+  <code>tess::movement</code> names in <code>include/tess/topology/movement_class.h</code>.
+  <code>OverlayCost</code> prices a base cost with
+  an additive overlay — terrain plus a congestion price or a toll. It is
+  zero if and only if its base is zero, so an overlay never makes
+  impassable ground enterable; that is the same rule the forward probe
+  applies where a provider's cost meets a class's entry cost. Its
+  overlay operand is the one place in this vocabulary where zero means
+  "no surcharge" rather than impassable, so the operands are not
+  interchangeable. Absorption is a backstop, not a substitute for
+  <code>NotZero&lt;BaseTag&gt;</code> in the passability predicate: that is what keeps
+  the region graph exact, and the minimum-step APIs that substitute
+  <code>UnitCost</code> for a class's cost expression see only the predicate.</li>
+<li>Field-backed adapters: <code>UnitCostFieldMovement&lt;PassableTag&gt;</code> carries the raw
+  tag and a <code>passable_span</code> fast path so the identity region flood remains a
+  byte-identical <code>field_span</code> scan;
+  <code>PositiveCostFieldMovement&lt;PassableTag, CostTag&gt;</code> folds positive entry cost
+  into passability. <code>movement_class_of&lt;T&gt;</code> normalizes a raw unit-cost tag or an
+  explicit <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>.</li>
+<li><code>MovementClassFor&lt;Class, Page&gt;</code> checks the full predicate/cost contract;
+  <code>HasPassableSpan&lt;Class&gt;</code> identifies the single-field fast path used by
+  compatible topology and path builders.</li>
+</ul>
+<p>Per-class region labeling and the graph class stamp are wired: the
+labeling builders take a class or tag, and <code>RegionGraphT</code> records the
+normalized class identity it was built for. Precheck agreement, commit
+validation, and the class-aware agent tick plus runtime class binding
+thread the same vocabulary through the path layer.</p>
+<h2 id="resolved-transitions">Resolved Transitions</h2>
+<p><code>ResolvedTransitionModel&lt;World, ClassOrTag, Provider&gt;</code> is the shared,
+allocation-free edge authority used by exact search, reverse fields, field
+products, topology, caches, path agents, and movement validation.
+<code>ForwardTransitionModelFor</code> and <code>ReverseTransitionModelFor</code> check its hot
+callback contracts. Each
+<code>TransitionProbe</code> reports the target, compact cost, <code>TransitionKind</code>, and
+three-valued <code>TransitionAvailability</code> (<code>Legal</code>, <code>Blocked</code>, or
+<code>MissingTopology</code>).</p>
+<p>Orthogonal default steps retain <code>+x, -x, +y, -y, +z, -z</code> order and scale one.
+Diagonal policies emit face steps first and then four planar diagonals, use
+128/181 fixed-point cardinal/diagonal costs, and test the <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> on
+both clearance tiles according to the selected corner rule. Axial-hex default
+steps emit <code>(+1,0), (-1,0), (0,+1), (0,-1), (+1,-1), (-1,+1)</code> at scale one.
+Model identity includes normalized class, lattice identity/version, step
+policy, cost scale, provider type, live stateful-provider instance, and
+revision; fields, products, graphs, and caches reject a mismatched stamp.
+Regular transitions are enumerated before special transitions.</p>
+<h2 id="transition-providers">Transition Providers</h2>
+<p><code>include/tess/topology/transition_provider.h</code> defines the
+<code>TransitionProviderFor&lt;P, World&gt;</code> concept: a provider contributes EXTRA
+directed tile-to-tile transitions to the region graph beyond the built-in
+six-axis face adjacency (stairs, ladders, and similar special movement).
+<code>build_region_graph</code> and <code>update_region_graph</code> take an optional trailing
+provider (default <code>AdjacentTransitions</code>, which contributes nothing and is
+byte-identical to the providerless build). The builders enumerate a provider
+once per chunk (<code>for_each_transition(world, chunk, sink)</code>, <code>from</code> inside the
+chunk) and append one directed <code>RegionPortal</code> per transition whose endpoints
+both resolve to labeled regions — so provider edges are automatically
+per-class, and a bidirectional passage emits each direction from its own
+chunk. The landing tile must lie in the same chunk or a regular-step neighbor
+chunk (asserted in debug builds): that means six face neighbors for orthogonal
+lattices and also the two diagonal chunk seams for axial hexes. Incremental
+updates re-derive portals over that same neighborhood, so a longer-range
+transition would survive, stale, past an edit to its landing chunk. The
+provider type, live stateful object identity, and revision are stamped like the
+<abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> (<code>matches_provider</code>). Empty providers use a null instance and
+revision zero. A stateful provider must remain at an address-stable location while the
+graph can be reused, expose
+<code>transition_revision() const noexcept -&gt; std::uint64_t</code>, and advance it
+whenever its emitted edge set can change; <code>update_region_graph</code> falls back to
+a full rebuild when any provider stamp changes. Clear the graph before ending
+the provider's lifetime so placement-new address reuse cannot recreate the
+same instance/revision stamp. On a sparse world, a provider transition landing
+in a non-resident
+chunk marks its origin region as reaching missing topology, so reachability
+degrades to <code>Indeterminate</code> rather than a wrong <code>Unreachable</code>; that
+reaches-missing pass re-enumerates every resident chunk's provider
+transitions after each build or incremental update (index flags are
+reassigned wholesale), so a provider's enumeration cost bounds sparse
+update cost regardless of the dirty-set size.</p>
+<p>Exact forward search additionally requires
+<code>ForwardTransitionProviderFor&lt;P, World&gt;</code> and allocation-free
+<code>for_each_forward(world, origin, sink)</code> enumeration. Reverse fields require
+<code>ReverseTransitionProviderFor&lt;P, World&gt;</code> and
+<code>for_each_reverse(world, target, sink)</code>. The resolved reverse model checks that
+the forward destination <code>target</code> is resident and passable before enumerating
+its predecessors, so direct external use has the same legality as forward
+enumeration instead of relying on a field builder's seed/frontier invariant.
+Each sink receives a
+<code>SpecialTransitionCandidate</code> containing the other endpoint, a positive cost
+in unscaled movement-class entry-cost units, and an optional
+<code>missing_topology</code> marker. The resolved model applies its cardinal scale; a
+provider must not pre-scale the value. A zero edge cost contributes no legal
+edge. The forward destination must also have a positive movement-class entry
+cost; provider pricing does not override the cost expression's impassable
+sentinel, even when a legacy passability predicate ignores cost.
+Providers may publish <code>maximum_transition_cost</code> as a sound compile-time bound.
+The empty and stair providers implement both exact contracts; topology-only
+custom providers remain valid for graph construction.</p>
+<h2 id="stairs">Stairs</h2>
+<p><code>StairTransitions&lt;StairTag&gt;</code> is the concrete vertical provider: an integral
+<code>StairTag</code> field holds a <code>StairDirection</code> (<code>None</code>/<code>PositiveX</code>/<code>NegativeX</code>/
+<code>PositiveY</code>/<code>NegativeY</code>), and a non-<code>None</code> tile is the FOOT of a stair whose
+landing is one step in that direction and one z-level up. The offset is
+deliberate — two vertically stacked passable tiles are already six-axis
+adjacent, so a same-column stair would add nothing. Each stair contributes
+both directions, each emitted from the chunk owning its origin tile (the down
+direction from the landing's chunk, which is the foot's chunk or its +z face
+neighbor), so incremental re-derivation holds. Whether either endpoint is
+traversable stays a movement-class question: stair edges are automatically
+per-class through the label filter. Limit: a landing that would cross two
+chunk boundaries at once (sideways off the chunk's x/y edge AND up off its
+top z layer) violates the face-neighbor contract and contributes nothing;
+place the foot so the landing stays within face-neighbor range.
+Crossing only a sideways x/y chunk boundary is supported when the landing
+stays below the foot chunk's top z layer; both directions are attributed to
+their respective origin chunks.
+Each stair edge has provider cost one, so it costs one cardinal step under any
+resolved step policy and does not inherit the landing tile's terrain cost.</p>
+<h2 id="deliberate-limits">Deliberate Limits</h2>
+<p>The historical transition-model TDD proposed a broad public capability-trait
+catalog. The maintained API currently exposes only capabilities required by
+implemented optimizations: step-policy constants, provider concepts and
+maximum cost, model stamps, and <code>path_cost_range_assessment</code>. Specialized open
+set, direct-probe, symmetry, and dependency-radius traits remain deferred
+until an algorithm consumes them; custom models therefore stay on conservative
+paths instead of depending on speculative traits.</p>
+<p>This slice does not implement a dirty rebuild queue. The portal graph stores directed
+portals only; incremental updates require the caller to supply the dirty
+chunk set, and provider transitions must stay within face-neighbor range.</p>
+<h3 id="field-edits-do-not-make-a-graph-stale">Field edits do not make a graph stale</h3>
+<p>Freshness compares recorded chunk topology versions, residency generations,
+the shape, and the class and provider stamps. <strong>A raw field write advances
+none of them</strong> — only <code>mark_topology_dirty</code> and <code>mark_topology_rebuilt</code> move
+a chunk's <code>topology_version</code>. Editing a field that a <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> or its
+provider reads, such as opening a wall or placing a stair, therefore leaves
+a previously built graph reporting fresh.</p>
+<p>The consequence is not a stale-but-conservative answer. <code>precheck_path</code>
+returns a <em>definitive</em> <code>Unreachable</code>, <code>precheck_rules_out_path</code> is true, and
+the runtime's precheck pass records <code>NoPath</code> and skips the search — so a
+route the edit just opened is never found. Provider stamps cannot cover this
+in general: an empty provider such as <code>StairTransitions</code> has a null instance
+identity and a zero revision, and both compare equal across any edit.</p>
+<p><strong>After editing any field a <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> or provider reads, mark every
+chunk whose transitions can change topology-dirty and rebuild</strong> before
+relying on the graph.</p>
+<p>For a <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr>, that is the chunk owning the edited tile and, where
+the edit changes a boundary tile, its face neighbours. <strong>For a provider it
+can be more.</strong> <code>TransitionProviderFor</code> constrains where an emitted edge's
+endpoints may lie, but it does not constrain which world fields the
+enumeration may read: a provider is free to emit an edge out of chunk A
+based on a field in some unrelated chunk B. Dirtying only B then
+re-enumerates B and its neighbours, leaves A's edge stale, and — because
+B's recorded <abbr title="A practically monotonic value that changes when topology-relevant state changes.">topology version</abbr> now matches again — leaves the graph reporting
+fresh. So for a provider whose enumeration reads outside the emitting chunk,
+either mark every chunk whose outgoing transitions the edit can change as
+topology-dirty,
+give the provider a revision (a changed <code>transition_revision</code> forces a full
+rebuild), or rebuild outright. The built-in <code>StairTransitions</code> reads only
+the emitting chunk's own field, so for it the owning chunk plus face
+neighbours is sufficient.</p>
+<p>This is the same explicit-dirty-set contract as the rest of incremental
+rebuilding, and it is a caller obligation by design rather than an
+oversight: bumping a <abbr title="A practically monotonic value that changes when topology-relevant state changes.">topology version</abbr> on every field write would put that
+cost on the hot write path.</p>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../path/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Pathfinding">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Pathfinding
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../spatial-coordination/" class="md-footer__link md-footer__link--next" aria-label="Next: Spatial coordination">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Spatial coordination
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; tess contributors
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.sections", "navigation.tabs", "navigation.top", "search.highlight", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+  <script>
+    (() => {
+      const searchDialog = document.querySelector(
+        ".md-search[role=\"dialog\"]",
+      );
+      searchDialog?.setAttribute(
+        "aria-label", "Search",
+      );
+
+      const mermaidRuntimeUrl = new URL(
+        "../../assets/javascripts/mermaid.min.js",
+        document.baseURI,
+      ).href;
+      let initializationOptions;
+      let runtimePromise;
+
+      const mermaidProxy = {
+        initialize(options) {
+          initializationOptions = options;
+        },
+        async render(...args) {
+          const mermaidRuntime = await loadMermaidRuntime();
+          return mermaidRuntime.render(...args);
+        },
+      };
+
+      function loadMermaidRuntime() {
+        if (!runtimePromise) {
+          runtimePromise = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = mermaidRuntimeUrl;
+            script.addEventListener("load", () => {
+              const mermaidRuntime = window.mermaid;
+              if (mermaidRuntime === mermaidProxy) {
+                reject(new Error("Mermaid runtime did not initialize"));
+                return;
+              }
+              mermaidRuntime.initialize(initializationOptions);
+              resolve(mermaidRuntime);
+            }, { once: true });
+            script.addEventListener("error", () => {
+              reject(new Error("Unable to load Mermaid runtime"));
+            }, { once: true });
+            document.head.append(script);
+          });
+        }
+        return runtimePromise;
+      }
+
+      window.mermaid = mermaidProxy;
+    })();
+  </script>
+  
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+
+  </body>
+</html>

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>tess pathfinding strategy comparison</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+  <link rel="canonical" href="https://tess.owx.dev/main/demo/strategies/">
+<meta name="description" content="Strategy comparison demo: A*, route caches, weighted batches, and distance fields over one obstacle map in WebAssembly.">
+<meta property="og:title" content="tess pathfinding strategy comparison">
+<meta property="og:url" content="https://tess.owx.dev/main/demo/strategies/">
+<meta property="og:image" content="https://tess.owx.dev/assets/tess-social-preview.png">
+</head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">The native example, compiled to WebAssembly</p>
+        <h1>See where pathfinding work is reused</h1>
+        <p>
+          Every route and counter below comes from the same C++ model as the
+          self-checking example. Animation explains call order; it is not a
+          browser performance measurement.
+        </p>
+        <p class="comparison-key">
+          Comparable requests intentionally match; the cache card repeats its
+          first request. Compare the operation chain above each map to see
+          where tess repeats work and where it reuses it. Violet coverage on
+          the distance-field map represents the exact C++-reported
+          reachable-tile count, not invented distance values.
+        </p>
+      </header>
+
+      <div class="toolbar" role="group" aria-label="Animation controls">
+        <button id="replay" type="button" disabled>Replay</button>
+        <button id="pause" type="button" aria-pressed="false" disabled>
+          Pause
+        </button>
+        <span id="phase" aria-live="polite">Loading WebAssembly…</span>
+      </div>
+
+      <section class="strategy-grid" aria-label="Pathfinding call shapes">
+        <article class="strategy-card" data-card="0">
+          <h2>Independent A*</h2>
+          <p class="data-product">
+            <strong>Data product:</strong> query-local search scratch, then
+            one returned path per call
+          </p>
+          <div class="call-topology" data-topology="astar"
+               aria-label="Call topology">
+            <span class="topology-step" data-reveal="1"
+                  data-metric="astar-0">Search 1</span>
+            <span class="topology-step" data-reveal="2"
+                  data-metric="astar-1">Search 2</span>
+            <span class="topology-step" data-reveal="3"
+                  data-metric="astar-2">Search 3</span>
+          </div>
+          <div class="tile-grid" data-grid="0" aria-hidden="true"></div>
+          <p class="card-phase" data-card-phase="0">Waiting for C++…</p>
+        </article>
+        <article class="strategy-card" data-card="1">
+          <h2>Exact route cache</h2>
+          <p class="data-product">
+            <strong>Data product:</strong> one stored route and suffixes,
+            addressable by an exact repeat
+          </p>
+          <div class="call-topology" data-topology="cache"
+               aria-label="Call topology">
+            <span class="topology-step" data-reveal="1"
+                  data-metric="cache-miss">Miss + search</span>
+            <span class="topology-arrow" aria-hidden="true">→</span>
+            <span class="topology-step" data-reveal="2"
+                  data-metric="cache-hit">Hit + reuse</span>
+          </div>
+          <div class="tile-grid" data-grid="1" aria-hidden="true"></div>
+          <p class="card-phase" data-card-phase="1">Waiting for C++…</p>
+        </article>
+        <article class="strategy-card" data-card="2">
+          <h2>Weighted batch</h2>
+          <p class="data-product">
+            <strong>Data product:</strong> one internally bounded field for
+            the group, then scratch-backed result paths
+          </p>
+          <div class="call-topology" data-topology="batch"
+               aria-label="Call topology">
+            <span class="topology-step" data-reveal="1"
+                  data-metric="batch-inputs">3 requests</span>
+            <span class="topology-arrow" aria-hidden="true">→</span>
+            <span class="topology-step" data-reveal="2"
+                  data-metric="batch-field">1 grouped field</span>
+            <span class="topology-arrow" aria-hidden="true">→</span>
+            <span class="topology-step" data-reveal="3"
+                  data-metric="batch-results">3 results</span>
+          </div>
+          <div class="tile-grid" data-grid="2" aria-hidden="true"></div>
+          <p class="card-phase" data-card-phase="2">Waiting for C++…</p>
+        </article>
+        <article class="strategy-card" data-card="3">
+          <h2>Distance field</h2>
+          <p class="data-product">
+            <strong>Data product:</strong> caller-owned labels over
+            <span data-metric="field-coverage">reachable tiles</span>, then
+            paths read from any start
+          </p>
+          <div class="call-topology" data-topology="field"
+               aria-label="Call topology">
+            <span class="topology-step" data-reveal="1"
+                  data-metric="field-build">Build field</span>
+            <span class="topology-arrow" aria-hidden="true">→</span>
+            <span class="topology-step" data-reveal="2">Read 1</span>
+            <span class="topology-step" data-reveal="2">Read 2</span>
+            <span class="topology-step" data-reveal="3">Read 3</span>
+          </div>
+          <div class="tile-grid" data-grid="3" aria-hidden="true"></div>
+          <p class="card-phase" data-card-phase="3">Waiting for C++…</p>
+        </article>
+      </section>
+
+      <section class="reported" aria-labelledby="reported-title">
+        <h2 id="reported-title">What the C++ calls reported</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Strategy</th>
+                <th scope="col">Request shape and call sequence</th>
+                <th scope="col">Returned paths and reuse facts</th>
+              </tr>
+            </thead>
+            <tbody id="strategy-results"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <p class="source-link">
+        <a
+          href="https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies_model.cc"
+        >
+          View the shared C++ example source
+        </a>
+      </p>
+    </main>
+    <script src="tess-strategies.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

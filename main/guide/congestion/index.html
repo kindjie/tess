@@ -1,0 +1,2656 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Congestion pricing over the tess cost-field surface: the validated two-field recipe, scoped replanning, and its measured boundary.">
+      
+      
+      
+        <link rel="canonical" href="https://tess.owx.dev/main/guide/congestion/">
+      
+      
+        <link rel="prev" href="../pathfinding/">
+      
+      
+        <link rel="next" href="../../pathfinding-strategy-comparison/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/tess-symbol.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Congestion pricing - tess</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    <meta property="og:type" content="website">
+  <meta property="og:site_name" content="tess">
+  <meta property="og:title" content="Congestion pricing - tess">
+  <meta property="og:description" content="Congestion pricing over the tess cost-field surface: the validated two-field recipe, scoped replanning, and its measured boundary.">
+  <meta property="og:url" content="https://tess.owx.dev/main/guide/congestion/">
+  <meta property="og:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
+  <meta property="og:image:width" content="2560">
+  <meta property="og:image:height" content="1280">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Congestion pricing - tess">
+  <meta name="twitter:description" content="Congestion pricing over the tess cost-field surface: the validated two-field recipe, scoped replanning, and its measured boundary.">
+  <meta name="twitter:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#congestion-pricing" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="tess" class="md-header__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            tess
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Congestion pricing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Decision guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://tess.owx.dev/api/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../performance/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Performance
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../use-cases/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Use cases
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../integration-policy/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="tess" class="md-nav__button md-logo" aria-label="tess" data-md-component="logo">
+      
+  <img src="../../assets/tess-symbol-header.svg" alt="logo">
+
+    </a>
+    tess
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kindjie/tess" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kindjie/tess
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Decision guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../residency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Residency
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../writes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pathfinding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding strategy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Congestion pricing
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Congestion pricing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-mechanism-all-policies-share-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The mechanism (all policies share it)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scoped-replanning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scoped replanning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-signal-menu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The signal menu
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-pricing-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What pricing costs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-planning-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a planning budget
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#route-spreading-composes-with-pricing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Route spreading composes with pricing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boundaries-recorded-with-the-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Boundaries recorded with the evidence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lab-and-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lab and example
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pathfinding-strategy-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology and precheck
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../entities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Entities and ECS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../presentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terminology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terminology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility evidence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/shape/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shapes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/persistence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Persistence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/block/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Block kernels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/no-exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exception-free builds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/query/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintenance experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pathfinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/spatial-coordination/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spatial coordination
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/queued-operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Queued operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/simulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation and scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/ecs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ECS integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://tess.owx.dev/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../use-cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integration-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../upgrade-1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade to 1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../for-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    For agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-mechanism-all-policies-share-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The mechanism (all policies share it)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scoped-replanning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scoped replanning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-signal-menu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The signal menu
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-pricing-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What pricing costs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-planning-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a planning budget
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#route-spreading-composes-with-pricing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Route spreading composes with pricing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#boundaries-recorded-with-the-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Boundaries recorded with the evidence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lab-and-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lab and example
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="congestion-pricing">Congestion pricing</h1>
+<p>Congestion pricing makes crowded tiles more expensive to weighted
+planners, using surfaces that tess already ships. The
+<a href="../../demo/congestion/">congestion lab</a> exposes
+the retained recipe and selected experimental policies; the numbers
+below come from 28 pre-registered experiment arms whose captures live
+in the repository's evidence records.</p>
+<p><strong>Validated caller recipe.</strong> Nearby-agent pricing was tested across
+seven scenarios, all 64 supported populations, and two platforms.</p>
+<p><strong>Screened, not promoted.</strong> The cooling, stalled-agent, queue,
+scoped-replanning, and route-spreading variants were compared across
+the same seven scenarios at 256 and 1,024 agents on one platform,
+across pre-registered rounds. These results rank the tested
+configurations; they do not predict other maps. The retained captures
+predate the pricing engine's relocation into the current lab model,
+which is the successor measurement surface.</p>
+<h2 id="the-mechanism-all-policies-share-it">The mechanism (all policies share it)</h2>
+<ol>
+<li>Give congestion its own field, separate from terrain, and have the
+   <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> read their sum:
+   <code>OverlayCost&lt;FieldCost&lt;TerrainTag&gt;, FieldCost&lt;SurchargeTag&gt;&gt;</code>.
+   Pricing then owns one field outright and never writes the caller's
+   terrain.</li>
+<li>Every four fixed ticks, compute a per-tile <strong>signal</strong> and write
+   <code>min(3, signal)</code> into the surcharge field. In the single-platform
+   screen, four ticks produced a lower aggregate <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr>-tick ratio than
+   eight or sixteen for both cooling policies, and a cap of 3 likewise
+   produced a lower aggregate ratio than a cap of 7.</li>
+<li>Publish the writes as versioned edits: <code>mark_content_changed</code> on
+   every chunk you touched. Do <strong>not</strong> raise the global pathing-dirty
+   flag; request replans only for affected retained routes, as
+   described below.</li>
+<li>When pricing turns off, clear the surcharge field and only then
+   force one full replan: every retained route was planned against
+   prices, so this single global replan is correct.</li>
+</ol>
+<p>Pricing changes route cost, not passability. An existing route
+remains valid, although it may no longer be the lowest-cost route.</p>
+<p>Two consequences of the separate field. The maximum cost your planner
+is configured for must cover terrain plus the surcharge cap, not the
+cap alone. And if you encode impassable terrain as cost zero, say so in the
+passability term as well — <code>AllOf&lt;Field&lt;PassableTag&gt;,
+NotZero&lt;TerrainTag&gt;&gt;</code>. <code>OverlayCost</code> is zero exactly when terrain is
+zero, so a surcharge cannot make impassable ground enterable in the
+weighted search, but that absorption is a backstop rather than the
+whole guard: region labelling and the minimum-step APIs consult the
+passability predicate alone, and would otherwise disagree with the
+search about the same tile.</p>
+<p>A single cost field, with the price written as <code>1 + min(3, signal)</code> and
+restored by writing 1 everywhere, is a valid shortcut <strong>only</strong> on
+uniformly unit terrain — which is what every experiment in this stream
+was screened on. On any other map it destroys terrain when pricing
+turns on and cannot restore it when pricing turns off, because the
+restoring code knows only the uniform value, not the map.</p>
+<p>Note also that the cap and the price magnitudes are expressed in your
+cost units. All the measured results here come from unit terrain, so
+<code>min(3, signal)</code> was a detour budget of three unit steps. On a map
+whose terrain spans a wider range, the same cap buys a different
+amount of detour, and no experiment in this stream has measured that.</p>
+<h2 id="scoped-replanning">Scoped replanning</h2>
+<p>Global replanning dominated the cost of the initial implementation.
+With 1,024 agents and a bounded planning budget, the browser run
+showed a saturated planning queue, replanning far from any changed
+price, and oscillation between near-equal routes. One recorded policy
+fell from about 84 ms to 1.6 ms per tick when replanning was scoped —
+about 53x.</p>
+<p>Request a replan only when an agent's remaining route crosses a tile
+whose price <strong>increased</strong>. Price decreases do not request replanning;
+agents consider them during their next ordinary replan. The
+experimental helper encodes this:</p>
+<!-- tess-snippet: congestion-scope source=examples/congestion_pricing.cc -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1">// A price change never invalidates a retained route, so only agents</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1">// whose remaining route crosses a price increase are asked to replan.</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1">// Price decreases request nothing; agents consider them during their</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1">// next ordinary replan.</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="w"> </span><span class="nf">scope_replans</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">PathAgentState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agents</span><span class="p">,</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">                          </span><span class="k">const</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">PathAgentRoutes</span><span class="o">&amp;</span><span class="w"> </span><span class="n">routes</span><span class="p">,</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">                          </span><span class="k">const</span><span class="w"> </span><span class="n">PricingState</span><span class="o">&amp;</span><span class="w"> </span><span class="n">state</span><span class="p">,</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">                          </span><span class="n">tess</span><span class="o">::</span><span class="n">PathAgentReplanQueue</span><span class="o">&amp;</span><span class="w"> </span><span class="n">queue</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">experimental</span><span class="o">::</span><span class="n">request_replans_for_route_crossings</span><span class="p">(</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="n">agents</span><span class="p">,</span><span class="w"> </span><span class="n">routes</span><span class="p">,</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">      </span><span class="p">[</span><span class="o">&amp;</span><span class="p">](</span><span class="n">tess</span><span class="o">::</span><span class="n">Coord3</span><span class="w"> </span><span class="n">coord</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="n">increased</span><span class="p">[</span><span class="k">static_cast</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="o">&gt;</span><span class="p">(</span><span class="n">coord</span><span class="p">.</span><span class="n">y</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">kWidth</span><span class="w"> </span><span class="o">+</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">                               </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="o">&gt;</span><span class="p">(</span><span class="n">coord</span><span class="p">.</span><span class="n">x</span><span class="p">)]</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">      </span><span class="p">},</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">      </span><span class="n">queue</span><span class="p">);</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="p">}</span>
+</code></pre></div>
+<!-- /tess-snippet -->
+
+<p>The scan starts at the agent's next step, not the tile it occupies: a
+tile's cost is charged on entering it, so the occupied tile is already
+paid for and a price rise there cannot change what the remaining route
+costs. A route that revisits that tile later is still caught, at the
+later index.</p>
+<p>The helper is experimental and its name may still change. Its
+documentation comment specifies the equivalent caller-owned scan.</p>
+<p>Its cost grows with the total length of the routes it scans rather than
+with the number of agents, which is why long routes with distant price
+changes are its worst case.</p>
+<h2 id="the-signal-menu">The signal menu</h2>
+<p>All signals reprice every four ticks and share the price formula;
+they differ only in what they count.</p>
+<p><strong>Define "stalled" as consecutive ticks unmoved, and derive the rest
+from it.</strong> Every policy below that reacts to stalling reads one
+per-agent counter: ticks since the agent last changed position, reset
+on any move. Policies wanting a window rather than a duration threshold
+that counter (<code>stall_duration &gt;= reprice_period</code>) instead of comparing
+positions across repricings.</p>
+<p>Comparing positions only at repricing boundaries looks equivalent and
+is not: an agent oscillating between two tiles returns to where it
+started and reads as stalled, so the price lands on agents that are
+moving. Screening both definitions across sixteen cells left every
+duration-based policy bit-identical and improved the two
+window-based ones by 5-7%, without changing which policy ranks first.</p>
+<p>Admit only agents with an outstanding goal. An agent whose goal has
+become unreachable never moves, so its counter grows without bound and
+pins a permanent hotspot on a tile nothing can use. Ratios are policy/canonical
+<abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr> ticks over the screen's safe cells (geometric mean; lower is
+better; 1.0 = no effect), with planning load relative to canonical.</p>
+<table>
+<thead>
+<tr>
+<th>policy</th>
+<th>signal</th>
+<th><abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr>-tick ratio</th>
+<th>planning-load ratio</th>
+<th>screening result and boundary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cooling memory</strong></td>
+<td>each live agent's tile and four orthogonal neighbours; the stored signal halves during each idle repricing period</td>
+<td>0.39</td>
+<td>~5x</td>
+<td>lowest aggregate ratio among unspread pricing policies</td>
+</tr>
+<tr>
+<td><strong>Stalled + cooling</strong></td>
+<td>same, but only agents whose stall duration reaches the repricing period contribute</td>
+<td>0.43</td>
+<td><strong>~2x</strong></td>
+<td>similar aggregate ratio at about 2x planning load rather than about 5x</td>
+</tr>
+<tr>
+<td><strong>Stall-gated queues</strong></td>
+<td>single-file chains of more than four agents, at least half stalled; prices the chain, graded into its free side lanes; corridor chains also price their approach ends</td>
+<td>0.69</td>
+<td><strong>~1.1x</strong></td>
+<td>emits no signal without a qualifying stalled chain; safe in 13 of 14 cells without spreading</td>
+</tr>
+<tr>
+<td>Nearby agents (base recipe)</td>
+<td>each live agent +1 on its tile and four neighbours</td>
+<td>0.41</td>
+<td>~5x</td>
+<td>screening ratio shown here; separately validated at supported-population coverage</td>
+</tr>
+<tr>
+<td>Stalled agents</td>
+<td>stalled tiles and neighbours, no memory</td>
+<td>0.43</td>
+<td>~2x</td>
+<td>superseded by stalled + cooling</td>
+</tr>
+<tr>
+<td>Peaked (own tile +2, ring +1)</td>
+<td>each agent a small gradient rather than a plateau</td>
+<td>0.41</td>
+<td>~5x</td>
+<td>lower aggregate ratio than the flat nearby-agent signal in this screen</td>
+</tr>
+<tr>
+<td>Escalating stall price</td>
+<td>contribution grows with consecutive ticks unmoved (+1 magnitude per 8 such ticks, capped)</td>
+<td>0.42</td>
+<td>~2x</td>
+<td>best recorded result on the capacity-bound maze scenario; screened on the relocated lab path</td>
+</tr>
+<tr>
+<td>Radiating stall price</td>
+<td>same, and the priced region widens with stall duration (a cone sloping from the agent outward)</td>
+<td>0.43</td>
+<td>~2x</td>
+<td>best maze result at 256 agents; the wider cone did not add value at 1,024</td>
+</tr>
+<tr>
+<td>On-path stall price</td>
+<td>the escalating magnitude applied only along the stalled agent's own remaining route, fading with distance</td>
+<td>0.42</td>
+<td>~2x</td>
+<td>value-indistinguishable from plain escalation in the screen; restricting the footprint to the route neither helped nor hurt</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Experiment rejected — ungated queue detection.</strong> In the screen it
+disrupted flowing convoys and created adjacent single-file queues.</p>
+<p><strong>Experiment rejected — planned-route demand.</strong> It failed the safety
+gate in 2 of 14 cells under scoped replanning; coupling prices to
+planned routes also creates feedback between pricing and replanning.
+Both remain selectable in the lab as rejected controls.</p>
+<p>None of the nine combined-signal arms improved on its better
+component in the 14-cell screen. A shared cap clipping the combined
+signal is one plausible explanation; the experiment did not
+instrument the cause.</p>
+<h2 id="what-pricing-costs">What pricing costs</h2>
+<p>Two costs scale with problem size rather than with crowding, and a
+caller should size both before adopting any policy here.</p>
+<p><strong>Applying prices scales with the tiles you write, not with the number
+of agents.</strong> The recipe below writes every tile every repricing. That
+is fine for a demo-sized world and wrong for a large one: the sweep
+visits every tile regardless of how many agents exist or how crowded
+they are, so a world with sixty-four times the area writes sixty-four
+times as many tiles per repricing, for a signal that is usually local
+to a few congested regions. That is a statement about work, not a
+measured elapsed time on any particular world. Write only the tiles whose price changed, tracking the union
+of the previous and current footprints so prices left behind still
+decay. Cooling memory — the halving variant, whose heat reaches zero
+once crowds move on — can still legitimately spread across most of the
+map; that is a reason to bound its extent, not to sweep the world
+unconditionally.</p>
+<p>Turning pricing on cost roughly a fifth of total run time on an
+uncongested 1,024-agent run of the escalating-stall policy, and about
+half at 256 agents. Read that as the price of the <strong>whole mechanism</strong>,
+not of the sweep alone: it also contains the policy's own per-tick
+bookkeeping, the replan selection, and the extra searching that
+repricing provokes. Those shares move with policy and geometry, and the measurements here
+do not separate the parts, so size your own configuration rather than
+transferring these numbers.</p>
+<p><strong>Selecting who replans is proportional to total remaining route
+length.</strong> <code>request_replans_for_route_crossings</code> walks each eligible
+agent's remaining route until it finds a price increase. On a congested
+map this dominates: it accounted for 89% of pricing samples in a maze
+scenario at 1,024 agents. Its cost therefore grows with how long routes
+are, not just how many agents exist, and long routes with distant
+price changes are its worst case.</p>
+<p>Sparse price application addresses only the first of these.</p>
+<h2 id="choosing-a-planning-budget">Choosing a planning budget</h2>
+<p>Scoping decides <em>which</em> agents replan; the planning budget decides <em>how
+many</em> of them get served each tick. The two interact: pricing creates
+replan demand, and the budget decides how fast that demand drains.</p>
+<p>Every option below reads only simulation state, so replay stays exact.
+A wall-clock budget is deliberately absent — it would read the host
+clock, and identical inputs would then replan different agents on
+different machines.</p>
+<table>
+<thead>
+<tr>
+<th>budget rule</th>
+<th><abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr> ticks</th>
+<th>elapsed time</th>
+<th>worst tick</th>
+<th>search</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Small fixed (4/tick)</td>
+<td>1.23</td>
+<td>1.04</td>
+<td><strong>0.73</strong></td>
+<td>0.85</td>
+</tr>
+<tr>
+<td>Larger fixed (32/tick)</td>
+<td>0.74</td>
+<td>1.51</td>
+<td>2.23</td>
+<td>1.91</td>
+</tr>
+<tr>
+<td>Scale with backlog</td>
+<td>0.78</td>
+<td>1.41</td>
+<td>2.09</td>
+<td>1.72</td>
+</tr>
+<tr>
+<td>Drain the backlog</td>
+<td><strong>0.67</strong></td>
+<td>2.37</td>
+<td>10.34</td>
+<td>4.06</td>
+</tr>
+<tr>
+<td>Fit a search-work target</td>
+<td>0.78</td>
+<td>0.98</td>
+<td>2.30</td>
+<td>1.20</td>
+</tr>
+</tbody>
+</table>
+<p>Ratios are against a fixed budget of 8 per tick, at 1,024 agents,
+geometric means over the screened scenarios; lower is better. Every row
+covers eight scenarios except <em>drain the backlog</em>, which covers seven:
+it changes trajectories before the scripted walls land in one scenario,
+so that scenario is not comparable for that rule and is excluded.</p>
+<p><strong>No rule dominates, so choose by the constraint you actually have.</strong></p>
+<ul>
+<li><strong>A frame budget you must not miss</strong>: the small fixed budget is the
+  only rule that improves the worst tick, and it pays for that with
+  23% more <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr> ticks. Nothing else here lowers the tail.</li>
+<li><strong>Throughput above all, offline or amortized</strong>: draining the whole
+  backlog settles fastest. Under congestion it is very expensive —
+  four times the search overall, and on a dense-maze scenario 1.82
+  billion node expansions against 113 million for the fixed budget of</li>
+<li>The likely mechanism is agents repeatedly replanning against a
+  price field that is still moving, though the runs did not isolate it.
+  On the open-geometry cells measured, expansions stayed flat across
+  every budget rule.</li>
+<li><strong>General use</strong>: fitting the request count to a search-work target
+  (a fixed expanded-node budget per tick, divided by the previous
+  tick's measured cost per search) settles about as fast as scaling
+  with the backlog while spending noticeably less time.</li>
+</ul>
+<p><strong>What this does not claim.</strong> The elapsed-time column is the weakest
+evidence in the table: five of the eight scenarios are individually
+slower under the work-target rule even though its aggregate is ~1.0,
+and the aggregate sits inside measurement drift. The <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr>-tick and
+search columns are exact and replay-identical; treat elapsed time as
+indicative only. A search-work target is a <em>lagged</em> target, not a
+bound: it sets this tick's request count from the previous tick's
+average cost per search, so a single expensive search still overshoots
+and the count reacts only afterwards. That is why its worst tick is
+2.3x rather than lower. A genuine per-tick bound would need a search
+that can be paused or cancelled mid-expansion, which this library's
+synchronous drain does not offer.</p>
+<p><strong>Screened, not promoted.</strong> Eight scenarios, two populations, one
+platform.</p>
+<h2 id="route-spreading-composes-with-pricing">Route spreading composes with pricing</h2>
+<p>The library's equal-cost tie-break seed
+(<code>PathAgentReplanOptions::equal_cost_tie_seed</code> on
+<code>process_weighted_path_agent_replans</code>) distributes agents across
+routes the planner scores identically. Adding it lowered the
+aggregate <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr>-tick ratio for each of the three screened pricing
+policies, and changed the stall-gated queue policy from 13 of 14 safe
+cells to 14 of 14. <strong>This does not claim universal benefit</strong>: the
+comparison covers seven scenarios at 256 and 1,024 agents on one
+platform.</p>
+<p>The lab permits one seeded replan wave per journey leg after its
+waits threshold, and suppresses the wave when the topology already
+offers several openings. Those gates are application policy, not
+library behaviour.</p>
+<h2 id="boundaries-recorded-with-the-evidence">Boundaries recorded with the evidence</h2>
+<ul>
+<li>The supported nearby-agent recipe regressed the goal-wall geometry
+  by a geometric mean of 1.49x across 64 populations. In the
+  cooling-memory screen, the 256- and 1,024-agent ratios were 0.99x
+  and 1.30x, for a geometric mean of about 1.13x. The experiments
+  measured outcomes, not wall contention: if your map has no real
+  contention, leave pricing off.</li>
+<li>On the fixpoint substrate, 17 of 132 marginal seeds changed
+  <abbr title="The five-way per-agent outcome a settle assigns: arrived, goal-occupied, sealed, wedged, or censored.">terminal classification</abbr> in both directions under pricing. Consumers
+  requiring stable per-seed classification under that <abbr title="A movement-tier run to a no-progress fixpoint, classified after termination.">settle</abbr> rule
+  should leave pricing disabled.</li>
+<li>On a dense-maze scenario (single-file corridors nearly everywhere),
+  the stall-gated queue policy does not help at all: large waiting
+  blocks fail its single-file chain test by design, and by the time an
+  agent is inside a corridor no alternative remains to price toward.
+  The duration-escalating policies were proposed for exactly that
+  case and hold the best maze results.</li>
+<li><strong>Screened, not promoted.</strong> No supported-population, two-platform
+  result exists for the cooling, stalled-agent, queue, or escalation
+  policies.</li>
+</ul>
+<h2 id="lab-and-example">Lab and example</h2>
+<ul>
+<li>The <a href="../../demo/congestion/">congestion lab</a>
+  runs the recipe, five screened policies, two rejected controls, and
+  three period or price-cap variants live in the browser over the
+  same simulation the colony tutorial uses, with a price overlay and
+  wall painting.</li>
+<li><code>examples/congestion_pricing.cc</code> is the compile-checked, copyable
+  implementation of the full protocol — signal, publish, replan
+  scoping, and restore — against public APIs only.</li>
+</ul>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../pathfinding/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Pathfinding strategy">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Pathfinding strategy
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../pathfinding-strategy-comparison/" class="md-footer__link md-footer__link--next" aria-label="Next: Interactive comparison">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Interactive comparison
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; tess contributors
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.sections", "navigation.tabs", "navigation.top", "search.highlight", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+  <script>
+    (() => {
+      const searchDialog = document.querySelector(
+        ".md-search[role=\"dialog\"]",
+      );
+      searchDialog?.setAttribute(
+        "aria-label", "Search",
+      );
+
+      const mermaidRuntimeUrl = new URL(
+        "../../assets/javascripts/mermaid.min.js",
+        document.baseURI,
+      ).href;
+      let initializationOptions;
+      let runtimePromise;
+
+      const mermaidProxy = {
+        initialize(options) {
+          initializationOptions = options;
+        },
+        async render(...args) {
+          const mermaidRuntime = await loadMermaidRuntime();
+          return mermaidRuntime.render(...args);
+        },
+      };
+
+      function loadMermaidRuntime() {
+        if (!runtimePromise) {
+          runtimePromise = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = mermaidRuntimeUrl;
+            script.addEventListener("load", () => {
+              const mermaidRuntime = window.mermaid;
+              if (mermaidRuntime === mermaidProxy) {
+                reject(new Error("Mermaid runtime did not initialize"));
+                return;
+              }
+              mermaidRuntime.initialize(initializationOptions);
+              resolve(mermaidRuntime);
+            }, { once: true });
+            script.addEventListener("error", () => {
+              reject(new Error("Unable to load Mermaid runtime"));
+            }, { once: true });
+            document.head.append(script);
+          });
+        }
+        return runtimePromise;
+      }
+
+      window.mermaid = mermaidProxy;
+    })();
+  </script>
+  
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+
+  </body>
+</html>

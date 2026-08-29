@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>tess congestion lab</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+  <link rel="canonical" href="https://tess.owx.dev/main/demo/congestion/">
+<meta name="description" content="Congestion pricing demo: demand-driven cost fields reroute tess path agents around crowded tiles, live in WebAssembly.">
+<meta property="og:title" content="tess congestion lab">
+<meta property="og:url" content="https://tess.owx.dev/main/demo/congestion/">
+<meta property="og:image" content="https://tess.owx.dev/assets/tess-social-preview.png">
+</head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="../../" aria-label="Read the tess documentation">
+          <img src="logo.svg" alt="tess">
+        </a>
+        <p class="eyebrow">A live WebAssembly example</p>
+        <h1>Congestion pricing</h1>
+        <p>
+          Agents shuttle between the edges while weighted pathfinding
+          treats caller-owned congestion prices as terrain costs. Choose a
+          pricing policy, compare it with equal-cost route spreading, and
+          draw or erase walls. "Nearby agents" is the supported-coverage
+          caller recipe; the other policies are labelled screening results
+          or rejected controls. The price overlay shows the current cost
+          field. Walls survive resets, and the bands near each edge stay
+          passable so the colony always has somewhere to stand.
+          The timing readout covers the C++ update, not canvas rendering.
+          Single-threaded WebAssembly — native numbers are faster; see
+          <a href="../../performance/">performance</a>.
+        </p>
+      </header>
+
+      <section class="demo" aria-label="Interactive congestion-pricing lab">
+        <div class="toolbar" role="toolbar" aria-label="Congestion-pricing controls">
+          <label>Agents
+            <input id="agents" type="range" min="16" max="1024" step="16"
+                   value="128">
+            <span id="agent-count">128</span>
+          </label>
+          <label>
+            <input id="replan" type="checkbox">
+            Replan every tick (drop retained routes)
+          </label>
+          <label>
+            <input id="spread" type="checkbox" checked>
+            Spread equal-cost routes after crowding
+          </label>
+          <label>
+            Congestion pricing
+            <select id="pricing">
+              <option value="0" selected>Off</option>
+              <option value="9">Cooling memory (screened: lowest tick ratio)</option>
+              <option value="12">Stalled + cooling (screened: ~2x planning load)</option>
+              <option value="10">Stall-gated queues (screened: jam-only)</option>
+              <option value="29">Escalating stall price (screened: best maze)</option>
+              <option value="30">Radiating stall price (screened)</option>
+              <option value="1">Nearby agents (validated caller recipe)</option>
+              <option value="5">Stalled agents (screened)</option>
+              <option value="8">Nearby agents, own tile +2 (screened)</option>
+              <option value="7">Ungated queues (rejected: disrupts convoys)</option>
+              <option value="6">Planned-route demand (rejected: failed outcome gate)</option>
+              <option value="23">Cooling memory, every 8 ticks (screened)</option>
+              <option value="24">Cooling memory, every 16 ticks (screened)</option>
+              <option value="27">Cooling memory, price cap 7 (screened)</option>
+              <option value="31">On-path stall price (screened)</option>
+            </select>
+          </label>
+          <label>
+            Planning budget
+            <select id="budget">
+              <option value="0" selected>8 per tick (default)</option>
+              <option value="4">4 per tick (screened: best worst-tick)</option>
+              <option value="16">16 per tick (screened)</option>
+              <option value="32">32 per tick (screened: 0.74x ticks, 1.5x time)</option>
+              <option value="-1">Scale with backlog (screened)</option>
+              <option value="-2">Drain backlog (screened: fastest, 4x search)</option>
+              <option value="-3">Search-work target (screened: best time)</option>
+            </select>
+          </label>
+          <label>
+            <input id="overlay" type="checkbox" checked>
+            Show price overlay
+          </label>
+          <button id="reset">Reset</button>
+          <button id="clear-walls">Clear walls</button>
+        </div>
+        <canvas id="world" width="768" height="768"
+                aria-label="Congestion-pricing world grid"></canvas>
+        <p class="edit-hint">
+          Drag empty space to draw; drag from a wall to erase.
+        </p>
+        <div class="status" aria-live="polite">
+          <span id="message">Loading WebAssembly…</span>
+          <span id="metrics"></span>
+        </div>
+      </section>
+
+      <footer>
+        <a href="../">Try the pathfinder demo</a>
+        <a href="../tower/">Climb the tower</a>
+        <a href="https://github.com/kindjie/tess/tree/main/examples/web_congestion">
+          View this example's source
+        </a>
+      </footer>
+    </main>
+    <script src="tess-congestion.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
