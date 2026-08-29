@@ -191,6 +191,17 @@ def mouse(
   page.command("Input.dispatchMouseEvent", params)
 
 
+def press_enter(page: BrowserPage) -> None:
+  """Send one keyboard Enter activation through DevTools."""
+  params: dict[str, object] = {
+    "key": "Enter",
+    "code": "Enter",
+    "windowsVirtualKeyCode": 13,
+  }
+  page.command("Input.dispatchKeyEvent", {"type": "keyDown", **params})
+  page.command("Input.dispatchKeyEvent", {"type": "keyUp", **params})
+
+
 def click_cell(page: BrowserPage, x: int, y: int) -> None:
   """Click the center of one colony tile."""
   point = cell_center(page, x, y)
@@ -271,6 +282,66 @@ def test_colony(browser: str, base_url: str, timeout: float) -> None:
       raise RuntimeError("fast drag did not interpolate every wall tile")
 
 
+def test_docs_homepage(
+  browser: str,
+  docs_url: str,
+  width: int,
+  height: int,
+  reduced_motion: bool,
+  exercise_navigation: bool,
+  timeout: float,
+) -> None:
+  """Verify homepage discovery, responsiveness, and keyboard navigation."""
+  with open_page(browser, docs_url, width, height, timeout) as page:
+    if reduced_motion:
+      page.command(
+        "Emulation.setEmulatedMedia",
+        {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]},
+      )
+      page.command("Page.reload", {"ignoreCache": True})
+    page.wait_for("document.readyState === 'complete'")
+    result = page.evaluate(
+      "(() => {"
+      "const actions = [...document.querySelectorAll("
+      "'.tess-hero .md-button')];"
+      "const cards = [...document.querySelectorAll("
+      "'.tess-demo-cards li')];"
+      "return {"
+      "actions: actions.map((link) => link.textContent.trim()),"
+      "keyboard: actions.every((link) => link.href && link.tabIndex >= 0),"
+      "cards: cards.length,"
+      "iframeCount: document.querySelectorAll('iframe').length,"
+      "reducedMotion: matchMedia("
+      "'(prefers-reduced-motion: reduce)').matches,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth,"
+      "width: innerWidth, height: innerHeight};"
+      "})()"
+    )
+    if not isinstance(result, dict):
+      raise RuntimeError("homepage layout probe returned no result")
+    if result["actions"] != [
+      "Get started",
+      "Explore tutorials",
+      "API reference",
+    ]:
+      raise RuntimeError(f"homepage actions diverged: {result}")
+    if not result["keyboard"] or result["cards"] < 8:
+      raise RuntimeError(f"homepage discovery controls diverged: {result}")
+    if result["iframeCount"] != 0 or not result["noOverflow"]:
+      raise RuntimeError(f"homepage overflowed {width}x{height}: {result}")
+    if result["width"] != width or result["height"] != height:
+      raise RuntimeError(
+        f"homepage viewport diverged from {width}x{height}: {result}"
+      )
+    if result["reducedMotion"] is not reduced_motion:
+      raise RuntimeError(f"reduced-motion emulation diverged: {result}")
+
+    if exercise_navigation:
+      page.evaluate("document.querySelector('.tess-hero .md-button').focus()")
+      press_enter(page)
+      page.wait_for("location.pathname.endsWith('/getting-started/')")
+
+
 def test_traffic_layout(
   browser: str,
   base_url: str,
@@ -294,9 +365,7 @@ def test_traffic_layout(
       or measurement["renderMs"]["samples"] < 3
       or measurement["scenario"] != (0 if scenario == "aligned" else 3)
     ):
-      raise RuntimeError(
-        "Traffic Lab measurement mode did not collect samples"
-      )
+      raise RuntimeError("Traffic Lab measurement mode did not collect samples")
     memory = page.evaluate(
       "(() => {"
       "const bytes = module.HEAPU8.buffer.byteLength;"
@@ -348,9 +417,16 @@ def main() -> int:
   parser = argparse.ArgumentParser()
   parser.add_argument("--browser", required=True)
   parser.add_argument("--base-url", required=True)
+  parser.add_argument("--docs-url", required=True)
   parser.add_argument("--timeout", type=float, default=30.0)
   args = parser.parse_args()
 
+  test_docs_homepage(
+    args.browser, args.docs_url, 1366, 768, False, True, args.timeout
+  )
+  test_docs_homepage(
+    args.browser, args.docs_url, 390, 844, True, False, args.timeout
+  )
   test_colony(args.browser, args.base_url, args.timeout)
   test_traffic_layout(
     args.browser, args.base_url, 1366, 768, "aligned", args.timeout

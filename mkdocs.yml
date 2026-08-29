@@ -80,23 +80,24 @@ extra_css:
 
 nav:
   - Home: index.md
-  - Getting started:
+  - Learn:
       - Getting started: getting-started.md
       - Installation: packaging.md
+      - Tutorials: tutorials.md
       - Examples: examples.md
-  - Decision guide:
-      - guide/README.md
+  - Guides:
+      - Guides: guide/README.md
       - Residency: guide/residency.md
       - Writes: guide/writes.md
       - Pathfinding strategy: guide/pathfinding.md
       - Congestion pricing: guide/congestion.md
-      - Interactive comparison: pathfinding-strategy-comparison.md
       - Topology and precheck: guide/topology.md
       - Entities and ECS: guide/entities.md
       - Presentation: guide/presentation.md
       - Diagnostics guide: guide/diagnostics.md
-  - Concepts:
-      - architecture/README.md
+  - Reference:
+      - Reference: reference.md
+      - Architecture: architecture/README.md
       - Terminology: terminology.md
       - Compatibility evidence: architecture/compatibility.md
       - Shapes: architecture/shape.md
@@ -114,10 +115,12 @@ nav:
       - ECS integration: architecture/ecs.md
       - Diagnostics architecture: architecture/diagnostics.md
       - GPU interface: architecture/gpu.md
-  - API reference: https://tess.owx.dev/api/
-  - Performance: performance.md
-  - Use cases: use-cases.md
+      - API reference: https://tess.owx.dev/api/
+  - Performance:
+      - Performance overview: performance.md
+      - Strategy comparison: pathfinding-strategy-comparison.md
   - Project:
+      - Use cases: use-cases.md
       - Integration policy: integration-policy.md
       - Upgrade to 1.0: upgrade-1.0.md
       - Roadmap: roadmap.md

@@ -307,7 +307,8 @@ jobs:
           grep -q 'C++ update' build/web-traffic-dom.html
           python3 tools/test_web_demo_interactions.py \
             --browser google-chrome \
-            --base-url http://127.0.0.1:8000/demo/
+            --base-url http://127.0.0.1:8000/demo/ \
+            --docs-url http://127.0.0.1:8000/
           google-chrome \
             --headless=new \
             --no-sandbox \
