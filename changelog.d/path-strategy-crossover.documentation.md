@@ -1,3 +1,3 @@
-- Added a C++ grid pathfinding comparison with a reviewed cold request-count
-  campaign method, reproducible Apple Silicon and Steam Deck controls, and an
-  opt-in grid/request capacity envelope.
+- Added an evidence-backed C++ grid pathfinding comparison with reviewed cold
+  crossover results, reproducible Apple Silicon and Steam Deck controls, and a
+  bounded grid/request capacity envelope.

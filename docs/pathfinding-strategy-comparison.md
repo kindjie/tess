@@ -35,16 +35,35 @@ boundary and the full API selection tree.
 
 ## Where reuse crosses over
 
-The campaign below measures cold end-to-end work. Route-cache population and
-distance-field construction stay inside the timed operation; no warm state is
-smuggled into the comparison. Every pair receives the same world and request
-array, and untimed checks require matching status, endpoints, legal steps, and
-path cost.
+The campaign below measures logically cold strategy work with reusable storage
+pre-reserved and the harness warmed once outside timing. Route-cache logical
+state is cleared; cache population and distance-field construction stay inside
+the timed operation. Every pair receives the same world and request array, and
+untimed checks require matching status, endpoints, legal steps, and path cost.
 
-The controlled Apple Silicon and Steam Deck campaign is pending. Results will
-be added only after the exact committed source is run on both hosts and the
-measurements and conclusions pass review. The benchmark method and decision
-table are available now so the eventual evidence has a reviewable contract.
+The controlled campaign ran from commit `fcaa2165a8bd` on an Apple M3 Max and
+an affinity-pinned Steam Deck. It found small, workload-specific crossovers,
+not one agent-count rule:
+
+![Cold path-strategy crossover evidence](assets/path-strategy-crossover.svg)
+
+| Question | M3 Max | Steam Deck |
+| --- | --- | --- |
+| Open map, shared unit goal | A\* won every accepted cell through 512 requests; 1,000 was rejected for variance | A\* still won at 1,000 requests |
+| Room portals, shared unit goal | Field crossover `(10, 16]` | Field crossover `(4, 8]` |
+| Exact-repeat route cache | Cache win observed by 4; lower boundary unresolved | Cache crossover `(2, 8]` |
+| Same-goal suffix cache | Cache win observed by 8; lower boundary unresolved | Cache crossover `(2, 8]` |
+| Weighted batch, one goal | Batch win observed by 8; lower boundary unresolved | Batch crossover `(2, 4]` |
+| Weighted batch, eight goals | Accepted count 8 was inconclusive; first material win at 10 | Counts 1-8 were inconclusive; first material win at 10 |
+| Weighted batch, all goals distinct | No material winner established through 1,000 | No material winner established through 1,000 |
+
+A bracket `(a, b]` means the baseline materially won at `a` and reuse
+materially won at `b`; it does not invent an unmeasured exact threshold. A
+“win observed by” result has an accepted reuse win but no accepted lower
+baseline boundary. Forty of 91 M3 cells exceeded the predeclared 5% variation
+limit despite a clean rerun with a 100 ms sampling floor, so those cells remain
+visible in the evidence but do not participate in the table. All 91 Steam Deck
+cells passed at its affinity-pinned 10 ms floor.
 
 | Question | Cold comparison | Decision signal |
 | --- | --- | --- |
@@ -53,28 +72,30 @@ table are available now so the eventual evidence has a reviewable contract.
 | Starts lie on one goal route | independent unit A* vs a cleared suffix cache | First count that repays population and suffix lookup cost |
 | Weighted requests arrive together | independent weighted A* vs one `weighted_path_batch` call | Whether grouping produces fields or A* fallbacks for the observed goal count |
 
-The established 100-request snapshot remains useful while the crossover
-campaign is pending. These are median single-threaded CPU times from a Release
-build on one Apple M3 Max, with at least one second per repetition across ten
-repetitions:
-
-| Workload | Independent searches | Reuse strategy | Relative time |
-| --- | ---: | ---: | ---: |
-| Shared unit-cost goal | 17.80 ms | 2.78 ms field | 6.4x faster |
-| Exact route repeats | 48.88 ms | 14.52 ms cache | 3.4x faster |
-| Same-goal suffixes | 113.08 us | 17.41 us cache | 6.5x faster |
-| Eight weighted goals | 441.16 ms | 42.29 ms batch | 10.4x faster |
-
-That run could not pin thread affinity and observed a load average near 4.0,
-so it establishes that reuse can win on these shapes, not where it first wins
-or what another machine will sustain.
-
 The primary 512x512 sweep uses request counts 1, 2, 4, 8, 10, 16, 32, 64,
 100, 128, 256, 512, and 1,000. After a bounded preflight established
 headroom, the opt-in capacity sweep was extended to 131,072 requests and
 grids through 16,384x16,384. Capacity cells identify the largest completed
 rung under a declared time and memory budget; they do not deliberately drive
 a machine into an out-of-memory failure.
+
+The capacity sweep found different operational envelopes under a 20-second
+per-process limit and conservative memory bounds:
+
+| Axis | Apple M3 Max, 16 GiB watchdog | Steam Deck, 12 GiB address-space limit |
+| --- | --- | --- |
+| Grid, most strategies | Completed the 16,384x16,384 test ceiling | Completed 8,192x8,192; 16,384x16,384 reached the controlled resource/time boundary |
+| Grid, one-goal weighted batch | Completed 8,192x8,192; 16,384x16,384 timed out | Same bracket |
+| Grid, eight-goal weighted batch | Completed 4,096x4,096; 8,192x8,192 timed out | Same bracket |
+| Requests, room-portal A\* | Completed 65,536; 131,072 timed out | Completed 16,384; 32,768 timed out |
+| Requests, one/eight-goal weighted A\* | Completed 4,096; 8,192 timed out | One goal completed 4,096 and timed out at 8,192; eight goals timed out at the first 1,000-request capacity rung |
+| Requests, reuse-heavy arms | Completed the 131,072 test ceiling | Completed the 131,072 test ceiling |
+
+“Completed the ceiling” is intentionally not called a platform maximum. The
+all-distinct request ladder is fixture-limited at 2,044 perimeter goals. At
+131,072 requests, the one-goal weighted batch peaked near 6.0 GiB on M3 and
+5.9 GiB on Deck, so the high-count results are throughput stress tests rather
+than frame-budget recommendations.
 
 Timing is accompanied by A* and unit-field expansions, reconstruction nodes,
 field builds, A* fallbacks, cache hits, suffix hits, unique-goal counts,
@@ -348,7 +369,7 @@ its supporting contracts exist.
 
 [strategy-main]: https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies.cc
 [benchmark-source]: https://github.com/kindjie/tess/tree/main/bench
-[crossover-evidence]: planning/evidence/v1.0/path-strategy-crossover/README.md
+[crossover-evidence]: https://github.com/kindjie/tess/tree/main/docs/planning/evidence/v1.0/path-strategy-crossover
 [quad-heap-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-14.md
 [congestion-rejection]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-17.md
 [congestion-revalidation]: https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/c5-congestion/README.md

@@ -13,27 +13,33 @@ deliberately exhausting host memory.
 
 ## Controlled method
 
-- Source base: `4780d718f5db87a3bfce3440b7dcbdf59dc43cc0`.
+- Source commit: `fcaa2165a8bd0194578bd0d9ab0a86662f0e90cb`.
 - Benchmark-source and runner SHA-256 values are embedded in every result file.
-- Build: CMake `bench-only`, Release, warnings as errors.
+- Build: CMake `bench-only` on M3 and `linux-bench` on Deck; Release, warnings
+  as errors.
 - Primary grid: 512x512 with 32x32 chunks and dense residency.
 - Counts: 1, 2, 4, 8, 10, 16, 32, 64, 100, 128, 256, 512, and
   1,000 requests.
 - Sampling: ten independently launched paired repetitions, randomized arm
-  order, a 10 ms minimum measured time, and median CPU time. Every sample,
+  order, and median CPU time. The affinity-pinned Steam Deck used a 10 ms
+  minimum measured time. The M3 used 100 ms after a shorter preflight proved
+  inadequate for its unpinned microsecond-scale cache cells. Every sample,
   order, iteration count, and peak-RSS observation is retained. Cells whose
   per-arm coefficient of variation exceeds 5% are rejected.
-- Decision: the paired right/left time-ratio interval from the 5th through
-  95th sample percentiles must clear both equality and a 2% practical-effect
-  floor. Near ties are inconclusive; later reversals prevent an earlier win
-  from becoming the published stable bracket.
+- Decision: the empirical range from the 5th through 95th sample percentiles
+  of the ten paired right/left time ratios must clear both equality and a 2%
+  practical-effect floor. It is not a confidence interval. Near ties are
+  inconclusive; later reversals prevent an earlier win from becoming the
+  published stable bracket.
 - Pairing: both arms receive the same constructed world and request vector.
-  Route-cache clearing, field construction, and batch grouping stay timed.
+  Reusable scratch/storage is pre-reserved and each arm receives one untimed
+  harness warmup. Route-cache logical state is cleared; cache population,
+  field construction, and batch grouping stay timed.
 - Correctness: a production A* reference records expected costs outside the
   timed loop; every arm then validates status, endpoints, legal unit steps, and
   independently reconstructed path cost. Primary cells check every request;
-  capacity cells deterministically sample up to 32 requests so the oracle
-  cannot become the failure mode.
+  capacity cells deterministically sample up to 32 requests to bound oracle
+  work and reduce its chance of dominating the process envelope.
 - Counters: A* and unit-field expansions, reconstruction nodes, field builds,
   A* fallbacks, unique goals, unique starts, cache hits, suffix hits, cache
   entries, retained path nodes, and compile-time dense field-page bytes
@@ -43,12 +49,15 @@ deliberately exhausting host memory.
 | Environment | Toolchain | Affinity and power |
 | --- | --- | --- |
 | Apple M3 Max, 64 GB, macOS 26.5.1 | Apple Clang 21.0.0; CMake 4.4.2 | Affinity unavailable; battery charged; single-threaded CPU time |
-| Steam Deck, 16 GB, Linux 6.16.12 | Ubuntu Clang 18.1.3; CMake 3.28.3 | Pinned to CPU 2; performance governor; external power online |
+| Steam Deck, 16 GB, Linux 6.16.12 | Debian Clang 19.1.7; CMake 3.31.6 | Pinned to CPU 2; performance governor; external power online |
 
-Normalized samples, summaries, work counters, and policy metadata live in the
-four platform/mode result files linked from the results section below. Raw
-Google Benchmark envelopes are not retained because the controller preserves
-the auditable cell observations without machine-local metadata.
+Normalized samples, summaries, work counters, and policy metadata are split
+by platform and workload family in the result files linked below. Splitting
+keeps every public file below the repository token limit without dropping any
+of the 1,820 paired repetitions (3,640 arm timings) or 349 capacity
+observations. Raw Google Benchmark envelopes are not retained because the
+controller preserves the auditable cell observations without machine-local
+metadata. [SHA-256 checksums](SHA256SUMS) cover every normalized JSON file.
 
 ## Capacity protocol
 
@@ -99,7 +108,8 @@ python3 tools/path_strategy_campaign.py primary \
   --binary build/bench/bench/tess_bench_path_strategy_crossover \
   --source bench/tess_path_strategy_crossover_bench.cc \
   --environment environment.json --output primary.json \
-  --memory-limit-gib <conservative-host-budget> [--cpu <linux-cpu>]
+  --memory-limit-gib <conservative-host-budget> \
+  --minimum-time <platform-floor-seconds> [--cpu <linux-cpu>]
 python3 tools/path_strategy_campaign.py capacity \
   --binary build/bench/bench/tess_bench_path_strategy_crossover \
   --source bench/tess_path_strategy_crossover_bench.cc \
@@ -124,17 +134,89 @@ checkpoints on-device, and restores the prior governors on exit.
 
 ## Results
 
-Results are added here only after both campaigns complete and their method,
-measurements, and interpretation pass review.
+The Steam Deck accepted all 91 primary cells. The M3 accepted 51; the other 40
+remain in the files with `accepted: false` because at least one arm exceeded
+the predeclared 5% coefficient-of-variation limit. The M3 curve therefore
+supports only the accepted brackets and observed wins below, not a complete
+cache crossover curve.
+
+| Workload | Apple M3 Max | Steam Deck |
+| --- | --- | --- |
+| Unit field, open | No accepted field win through 512 | No field win through 1,000 |
+| Unit field, room portals | `(10, 16]` | `(4, 8]` |
+| Route cache, exact repeats | Cache win observed by 4; lower bound unresolved | `(2, 8]` |
+| Route cache, same-goal suffixes | Cache win observed by 8; lower bound unresolved | `(2, 8]` |
+| Weighted batch, one goal | Batch win observed by 8; lower bound unresolved | `(2, 4]` |
+| Weighted batch, eight goals | First material win at 10 | First material win at 10 |
+| Weighted batch, distinct goals | Inconclusive through 1,000 | Inconclusive through 1,000 |
+
+In the controller's raw crossover summary, `lower_exclusive: 0` means no
+accepted decisive baseline win was available before the first accepted reuse
+win. It is reported here as “win observed by,” never as a literal `(0, n]`
+crossover bracket.
+
+The capacity campaign completed 170 of 177 M3 observations and 153 of 172
+Deck observations. The remainder were five M3 timeouts, 17 Deck timeouts, and
+two fixture limits on each platform. Notable controlled boundaries were:
+
+| Axis | Apple M3 Max | Steam Deck |
+| --- | --- | --- |
+| Most grid ladders | Completed the 16,384x16,384 ceiling | Completed 8,192x8,192; 16,384x16,384 stopped under the resource/time bounds |
+| One-goal batch grid | 8,192x8,192 complete; 16,384x16,384 timed out | Same |
+| Eight-goal batch grid | 4,096x4,096 complete; 8,192x8,192 timed out | Same |
+| Room-portal A\* requests | 65,536 complete; 131,072 timed out | 16,384 complete; 32,768 timed out |
+| One/eight-goal weighted A\* requests | 4,096 complete; 8,192 timed out | One goal matched M3; eight goals timed out at the first 1,000-request capacity rung |
+| Reuse-heavy request ladders | Completed the 131,072 ceiling | Completed the 131,072 ceiling |
+
+The 16,384x16,384 Deck processes reported `std::bad_alloc` under the 12 GiB
+address-space limit before the controller's 20-second stop. The report retains
+both facts rather than reclassifying the recorded timeout. On M3, most
+16,384x16,384 cells completed; the all-distinct weighted-batch process peaked
+near 9.5 GiB RSS. A larger grid was not registered because its dense scratch
+could exceed the declared host budgets.
+
+### Primary evidence
+
+| Workload | Apple M3 Max | Steam Deck |
+| --- | --- | --- |
+| Unit field, open | [JSON](apple-m3-max-primary-unit-shared-open.json) | [JSON](steam-deck-primary-unit-shared-open.json) |
+| Unit field, room portals | [JSON](apple-m3-max-primary-unit-shared-room-portals.json) | [JSON](steam-deck-primary-unit-shared-room-portals.json) |
+| Route cache, exact repeats | [JSON](apple-m3-max-primary-route-cache-exact-repeats.json) | [JSON](steam-deck-primary-route-cache-exact-repeats.json) |
+| Route cache, same-goal suffixes | [JSON](apple-m3-max-primary-route-cache-same-goal-suffixes.json) | [JSON](steam-deck-primary-route-cache-same-goal-suffixes.json) |
+| Weighted batch, one goal | [JSON](apple-m3-max-primary-weighted-one-goal.json) | [JSON](steam-deck-primary-weighted-one-goal.json) |
+| Weighted batch, eight goals | [JSON](apple-m3-max-primary-weighted-eight-goals.json) | [JSON](steam-deck-primary-weighted-eight-goals.json) |
+| Weighted batch, distinct goals | [JSON](apple-m3-max-primary-weighted-all-distinct-goals.json) | [JSON](steam-deck-primary-weighted-all-distinct-goals.json) |
+
+### Capacity evidence
+
+| Group | Apple M3 Max | Steam Deck |
+| --- | --- | --- |
+| Unit fields | [JSON](apple-m3-max-capacity-unit-shared.json) | [JSON](steam-deck-capacity-unit-shared.json) |
+| Route caches | [JSON](apple-m3-max-capacity-route-cache.json) | [JSON](steam-deck-capacity-route-cache.json) |
+| Weighted paths | [JSON](apple-m3-max-capacity-weighted.json) | [JSON](steam-deck-capacity-weighted.json) |
 
 ## Conclusion
 
 The decision rule is a platform- and workload-specific bracket, not a fixed
-agent threshold. Use independent A* below the first observed reuse win, then
-confirm the same paired cell on the deployment target. Weighted batching is
-valuable only when its counters show field construction; all-distinct goals
-correctly fall back and should remain close to independent weighted A*.
+agent threshold. Prefer independent A* at measured left-winning counts and
+reuse at measured right-winning counts. Measure the deployment target inside
+a bracket or wherever the lower boundary remains unresolved. A measured
+performance win from weighted batching requires its counters to show field
+construction. All-distinct goals correctly fell back and established no
+material winner under this decision rule.
 
 The capacity sweep is a separate operational envelope. A completed high-count
 cell does not mean an application can afford that workload inside its frame
 budget, and a timeout is not an algorithmic correctness failure.
+
+## Deferred follow-ups
+
+- A multithreaded CPU campaign should measure throughput and tail latency with
+  worker-owned scratch/runtime state at physical-core and SMT boundaries. A
+  `PathRequestRuntime` is unsynchronized and must not simply be shared by
+  workers.
+- GPU pathfinding is not currently a Tess benchmarkable capability. The
+  WebGPU layer transports consumer-owned pipelines; Tess does not ship a GPU
+  pathfinding kernel. A future campaign first needs a correctness-tested
+  provider, then separate cold upload/dispatch/readback and warm-resident
+  measurements against the CPU oracle.
