@@ -88,8 +88,11 @@ committed before preparation runs, which the workflow-order tests pin.
   `/1.0.0-rc.1/` tree without moving the stable root or `/latest/`.
 - To republish an existing tag, dispatch the workflow from `main` with
   `publish_tag` set to the exact stable or RC tag. The build and Mike source
-  come from that tag; selection, artifact assembly, validation, and deployment
-  use the current trusted workflow commit. A source whose CMake version does
+  come from that tag, including source-content checks and demo tests that are
+  coupled to it. The current trusted workflow commit supplies artifact
+  assembly, generated-site link validation, Doxygen stamping, selection, and
+  deployment. A later authored-content check is skipped only when it does not
+  exist in the selected historical source. A source whose CMake version does
   not match the requested tag fails before publication.
 - The selector inventory is normalized after every Mike deployment. The
   newest stable release comes first, followed by the highest unsuperseded RCs,

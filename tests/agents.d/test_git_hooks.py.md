@@ -22,8 +22,7 @@
 - Release-evidence coverage requires checksummed, retained job logs containing
   actual versions, a provenance workflow-run URL, and explicit expected/pinned
   toolchain identifiers.
-- Documentation workflow coverage keeps current publication tooling separate
-  from the exact selected source checkout, stamps the selected Doxygen label,
+- Documentation workflow coverage stamps the selected Doxygen label,
   normalizes the selector before root assembly, and uploads the checked source
   worktree rather than an adjacent unprepared tree.
 - Failure-reporter coverage executes the supersession classifier embedded in

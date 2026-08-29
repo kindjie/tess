@@ -82,7 +82,11 @@ mode.
 The RC tag publishes documentation at its exact SemVer path without moving the
 stable root. If an already-created RC predates that publication behavior,
 dispatch `.github/workflows/pages.yml` from `main` with `publish_tag` set to the
-exact tag. Verify the deployed RC homepage, API reference, demos, `noindex`
+exact tag. The selected tag retains its docs, examples, dependencies, and build
+scripts, plus the checks coupled to that content. Current tooling assembles and
+validates the generated artifact; later authored-content checks are skipped
+when the selected source predates them. Verify the deployed RC homepage, API
+reference, demos, `noindex`
 metadata, selector title, and that `/`, `/latest/`, and `/main/` remain on their
 respective stable, compatibility, and development content.
 

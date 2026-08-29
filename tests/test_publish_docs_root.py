@@ -882,6 +882,30 @@ def test_current_tooling_stamps_and_checks_an_old_doxygen_config(
   assert "Doxygen project number" in wrong.stderr
 
 
+def test_historical_source_keeps_checks_at_the_correct_authority():
+  workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text()
+  build_job = workflow.split("  build:\n", 1)[1].split(
+    "  deploy:\n", 1
+  )[0]
+  finalize = "build/publication/tools/finalize_generated_pages.py"
+  links = "build/publication/tools/check_docs_links.py"
+
+  assert "path: build/publication" in build_job
+  assert finalize in build_job
+  assert links in build_job
+  assert "python3 tools/check_doc_snippets.py" in build_job
+  assert "python3 tools/check_doc_versions.py" in build_job
+  assert "python3 tools/check_mermaid.py" in build_job
+  assert "python3 tools/test_web_demo_interactions.py" in build_job
+  assert "[ -f tools/check_page_descriptions.py ]" in build_job
+  assert 'elif [ -n "$SELECTED_SOURCE_REF" ]' in build_job
+  assert "Current source lacks check_page_descriptions.py" in build_job
+  assert "build/publication/tools/check_page_descriptions.py" not in build_job
+  assert "build/publication/tools/test_web_demo_interactions.py" not in (
+    build_job
+  )
+
+
 def test_sync_converts_dev_html_to_main_redirects_and_retains_assets(
   tmp_path: Path,
 ):
