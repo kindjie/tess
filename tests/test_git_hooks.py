@@ -1247,11 +1247,16 @@ def test_pages_build_has_only_the_permissions_needed_to_configure_pages():
 def test_pages_build_publishes_warning_clean_public_doxygen_api():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "pages.yml").read_text()
+  build_job = workflow.split("  build:\n", 1)[1].split(
+    "  deploy:\n", 1
+  )[0]
   cmake = (root / "CMakeLists.txt").read_text()
   mkdocs = (root / "mkdocs.yml").read_text()
 
   configure = "cmake -S . -B build/docs-api"
   build = "cmake --build build/docs-api --target tess_docs"
+  stamp = 'python3 "$PUBLICATION_TOOL" stamp-doxygen'
+  check_label = 'python3 "$PUBLICATION_TOOL" check-doxygen-label'
   publish = "cp -R build/docs-api/docs/html build/site/api"
   link_check = "python3 tools/check_docs_links.py build/site"
 
@@ -1266,6 +1271,9 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   assert build in workflow
   assert publish in workflow
   assert workflow.index(configure) < workflow.index(build)
+  assert workflow.index(configure) < workflow.index(stamp)
+  assert workflow.index(stamp) < workflow.index(build)
+  assert workflow.index(build) < workflow.index(check_label)
   assert workflow.index(build) < workflow.index(publish)
   assert workflow.index(publish) < workflow.index(link_check)
   assert workflow.index(publish) < workflow.index("Upload Pages artifact")
@@ -1289,6 +1297,11 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   assert "set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)" in cmake
   assert 'set(DOXYGEN_PROJECT_NUMBER "${TESS_DOC_VERSION_LABEL}")' in cmake
   assert '-DTESS_DOC_VERSION_LABEL="$SELECTED_VERSION_LABEL"' in workflow
+  assert "path: build/publication" in build_job
+  assert stamp in build_job
+  assert "build/docs-api/Doxyfile.tess_docs" in build_job
+  assert check_label in build_job
+  assert "build/docs-api/docs/html/index.html" in build_job
   assert '"tess::detail::*"' in cmake
   assert "API reference: https://tess.owx.dev/api/" in mkdocs
 

@@ -86,6 +86,14 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
+      - name: Check out current publication tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: build/publication
+
       - name: Verify selected source version
         env:
           EXPECTED_VERSION: ${{ needs.select.outputs.expected_version }}
@@ -154,6 +162,8 @@ jobs:
 
       - name: Build API reference
         env:
+          PUBLICATION_TOOL: >-
+            ${{ github.workspace }}/build/publication/tools/publish_docs_root.py
           SELECTED_VERSION_LABEL: ${{ needs.select.outputs.version_label }}
         run: |
           cmake -S . -B build/docs-api \
@@ -164,7 +174,13 @@ jobs:
             -DTESS_BUILD_DOCS=ON \
             -DTESS_DOC_VERSION_LABEL="$SELECTED_VERSION_LABEL" \
             -DTESS_ENABLE_ENTT=OFF
+          python3 "$PUBLICATION_TOOL" stamp-doxygen \
+            build/docs-api/Doxyfile.tess_docs \
+            --label "$SELECTED_VERSION_LABEL"
           cmake --build build/docs-api --target tess_docs
+          python3 "$PUBLICATION_TOOL" check-doxygen-label \
+            build/docs-api/docs/html/index.html \
+            --label "$SELECTED_VERSION_LABEL"
 
       - name: Build WebAssembly example
         env:

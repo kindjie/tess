@@ -35,6 +35,9 @@ VERSION_NAME = re.compile(
 TAG_VERSION = re.compile(
   rf"^v({NUMBER})\.({NUMBER})\.({NUMBER})(?:-rc\.({NUMBER}))?$"
 )
+DOC_VERSION_LABEL = re.compile(
+  rf"(?:{NUMBER}\.{NUMBER}\.{NUMBER}(?:-rc\.{NUMBER})?|main \(unreleased\))$"
+)
 TEXT_SUFFIXES = {
   ".css",
   ".html",
@@ -530,6 +533,47 @@ def stable_alias(raw: object, *, version: str, title: str) -> str:
   return "latest"
 
 
+def _validate_doc_version_label(label: str) -> None:
+  if DOC_VERSION_LABEL.fullmatch(label) is None:
+    raise PublicationError(f"invalid documentation version label: {label!r}")
+
+
+def stamp_doxygen_config(config: Path, *, label: str) -> None:
+  """Override Doxygen's project number in new and historical builds."""
+  _validate_doc_version_label(label)
+  try:
+    text = config.read_text()
+  except OSError as error:
+    raise PublicationError(f"cannot read Doxygen config: {error}") from error
+  pattern = re.compile(r"^PROJECT_NUMBER\s*=.*$", re.MULTILINE)
+  if len(pattern.findall(text)) != 1:
+    raise PublicationError(
+      "Doxygen config must contain exactly one PROJECT_NUMBER assignment"
+    )
+  config.write_text(pattern.sub(f"PROJECT_NUMBER = {label}", text))
+
+
+def check_doxygen_label(index: Path, *, label: str) -> None:
+  """Verify the built Doxygen header carries the exact selected label."""
+  _validate_doc_version_label(label)
+  try:
+    text = index.read_text()
+  except OSError as error:
+    raise PublicationError(f"cannot read Doxygen index: {error}") from error
+  match = re.search(
+    r'<span\s+id="projectnumber"[^>]*>(.*?)</span>',
+    text,
+    re.DOTALL | re.IGNORECASE,
+  )
+  if match is None:
+    raise PublicationError("Doxygen project number is missing")
+  rendered = html.unescape(re.sub(r"<[^>]+>", "", match[1])).strip()
+  if rendered != label:
+    raise PublicationError(
+      f"Doxygen project number is {rendered!r}, expected {label!r}"
+    )
+
+
 def _normalized_versions(pages: Path, raw: object) -> list[dict[str, object]]:
   if not isinstance(raw, list):
     raise PublicationError("versions.json must be an array")
@@ -564,7 +608,10 @@ def _normalized_versions(pages: Path, raw: object) -> list[dict[str, object]]:
 
   stable.sort(key=lambda item: item[0], reverse=True)
   rcs.sort(key=lambda item: item[0], reverse=True)
-  ga_versions = {key for key, _ in stable}
+  ga_patch_by_line: dict[tuple[int, int], int] = {}
+  for key, _ in stable:
+    line = key[:2]
+    ga_patch_by_line[line] = max(ga_patch_by_line.get(line, -1), key[2])
   visible_rc: list[dict[str, object]] = []
   hidden_rc: list[dict[str, object]] = []
   newest_by_base: dict[tuple[int, int, int], int] = {}
@@ -572,7 +619,8 @@ def _normalized_versions(pages: Path, raw: object) -> list[dict[str, object]]:
     base = key[:3]
     newest_by_base[base] = max(newest_by_base.get(base, -1), key[3])
   for key, entry in rcs:
-    hidden = key[:3] in ga_versions or key[3] != newest_by_base[key[:3]]
+    ga_patch = ga_patch_by_line.get(key[:2], -1)
+    hidden = ga_patch >= key[2] or key[3] != newest_by_base[key[:3]]
     _set_hidden(entry, hidden)
     (hidden_rc if hidden else visible_rc).append(entry)
 
@@ -887,6 +935,12 @@ def parse_args() -> argparse.Namespace:
   alias_parser.add_argument("inventory", type=Path)
   alias_parser.add_argument("--version", required=True)
   alias_parser.add_argument("--title", required=True)
+  stamp_parser = subparsers.add_parser("stamp-doxygen")
+  stamp_parser.add_argument("config", type=Path)
+  stamp_parser.add_argument("--label", required=True)
+  label_parser = subparsers.add_parser("check-doxygen-label")
+  label_parser.add_argument("index", type=Path)
+  label_parser.add_argument("--label", required=True)
   for command in ("prepare-artifact", "check"):
     child = subparsers.add_parser(command)
     child.add_argument("pages", type=Path)
@@ -916,6 +970,10 @@ def main() -> int:
       except (json.JSONDecodeError, OSError) as error:
         raise PublicationError(f"invalid versions.json: {error}") from error
       print(stable_alias(inventory, version=args.version, title=args.title))
+    elif args.command == "stamp-doxygen":
+      stamp_doxygen_config(args.config, label=args.label)
+    elif args.command == "check-doxygen-label":
+      check_doxygen_label(args.index, label=args.label)
     elif args.command == "prepare-artifact":
       prepare_artifact(args.pages)
     else:

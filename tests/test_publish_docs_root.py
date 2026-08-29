@@ -834,6 +834,54 @@ def test_ga_transition_hides_rc_but_preserves_exact_tree_and_latest_redirect(
   assert _run_tool("check", tmp_path).returncode == 0
 
 
+@pytest.mark.parametrize("initially_hidden", [False, True])
+def test_patch_release_keeps_earlier_ga_candidate_hidden(
+  tmp_path: Path, initially_hidden: bool
+):
+  entries = [
+    _version_entry(
+      "1.0.0-rc.1", "1.0.0-rc.1", hidden=initially_hidden
+    ),
+    _version_entry("1.0", "1.0.1", aliases=["latest"]),
+    _version_entry("main", "main (unreleased)"),
+  ]
+  _write(tmp_path / "versions.json", json.dumps(entries))
+  for version in ("1.0.0-rc.1", "1.0", "main"):
+    (tmp_path / version).mkdir()
+
+  assert _run_tool("normalize-versions", tmp_path).returncode == 0
+
+  normalized = json.loads((tmp_path / "versions.json").read_text())
+  rc = next(entry for entry in normalized if entry["version"] == "1.0.0-rc.1")
+  assert rc["properties"]["hidden"] is True
+
+
+def test_current_tooling_stamps_and_checks_an_old_doxygen_config(
+  tmp_path: Path,
+):
+  config = tmp_path / "Doxyfile.tess_docs"
+  config.write_text("PROJECT_NAME = tess\nPROJECT_NUMBER = 1.0.0\n")
+
+  result = _run_tool("stamp-doxygen", config, "--label", "1.0.0-rc.1")
+
+  assert result.returncode == 0, result.stderr
+  assert "PROJECT_NUMBER = 1.0.0-rc.1" in config.read_text()
+
+  index = tmp_path / "index.html"
+  index.write_text(
+    '<div id="projectname">tess<span id="projectnumber">'
+    "&#160;1.0.0-rc.1</span></div>"
+  )
+  assert (
+    _run_tool("check-doxygen-label", index, "--label", "1.0.0-rc.1").returncode
+    == 0
+  )
+
+  wrong = _run_tool("check-doxygen-label", index, "--label", "1.0.0-rc.2")
+  assert wrong.returncode != 0
+  assert "Doxygen project number" in wrong.stderr
+
+
 def test_sync_converts_dev_html_to_main_redirects_and_retains_assets(
   tmp_path: Path,
 ):
