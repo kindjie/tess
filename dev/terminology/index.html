@@ -2271,6 +2271,10 @@ remain authoritative for the full contracts.</p>
 <td>Retained shortest-distance data built from one or more goals for repeated path reads. See <a href="../architecture/path/">pathfinding</a>.</td>
 </tr>
 <tr>
+<td><strong><abbr title="Per-cell movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr></strong></td>
+<td>Per-cell movement directions derived from distance-to-goal data so agents can choose local steps without reconstructing full paths. Designed, not currently shipped; see the <a href="../pathfinding-strategy-comparison/#distance-fields-and-flow-fields">pathfinding comparison</a>.</td>
+</tr>
+<tr>
 <td><strong><abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr></strong></td>
 <td>Capacity-bounded retained storage for reusable route results.</td>
 </tr>

@@ -731,8 +731,9 @@
           const verticalPadding =
             Number.parseFloat(bodyStyle.paddingTop) +
             Number.parseFloat(bodyStyle.paddingBottom);
+          const frameSlack = 2;
           const contentHeight = Math.ceil(
-            root.getBoundingClientRect().height + verticalPadding);
+            root.getBoundingClientRect().height + verticalPadding + frameSlack);
           const frameHeight = Number.parseFloat(
             window.frameElement.style.height);
           if (Number.isFinite(frameHeight) &&

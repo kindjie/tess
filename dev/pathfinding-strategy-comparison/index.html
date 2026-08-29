@@ -2231,18 +2231,24 @@ Do many agents share a goal? Do weighted path requests arrive together? Or is
 every path request genuinely independent? tess exposes a different call shape
 for each case, letting an application reuse only the work its own workload
 repeats.</p>
-<p>Here, a <strong>request</strong> is one path query: one start, one goal, and one resulting
-path or failure. It is not the same thing as an agent. One agent can issue many
-requests, and a benchmark can repeat the same request. A request count is the
-number of query entries handled by one measured operation. The evidence
-reports unique-start counts separately and, for weighted batches, unique-goal
-counts.</p>
+<div class="admonition info">
+<p class="admonition-title">What a request means</p>
+<p>A <strong>request</strong> is one path query: one start, one goal, and one resulting
+path or failure. It is not the same thing as an agent. One agent can issue
+many requests, and a benchmark can repeat the same request. A request count
+is the number of query entries handled by one measured operation. The
+evidence reports unique-start counts separately and, for weighted batches,
+unique-goal counts.</p>
+</div>
 <p>This page connects those choices in three stages. First, a small 16x16 example
 makes the four call shapes visible on the same obstacle course. Next,
 controlled 512x512 benchmarks measure when the cost of creating or retaining
 reusable work is repaid. Finally, self-checking C++ excerpts show how each call
 shape is expressed in code. The example teaches the choices; the
 benchmark campaign supplies the timing evidence.</p>
+<p>If you arrived looking for flow fields, jump to
+<a href="#distance-fields-and-flow-fields">how distance fields relate to them</a> and what
+the benchmark does—and does not—measure.</p>
 <h2 id="the-short-answer">The short answer</h2>
 <p>The four choices differ in where repeated work appears:</p>
 <p><picture>
@@ -2649,6 +2655,18 @@ verify that a real request set contains the reuse the batch was meant to find.</
 <h3 id="distance-field-many-starts-one-goal">Distance field: many starts, one goal</h3>
 <p>A reverse <abbr title="Retained shortest-distance data built from one or more goals for repeated path reads.">distance field</abbr> builds one goal-rooted search tree. Every matching
 start then reconstructs a path from that field instead of running another A*.</p>
+<p><span id="distance-fields-and-flow-fields"></span></p>
+<div class="admonition info">
+<p class="admonition-title">Distance fields and flow fields</p>
+<p>A <abbr title="Retained shortest-distance data built from one or more goals for repeated path reads.">distance field</abbr> gives each reachable cell its remaining cost to the goal.
+A <abbr title="Per-cell movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr> adds a direction at each cell, usually pointing to a
+neighboring cell with a lower remaining cost. An agent can repeatedly
+sample those directions instead of requesting a complete path. Tess
+provides the distance data and full-path reconstruction shown here; it does
+not currently retain a separate direction field or run agents from one.
+The benchmarked arm therefore measures one distance-field build plus one
+full path reconstruction per request, not flow-field steering.</p>
+</div>
 <!-- tess-snippet: strategy-distance-field source=examples/pathfinding_strategies_model.cc -->
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">tess</span><span class="o">::</span><span class="n">DistanceFieldScratch</span><span class="w"> </span><span class="n">scratch</span><span class="p">;</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">field</span><span class="w"> </span><span class="o">=</span>
