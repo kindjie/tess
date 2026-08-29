@@ -7,18 +7,39 @@ description: >-
 
 # A* vs route caches, batches, and distance fields
 
-There is no universally fastest pathfinding API. The useful question is which
-work repeats: a route, a goal, or nothing at all. tess exposes separate APIs
-for those shapes so a caller can pay for reuse only when a measured workload
-has reuse to exploit.
+Pathfinding performance is rarely about choosing one universally fastest
+algorithm. It is about recognizing repeated work. Does the same route recur?
+Do many agents share a goal? Do weighted path requests arrive together? Or is
+every path request genuinely independent? tess exposes a different call shape
+for each case, letting an application reuse only the work its own workload
+repeats.
 
-This comparison uses one 16x16 world and three requests. The
-[complete self-checking example][strategy-main] compiles and runs in CI; each
-excerpt below is copied from that source and rejected by CI if it drifts.
-Timing evidence comes from the benchmark suite instead of from this teaching
-program.
+Here, a **request** is one path query: one start, one goal, and one resulting
+path or failure. It is not the same thing as an agent. One agent can issue many
+requests, and a benchmark can repeat the same request. A request count is the
+number of query entries handled by one measured operation. The evidence
+reports unique-start counts separately and, for weighted batches, unique-goal
+counts.
+
+This page connects those choices in three stages. First, a small 16x16 example
+makes the four call shapes visible on the same obstacle course. Next,
+controlled 512x512 benchmarks measure when the cost of creating or retaining
+reusable work is repaid. Finally, self-checking C++ excerpts show how each call
+shape is expressed in code. The example teaches the choices; the
+benchmark campaign supplies the timing evidence.
 
 ## The short answer
+
+The four choices differ in where repeated work appears:
+
+<picture>
+  <source media="(max-width: 600px)"
+          srcset="assets/path-strategy-workload-shapes-mobile.svg">
+  <img src="assets/path-strategy-workload-shapes.svg"
+       alt="Four pathfinding workload shapes: one independent request, a
+            repeated route or shared-goal suffix, weighted requests arriving
+            as a batch, and many starts sharing one goal">
+</picture>
 
 | Workload | Start with | What is reused |
 | --- | --- | --- |
@@ -33,7 +54,34 @@ different, dense-only family. The
 [pathfinding decision guide](guide/pathfinding.md) covers that residency
 boundary and the full API selection tree.
 
-## Where reuse crosses over
+## See the call shapes on one small world
+
+The interactive example sends three requests through one 16x16 obstacle
+course. Each card solves a comparable routing problem but organizes the work
+differently: independent A* repeats the search, the cache retains a route, the
+batch groups requests arriving together, and the distance field labels the
+reachable world once for a shared goal. The cache card repeats its first
+request so its reuse is visible.
+
+The animation shows call order and data products, not benchmark timing or a
+search frontier that the APIs do not report.
+Here, comparable requests return the same routes. The distinction to watch is
+the work each strategy keeps or shares.
+
+<iframe class="strategy-demo-frame"
+        src="../demo/strategies/"
+        loading="lazy"
+        title="Interactive pathfinding strategy comparison"></iframe>
+
+[Open the strategy demo in a separate page](../demo/strategies/).
+
+The example establishes what can be reused, but it cannot show when reuse is
+worth its setup cost. Building a field, populating a cache, or grouping a
+batch can cost more than it saves at low request counts. The benchmark
+campaign therefore repeats these workload shapes at increasing counts and
+records where reuse begins to outperform independent A*.
+
+## When reuse pays for itself
 
 The campaign below measures logically cold strategy work with reusable storage
 pre-reserved and the harness warmed once outside timing. Route-cache logical
@@ -45,32 +93,77 @@ The controlled campaign ran from commit `fcaa2165a8bd` on an Apple M3 Max and
 an affinity-pinned Steam Deck. It found small, workload-specific crossovers,
 not one agent-count rule:
 
-![Cold path-strategy crossover evidence](assets/path-strategy-crossover.svg)
+Read each lane from fewer to more requests. A purple circle marks an accepted
+count where independent A* was materially faster; a green diamond marks one
+where the reuse strategy was materially faster. A pair brackets a crossover.
+A lone green diamond means that reuse won but no lower A* boundary was
+accepted, while a gray lane means that no material winner was established.
 
-| Question | M3 Max | Steam Deck |
-| --- | --- | --- |
-| Open map, shared unit goal | A\* won every accepted cell through 512 requests; 1,000 was rejected for variance | A\* still won at 1,000 requests |
-| Room portals, shared unit goal | Field crossover `(10, 16]` | Field crossover `(4, 8]` |
-| Exact-repeat route cache | Cache win observed by 4; lower boundary unresolved | Cache crossover `(2, 8]` |
-| Same-goal suffix cache | Cache win observed by 8; lower boundary unresolved | Cache crossover `(2, 8]` |
-| Weighted batch, one goal | Batch win observed by 8; lower boundary unresolved | Batch crossover `(2, 4]` |
-| Weighted batch, eight goals | Accepted count 8 was inconclusive; first material win at 10 | Counts 1-8 were inconclusive; first material win at 10 |
-| Weighted batch, all goals distinct | No material winner established through 1,000 | No material winner established through 1,000 |
+<picture>
+  <source media="(max-width: 600px)"
+          srcset="assets/path-strategy-crossover-mobile.svg">
+  <img src="assets/path-strategy-crossover.svg"
+       alt="Cold path-strategy results across increasing request counts on
+            Apple M3 Max and Steam Deck">
+</picture>
 
-A bracket `(a, b]` means the baseline materially won at `a` and reuse
-materially won at `b`; it does not invent an unmeasured exact threshold. A
-“win observed by” result has an accepted reuse win but no accepted lower
-baseline boundary. Forty of 91 M3 cells exceeded the predeclared 5% variation
-limit despite a clean rerun with a 100 ms sampling floor, so those cells remain
-visible in the evidence but do not participate in the table. All 91 Steam Deck
-cells passed at its affinity-pinned 10 ms floor.
+The practical takeaways are simpler than the individual cells:
 
-| Question | Cold comparison | Decision signal |
-| --- | --- | --- |
-| Many starts share one goal | independent unit A* vs one field build plus reconstruction | First measured count where the field wins on that map |
-| Exact requests repeat | independent unit A* vs a cleared route cache | First count that repays population and lookup cost |
-| Starts lie on one goal route | independent unit A* vs a cleared suffix cache | First count that repays population and suffix lookup cost |
-| Weighted requests arrive together | independent weighted A* vs one `weighted_path_batch` call | Whether grouping produces fields or A* fallbacks for the observed goal count |
+- **Open map:** building a field did not pay back. A\* still won at the largest
+  accepted count on each machine.
+- **Room portals:** the field paid back between 10 and 16 requests on the M3,
+  and between 4 and 8 on the Steam Deck.
+- **Repeated routes:** exact and same-goal suffix caches paid back at low
+  request counts on both machines.
+- **Weighted batches:** one shared goal paid back quickly. With eight goals,
+  the first clear batch win was at 10 requests on both machines.
+- **Distinct goals:** neither approach materially won through 1,000 requests.
+
+A bracket such as `(4, 8]` means A\* won at 4 and reuse won at 8; it is not an
+exact threshold. Only accepted cells support the conclusions. Forty of 91 M3
+cells exceeded the 5% variation limit, including the 1,000-request open-map
+cell, and were excluded. All 91 Steam Deck cells passed.
+
+### How operation time scales
+
+The crossover ladder shows where the winner changes; the curves below show how
+whole-operation CPU time scales. They cover three illustrative reuse-rich
+workloads: one field, cache, and weighted-batch case. The summary above retains
+the open-map and distinct-goal counterexamples. Hover, focus, or tap a plot for
+exact measured values; hollow M3 cells are excluded from crossover decisions.
+
+<iframe class="strategy-scaling-frame"
+        src="../assets/path-strategy-scaling.html"
+        loading="lazy"
+        title="Pathfinding operation-time scaling on Apple M3 Max and Steam Deck"></iframe>
+
+[Open the scaling chart in a separate page](assets/path-strategy-scaling.html).
+
+### Representative operation times
+
+The following accepted cells give a rough sense of scale. Each value is median
+CPU time for one complete measured operation, not time per request. Cold field
+construction, cache population, and batch grouping are included. Each platform
+cell shows **independent A\* / compared strategy**.
+
+| 512x512 workload (requests) | M3 Max | Steam Deck |
+| --- | ---: | ---: |
+| Open-map unit field (512) | 1.08 / 5.13 ms | 2.87 / 8.97 ms |
+| Room-portal unit field (16) | 2.85 / 2.27 ms | 12.3 / 4.87 ms |
+| Exact-repeat route cache (16) | 20.9 / 5.86 us | 45.7 / 13.2 us |
+| Same-goal suffix cache (8) | 10.5 / 4.65 us | 22.7 / 12.1 us |
+| Weighted batch, one goal (10) | 11.4 / 5.23 ms | 22.3 / 9.57 ms |
+| Weighted batch, eight goals (10) | 35.2 / 28.2 ms | 69.4 / 53.3 ms |
+| Weighted batch, distinct goals (1,000) | 1.41 / 1.41 s | 2.77 / 2.80 s |
+
+These are platform-specific examples, not frame-time guarantees. Path length,
+topology, compiler, system load, and application work all affect production
+latency. Compare strategies within one platform, not absolute speed across the
+two platforms: their compilers and instruction sets differ.
+
+Each comparison asks whether reuse repays its setup cost. The baseline runs one
+A\* search per request. The reuse arm builds a field, populates a cleared
+cache, or groups the same requests into one weighted batch.
 
 The primary 512x512 sweep uses request counts 1, 2, 4, 8, 10, 16, 32, 64,
 100, 128, 256, 512, and 1,000. After a bounded preflight established
@@ -122,53 +215,40 @@ Scoped-feasible reuse guarantees a legal route with truthful cost, not fresh
 optimality: an unrelated edit that opens a shortcut can leave a previously
 optimal route suboptimal. Sparse worlds retain whole-world sensitivity.
 
+Run the controlled comparison on a target machine with an environment metadata
+file and a memory limit appropriate to that host:
+
+```sh
+cmake --preset bench
+cmake --build --preset bench --target tess_bench_path_strategy_crossover
+python3 tools/path_strategy_campaign.py primary \
+  --binary build/bench/bench/tess_bench_path_strategy_crossover \
+  --source bench/tess_path_strategy_crossover_bench.cc \
+  --environment environment.json \
+  --output path-strategy-results.json \
+  --memory-limit-gib 12
+```
+
+The driver interleaves paired arms in fresh processes, checkpoints each cell,
+and rejects an unstable cell from crossover calculation. Its separate
+`capacity` mode runs ascending grid and request ladders with per-process time
+and address-space limits, then stops a ladder at its first incomplete rung.
+The decision remains workload-specific: inspect both timing and counters, and
+retain the simpler API when the measured benefit does not justify another
+invalidation or grouping lifecycle.
+
 See the [campaign method and normalized evidence][crossover-evidence] before
 using a bracket for a production decision.
 
-## Algorithm and strategy status
+## Implement the four call shapes
 
-The four choices in the short answer are not four peer algorithms. A* and the
-reverse field builders perform graph search; caches, batches, and retained
-products decide when to reuse that work; movement coordination resolves tile
-conflicts after routes have been planned.
+The measurements narrow the choice, but a crossover bracket does not show how
+to call an API. The following excerpts translate the four reuse patterns into
+C++ using the same 16x16 world shown above. The
+[complete self-checking example][strategy-main] compiles and runs in CI, and
+each excerpt is rejected by CI if it drifts from that source.
 
-<div class="strategy-status-table" markdown="1">
-
-| Layer | Capability | Status and boundary |
-| --- | --- | --- |
-| Search | Unit-cost A\* and weighted A\* | <span class="strategy-status strategy-status--released">Released</span> Exact, deterministic per-request routes over orthogonal, diagonal, and axial-hex movement models. |
-| Search | Reverse BFS, reverse Dijkstra, and bounded-cost bucket search | <span class="strategy-status strategy-status--released">Released</span> Shared-goal distance labels: regular unit-cost models use BFS, weighted or non-unit models use Dijkstra, and small bounded integer costs can use an exact Dial-style queue. |
-| Reuse | Exact/suffix route cache, weighted batch, and field-product cache | <span class="strategy-status strategy-status--released">Released</span> Workload policies layered over the searches above; they do not introduce another route-quality objective. |
-| Topology | Reachability precheck, coarse region/portal routes, and chunk corridors | <span class="strategy-status strategy-status--released">Released</span> Coarse products can rule out known disconnection or guide exact segments; the automatic chunk-portal builder does not claim globally optimal portal selection. |
-| Coordination | Joint movement and PIBT | <span class="strategy-status strategy-status--released">Released</span> Resolve contention between independently planned routes. They are movement algorithms, not globally optimal multi-agent pathfinding. |
-| Future fields | Flow, congestion, and influence products | <span class="strategy-status strategy-status--designed">Designed, not shipped</span> The [roadmap](roadmap.md#future-and-deferred-extensions) keeps these explicit; today, callers can express congestion through a weighted cost field. |
-| Application layer | Continuous steering, formations, and globally optimal multi-agent planning | <span class="strategy-status strategy-status--boundary">Out of scope</span> tess supplies the spatial substrate while applications retain these semantics. |
-
-</div>
-
-The [path architecture](architecture/path.md) specifies the search and reuse
-contracts. The [simulation architecture](architecture/simulation.md) separates
-route planning from joint movement and PIBT.
-
-## See the call shapes
-
-The embedded demo runs the same C++ model as the self-checking example. Its
-animation shows call order and reuse; it deliberately does not time
-WebAssembly or draw a search frontier that the APIs do not report.
-The obstacle course is shared, and comparable requests return the same routes.
-The cache card instead repeats its first request to expose reuse. Compare the
-operation chain and data-product label above each map to see whether tess
-repeats searches, retains a route, groups a batch, or labels the reachable map
-for later reads.
-
-<iframe class="strategy-demo-frame"
-        src="../demo/strategies/"
-        loading="lazy"
-        title="Interactive pathfinding strategy comparison"></iframe>
-
-[Open the strategy demo in a separate page](../demo/strategies/).
-
-## One world, one request set
+### One world, one request set
 
 The example uses three solid vertical walls with alternating single-tile gaps.
 Every passable tile has unit cost, so each strategy must solve the
@@ -220,7 +300,7 @@ constexpr auto kRequests = std::array{
 ```
 <!-- /tess-snippet -->
 
-## Independent A*: the default
+### Independent A*: the default
 
 Plain A* is the baseline when requests do not share useful work. The example
 runs all three requests independently and reuses only scratch storage; it does
@@ -242,7 +322,7 @@ Use it when goals are mostly distinct, the map changes too often for retained
 routes to survive, or the request count is small enough that the direct call is
 already below the application budget.
 
-## Route cache: repeated paths on an unchanged map
+### Route cache: repeated paths on an unchanged map
 
 `cached_astar_path` stores exact routes and same-goal suffixes. A first request
 still performs A*; a repeat can return without expanding search nodes.
@@ -265,7 +345,7 @@ entries in exact mode; scoped feasibility is a deliberate alternative with a
 different optimality contract. Read the
 [route-cache specification](architecture/path.md) before choosing that policy.
 
-## Weighted batch: group work arriving together
+### Weighted batch: group work arriving together
 
 `weighted_path_batch` groups requests by goal. Repeated goals can share a
 bounded weighted field; distinct goals fall back to per-request weighted A*.
@@ -287,7 +367,7 @@ for (std::size_t index = 0; index < results.size(); ++index) {
 Use the statistics (`field_builds`, `astar_fallbacks`, and `unique_goals`) to
 verify that a real request set contains the reuse the batch was meant to find.
 
-## Distance field: many starts, one goal
+### Distance field: many starts, one goal
 
 A reverse distance field builds one goal-rooted search tree. Every matching
 start then reconstructs a path from that field instead of running another A*.
@@ -309,27 +389,30 @@ The field is tied to its goal and world snapshot. Rebuild it after relevant
 world or residency changes. For cross-frame, multi-goal retention on a dense
 world, use the separate `DistanceFieldProduct` and `FieldProductCache` family.
 
-Run the controlled comparison on a target machine with an environment metadata
-file and a memory limit appropriate to that host:
+## Where these choices fit
 
-```sh
-cmake --preset bench
-cmake --build --preset bench --target tess_bench_path_strategy_crossover
-python3 tools/path_strategy_campaign.py primary \
-  --binary build/bench/bench/tess_bench_path_strategy_crossover \
-  --source bench/tess_path_strategy_crossover_bench.cc \
-  --environment environment.json \
-  --output path-strategy-results.json \
-  --memory-limit-gib 12
-```
+The examples above share a decision point; they are not four peer algorithms.
+A* and the reverse field builders perform graph search. Caches,
+batches, and retained products decide when to reuse that work. Movement
+coordination resolves tile conflicts only after routes have been planned.
 
-The driver interleaves paired arms in fresh processes, checkpoints each cell,
-and rejects an unstable cell from crossover calculation. Its separate
-`capacity` mode runs ascending grid and request ladders with per-process time
-and address-space limits, then stops a ladder at its first incomplete rung.
-The decision remains workload-specific: inspect both timing and counters, and
-retain the simpler API when the measured benefit does not justify another
-invalidation or grouping lifecycle.
+<div class="strategy-status-table" markdown="1">
+
+| Layer | Capability | Status and boundary |
+| --- | --- | --- |
+| Search | Unit-cost A\* and weighted A\* | <span class="strategy-status strategy-status--released">Released</span> Exact, deterministic per-request routes over orthogonal, diagonal, and axial-hex movement models. |
+| Search | Reverse BFS, reverse Dijkstra, and bounded-cost bucket search | <span class="strategy-status strategy-status--released">Released</span> Shared-goal distance labels: regular unit-cost models use BFS, weighted or non-unit models use Dijkstra, and small bounded integer costs can use an exact Dial-style queue. |
+| Reuse | Exact/suffix route cache, weighted batch, and field-product cache | <span class="strategy-status strategy-status--released">Released</span> Workload policies layered over the searches above; they do not introduce another route-quality objective. |
+| Topology | Reachability precheck, coarse region/portal routes, and chunk corridors | <span class="strategy-status strategy-status--released">Released</span> Coarse products can rule out known disconnection or guide exact segments; the automatic chunk-portal builder does not claim globally optimal portal selection. |
+| Coordination | Joint movement and PIBT | <span class="strategy-status strategy-status--released">Released</span> Resolve contention between independently planned routes. They are movement algorithms, not globally optimal multi-agent pathfinding. |
+| Future fields | Flow, congestion, and influence products | <span class="strategy-status strategy-status--designed">Designed, not shipped</span> The [roadmap](roadmap.md#future-and-deferred-extensions) keeps these explicit; today, callers can express congestion through a weighted cost field. |
+| Application layer | Continuous steering, formations, and globally optimal multi-agent planning | <span class="strategy-status strategy-status--boundary">Out of scope</span> tess supplies the spatial substrate while applications retain these semantics. |
+
+</div>
+
+The [path architecture](architecture/path.md) specifies the search and reuse
+contracts. The [simulation architecture](architecture/simulation.md) separates
+route planning from joint movement and PIBT.
 
 <details class="strategy-alternatives" markdown="1">
 <summary>Why some alternatives were not promoted</summary>

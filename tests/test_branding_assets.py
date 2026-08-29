@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -490,7 +491,7 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert "Open the strategy demo in a separate page" in article
   assert "[complete self-checking example][strategy-main]" in article
   assert "[strategy-main]:" in article
-  assert "## Algorithm and strategy status" in article
+  assert "## Where these choices fit" in article
   assert "four peer algorithms" in article
   assert "Unit-cost A\\* and weighted A\\*" in article
   assert '<div class="strategy-status-table" markdown="1">' in article
@@ -518,7 +519,6 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert "optimization-log-archive-2026-08-17.md" in article
   # The congestion and waypoint rejections both live in the 08-17
   # archive; the assertion above covers that link target once.
-  assert "planning/local-movement-resolution.md" in article
 
   assert "demo/strategies/" in pages
   strategy_smoke = pages.split("demo/strategies/", maxsplit=1)[1]
@@ -531,6 +531,83 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert "data-impassable-tiles-per-grid=\"45\"" in strategy_smoke
   assert "data-distance-field-covered-tiles=\"211\"" in strategy_smoke
   assert "data-distance-field-third-route=\"ready\"" in strategy_smoke
+
+
+def test_path_strategy_scaling_chart_matches_accepted_evidence():
+  chart = read("docs/assets/path-strategy-scaling.html")
+  article = read("docs/pathfinding-strategy-comparison.md")
+  site_css = read("docs/stylesheets/extra.css")
+  evidence_root = ROOT / "docs" / "planning" / "evidence" / "v1.0" / \
+    "path-strategy-crossover"
+  cases = {
+    ("Apple M3 Max", "Room-portal field"):
+      "apple-m3-max-primary-unit-shared-room-portals.json",
+    ("Apple M3 Max", "Exact-repeat cache"):
+      "apple-m3-max-primary-route-cache-exact-repeats.json",
+    ("Apple M3 Max", "Weighted batch, one goal"):
+      "apple-m3-max-primary-weighted-one-goal.json",
+    ("Steam Deck", "Room-portal field"):
+      "steam-deck-primary-unit-shared-room-portals.json",
+    ("Steam Deck", "Exact-repeat cache"):
+      "steam-deck-primary-route-cache-exact-repeats.json",
+    ("Steam Deck", "Weighted batch, one goal"):
+      "steam-deck-primary-weighted-one-goal.json",
+  }
+  encoded_rows = re.findall(
+    r'\{p:"([^"]+)",w:"([^"]+)",d:(\[\[.*?\]\])\}',
+    chart,
+    re.DOTALL,
+  )
+
+  assert len(encoded_rows) == len(cases)
+  assert {(platform, workload)
+          for platform, workload, _ in encoded_rows} == set(cases)
+  for platform, workload, encoded_points in encoded_rows:
+    evidence = json.loads((evidence_root / cases[(platform, workload)])
+                          .read_text(encoding="utf-8"))
+    points = ast.literal_eval(encoded_points)
+    assert len(points) == len(evidence["cells"])
+    for point, cell in zip(points, evidence["cells"], strict=True):
+      assert point[0] == cell["count"]
+      assert abs(point[1] - cell["left"]["median_cpu_ns"] / 1_000_000) \
+        <= 0.00000051
+      assert abs(point[2] - cell["right"]["median_cpu_ns"] / 1_000_000) \
+        <= 0.00000051
+      assert point[3] == int(cell["accepted"])
+
+  assert "https://" not in chart
+  assert 'data-series-toggle="baseline"' in chart
+  assert 'data-series-toggle="reuse"' in chart
+  assert '"data-chart-hover-overlay": "cross-series"' in chart
+  assert '"data-chart-hover-guide": ""' in chart
+  assert 'data-chart-hover-marker' in chart
+  assert 'aria-live="polite"' in chart
+  assert 'button.type = "button"' in chart
+  assert 'className = "cell-target"' in chart
+  assert 'role: "group"' in chart
+  assert 'role: "img"' not in chart
+  assert 'button.addEventListener("click"' in chart
+  assert 'button.addEventListener("focus"' in chart
+  assert "`${row.p}, ${row.w}." in chart
+  assert "activeSelection" in chart
+  assert "toggle.disabled" in chart
+  assert 'document.createElement("h3")' in chart
+  assert "nearestPoint(row.d, requestCount)" in chart
+  assert "interpolate(" not in chart
+  assert "segment--rejected" in chart
+  assert "Cell rejected: either arm exceeded 5% CV" in chart
+  assert "logical setup included" in chart
+  assert re.search(r"reusable\s+storage pre-reserved", chart)
+  assert "untimed harness warmup" in chart
+  assert 'window.frameElement.style.height' in chart
+  assert 'document.body' in chart
+  assert 'attributeFilter: ["data-md-color-scheme"]' in chart
+  assert 'class="strategy-scaling-frame"' in article
+  assert 'src="../assets/path-strategy-scaling.html"' in article
+  assert 'title="Pathfinding operation-time scaling' in article
+  assert "Open the scaling chart in a separate page" in article
+  assert ".strategy-scaling-frame" in site_css
+  assert "planning/local-movement-resolution.md" in article
 
 
 def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():

@@ -1,68 +1,271 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500"
-     width="960" height="500" role="img"
-     aria-labelledby="title desc">
-  <title id="title">Cold path-strategy crossover evidence</title>
-  <desc id="desc">Comparison table for Apple M3 Max and Steam Deck on a
-  512 by 512 grid. Room fields cross from A-star between 10 and 16 requests
-  on M3 and between 4 and 8 on Steam Deck. Deck route caches cross between 2
-  and 8 requests. Several M3 lower bounds are unresolved because timing cells
-  exceeded the variance limit.</desc>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 960 740"
+     width="960"
+     height="740"
+     role="img"
+     aria-labelledby="title description">
+  <title id="title">
+    Cold strategy results across request counts on a 512x512 grid
+  </title>
+  <desc id="description">
+    Two request-count ladders compare Apple M3 Max and Steam Deck results.
+    Purple circles mark accepted counts where independent A-star was faster.
+    Green diamonds mark accepted counts where the reuse strategy was faster.
+    Gray lines mark inconclusive or rejected ranges. Exact crossover brackets
+    appear only where both a baseline win and a reuse win were accepted.
+  </desc>
   <style>
-    .bg{fill:#fff}.head{fill:#f3f5f7}.alt{fill:#f8f9fa}
-    .line{stroke:#d8dadd;stroke-width:1}.fg{fill:#202124}
-    .muted{fill:#5f6368}.m3{fill:#7357c9}.deck{fill:#16825d}
-    text{font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:14px}
-    .title{font-size:20px;font-weight:650}.label{font-weight:600}
-    .small{font-size:12px}
-    @media (prefers-color-scheme: dark){
-      .bg{fill:#17181a}.head{fill:#24262a}.alt{fill:#1d1f22}
-      .line{stroke:#3a3d42}.fg{fill:#eceff1}.muted{fill:#b0b5bd}
-      .m3{fill:#b7a7ff}.deck{fill:#66d3aa}
+    .background { fill: #fff; }
+    .panel { fill: #f8f9fa; }
+    .stripe { fill: #f1f3f5; }
+    .axis, .grid { stroke: #d8dadd; stroke-width: 1; }
+    .grid { stroke-dasharray: 2 4; }
+    .foreground { fill: #202124; }
+    .muted { fill: #5f6368; }
+    .baseline-fill { fill: #7357c9; }
+    .reuse-fill { fill: #16825d; }
+    .neutral-fill { fill: #7b8087; }
+    .baseline-line {
+      fill: none;
+      stroke: #7357c9;
+      stroke-linecap: round;
+      stroke-width: 4;
+    }
+    .reuse-line {
+      fill: none;
+      stroke: #16825d;
+      stroke-linecap: round;
+      stroke-width: 4;
+    }
+    .neutral-line {
+      fill: none;
+      stroke: #8b9097;
+      stroke-dasharray: 5 5;
+      stroke-width: 2;
+    }
+    text {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 13px;
+    }
+    .title { font-size: 20px; font-weight: 650; }
+    .panel-title { font-size: 16px; font-weight: 650; }
+    .label { font-weight: 600; }
+    .small { font-size: 12px; }
+    .tiny { font-size: 11px; }
+    @media (prefers-color-scheme: dark) {
+      .background { fill: #17181a; }
+      .panel { fill: #1d1f22; }
+      .stripe { fill: #24262a; }
+      .axis, .grid { stroke: #3a3d42; }
+      .foreground { fill: #eceff1; }
+      .muted { fill: #b0b5bd; }
+      .baseline-fill { fill: #b7a7ff; }
+      .reuse-fill { fill: #66d3aa; }
+      .neutral-fill { fill: #a7adb5; }
+      .baseline-line { stroke: #b7a7ff; }
+      .reuse-line { stroke: #66d3aa; }
+      .neutral-line { stroke: #8e949c; }
     }
   </style>
-  <rect class="bg" width="960" height="500"/>
-  <text class="fg title" x="28" y="35">Cold crossover evidence on a 512x512 grid</text>
-  <text class="muted small" x="28" y="58">Logical setup remains timed; reusable storage is pre-reserved. Brackets are request counts; “by” means the lower boundary was not accepted.</text>
 
-  <rect class="head" x="20" y="78" width="920" height="44" rx="5"/>
-  <text class="fg label" x="36" y="106">Workload</text>
-  <text class="m3 label" x="386" y="106">Apple M3 Max</text>
-  <text class="deck label" x="672" y="106">Steam Deck</text>
+  <defs>
+    <g id="reuse-marker">
+      <path class="reuse-fill" d="M 0 -7 L 7 0 L 0 7 L -7 0 Z"/>
+    </g>
+    <g id="baseline-marker">
+      <circle class="baseline-fill" r="6"/>
+    </g>
+    <g id="neutral-marker">
+      <circle class="neutral-fill" r="5"/>
+    </g>
+    <g id="rejected-marker">
+      <path class="neutral-line" d="M -5 -5 L 5 5 M 5 -5 L -5 5"/>
+    </g>
+  </defs>
 
-  <rect class="alt" x="20" y="122" width="920" height="46"/>
-  <text class="fg label" x="36" y="151">Open-map unit field</text>
-  <text class="fg" x="386" y="151">no field win through 512</text>
-  <text class="fg" x="672" y="151">no field win through 1,000</text>
+  <rect class="background" width="960" height="740"/>
+  <text class="foreground title" x="24" y="32">
+    Cold strategy results across request counts on a 512x512 grid
+  </text>
+  <text class="muted small" x="24" y="54">
+    Move left to right as request count rises; reusable setup remains timed.
+  </text>
 
-  <text class="fg label" x="36" y="197">Room-portal unit field</text>
-  <text class="m3" x="386" y="197">(10, 16]</text>
-  <text class="deck" x="672" y="197">(4, 8]</text>
+  <use href="#baseline-marker" transform="translate(36 82)"/>
+  <text class="foreground small" x="49" y="86">A* materially faster</text>
+  <use href="#reuse-marker" transform="translate(218 82)"/>
+  <text class="foreground small" x="232" y="86">
+    reuse strategy materially faster
+  </text>
+  <line class="neutral-line" x1="459" y1="82" x2="493" y2="82"/>
+  <text class="foreground small" x="505" y="86">
+    inconclusive or lower bound unavailable
+  </text>
+  <use href="#rejected-marker" transform="translate(795 82)"/>
+  <text class="foreground small" x="807" y="86">variance rejected</text>
 
-  <rect class="alt" x="20" y="214" width="920" height="46"/>
-  <text class="fg label" x="36" y="243">Exact-repeat route cache</text>
-  <text class="m3" x="386" y="243">cache win observed by 4*</text>
-  <text class="deck" x="672" y="243">(2, 8]</text>
+  <g aria-label="Apple M3 Max results">
+    <rect class="panel" x="18" y="106" width="924" height="292" rx="7"/>
+    <text class="foreground panel-title" x="34" y="132">Apple M3 Max</text>
+    <text class="muted tiny" x="286" y="132">
+      measured request count
+    </text>
 
-  <text class="fg label" x="36" y="289">Same-goal suffix cache</text>
-  <text class="m3" x="386" y="289">cache win observed by 8*</text>
-  <text class="deck" x="672" y="289">(2, 8]</text>
+    <rect class="stripe" x="26" y="154" width="908" height="32"/>
+    <rect class="stripe" x="26" y="218" width="908" height="32"/>
+    <rect class="stripe" x="26" y="282" width="908" height="32"/>
+    <rect class="stripe" x="26" y="346" width="908" height="32"/>
 
-  <rect class="alt" x="20" y="306" width="920" height="46"/>
-  <text class="fg label" x="36" y="335">Weighted batch, one goal</text>
-  <text class="m3" x="386" y="335">batch win observed by 8*</text>
-  <text class="deck" x="672" y="335">(2, 4]</text>
+    <line class="axis" x1="300" y1="148" x2="900" y2="148"/>
+    <g class="muted tiny" text-anchor="middle">
+      <text x="300" y="145">1</text>
+      <text x="350" y="145">2</text>
+      <text x="400" y="145">4</text>
+      <text x="450" y="145">8</text>
+      <text x="550" y="145">16</text>
+      <text x="650" y="145">64</text>
+      <text x="800" y="145">256</text>
+      <text x="900" y="145">1,000</text>
+    </g>
 
-  <text class="fg label" x="36" y="381">Weighted batch, eight goals</text>
-  <text class="m3" x="386" y="381">first material win at 10</text>
-  <text class="deck" x="672" y="381">first material win at 10</text>
+    <g class="grid">
+      <line x1="300" y1="150" x2="300" y2="382"/>
+      <line x1="350" y1="150" x2="350" y2="382"/>
+      <line x1="400" y1="150" x2="400" y2="382"/>
+      <line x1="450" y1="150" x2="450" y2="382"/>
+      <line x1="550" y1="150" x2="550" y2="382"/>
+      <line x1="650" y1="150" x2="650" y2="382"/>
+      <line x1="800" y1="150" x2="800" y2="382"/>
+      <line x1="900" y1="150" x2="900" y2="382"/>
+    </g>
 
-  <rect class="alt" x="20" y="398" width="920" height="46"/>
-  <text class="fg label" x="36" y="427">Weighted batch, distinct goals</text>
-  <text class="fg" x="386" y="427">no material winner through 1,000</text>
-  <text class="fg" x="672" y="427">no material winner through 1,000</text>
+    <g class="foreground label">
+      <text x="36" y="176">Open-map unit field</text>
+      <text x="36" y="208">Room-portal unit field</text>
+      <text x="36" y="240">Exact-repeat route cache</text>
+      <text x="36" y="272">Same-goal suffix cache</text>
+      <text x="36" y="304">Weighted batch, one goal</text>
+      <text x="36" y="336">Weighted batch, eight goals</text>
+      <text x="36" y="368">Weighted batch, distinct goals</text>
+    </g>
 
-  <line class="line" x1="370" y1="78" x2="370" y2="444"/>
-  <line class="line" x1="656" y1="78" x2="656" y2="444"/>
-  <text class="muted small" x="28" y="472">* Earlier M3 cells were rejected when either arm exceeded 5% CV; they cannot establish a lower bound.</text>
-  <text class="muted small" x="28" y="490">A bracket (a, b] means the baseline still won at a and reuse won at b; no intermediate count is implied.</text>
+    <line class="baseline-line" x1="300" y1="172" x2="850" y2="172"/>
+    <use href="#baseline-marker" transform="translate(850 172)"/>
+    <use href="#rejected-marker" transform="translate(900 172)"/>
+    <text class="muted tiny" x="742" y="168">A* through 512</text>
+
+    <line class="neutral-line" x1="500" y1="204" x2="550" y2="204"/>
+    <use href="#baseline-marker" transform="translate(500 204)"/>
+    <use href="#reuse-marker" transform="translate(550 204)"/>
+    <text class="muted tiny" x="512" y="199">(10, 16]</text>
+
+    <line class="neutral-line" x1="300" y1="236" x2="400" y2="236"/>
+    <use href="#reuse-marker" transform="translate(400 236)"/>
+    <text class="muted tiny" x="410" y="240">win by 4*</text>
+
+    <line class="neutral-line" x1="300" y1="268" x2="450" y2="268"/>
+    <use href="#reuse-marker" transform="translate(450 268)"/>
+    <text class="muted tiny" x="460" y="272">win by 8*</text>
+
+    <line class="neutral-line" x1="300" y1="300" x2="450" y2="300"/>
+    <use href="#reuse-marker" transform="translate(450 300)"/>
+    <text class="muted tiny" x="460" y="304">win by 8*</text>
+
+    <line class="neutral-line" x1="300" y1="332" x2="500" y2="332"/>
+    <use href="#neutral-marker" transform="translate(450 332)"/>
+    <use href="#reuse-marker" transform="translate(500 332)"/>
+    <text class="muted tiny" x="510" y="336">first win at 10</text>
+
+    <line class="neutral-line" x1="300" y1="364" x2="900" y2="364"/>
+    <use href="#neutral-marker" transform="translate(900 364)"/>
+    <text class="muted tiny" x="710" y="360">
+      no material winner through 1,000
+    </text>
+  </g>
+
+  <g aria-label="Steam Deck results">
+    <rect class="panel" x="18" y="414" width="924" height="292" rx="7"/>
+    <text class="foreground panel-title" x="34" y="440">Steam Deck</text>
+    <text class="muted tiny" x="286" y="440">
+      measured request count
+    </text>
+
+    <rect class="stripe" x="26" y="462" width="908" height="32"/>
+    <rect class="stripe" x="26" y="526" width="908" height="32"/>
+    <rect class="stripe" x="26" y="590" width="908" height="32"/>
+    <rect class="stripe" x="26" y="654" width="908" height="32"/>
+
+    <line class="axis" x1="300" y1="456" x2="900" y2="456"/>
+    <g class="muted tiny" text-anchor="middle">
+      <text x="300" y="453">1</text>
+      <text x="350" y="453">2</text>
+      <text x="400" y="453">4</text>
+      <text x="450" y="453">8</text>
+      <text x="550" y="453">16</text>
+      <text x="650" y="453">64</text>
+      <text x="800" y="453">256</text>
+      <text x="900" y="453">1,000</text>
+    </g>
+
+    <g class="grid">
+      <line x1="300" y1="458" x2="300" y2="690"/>
+      <line x1="350" y1="458" x2="350" y2="690"/>
+      <line x1="400" y1="458" x2="400" y2="690"/>
+      <line x1="450" y1="458" x2="450" y2="690"/>
+      <line x1="550" y1="458" x2="550" y2="690"/>
+      <line x1="650" y1="458" x2="650" y2="690"/>
+      <line x1="800" y1="458" x2="800" y2="690"/>
+      <line x1="900" y1="458" x2="900" y2="690"/>
+    </g>
+
+    <g class="foreground label">
+      <text x="36" y="484">Open-map unit field</text>
+      <text x="36" y="516">Room-portal unit field</text>
+      <text x="36" y="548">Exact-repeat route cache</text>
+      <text x="36" y="580">Same-goal suffix cache</text>
+      <text x="36" y="612">Weighted batch, one goal</text>
+      <text x="36" y="644">Weighted batch, eight goals</text>
+      <text x="36" y="676">Weighted batch, distinct goals</text>
+    </g>
+
+    <line class="baseline-line" x1="300" y1="480" x2="900" y2="480"/>
+    <use href="#baseline-marker" transform="translate(900 480)"/>
+    <text class="muted tiny" x="765" y="476">A* through 1,000</text>
+
+    <line class="neutral-line" x1="400" y1="512" x2="450" y2="512"/>
+    <use href="#baseline-marker" transform="translate(400 512)"/>
+    <use href="#reuse-marker" transform="translate(450 512)"/>
+    <text class="muted tiny" x="410" y="507">(4, 8]</text>
+
+    <line class="neutral-line" x1="350" y1="544" x2="450" y2="544"/>
+    <use href="#baseline-marker" transform="translate(350 544)"/>
+    <use href="#reuse-marker" transform="translate(450 544)"/>
+    <text class="muted tiny" x="378" y="539">(2, 8]</text>
+
+    <line class="neutral-line" x1="350" y1="576" x2="450" y2="576"/>
+    <use href="#baseline-marker" transform="translate(350 576)"/>
+    <use href="#reuse-marker" transform="translate(450 576)"/>
+    <text class="muted tiny" x="378" y="571">(2, 8]</text>
+
+    <line class="neutral-line" x1="350" y1="608" x2="400" y2="608"/>
+    <use href="#baseline-marker" transform="translate(350 608)"/>
+    <use href="#reuse-marker" transform="translate(400 608)"/>
+    <text class="muted tiny" x="356" y="603">(2, 4]</text>
+
+    <line class="neutral-line" x1="300" y1="640" x2="500" y2="640"/>
+    <use href="#neutral-marker" transform="translate(450 640)"/>
+    <use href="#reuse-marker" transform="translate(500 640)"/>
+    <text class="muted tiny" x="510" y="644">first win at 10</text>
+
+    <line class="neutral-line" x1="300" y1="672" x2="900" y2="672"/>
+    <use href="#neutral-marker" transform="translate(900 672)"/>
+    <text class="muted tiny" x="710" y="668">
+      no material winner through 1,000
+    </text>
+  </g>
+
+  <text class="muted tiny" x="24" y="724">
+    * Reuse won at the labeled count, but rejected earlier M3 cells could not
+    establish an accepted lower A* boundary.
+  </text>
 </svg>
