@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Compare C++ grid pathfinding workloads using A*, route caching, weighted batches, and shared-goal distance fields in the tess C++20 library.">
+        <meta name="description" content="C++ grid pathfinding benchmark comparison of A*, cold route caches, weighted batches, and shared-goal distance fields in tess.">
       
       
       
@@ -57,14 +57,14 @@
     <meta property="og:type" content="website">
   <meta property="og:site_name" content="tess">
   <meta property="og:title" content="A* vs Route Caches, Batches, and Distance Fields - tess">
-  <meta property="og:description" content="Compare C++ grid pathfinding workloads using A*, route caching, weighted batches, and shared-goal distance fields in the tess C++20 library.">
+  <meta property="og:description" content="C++ grid pathfinding benchmark comparison of A*, cold route caches, weighted batches, and shared-goal distance fields in tess.">
   <meta property="og:url" content="https://tess.owx.dev/dev/pathfinding-strategy-comparison/">
   <meta property="og:image" content="https://tess.owx.dev/dev/assets/tess-social-preview.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1280">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="A* vs Route Caches, Batches, and Distance Fields - tess">
-  <meta name="twitter:description" content="Compare C++ grid pathfinding workloads using A*, route caching, weighted batches, and shared-goal distance fields in the tess C++20 library.">
+  <meta name="twitter:description" content="C++ grid pathfinding benchmark comparison of A*, cold route caches, weighted batches, and shared-goal distance fields in tess.">
   <meta name="twitter:image" content="https://tess.owx.dev/dev/assets/tess-social-preview.png">
 
   </head>
@@ -898,6 +898,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#where-reuse-crosses-over" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where reuse crosses over
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#algorithm-and-strategy-status" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -968,17 +979,6 @@
     <span class="md-ellipsis">
       
         Distance field: many starts, one goal
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-the-benchmarks-compare" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What the benchmarks compare
       
     </span>
   </a>
@@ -2027,6 +2027,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#where-reuse-crosses-over" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where reuse crosses over
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#algorithm-and-strategy-status" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2103,17 +2114,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#what-the-benchmarks-compare" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What the benchmarks compare
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -2181,6 +2181,202 @@ dense and sparse-resident worlds. Persistent distance-field <em>products</em> ar
 different, dense-only family. The
 <a href="../guide/pathfinding/">pathfinding decision guide</a> covers that residency
 boundary and the full API selection tree.</p>
+<h2 id="where-reuse-crosses-over">Where reuse crosses over</h2>
+<p>The campaign below measures logically cold strategy work with reusable storage
+pre-reserved and the harness warmed once outside timing. Route-cache logical
+state is cleared; cache population and distance-field construction stay inside
+the timed operation. Every pair receives the same world and request array, and
+untimed checks require matching status, endpoints, legal steps, and path cost.</p>
+<p>The controlled campaign ran from commit <code>fcaa2165a8bd</code> on an Apple M3 Max and
+an affinity-pinned Steam Deck. It found small, workload-specific crossovers,
+not one agent-count rule:</p>
+<p><img alt="Cold path-strategy crossover evidence" src="../assets/path-strategy-crossover.svg" /></p>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>M3 Max</th>
+<th>Steam Deck</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Open map, shared unit goal</td>
+<td>A* won every accepted cell through 512 requests; 1,000 was rejected for variance</td>
+<td>A* still won at 1,000 requests</td>
+</tr>
+<tr>
+<td>Room portals, shared unit goal</td>
+<td>Field crossover <code>(10, 16]</code></td>
+<td>Field crossover <code>(4, 8]</code></td>
+</tr>
+<tr>
+<td>Exact-repeat <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr></td>
+<td>Cache win observed by 4; lower boundary unresolved</td>
+<td>Cache crossover <code>(2, 8]</code></td>
+</tr>
+<tr>
+<td>Same-goal suffix cache</td>
+<td>Cache win observed by 8; lower boundary unresolved</td>
+<td>Cache crossover <code>(2, 8]</code></td>
+</tr>
+<tr>
+<td>Weighted batch, one goal</td>
+<td>Batch win observed by 8; lower boundary unresolved</td>
+<td>Batch crossover <code>(2, 4]</code></td>
+</tr>
+<tr>
+<td>Weighted batch, eight goals</td>
+<td>Accepted count 8 was inconclusive; first material win at 10</td>
+<td>Counts 1-8 were inconclusive; first material win at 10</td>
+</tr>
+<tr>
+<td>Weighted batch, all goals distinct</td>
+<td>No material winner established through 1,000</td>
+<td>No material winner established through 1,000</td>
+</tr>
+</tbody>
+</table>
+<p>A bracket <code>(a, b]</code> means the baseline materially won at <code>a</code> and reuse
+materially won at <code>b</code>; it does not invent an unmeasured exact threshold. A
+“win observed by” result has an accepted reuse win but no accepted lower
+baseline boundary. Forty of 91 M3 cells exceeded the predeclared 5% variation
+limit despite a clean rerun with a 100 ms sampling floor, so those cells remain
+visible in the evidence but do not participate in the table. All 91 Steam Deck
+cells passed at its affinity-pinned 10 ms floor.</p>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Cold comparison</th>
+<th>Decision signal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Many starts share one goal</td>
+<td>independent unit A* vs one field build plus reconstruction</td>
+<td>First measured count where the field wins on that map</td>
+</tr>
+<tr>
+<td>Exact requests repeat</td>
+<td>independent unit A* vs a cleared <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr></td>
+<td>First count that repays population and lookup cost</td>
+</tr>
+<tr>
+<td>Starts lie on one goal route</td>
+<td>independent unit A* vs a cleared suffix cache</td>
+<td>First count that repays population and suffix lookup cost</td>
+</tr>
+<tr>
+<td>Weighted requests arrive together</td>
+<td>independent weighted A* vs one <code>weighted_path_batch</code> call</td>
+<td>Whether grouping produces fields or A* fallbacks for the observed goal count</td>
+</tr>
+</tbody>
+</table>
+<p>The primary 512x512 sweep uses request counts 1, 2, 4, 8, 10, 16, 32, 64,
+100, 128, 256, 512, and 1,000. After a bounded preflight established
+headroom, the opt-in capacity sweep was extended to 131,072 requests and
+grids through 16,384x16,384. Capacity cells identify the largest completed
+rung under a declared time and memory budget; they do not deliberately drive
+a machine into an out-of-memory failure.</p>
+<p>The capacity sweep found different operational envelopes under a 20-second
+per-process limit and conservative memory bounds:</p>
+<table>
+<thead>
+<tr>
+<th>Axis</th>
+<th>Apple M3 Max, 16 GiB watchdog</th>
+<th>Steam Deck, 12 GiB address-space limit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Grid, most strategies</td>
+<td>Completed the 16,384x16,384 test ceiling</td>
+<td>Completed 8,192x8,192; 16,384x16,384 reached the controlled resource/time boundary</td>
+</tr>
+<tr>
+<td>Grid, one-goal weighted batch</td>
+<td>Completed 8,192x8,192; 16,384x16,384 timed out</td>
+<td>Same bracket</td>
+</tr>
+<tr>
+<td>Grid, eight-goal weighted batch</td>
+<td>Completed 4,096x4,096; 8,192x8,192 timed out</td>
+<td>Same bracket</td>
+</tr>
+<tr>
+<td>Requests, room-portal A*</td>
+<td>Completed 65,536; 131,072 timed out</td>
+<td>Completed 16,384; 32,768 timed out</td>
+</tr>
+<tr>
+<td>Requests, one/eight-goal weighted A*</td>
+<td>Completed 4,096; 8,192 timed out</td>
+<td>One goal completed 4,096 and timed out at 8,192; eight goals timed out at the first 1,000-request capacity rung</td>
+</tr>
+<tr>
+<td>Requests, reuse-heavy arms</td>
+<td>Completed the 131,072 test ceiling</td>
+<td>Completed the 131,072 test ceiling</td>
+</tr>
+</tbody>
+</table>
+<p>“Completed the ceiling” is intentionally not called a platform maximum. The
+all-distinct request ladder is fixture-limited at 2,044 perimeter goals. At
+131,072 requests, the one-goal weighted batch peaked near 6.0 GiB on M3 and
+5.9 GiB on Deck, so the high-count results are throughput stress tests rather
+than frame-budget recommendations.</p>
+<p>Timing is accompanied by A<em> and unit-field expansions, reconstruction nodes,
+field builds, A</em> fallbacks, cache hits, suffix hits, unique-goal counts,
+retained cache entries and path nodes, and dense field-page bytes. Weighted
+batches do not expose field expansions, so the comparison does not pretend
+that every arm has a common expansion counter. The report distinguishes
+requests from unique starts:
+high request counts are a throughput stress, not a claim that every request
+represents a distinct simulated agent. Field-product byte counts and warm
+replay remain in the existing product benchmarks because the transient
+two-call field and per-call batch API do not retain comparable products.</p>
+<p>Map edits have a separate lifecycle question, so the crossover matrix does not
+multiply every cell by invalidation policy:</p>
+<table>
+<thead>
+<tr>
+<th>Retained work</th>
+<th>Edit behavior</th>
+<th>Evidence reported</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Exact <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr></td>
+<td>Any world change clears the cache</td>
+<td>Clears, misses, entries, and retained path nodes</td>
+</tr>
+<tr>
+<td>Scoped-feasible <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr></td>
+<td>Dense unit-cost worlds can preserve routes whose chunks did not change</td>
+<td>Existing on-path and off-path edit benchmarks</td>
+</tr>
+<tr>
+<td>Field product/cache</td>
+<td>Product dependencies decide whether replay remains valid</td>
+<td>Exact product and cache bytes plus warm replay timings</td>
+</tr>
+<tr>
+<td>Transient field or batch</td>
+<td>Nothing survives the call</td>
+<td>No invalidation mode or invented retained-byte total</td>
+</tr>
+</tbody>
+</table>
+<p>Scoped-feasible reuse guarantees a legal route with truthful cost, not fresh
+optimality: an unrelated edit that opens a shortcut can leave a previously
+optimal route suboptimal. Sparse worlds retain whole-world sensitivity.</p>
+<p>See the <a href="https://github.com/kindjie/tess/tree/main/docs/planning/evidence/v1.0/path-strategy-crossover">campaign method and normalized evidence</a> before
+using a bracket for a production decision.</p>
 <h2 id="algorithm-and-strategy-status">Algorithm and strategy status</h2>
 <p>The four choices in the short answer are not four peer algorithms. A* and the
 reverse field builders perform graph search; caches, batches, and retained
@@ -2237,50 +2433,6 @@ conflicts after routes have been planned.</p>
 <p>The <a href="../architecture/path/">path architecture</a> specifies the search and reuse
 contracts. The <a href="../architecture/simulation/">simulation architecture</a> separates
 route planning from joint movement and PIBT.</p>
-<details class="strategy-alternatives">
-<summary>Why some alternatives were not promoted</summary>
-<p>These decisions are deliberately scoped. A rejected browser policy or
-internal data structure is not a rejection of the broader research idea.</p>
-<ul>
-<li><strong>Four-ary open-list heap</strong> —
-  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
-  It helped a few A* benchmark cases but substantially regressed weighted field builds
-  and failed the second-platform non-regression gate
-  (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-14.md">evidence</a>).</li>
-<li><strong>Dynamic congestion prices in the colony demo</strong> —
-  <span class="strategy-status strategy-status--released">Validated caller recipe</span>
-  The original policies produced incomplete arrivals and were rejected
-  (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-17.md">evidence</a>); a later revalidation on the corrected
-  topology superseded that result — a bounded demand-driven price policy
-  retained or improved <abbr title="The five-way per-agent outcome a settle assigns: arrived, goal-occupied, sealed, wedged, or censored.">terminal classification</abbr> on every supported population
-  across all seven demo scenarios on two platforms, and is documented as a
-  caller recipe with its measured boundary
-  (<a href="../architecture/spatial-coordination/">spatial coordination</a>,
-  <a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/c5-congestion/README.md">evidence</a>). No library mechanism was added.</li>
-<li><strong>Balanced gate waypoints</strong> —
-  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
-  Assigning equal cohorts to exact crossing tiles synchronized agents onto
-  capacity hotspots, increased waits, and lost arrivals
-  (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-17.md">evidence</a>).</li>
-<li><strong>Eight-step WHCA-style space-time planning</strong> —
-  <span class="strategy-status strategy-status--boundary">Not promoted</span>
-  The screening result was 30–90x the cheap resolver's per-tick cost and
-  degraded at dense bottlenecks whose queues exceeded the fixed horizon
-  (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/local-movement-resolution.md#evidence">screening study</a>).</li>
-</ul>
-<p>The pre-RC screens in the <a href="https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md">execution plan</a> rejected all
-three of the remaining classical candidates on retained evidence:
-gated 4-connected JPS regressed dense rubble maps despite large
-structured-map wins (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p3-jps/README.md">evidence</a>); whole-query
-bidirectional A* confirmed material regressions on five of eight cells
-with correctness gates green (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p4-bidir/README.md">evidence</a>); and goal-keyed
-D* Lite rejected at feasibility once both arms were counted with the
-same ruler — its repair machinery does essentially the same abstract
-work as searching fresh against this incumbent
-(<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p5-dstar/README.md">evidence</a>). Each record carries its scoped
-reconsideration condition; none is a verdict on other domains.
-Theta* remains deferred until its supporting contracts exist.</p>
-</details>
 <h2 id="see-the-call-shapes">See the call shapes</h2>
 <p>The embedded demo runs the same C++ model as the self-checking example. Its
 animation shows call order and reuse; it deliberately does not time
@@ -2416,143 +2568,58 @@ start then reconstructs a path from that field instead of running another A*.</p
 <p>The field is tied to its goal and world snapshot. Rebuild it after relevant
 world or residency changes. For cross-frame, multi-goal retention on a dense
 world, use the separate <code>DistanceFieldProduct</code> and <code>FieldProductCache</code> family.</p>
-<h2 id="what-the-benchmarks-compare">What the benchmarks compare</h2>
-<p>The benchmark suite contains paired workloads rather than timing unrelated
-examples:</p>
-<table>
-<thead>
-<tr>
-<th>Question</th>
-<th>Baseline</th>
-<th>Reuse strategy</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>100 starts share one room-and-portal goal</td>
-<td>independent A*</td>
-<td>one <abbr title="Retained shortest-distance data built from one or more goals for repeated path reads.">distance field</abbr></td>
-</tr>
-<tr>
-<td>100 requests contain exact repeats</td>
-<td>independent A*</td>
-<td>exact <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr></td>
-</tr>
-<tr>
-<td>100 starts lie on one route to a goal</td>
-<td>independent A*</td>
-<td>suffix <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr></td>
-</tr>
-<tr>
-<td>100 weighted requests share eight goals</td>
-<td>weighted A*</td>
-<td>weighted batch planner</td>
-</tr>
-</tbody>
-</table>
-<p>The pairs use the same world and request arrays inside each question. They
-validate returned paths and expose counters such as unique goals, expanded
-nodes, cache hits, and misses outside the timed loops. See the
-<a href="https://github.com/kindjie/tess/tree/main/bench">benchmark implementation</a> and the
-<a href="../performance/">performance methodology</a> before treating a result as a
-portable constant.</p>
-<p>For a concrete scale check, these are median CPU times from Release
-builds of commit <code>d653d813</code> on two platforms — an Apple M3 Max (Apple
-Clang 21.0.0) and a Steam Deck LCD (Zen 2, Clang 19.1.7 in the pinned
-steamrt4 SDK). Each benchmark ran single-threaded for at least one
-second per repetition across ten repetitions; per-benchmark CV stayed at
-or under 1.1% on the M3 and 0.6% on the Deck, work counters were
-byte-identical across platforms and repetitions, and the raw outputs are
-retained with the <a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/strategy-comparison-refresh/README.md">full conditions</a>:</p>
-<table>
-<thead>
-<tr>
-<th>Workload</th>
-<th>Platform</th>
-<th style="text-align: right;">Independent searches</th>
-<th style="text-align: right;">Reuse strategy</th>
-<th style="text-align: right;">Relative time</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Shared unit-cost goal</td>
-<td>M3 Max</td>
-<td style="text-align: right;">18.28 ms</td>
-<td style="text-align: right;">2.91 ms field</td>
-<td style="text-align: right;">6.3x faster</td>
-</tr>
-<tr>
-<td></td>
-<td>Steam Deck</td>
-<td style="text-align: right;">68.96 ms</td>
-<td style="text-align: right;">5.52 ms field</td>
-<td style="text-align: right;">12.5x faster</td>
-</tr>
-<tr>
-<td>Exact route repeats</td>
-<td>M3 Max</td>
-<td style="text-align: right;">50.62 ms</td>
-<td style="text-align: right;">15.25 ms cache</td>
-<td style="text-align: right;">3.3x faster</td>
-</tr>
-<tr>
-<td></td>
-<td>Steam Deck</td>
-<td style="text-align: right;">191.92 ms</td>
-<td style="text-align: right;">65.80 ms cache</td>
-<td style="text-align: right;">2.9x faster</td>
-</tr>
-<tr>
-<td>Same-goal suffixes</td>
-<td>M3 Max</td>
-<td style="text-align: right;">112.52 us</td>
-<td style="text-align: right;">17.84 us cache</td>
-<td style="text-align: right;">6.3x faster</td>
-</tr>
-<tr>
-<td></td>
-<td>Steam Deck</td>
-<td style="text-align: right;">259.19 us</td>
-<td style="text-align: right;">24.66 us cache</td>
-<td style="text-align: right;">10.5x faster</td>
-</tr>
-<tr>
-<td>Eight weighted goals</td>
-<td>M3 Max</td>
-<td style="text-align: right;">467.98 ms</td>
-<td style="text-align: right;">44.80 ms batch</td>
-<td style="text-align: right;">10.4x faster</td>
-</tr>
-<tr>
-<td></td>
-<td>Steam Deck</td>
-<td style="text-align: right;">904.07 ms</td>
-<td style="text-align: right;">75.44 ms batch</td>
-<td style="text-align: right;">12.0x faster</td>
-</tr>
-</tbody>
-</table>
-<p>Neither run pinned thread affinity, and the M3 host carried load
-averages between five and six and a half, so use these as workload
-evidence, not target-machine promises. The result that matters is the shape, and it held on both
-architectures: every reuse strategy beat its independent-search baseline
-whenever the paired request set actually contained the structure each
-API is designed to share. The magnitudes move with the machine — the
-field and planner strategies win larger on the Deck's Zen 2, the exact
-<abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr> somewhat smaller.</p>
-<p>Run the comparison on the target machine:</p>
+<p>Run the controlled comparison on a target machine with an environment metadata
+file and a memory limit appropriate to that host:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>cmake<span class="w"> </span>--preset<span class="w"> </span>bench
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>bench<span class="w"> </span>--target<span class="w"> </span>tess_bench
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>./build/bench/bench/tess_bench<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span>--benchmark_filter<span class="o">=</span><span class="s1">&#39;path/.*batch(_planner)?_100_.*&#39;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span>--benchmark_min_time<span class="o">=</span>1s<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span>--benchmark_repetitions<span class="o">=</span><span class="m">10</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span>--benchmark_report_aggregates_only<span class="o">=</span><span class="nb">true</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>bench<span class="w"> </span>--target<span class="w"> </span>tess_bench_path_strategy_crossover
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>python3<span class="w"> </span>tools/path_strategy_campaign.py<span class="w"> </span>primary<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span>--binary<span class="w"> </span>build/bench/bench/tess_bench_path_strategy_crossover<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span>--source<span class="w"> </span>bench/tess_path_strategy_crossover_bench.cc<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span>--environment<span class="w"> </span>environment.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span>--output<span class="w"> </span>path-strategy-results.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span>--memory-limit-gib<span class="w"> </span><span class="m">12</span>
 </code></pre></div>
-<p>The decision is workload-specific: compare paired names with the same suffix,
-inspect their counters, and retain the simpler API when the measured benefit
-does not justify another invalidation or grouping lifecycle.</p>
+<p>The driver interleaves paired arms in fresh processes, checkpoints each cell,
+and rejects an unstable cell from crossover calculation. Its separate
+<code>capacity</code> mode runs ascending grid and request ladders with per-process time
+and address-space limits, then stops a ladder at its first incomplete rung.
+The decision remains workload-specific: inspect both timing and counters, and
+retain the simpler API when the measured benefit does not justify another
+invalidation or grouping lifecycle.</p>
+<details class="strategy-alternatives">
+<summary>Why some alternatives were not promoted</summary>
+<p>These decisions are deliberately scoped. A rejected browser policy or
+internal data structure is not a rejection of the broader research idea.</p>
+<ul>
+<li><strong>Four-ary open-list heap</strong> —
+  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
+  It helped a few A* benchmark cases but substantially regressed weighted
+  field builds and failed the second-platform non-regression gate
+  (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-14.md">evidence</a>).</li>
+<li><strong>Dynamic congestion prices in the colony demo</strong> —
+  <span class="strategy-status strategy-status--released">Validated caller recipe</span>
+  The original policies produced incomplete arrivals and were rejected
+  (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-17.md">evidence</a>); a later revalidation on the corrected
+  topology superseded that result. The bounded caller policy is documented
+  with its measured boundary in <a href="../architecture/spatial-coordination/">spatial coordination</a>
+  and the <a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/c5-congestion/README.md">retained evidence</a>.</li>
+<li><strong>Balanced gate waypoints</strong> —
+  <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
+  Equal cohorts synchronized agents onto capacity hotspots and lost arrivals
+  (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log-archive-2026-08-17.md">evidence</a>).</li>
+<li><strong>Eight-step WHCA-style space-time planning</strong> —
+  <span class="strategy-status strategy-status--boundary">Not promoted</span>
+  The screen cost 30–90x the cheap resolver per tick and degraded at dense
+  bottlenecks beyond its horizon (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/local-movement-resolution.md#evidence">screening study</a>).</li>
+</ul>
+<p>The pre-RC screens in the <a href="https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md">execution plan</a> rejected all three
+remaining classical candidates: gated 4-connected JPS on dense rubble maps
+(<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p3-jps/README.md">evidence</a>), whole-query bidirectional A<em> on five of eight
+cells (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p4-bidir/README.md">evidence</a>), and goal-keyed D</em> Lite at feasibility
+(<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p5-dstar/README.md">evidence</a>). Each record has a scoped reconsideration
+condition; none is a verdict on other domains. Theta* remains deferred until
+its supporting contracts exist.</p>
+</details>
 
 
 
