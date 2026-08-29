@@ -357,6 +357,7 @@ def test_terminology_reference_and_global_tooltips_stay_synchronized():
     "residency generation",
     "movement class",
     "distance field",
+    "flow field",
     "route cache",
   )
   for term in exact_terms:
@@ -602,6 +603,8 @@ def test_path_strategy_scaling_chart_matches_accepted_evidence():
   assert 'window.frameElement.style.height' in chart
   assert 'root.getBoundingClientRect().height' in chart
   assert 'document.documentElement.scrollHeight' not in chart
+  assert 'const frameSlack = 2;' in chart
+  assert 'verticalPadding + frameSlack' in chart
   assert 'Math.abs(frameHeight - contentHeight) <= 1' in chart
   assert '.chart-note { margin: 0.7rem 0 0; }' in chart
   assert 'document.body' in chart
