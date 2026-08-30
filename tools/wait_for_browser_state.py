@@ -66,11 +66,14 @@ def encode_client_text_frame(
 
 
 def _socket_timeout(deadline: float, operation: str) -> float:
-  """Return a short socket timeout bounded by one shared wall deadline."""
+  """Return a bounded socket timeout within one shared wall deadline."""
   remaining = deadline - time.monotonic()
   if remaining <= 0:
     raise RuntimeError(f"{operation} exceeded the shared deadline")
-  return min(2.0, remaining)
+  # SwiftShader can leave DevTools responsive but silent for several seconds
+  # while its first WebGL context initializes. Keep one stalled read bounded,
+  # without treating that expected startup pause as a disconnected browser.
+  return min(10.0, remaining)
 
 
 def _recv_exact(

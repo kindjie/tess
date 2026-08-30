@@ -142,8 +142,10 @@ void DiagnosticsModel::run_consumer_allocation_probe() {
     return;
   }
   using Snapshot = std::vector<std::int16_t, CountingAllocator<std::int16_t>>;
+  const auto position_count =
+      static_cast<std::ptrdiff_t>(colony_->agent_count()) * 2;
   Snapshot positions(colony_->current_agents(),
-                     colony_->current_agents() + colony_->agent_count() * 2);
+                     colony_->current_agents() + position_count);
   presentation_checksum_ = 0;
   for (const auto value : positions) {
     presentation_checksum_ += static_cast<std::uint64_t>(value);
