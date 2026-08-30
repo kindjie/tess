@@ -322,14 +322,26 @@ cp "$imgui/LICENSE.txt" "$diagnostics/third-party-imgui-LICENSE.txt"
 
 diagnostics_exports='["_main","_tess_diagnostics_status"'
 diagnostics_exports+=',"_tess_diagnostics_set_paused"'
-diagnostics_exports+=',"_tess_diagnostics_set_intensity"'
+diagnostics_exports+=',"_tess_diagnostics_reset"'
 diagnostics_exports+=',"_tess_diagnostics_select"'
 diagnostics_exports+=',"_tess_diagnostics_set_passable"'
 diagnostics_exports+=',"_tess_diagnostics_paused"'
-diagnostics_exports+=',"_tess_diagnostics_intensity"'
 diagnostics_exports+=',"_tess_diagnostics_selected_x"'
 diagnostics_exports+=',"_tess_diagnostics_selected_y"'
-diagnostics_exports+=',"_tess_diagnostics_selected_passable"]'
+diagnostics_exports+=',"_tess_diagnostics_selected_passable"'
+diagnostics_exports+=',"_tess_diagnostics_fixed_ticks"'
+diagnostics_exports+=',"_tess_diagnostics_path_passability_checks"'
+diagnostics_exports+=',"_tess_diagnostics_queued_phase_calls"'
+diagnostics_exports+=',"_tess_diagnostics_queued_dirty_merged"'
+diagnostics_exports+=',"_tess_diagnostics_planning_queries"'
+diagnostics_exports+=',"_tess_diagnostics_planning_expansions"'
+diagnostics_exports+=',"_tess_diagnostics_flow_offered"'
+diagnostics_exports+=',"_tess_diagnostics_flow_admitted"'
+diagnostics_exports+=',"_tess_diagnostics_flow_terminal"'
+diagnostics_exports+=',"_tess_diagnostics_flow_outstanding"'
+diagnostics_exports+=',"_tess_diagnostics_flow_high_water"'
+diagnostics_exports+=',"_tess_diagnostics_flow_admission_ok"'
+diagnostics_exports+=',"_tess_diagnostics_flow_retention_ok"]'
 
 em++ \
   -std=c++20 \
@@ -341,6 +353,7 @@ em++ \
   -I"$config/generated/include" \
   -I"$imgui" \
   -I"$imgui/backends" \
+  "$root/examples/web_colony/colony_model.cc" \
   "$root/examples/web_diagnostics/diagnostics_model.cc" \
   "$root/examples/web_diagnostics/diagnostics_wasm.cc" \
   "$imgui/imgui.cpp" \

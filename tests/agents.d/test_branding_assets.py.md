@@ -21,9 +21,12 @@
   documentation navigation, the canonical terminology reference and exact
   global-tooltip configuration,
   dependencies, licensing, accessibility, readiness, and browser-smoke
-  contracts. Assertions intentionally inspect source text so hook-backstop CI
-  catches drift without requiring Emscripten or a browser; keep literal checks
-  synchronized with the templates and configuration they pin.
+  contracts. The diagnostics assertions pin the colony-backed host, its
+  example-local flow-health panel, and keyboard-accessible DOM mirrors rather
+  than the retired synthetic workload. Assertions intentionally inspect source
+  text so hook-backstop CI catches drift without requiring Emscripten or a
+  browser; keep literal checks synchronized with the templates and
+  configuration they pin.
 - The README identity assertion pins a plain-language H1 naming pathfinding
   and 2D/3D grid worlds, while the opening sentence carries the C++20 term.
 - Maintained README, documentation, and browser-demo links use stable root

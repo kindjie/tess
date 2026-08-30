@@ -199,3 +199,11 @@ def test_devtools_handshake_failure_closes_raw_socket(monkeypatch):
     )
 
   assert stream.closed
+
+
+def test_devtools_read_timeout_tolerates_slow_software_gpu(monkeypatch):
+  """A responsive SwiftShader page may take more than two seconds."""
+  monkeypatch.setattr(browser_state.time, "monotonic", lambda: 100.0)
+
+  assert browser_state._socket_timeout(130.0, "read") == 10.0
+  assert browser_state._socket_timeout(104.0, "read") == 4.0

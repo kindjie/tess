@@ -553,6 +553,7 @@ jobs:
           tests/test_doxygen_integration.py
           tests/test_flow_steering_tutorial.py
           tests/test_colony_tutorial.py
+          tests/test_colony_diagnostics.py
           tests/test_measure_traffic_lab.py
           tests/test_browser_demo_resources.py
           tests/test_compatibility_snapshots.py

@@ -1,17 +1,13 @@
 #include "diagnostics_model.h"
 
-#include <tess/diagnostics/trace.h>
-
 #include <algorithm>
 #include <cstddef>
 #include <memory>
-#include <span>
+#include <string_view>
 #include <vector>
 
 namespace tess::examples::web_diagnostics {
 namespace {
-
-constexpr auto kTerrainDirty = tess::DirtyMask{1U << 0U};
 
 template <typename T>
 class CountingAllocator {
@@ -42,12 +38,6 @@ class CountingAllocator {
   }
 };
 
-[[nodiscard]] auto in_bounds(int x, int y) noexcept -> bool {
-  return x >= 0 && x < width && y >= 0 && y < height;
-}
-
-[[nodiscard]] auto coord(int x, int y) noexcept -> Coord2 { return {x, y}; }
-
 [[nodiscard]] auto has_duration(
     const diagnostics::DiagnosticsSnapshot& snapshot,
     std::string_view label) noexcept -> bool {
@@ -76,13 +66,13 @@ void accumulate_timing(diagnostics::TimingSnapshot& history,
     }
     destination.samples += source.samples;
     destination.total_ns += source.total_ns;
-    if (source.min_ns < destination.min_ns) {
-      destination.min_ns = source.min_ns;
-    }
-    if (source.max_ns > destination.max_ns) {
-      destination.max_ns = source.max_ns;
-    }
+    destination.min_ns = std::min(destination.min_ns, source.min_ns);
+    destination.max_ns = std::max(destination.max_ns, source.max_ns);
   }
+}
+
+[[nodiscard]] auto in_bounds(int x, int y) noexcept -> bool {
+  return x >= 0 && x < web_colony::width && y >= 0 && y < web_colony::height;
 }
 
 }  // namespace
@@ -90,119 +80,85 @@ void accumulate_timing(diagnostics::TimingSnapshot& history,
 auto ReadinessEvidence::ready() const noexcept -> bool {
   return runtime_initialized && workload_tick && path_counters &&
          queued_counters && timing_samples && duration_spans &&
-         allocation_counters && allocation_balanced && imgui_frame;
+         allocation_counters && allocation_balanced && flow_identities &&
+         imgui_frame;
 }
 
-DiagnosticsModel::DiagnosticsModel() {
-  initialize_world();
-  path_scratch_.reserve_nodes(static_cast<std::size_t>(width) *
-                              static_cast<std::size_t>(height));
-}
+DiagnosticsModel::DiagnosticsModel() { reset(); }
 
-void DiagnosticsModel::initialize_world() {
-  world_.fill_field<PassableTag>(true);
-  for (int y = 0; y < height; ++y) {
-    if (y != 5 && y != 18) {
-      world_.field<PassableTag>(coord(width / 3, y)) = false;
-    }
-    if (y != 9 && y != 21) {
-      world_.field<PassableTag>(coord(2 * width / 3, y)) = false;
-    }
-  }
-}
-
-void DiagnosticsModel::set_intensity(int value) noexcept {
-  intensity_ = std::clamp(value, 1, 32);
+void DiagnosticsModel::reset() {
+  const auto runtime_initialized = evidence_.runtime_initialized;
+  const auto imgui_frame = evidence_.imgui_frame;
+  colony_.reset();
+  flow_accounting_ = {};
+  colony_ = std::make_unique<web_colony::ColonyModel>(default_agent_count,
+                                                      &flow_accounting_);
+  selected_x_ = 64;
+  selected_y_ = 48;
+  paused_ = false;
+  allocation_probe_pending_ = true;
+  fixed_ticks_ = 0;
+  path_passability_checks_total_ = 0;
+  queued_phase_calls_total_ = 0;
+  queued_dirty_merged_total_ = 0;
+  presentation_checksum_ = 0;
+  timing_history_ = {};
+  snapshot_ = {};
+  flow_snapshot_ = diagnostics::snapshot(flow_accounting_);
+  evidence_ = {
+      .runtime_initialized = runtime_initialized,
+      .imgui_frame = imgui_frame,
+  };
+  // The first real colony tick applies one queued edit. This gives readiness
+  // an end-to-end queued-work proof without retaining the retired synthetic
+  // operation batch.
+  (void)set_passable(selected_x_, selected_y_, false);
 }
 
 auto DiagnosticsModel::select(int x, int y) noexcept -> bool {
   if (!in_bounds(x, y)) {
     return false;
   }
-  selected_ = coord(x, y);
+  selected_x_ = x;
+  selected_y_ = y;
   return true;
 }
 
-auto DiagnosticsModel::set_passable(int x, int y, bool value) noexcept -> bool {
+auto DiagnosticsModel::set_passable(int x, int y, bool value) -> bool {
   if (!in_bounds(x, y)) {
     return false;
   }
-  const auto tile = coord(x, y);
-  world_.field<PassableTag>(tile) = value;
-  const auto resolved = world_.try_resolve(tile);
-  if (resolved.has_value()) {
-    world_.mark_dirty(resolved->chunk_key, kTerrainDirty,
-                      Box3{tile, Extent3{1, 1, 1}});
-  }
-  return true;
+  return colony_->set_wall(x, y, !value);
 }
 
-auto DiagnosticsModel::run_path_workload() -> bool {
-  diagnostics::ScopedTimer timer{diagnostics::TraceCategory::Path,
-                                 "path_search"};
-  const auto start = coord(0, 0);
-  const auto goal = coord(width - 1, height - 1);
-  for (int iteration = 0; iteration < intensity_; ++iteration) {
-    const auto result = astar_path<World, PassableTag>(
-        world_, PathRequest{start, goal}, path_scratch_);
-    switch (result.status) {
-      case PathStatus::Found:
-      case PathStatus::InvalidStart:
-      case PathStatus::InvalidGoal:
-      case PathStatus::NoPath:
-        break;
-      case PathStatus::NotComputed:
-      case PathStatus::NoCandidate:
-      case PathStatus::Indeterminate:
-      case PathStatus::CostOverflow:
-        return false;
-    }
-  }
-  return true;
+auto DiagnosticsModel::selected_passable() const noexcept -> bool {
+  const auto index = static_cast<std::size_t>(selected_y_) * web_colony::width +
+                     static_cast<std::size_t>(selected_x_);
+  return colony_->tiles()[index] == 0;
 }
 
-auto DiagnosticsModel::run_queued_workload() -> bool {
-  diagnostics::ScopedTimer timer{diagnostics::TraceCategory::Queued,
-                                 "queued_phase"};
-  OperationBatch ops;
-  using KeyVector = std::vector<ChunkKey, CountingAllocator<ChunkKey>>;
-  KeyVector keys;
-  keys.reserve(4);
-  keys.push_back(ChunkKey{0});
-  keys.push_back(ChunkKey{1});
-  keys.push_back(ChunkKey{4});
-  keys.push_back(ChunkKey{5});
-  const auto domain = DomainDesc::explicit_chunks(
-      std::span<const ChunkKey>{keys.data(), keys.size()});
-  (void)ops.update_field(domain,
-                         FieldAccessDesc{0, kTerrainDirty.value, kTerrainDirty},
-                         WritePolicy::UniquePerChunk);
-  const auto report = plan_operations(world_, ops);
-  if (!report.ok()) {
-    return false;
+void DiagnosticsModel::run_consumer_allocation_probe() {
+  if (!allocation_probe_pending_) {
+    return;
   }
-  const auto phases = plan_parallel_execution_phases(report.plan());
-  if (!phases.ok() || phases.phases().empty()) {
-    return false;
+  using Snapshot = std::vector<std::int16_t, CountingAllocator<std::int16_t>>;
+  const auto position_count =
+      static_cast<std::ptrdiff_t>(colony_->agent_count()) * 2;
+  Snapshot positions(colony_->current_agents(),
+                     colony_->current_agents() + position_count);
+  presentation_checksum_ = 0;
+  for (const auto value : positions) {
+    presentation_checksum_ += static_cast<std::uint64_t>(value);
   }
-  const auto result =
-      execute_phase_partitioned_dirty_with<WritePolicy::UniquePerChunk>(
-          SerialPhaseExecutor{}, world_, report.plan(), phases.phases()[0],
-          phase_scratch_, [this](auto view) {
-            auto terrain = view.template field_span<TerrainTag>();
-            terrain[0] = static_cast<std::uint16_t>(
-                (tick_number_ + view.key().value) & 0xffffU);
-          });
-  if (result.status != PlannedExecutionStatus::Executed) {
-    return false;
-  }
-  return merge_planned_dirty(world_, phase_scratch_).status ==
-         PlannedDirtyMergeStatus::Merged;
+  allocation_probe_pending_ = false;
 }
 
 auto DiagnosticsModel::tick() -> bool {
   if (paused_) {
     return true;
+  }
+  if (colony_->turnaround_ready()) {
+    (void)colony_->relaunch();
   }
   path_counters_.reset();
   queued_counters_.reset();
@@ -211,28 +167,38 @@ auto DiagnosticsModel::tick() -> bool {
 
   auto succeeded = false;
   {
-    diagnostics::ScopedTrace trace{trace_buffer_};
-    diagnostics::ScopedPathCounters path{path_counters_};
-    diagnostics::ScopedQueuedPhaseCounters queued{queued_counters_};
+    succeeded =
+        colony_->tick_with_diagnostics(0.05, path_counters_, queued_counters_,
+                                       trace_buffer_) >= 0.0;
     diagnostics::ScopedAllocationCounters allocation{allocation_counters_};
-    diagnostics::ScopedTimer tick_timer{diagnostics::TraceCategory::General,
-                                        "diagnostics_tick"};
-    succeeded = run_path_workload() && run_queued_workload();
+    run_consumer_allocation_probe();
   }
-  ++tick_number_;
+  ++fixed_ticks_;
   snapshot_ = diagnostics::capture_diagnostics(
       path_counters_, allocation_counters_, queued_counters_, trace_buffer_);
   accumulate_timing(timing_history_, snapshot_.timing);
   snapshot_.timing = timing_history_;
+  flow_snapshot_ = diagnostics::snapshot(flow_accounting_);
+  path_passability_checks_total_ += snapshot_.path.passability_checks;
+  queued_phase_calls_total_ += snapshot_.queued.phase_calls;
+  queued_dirty_merged_total_ += snapshot_.queued.dirty_chunks_merged;
   evidence_.workload_tick = evidence_.workload_tick || succeeded;
   update_evidence();
   return succeeded;
 }
 
+auto DiagnosticsModel::planning_queries() const noexcept -> int {
+  return colony_->planning_queries_last_tick();
+}
+
+auto DiagnosticsModel::planning_expansions() const noexcept -> int {
+  return colony_->planning_expansions_last_tick();
+}
+
 void DiagnosticsModel::update_evidence() noexcept {
   evidence_.path_counters =
-      evidence_.path_counters ||
-      (snapshot_.path.initializations > 0 && snapshot_.path.heap_pushes > 0);
+      evidence_.path_counters || (snapshot_.path.passability_checks > 0 &&
+                                  snapshot_.path.reconstructed_nodes > 0);
   evidence_.queued_counters =
       evidence_.queued_counters || (snapshot_.queued.phase_calls > 0 &&
                                     snapshot_.queued.phase_operations > 0 &&
@@ -241,21 +207,26 @@ void DiagnosticsModel::update_evidence() noexcept {
       evidence_.timing_samples ||
       (snapshot_.timing.stats(diagnostics::TraceCategory::General).samples >
            0 &&
-       snapshot_.timing.stats(diagnostics::TraceCategory::Path).samples > 0 &&
-       snapshot_.timing.stats(diagnostics::TraceCategory::Queued).samples > 0);
+       snapshot_.timing.stats(diagnostics::TraceCategory::Scheduler).samples >
+           0);
   evidence_.duration_spans =
-      evidence_.duration_spans || (has_duration(snapshot_, "path_search") &&
-                                   has_duration(snapshot_, "queued_phase"));
+      evidence_.duration_spans || (has_duration(snapshot_, "schedule_tick") &&
+                                   has_duration(snapshot_, "agents"));
   evidence_.allocation_counters = evidence_.allocation_counters ||
                                   (snapshot_.allocation.allocations > 0 &&
                                    snapshot_.allocation.allocation_bytes > 0 &&
                                    snapshot_.allocation.peak_live_bytes > 0);
   evidence_.allocation_balanced =
       evidence_.allocation_balanced ||
-      (snapshot_.allocation.allocations == snapshot_.allocation.deallocations &&
+      (snapshot_.allocation.allocations > 0 &&
+       snapshot_.allocation.allocations == snapshot_.allocation.deallocations &&
        snapshot_.allocation.allocation_bytes ==
            snapshot_.allocation.deallocation_bytes &&
        snapshot_.allocation.live_bytes == 0);
+  evidence_.flow_identities =
+      evidence_.flow_identities || (flow_snapshot_.counters.offered > 0 &&
+                                    flow_snapshot_.admission_identity_ok &&
+                                    flow_snapshot_.retention_identity_ok);
 }
 
 }  // namespace tess::examples::web_diagnostics

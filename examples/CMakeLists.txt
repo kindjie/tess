@@ -350,12 +350,26 @@ add_executable(
   tess_web_diagnostics_model
   web_diagnostics/diagnostics_model.cc
   web_diagnostics/diagnostics_native.cc
+  web_colony/colony_model.cc
 )
 target_link_libraries(tess_web_diagnostics_model PRIVATE tess::tess)
 target_compile_definitions(
   tess_web_diagnostics_model PRIVATE TESS_ENABLE_DIAGNOSTICS
 )
 tess_apply_project_options(tess_web_diagnostics_model)
+if(BUILD_TESTING)
+  add_test(
+    NAME tess_web_colony_diagnostics_self_check
+    COMMAND tess_web_diagnostics_model
+  )
+  set_tests_properties(
+    tess_web_colony_diagnostics_self_check
+    PROPERTIES
+      LABELS
+        "target:tess_web_diagnostics_model;subsystem:diagnostics;subsystem:path;subsystem:sim"
+      PASS_REGULAR_EXPRESSION "web colony diagnostics model: ok"
+  )
+endif()
 
 add_executable(tess_queued_path queued_path.cc)
 target_link_libraries(tess_queued_path PRIVATE tess::tess)

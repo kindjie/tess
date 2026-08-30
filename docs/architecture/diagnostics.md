@@ -208,10 +208,14 @@ tess validates the header in CI against a minimal ImGui stub
 also compiles the pinned real Dear ImGui core with its GLFW/OpenGL3 backends
 and smoke-tests a submitted WebGL2 frame at `/demo/diagnostics/`. Normal tess
 builds and packages remain dependency-free; only that integration artifact
-fetches ImGui. The demo keeps path, queue, and allocation counters frame-local,
-but merges each active frame's timing sample into the displayed history so the
-sample, average, minimum, and maximum columns remain meaningful even when the
-browser exposes a coarse monotonic clock.
+fetches ImGui. The demo compiles the shared colony model and its host
+translation units under the same diagnostics gate. It keeps path, queue, and
+allocation counters frame-local, but merges each active frame's timing sample
+into the displayed history so the sample, average, minimum, and maximum
+columns remain meaningful even when the browser exposes a coarse monotonic
+clock. Allocation events are consumer-instrumented: a one-time presentation
+snapshot proves balanced capture, while reserved warm ticks may correctly
+remain zero.
 
 When diagnostics are enabled, `Schedule::run_tick` automatically records a
 `Scheduler` duration named `schedule_tick` and one nested duration named after
@@ -270,6 +274,12 @@ One documented exception to bucket monotonicity exists: a produced
 result that later goes stale before retirement is reclassified from
 `completed` to `stale`. `FlowHealthSnapshot` packages the counters and
 both identity verdicts for tools without binding any UI toolkit.
+
+The colony diagnostics host attaches its accountant before admitting the
+first agent goal and observes it once per fixed tick. Its ImGui helper for
+`FlowHealthSnapshot` is example-local during the release-candidate cycle;
+tess adds no public panel API. This lifecycle flow accounting is distinct from
+a pathfinding flow field, which would retain per-tile movement directions.
 
 ## Deliberate Limits
 
