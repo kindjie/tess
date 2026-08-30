@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The tess stability policy: the 1.x source-compatibility promise, archive format support, and the exclusions that bound both.">
+        <meta name="description" content="Find tess architecture contracts, canonical terminology, compatibility evidence, and generated C++ API documentation.">
       
       
       
-        <link rel="canonical" href="https://tess.owx.dev/main/support/">
+        <link rel="canonical" href="https://tess.owx.dev/main/reference/">
       
       
-        <link rel="prev" href="../roadmap/">
+        <link rel="prev" href="../guide/diagnostics/">
       
       
-        <link rel="next" href="../for-agents/">
+        <link rel="next" href="../architecture/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Support - tess</title>
+        <title>tess Reference - tess</title>
       
     
     
@@ -56,15 +56,15 @@
     
     <meta property="og:type" content="website">
   <meta property="og:site_name" content="tess">
-  <meta property="og:title" content="Support - tess">
-  <meta property="og:description" content="The tess stability policy: the 1.x source-compatibility promise, archive format support, and the exclusions that bound both.">
-  <meta property="og:url" content="https://tess.owx.dev/main/support/">
+  <meta property="og:title" content="tess Reference - tess">
+  <meta property="og:description" content="Find tess architecture contracts, canonical terminology, compatibility evidence, and generated C++ API documentation.">
+  <meta property="og:url" content="https://tess.owx.dev/main/reference/">
   <meta property="og:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1280">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Support - tess">
-  <meta name="twitter:description" content="The tess stability policy: the 1.x source-compatibility promise, archive format support, and the exclusions that bound both.">
+  <meta name="twitter:title" content="tess Reference - tess">
+  <meta name="twitter:description" content="Find tess architecture contracts, canonical terminology, compatibility evidence, and generated C++ API documentation.">
   <meta name="twitter:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
 
   </head>
@@ -86,7 +86,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#support-and-compatibility" class="md-skip">
+        <a href="#reference" class="md-skip">
           Skip to content
         </a>
       
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Support
+              tess Reference
             
           </span>
         </div>
@@ -297,11 +297,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../reference/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
           
   
   
@@ -341,12 +343,10 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
+      <li class="md-tabs__item">
         <a href="../use-cases/" class="md-tabs__link">
           
   
@@ -931,6 +931,8 @@
       
   
   
+    
+  
   
   
     
@@ -982,16 +984,19 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
           <div class="md-nav__link md-nav__container">
@@ -1013,13 +1018,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1034,10 +1039,19 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../reference/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1053,6 +1067,7 @@
   
 
       </a>
+      
     </li>
   
 
@@ -1696,10 +1711,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -1719,22 +1732,19 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
@@ -1752,7 +1762,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1879,37 +1889,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Support
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../support/" class="md-nav__link">
         
   
   
@@ -1925,48 +1908,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#the-1x-compatibility-contract" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The 1.x compatibility contract
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#toolchain-floors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Toolchain floors
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -2027,36 +1968,6 @@
     
   
   
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#the-1x-compatibility-contract" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The 1.x compatibility contract
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#toolchain-floors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Toolchain floors
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
 </nav>
                   </div>
                 </div>
@@ -2075,86 +1986,43 @@
   
 
 
-<h1 id="support-and-compatibility">Support and compatibility</h1>
-<p>Use <a href="https://github.com/kindjie/tess/discussions">GitHub Discussions</a> for
-adoption questions and design conversations. Use
-<a href="https://github.com/kindjie/tess/issues">GitHub Issues</a> for reproducible bugs
-and focused feature requests. Security reports should follow the repository's
-<a href="https://github.com/kindjie/tess/security/policy">security policy</a> rather than
-being filed publicly.</p>
-<p>All <code>0.x</code> releases are pre-stable. Public APIs and data layouts may change
-between minor versions while the design is validated. Release tags are the
-supported consumption points; pin a tag or commit rather than a branch. The
-<a href="../roadmap/">roadmap</a> records what is shipped, deferred, and out of scope.</p>
-<h2 id="the-1x-compatibility-contract">The 1.x compatibility contract</h2>
-<p>Within the 1.x release line, tess preserves source compatibility for:</p>
+<h1 id="reference">Reference</h1>
+<p>Use this section when you need a contract or symbol definition rather than a
+learning sequence. The <a href="../tutorials/">tutorials</a> and
+<a href="../guide/">decision guides</a> remain the better entry points for a new
+workflow or design choice.</p>
+<div class="grid cards">
 <ul>
-<li>documented APIs declared by <code>stable</code> and <code>optional-stable</code> headers;</li>
-<li>documented configuration macros;</li>
-<li>the <code>tess::tess</code> CMake target and installed-package entry points;</li>
-<li>portable release assets named <code>tess-&lt;version&gt;-headers.tar.gz</code> and <code>.zip</code>,
-  each rooted at <code>tess-&lt;version&gt;/</code> with the complete installed <code>include/tess/</code>
-  tree;</li>
-<li>direct membership of the stable aggregate headers; and</li>
-<li>archive format v2, including loading fixtures produced by earlier 1.x
-  releases.</li>
+<li>
+<p><span class="twemoji lg middle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 0 3 7l1.63 1.27L12 14l7.36-5.73L21 7zm7.37 10.73L12 16.47l-7.38-5.73L3 12l9 7 9-7zm0 5L12 21.47l-7.38-5.73L3 17l9 7 9-7z"/></svg></span> <strong>Architecture</strong></p>
+<hr />
+<p>Maintained contracts for worlds, storage, pathfinding, topology,
+simulation, diagnostics, and optional integration boundaries.</p>
+<p><a href="../architecture/"><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13.22 19.03a.75.75 0 0 1 0-1.06L18.19 13H3.75a.75.75 0 0 1 0-1.5h14.44l-4.97-4.97a.749.749 0 0 1 .326-1.275.75.75 0 0 1 .734.215l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0"/></svg></span> Architecture</a></p>
+</li>
+<li>
+<p><span class="twemoji lg middle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M5.81 2C4.83 2.09 4 3 4 4v16c0 1.05.95 2 2 2h12c1.05 0 2-.95 2-2V4a2 2 0 0 0-2-2h-6v7L9.5 7.5 7 9V2H5.81M12 13h1a1 1 0 0 1 1 1v4h-1v-2h-1v2h-1v-4a1 1 0 0 1 1-1m0 1v1h1v-1zm3 1h3v1l-2 3h2v1h-3v-1l2-3h-2z"/></svg></span> <strong>Terminology</strong></p>
+<hr />
+<p>Canonical domain nouns, actions, states, units, and qualifiers used across
+public APIs and maintained documentation.</p>
+<p><a href="../terminology/"><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13.22 19.03a.75.75 0 0 1 0-1.06L18.19 13H3.75a.75.75 0 0 1 0-1.5h14.44l-4.97-4.97a.749.749 0 0 1 .326-1.275.75.75 0 0 1 .734.215l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0"/></svg></span> Terminology</a></p>
+</li>
+<li>
+<p><span class="twemoji lg middle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m10 17-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9m-6-8L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5z"/></svg></span> <strong>Compatibility evidence</strong></p>
+<hr />
+<p>Tested compiler, configuration, packaging, and consumer boundaries behind
+the support policy.</p>
+<p><a href="../architecture/compatibility/"><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13.22 19.03a.75.75 0 0 1 0-1.06L18.19 13H3.75a.75.75 0 0 1 0-1.5h14.44l-4.97-4.97a.749.749 0 0 1 .326-1.275.75.75 0 0 1 .734.215l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0"/></svg></span> Compatibility</a></p>
+</li>
+<li>
+<p><span class="twemoji lg middle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg></span> <strong>Generated API</strong></p>
+<hr />
+<p>Doxygen pages for the supported public C++ surface of this documentation
+version.</p>
+<p><a href="../api/"><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13.22 19.03a.75.75 0 0 1 0-1.06L18.19 13H3.75a.75.75 0 0 1 0-1.5h14.44l-4.97-4.97a.749.749 0 0 1 .326-1.275.75.75 0 0 1 .734.215l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0"/></svg></span> API reference</a></p>
+</li>
 </ul>
-<p>The stable maintenance contract covers documented names and semantics in
-<code>tess/maintenance.h</code> and <code>tess/maintenance/</code>, including the immediate backend,
-registered handles and results, the structural backend boundary, and the
-external chunk adapter. It does not cover the experimental FIFO,
-queued-coalescing, dirty-bit, or virtual scheduler spellings, even when an
-application explicitly supplies one of those backend types to the stable
-facade.</p>
-<p>Direct aggregate membership remains unconditional. Existing aggregate types
-remain aggregates, and public data-member sets on existing stable types remain
-fixed, so constructors, hidden state, or fields cannot break aggregate or
-structured-binding users. Enumerator order is append-only. New overloads of an
-existing callable are excluded because they can make existing calls and
-address-taking ambiguous; additive behavior uses a distinctly named method,
-type, or entry point.</p>
-<p><code>cmake/tess-headers.json</code> is the machine-readable source of truth for header
-stability. Every installed header has exactly one classification:</p>
-<ul>
-<li><code>stable</code> headers form the dependency-free supported surface;</li>
-<li><code>optional-stable</code> headers are supported when the named third-party
-  integration is enabled;</li>
-<li><code>experimental</code> headers are installed for evaluation but may change or be
-  removed in any release; and</li>
-<li><code>implementation-only</code> headers are installed only because public templates
-  depend on them and must not be included directly.</li>
-</ul>
-<p>The contract does not cover ABI or object layout, binary compatibility,
-mixing tess versions or build-wide configurations across translation units,
-implementation names, or identity-token comparisons across dynamic-library
-boundaries. Rebuild all consuming translation units together with one tess
-version and one macro configuration.</p>
-<p>The current dense signatures for queued operations, field products, and PIBT
-are part of the stable source contract. Sparse support must arrive through new
-entry points rather than changing those signatures or adding ambiguous
-overloads.</p>
-<p>Compatibility is enforced in layers. Snapshots protect header classes, direct
-aggregate membership, and per-header documented public namespace-scope and
-<code>TESS_*</code> macro names. Installed and optional-integration builds, immutable
-source-consumer fixtures, archive fixtures, and release review cover C++
-semantics. The snapshot checker
-deliberately does not parse declaration signatures or model C++ semantics and
-is not represented as a complete proof of this policy.</p>
-<h2 id="toolchain-floors">Toolchain floors</h2>
-<p>The required language baseline is C++20. Release evidence continuously builds
-and runs the stable surface with:</p>
-<ul>
-<li>GCC 12 and Clang 16 on Ubuntu 24.04;</li>
-<li>AppleClang from Xcode 16.0 on macOS 15;</li>
-<li>MSVC 19.44 from Visual Studio 2022 17.14; and</li>
-<li>CMake 3.25.3 through configure, install, package discovery, consumer build,
-  and execution.</li>
-</ul>
-<p>Current compiler and CMake versions are tested separately. Stable surfaces are
-also compiled and run without RTTI on every compiler family, using <code>-fno-rtti</code>
-or <code>/GR-</code>. Exact release cells and their results are recorded in the release
-evidence artifact, which bundles checksummed job logs recording the actual tool
-versions for each platform cell and retains the workflow-run URL as provenance.</p>
+</div>
 
 
 
@@ -2193,7 +2061,7 @@ versions for each platform cell and retains the workflow-run URL as provenance.<
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../roadmap/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Roadmap">
+          <a href="../guide/diagnostics/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Diagnostics guide">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2203,20 +2071,20 @@ versions for each platform cell and retains the workflow-run URL as provenance.<
                 Previous
               </span>
               <div class="md-ellipsis">
-                Roadmap
+                Diagnostics guide
               </div>
             </div>
           </a>
         
         
           
-          <a href="../for-agents/" class="md-footer__link md-footer__link--next" aria-label="Next: For agents">
+          <a href="../architecture/" class="md-footer__link md-footer__link--next" aria-label="Next: Architecture">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                For agents
+                Architecture
               </div>
             </div>
             <div class="md-footer__button md-icon">

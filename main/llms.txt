@@ -17,11 +17,16 @@ https://tess.owx.dev/for-agents/
   schedule, render bridge
 - [Installation](https://tess.owx.dev/packaging/): portable headers,
   FetchContent / find_package, supported include surface
+- [Tutorials](https://tess.owx.dev/tutorials/): connected learning paths for
+  basic routing, colony composition, strategy selection, and congestion
+  pricing
 - [Examples](https://tess.owx.dev/examples/): annotated self-checking
   example catalog
 - [Use cases](https://tess.owx.dev/use-cases/): robotics, agent-based
   modeling, and headless-server framings
-- [Concepts](https://tess.owx.dev/architecture/): normative design notes
+- [Reference](https://tess.owx.dev/reference/): architecture, terminology,
+  compatibility evidence, and generated API entry points
+- [Architecture](https://tess.owx.dev/architecture/): normative design notes
   per subsystem
 - [Performance](https://tess.owx.dev/performance/): measured medians and
   CI-enforced serial and worker-pool ceilings

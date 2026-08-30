@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The tess stability policy: the 1.x source-compatibility promise, archive format support, and the exclusions that bound both.">
+        <meta name="description" content="Follow tess learning paths for basic pathfinding, colony simulation, strategy selection, and congestion-aware movement.">
       
       
       
-        <link rel="canonical" href="https://tess.owx.dev/main/support/">
+        <link rel="canonical" href="https://tess.owx.dev/main/tutorials/">
       
       
-        <link rel="prev" href="../roadmap/">
+        <link rel="prev" href="../packaging/">
       
       
-        <link rel="next" href="../for-agents/">
+        <link rel="next" href="../examples/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Support - tess</title>
+        <title>Tutorials and Learning Paths - tess</title>
       
     
     
@@ -56,15 +56,15 @@
     
     <meta property="og:type" content="website">
   <meta property="og:site_name" content="tess">
-  <meta property="og:title" content="Support - tess">
-  <meta property="og:description" content="The tess stability policy: the 1.x source-compatibility promise, archive format support, and the exclusions that bound both.">
-  <meta property="og:url" content="https://tess.owx.dev/main/support/">
+  <meta property="og:title" content="Tutorials and Learning Paths - tess">
+  <meta property="og:description" content="Follow tess learning paths for basic pathfinding, colony simulation, strategy selection, and congestion-aware movement.">
+  <meta property="og:url" content="https://tess.owx.dev/main/tutorials/">
   <meta property="og:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1280">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Support - tess">
-  <meta name="twitter:description" content="The tess stability policy: the 1.x source-compatibility promise, archive format support, and the exclusions that bound both.">
+  <meta name="twitter:title" content="Tutorials and Learning Paths - tess">
+  <meta name="twitter:description" content="Follow tess learning paths for basic pathfinding, colony simulation, strategy selection, and congestion-aware movement.">
   <meta name="twitter:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
 
   </head>
@@ -86,7 +86,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#support-and-compatibility" class="md-skip">
+        <a href="#tutorials" class="md-skip">
           Skip to content
         </a>
       
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Support
+              Tutorials and Learning Paths
             
           </span>
         </div>
@@ -253,10 +253,12 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
+      <li class="md-tabs__item md-tabs__item--active">
         <a href="../getting-started/" class="md-tabs__link">
           
   
@@ -341,12 +343,10 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
+      <li class="md-tabs__item">
         <a href="../use-cases/" class="md-tabs__link">
           
   
@@ -436,8 +436,10 @@
       
   
   
+    
   
   
+  
     
     
       
@@ -453,19 +455,22 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
             
   
   
@@ -483,7 +488,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -554,10 +559,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../tutorials/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -573,6 +605,70 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#colony-simulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Colony simulation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pathfinding-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pathfinding strategies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#congestion-pricing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Congestion pricing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced-labs-and-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced labs and integrations
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1696,10 +1792,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -1719,22 +1813,19 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
@@ -1752,7 +1843,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1879,37 +1970,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Support
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../support/" class="md-nav__link">
         
   
   
@@ -1925,48 +1989,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#the-1x-compatibility-contract" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The 1.x compatibility contract
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#toolchain-floors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Toolchain floors
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -2034,10 +2056,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-1x-compatibility-contract" class="md-nav__link">
+  <a href="#colony-simulation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The 1.x compatibility contract
+        Colony simulation
       
     </span>
   </a>
@@ -2045,10 +2067,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#toolchain-floors" class="md-nav__link">
+  <a href="#pathfinding-strategies" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Toolchain floors
+        Pathfinding strategies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#congestion-pricing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Congestion pricing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced-labs-and-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced labs and integrations
       
     </span>
   </a>
@@ -2075,86 +2119,64 @@
   
 
 
-<h1 id="support-and-compatibility">Support and compatibility</h1>
-<p>Use <a href="https://github.com/kindjie/tess/discussions">GitHub Discussions</a> for
-adoption questions and design conversations. Use
-<a href="https://github.com/kindjie/tess/issues">GitHub Issues</a> for reproducible bugs
-and focused feature requests. Security reports should follow the repository's
-<a href="https://github.com/kindjie/tess/security/policy">security policy</a> rather than
-being filed publicly.</p>
-<p>All <code>0.x</code> releases are pre-stable. Public APIs and data layouts may change
-between minor versions while the design is validated. Release tags are the
-supported consumption points; pin a tag or commit rather than a branch. The
-<a href="../roadmap/">roadmap</a> records what is shipped, deferred, and out of scope.</p>
-<h2 id="the-1x-compatibility-contract">The 1.x compatibility contract</h2>
-<p>Within the 1.x release line, tess preserves source compatibility for:</p>
+<h1 id="tutorials">Tutorials</h1>
+<p>Start with the existing <a href="../getting-started/">getting-started tutorial</a>, then
+use the <a href="../demo/">live pathfinder</a> to change endpoints and obstacles while
+the same core query runs in WebAssembly. Together they are the basic
+pathfinding learning path; this page does not introduce a competing beginner
+sequence.</p>
+<h2 id="colony-simulation">Colony simulation</h2>
+<p>The colony family shows how focused agent movement grows into a complete
+fixed-step composition:</p>
+<ol>
+<li><a href="https://github.com/kindjie/tess/blob/main/examples/path_agents.cc"><code>path_agents.cc</code></a> isolates goal assignment, bounded planning,
+   movement, and blocked-path handling.</li>
+<li><a href="https://github.com/kindjie/tess/blob/main/examples/colony_2d.cc"><code>colony_2d.cc</code></a> adds queued construction, dirty-driven topology,
+   scheduling, and <code>DeltaFrame</code> presentation.</li>
+<li>The <a href="https://github.com/kindjie/tess/tree/main/examples/web_colony"><code>web_colony</code> host</a> compiles the same model for the
+   <a href="../demo/colony/">live colony</a> while keeping interpolation in the browser.</li>
+<li>The native model check exercises the composition without a renderer.</li>
+</ol>
+<p>Use this family when you want to understand the boundary between simulation
+state, retained paths, and presentation state.</p>
+<h2 id="pathfinding-strategies">Pathfinding strategies</h2>
+<p>The strategy family connects API call shape to measured workload shape:</p>
+<ol>
+<li><a href="https://github.com/kindjie/tess/blob/main/examples/pathfinding_strategies_model.cc"><code>pathfinding_strategies_model.cc</code></a> runs plain A*, exact route
+   caching, weighted batches, and shared-goal distance fields on one map.</li>
+<li>The <a href="../demo/strategies/">interactive comparison</a> exposes the paths and
+   reuse counters without treating browser timing as a benchmark.</li>
+<li>The <a href="../pathfinding-strategy-comparison/">strategy comparison article</a>
+   explains the decision boundary and links to the benchmark evidence.</li>
+</ol>
+<p>Use the <a href="../guide/pathfinding/">pathfinding decision guide</a> for a compact
+branch-by-branch choice after working through the comparison.</p>
+<h2 id="congestion-pricing">Congestion pricing</h2>
+<p>The congestion family keeps the supported recipe, evidence, and experimental
+lab visibly separate:</p>
+<ol>
+<li><a href="https://github.com/kindjie/tess/blob/main/examples/congestion_pricing.cc"><code>congestion_pricing.cc</code></a> is the focused public-API
+   recipe for a separate surcharge field and affected-route replanning.</li>
+<li>The <a href="https://github.com/kindjie/tess/tree/main/examples/web_congestion"><code>web_congestion</code> model</a> layers screened policies over
+   the colony model and retains a native self-check.</li>
+<li>The <a href="../guide/congestion/">congestion pricing guide</a> states which results
+   are supported, rejected, or experimental.</li>
+<li><a href="../demo/congestion/">Congestion Lab</a> makes those variants explorable.</li>
+</ol>
+<p>Congestion pricing changes route cost. Reservations, collision avoidance,
+and local steering remain separate coordination concerns.</p>
+<h2 id="advanced-labs-and-integrations">Advanced labs and integrations</h2>
+<p>These experiences are useful next steps, but do not need dedicated tutorials
+yet:</p>
 <ul>
-<li>documented APIs declared by <code>stable</code> and <code>optional-stable</code> headers;</li>
-<li>documented configuration macros;</li>
-<li>the <code>tess::tess</code> CMake target and installed-package entry points;</li>
-<li>portable release assets named <code>tess-&lt;version&gt;-headers.tar.gz</code> and <code>.zip</code>,
-  each rooted at <code>tess-&lt;version&gt;/</code> with the complete installed <code>include/tess/</code>
-  tree;</li>
-<li>direct membership of the stable aggregate headers; and</li>
-<li>archive format v2, including loading fixtures produced by earlier 1.x
-  releases.</li>
+<li><a href="../demo/congestion/">Congestion Lab</a> compares pricing policies.</li>
+<li><a href="../demo/traffic/">Traffic Lab</a> shows a large deterministic crowd workload.</li>
+<li><a href="../demo/tower/">Tower</a> explores one routed three-dimensional world.</li>
+<li><a href="../demo/webgpu/">WebGPU</a> demonstrates the optional GPU transport boundary,
+  not GPU pathfinding.</li>
 </ul>
-<p>The stable maintenance contract covers documented names and semantics in
-<code>tess/maintenance.h</code> and <code>tess/maintenance/</code>, including the immediate backend,
-registered handles and results, the structural backend boundary, and the
-external chunk adapter. It does not cover the experimental FIFO,
-queued-coalescing, dirty-bit, or virtual scheduler spellings, even when an
-application explicitly supplies one of those backend types to the stable
-facade.</p>
-<p>Direct aggregate membership remains unconditional. Existing aggregate types
-remain aggregates, and public data-member sets on existing stable types remain
-fixed, so constructors, hidden state, or fields cannot break aggregate or
-structured-binding users. Enumerator order is append-only. New overloads of an
-existing callable are excluded because they can make existing calls and
-address-taking ambiguous; additive behavior uses a distinctly named method,
-type, or entry point.</p>
-<p><code>cmake/tess-headers.json</code> is the machine-readable source of truth for header
-stability. Every installed header has exactly one classification:</p>
-<ul>
-<li><code>stable</code> headers form the dependency-free supported surface;</li>
-<li><code>optional-stable</code> headers are supported when the named third-party
-  integration is enabled;</li>
-<li><code>experimental</code> headers are installed for evaluation but may change or be
-  removed in any release; and</li>
-<li><code>implementation-only</code> headers are installed only because public templates
-  depend on them and must not be included directly.</li>
-</ul>
-<p>The contract does not cover ABI or object layout, binary compatibility,
-mixing tess versions or build-wide configurations across translation units,
-implementation names, or identity-token comparisons across dynamic-library
-boundaries. Rebuild all consuming translation units together with one tess
-version and one macro configuration.</p>
-<p>The current dense signatures for queued operations, field products, and PIBT
-are part of the stable source contract. Sparse support must arrive through new
-entry points rather than changing those signatures or adding ambiguous
-overloads.</p>
-<p>Compatibility is enforced in layers. Snapshots protect header classes, direct
-aggregate membership, and per-header documented public namespace-scope and
-<code>TESS_*</code> macro names. Installed and optional-integration builds, immutable
-source-consumer fixtures, archive fixtures, and release review cover C++
-semantics. The snapshot checker
-deliberately does not parse declaration signatures or model C++ semantics and
-is not represented as a complete proof of this policy.</p>
-<h2 id="toolchain-floors">Toolchain floors</h2>
-<p>The required language baseline is C++20. Release evidence continuously builds
-and runs the stable surface with:</p>
-<ul>
-<li>GCC 12 and Clang 16 on Ubuntu 24.04;</li>
-<li>AppleClang from Xcode 16.0 on macOS 15;</li>
-<li>MSVC 19.44 from Visual Studio 2022 17.14; and</li>
-<li>CMake 3.25.3 through configure, install, package discovery, consumer build,
-  and execution.</li>
-</ul>
-<p>Current compiler and CMake versions are tested separately. Stable surfaces are
-also compiled and run without RTTI on every compiler family, using <code>-fno-rtti</code>
-or <code>/GR-</code>. Exact release cells and their results are recorded in the release
-evidence artifact, which bundles checksummed job logs recording the actual tool
-versions for each platform cell and retains the workflow-run URL as provenance.</p>
+<p>The <a href="../examples/">examples catalog</a> groups every compiled model, lab, recipe,
+and optional integration by how it is best used.</p>
 
 
 
@@ -2193,7 +2215,7 @@ versions for each platform cell and retains the workflow-run URL as provenance.<
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../roadmap/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Roadmap">
+          <a href="../packaging/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Installation">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2203,20 +2225,20 @@ versions for each platform cell and retains the workflow-run URL as provenance.<
                 Previous
               </span>
               <div class="md-ellipsis">
-                Roadmap
+                Installation
               </div>
             </div>
           </a>
         
         
           
-          <a href="../for-agents/" class="md-footer__link md-footer__link--next" aria-label="Next: For agents">
+          <a href="../examples/" class="md-footer__link md-footer__link--next" aria-label="Next: Examples">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                For agents
+                Examples
               </div>
             </div>
             <div class="md-footer__button md-icon">
