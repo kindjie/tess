@@ -2565,10 +2565,14 @@ not include it.</p>
 also compiles the pinned real Dear ImGui core with its GLFW/OpenGL3 backends
 and smoke-tests a submitted WebGL2 frame at <code>/demo/diagnostics/</code>. Normal tess
 builds and packages remain dependency-free; only that integration artifact
-fetches ImGui. The demo keeps path, queue, and allocation counters frame-local,
-but merges each active frame's timing sample into the displayed history so the
-sample, average, minimum, and maximum columns remain meaningful even when the
-browser exposes a coarse monotonic clock.</p>
+fetches ImGui. The demo compiles the shared colony model and its host
+translation units under the same diagnostics gate. It keeps path, queue, and
+allocation counters frame-local, but merges each active frame's timing sample
+into the displayed history so the sample, average, minimum, and maximum
+columns remain meaningful even when the browser exposes a coarse monotonic
+clock. Allocation events are consumer-instrumented: a one-time presentation
+snapshot proves balanced capture, while reserved warm ticks may correctly
+remain zero.</p>
 <p>When diagnostics are enabled, <code>Schedule::run_tick</code> automatically records a
 <code>Scheduler</code> duration named <code>schedule_tick</code> and one nested duration named after
 each executed task. Installing <code>ScopedTrace</code> and, optionally,
@@ -2621,6 +2625,11 @@ One documented exception to bucket monotonicity exists: a produced
 result that later goes stale before retirement is reclassified from
 <code>completed</code> to <code>stale</code>. <code>FlowHealthSnapshot</code> packages the counters and
 both identity verdicts for tools without binding any UI toolkit.</p>
+<p>The colony diagnostics host attaches its accountant before admitting the
+first agent goal and observes it once per fixed tick. Its ImGui helper for
+<code>FlowHealthSnapshot</code> is example-local during the release-candidate cycle;
+tess adds no public panel API. This <abbr title="Admission, terminal-outcome, outstanding-inventory, residence, and bounded-work accounting for one work lifecycle; distinct from a pathfinding flow field.">lifecycle flow accounting</abbr> is distinct from
+a pathfinding <abbr title="Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr>, which would retain per-tile movement directions.</p>
 <h2 id="deliberate-limits">Deliberate Limits</h2>
 <p>Beyond the counters, warning sink, trace/timing, planner trace, snapshot export,
 and the opt-in ImGui panels and bounded tools above, this layer does not

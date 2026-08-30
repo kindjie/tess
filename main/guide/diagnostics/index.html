@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Enabling tess diagnostics: compile gates, counters, traces, and reading instrumentation without paying for it in release builds.">
+        <meta name="description" content="Enable tess diagnostics around a deterministic colony, capture counters and traces on their recording thread, and interpret lifecycle flow accounting.">
       
       
       
@@ -27,7 +27,7 @@
     
     
       
-        <title>Diagnostics guide - tess</title>
+        <title>Instrument a Real Colony Workload - tess</title>
       
     
     
@@ -56,15 +56,15 @@
     
     <meta property="og:type" content="website">
   <meta property="og:site_name" content="tess">
-  <meta property="og:title" content="Diagnostics guide - tess">
-  <meta property="og:description" content="Enabling tess diagnostics: compile gates, counters, traces, and reading instrumentation without paying for it in release builds.">
+  <meta property="og:title" content="Instrument a Real Colony Workload - tess">
+  <meta property="og:description" content="Enable tess diagnostics around a deterministic colony, capture counters and traces on their recording thread, and interpret lifecycle flow accounting.">
   <meta property="og:url" content="https://tess.owx.dev/main/guide/diagnostics/">
   <meta property="og:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1280">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Diagnostics guide - tess">
-  <meta name="twitter:description" content="Enabling tess diagnostics: compile gates, counters, traces, and reading instrumentation without paying for it in release builds.">
+  <meta name="twitter:title" content="Instrument a Real Colony Workload - tess">
+  <meta name="twitter:description" content="Enable tess diagnostics around a deterministic colony, capture counters and traces on their recording thread, and interpret lifecycle flow accounting.">
   <meta name="twitter:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
 
   </head>
@@ -86,7 +86,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#diagnostics" class="md-skip">
+        <a href="#instrument-a-real-colony-workload" class="md-skip">
           Skip to content
         </a>
       
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Diagnostics guide
+              Instrument a Real Colony Workload
             
           </span>
         </div>
@@ -1088,10 +1088,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#branches" class="md-nav__link">
+  <a href="#compile-the-whole-host-consistently" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Branches
+        Compile the whole host consistently
       
     </span>
   </a>
@@ -1099,10 +1099,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#learn-and-specify" class="md-nav__link">
+  <a href="#attach-lifecycle-accounting-before-admission" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Learn and specify
+        Attach lifecycle accounting before admission
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capture-on-the-recording-thread" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capture on the recording thread
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#read-allocation-zero-honestly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Read allocation zero honestly
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#other-branches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other branches
       
     </span>
   </a>
@@ -2158,10 +2191,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#branches" class="md-nav__link">
+  <a href="#compile-the-whole-host-consistently" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Branches
+        Compile the whole host consistently
       
     </span>
   </a>
@@ -2169,10 +2202,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#learn-and-specify" class="md-nav__link">
+  <a href="#attach-lifecycle-accounting-before-admission" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Learn and specify
+        Attach lifecycle accounting before admission
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capture-on-the-recording-thread" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capture on the recording thread
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#read-allocation-zero-honestly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Read allocation zero honestly
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#other-branches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other branches
       
     </span>
   </a>
@@ -2199,55 +2265,100 @@
   
 
 
-<h1 id="diagnostics">Diagnostics</h1>
-<p><strong>The decision:</strong> which build configurations compile the instrumentation
-in? This is a build-config choice, not an architecture one — shipping
-builds leave <code>TESS_ENABLE_DIAGNOSTICS</code> undefined and every counter,
-trace, and panel compiles to nothing.</p>
-<h2 id="branches">Branches</h2>
-<table>
-<thead>
-<tr>
-<th>Branch</th>
-<th>Pick when</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Off (default)</td>
-<td>shipping builds; zero overhead, zero surface</td>
-</tr>
-<tr>
-<td>Counters and warnings</td>
-<td>development builds tuning budgets: route-cache, field-product-cache, and weighted-batch statistics plus the warning sink</td>
-</tr>
-<tr>
-<td>Tracing and ImGui panels</td>
-<td>interactive tuning sessions; diagnostics panels ride both gates, and the host supplies Dear ImGui</td>
-</tr>
-</tbody>
-</table>
-<p>Counter types only exist when the gate is on, so guard call sites with
-the provided macros rather than <code>#ifdef</code>ing ad hoc. tess never links or
-fetches Dear ImGui itself — the panels are headers your ImGui-enabled
-host compiles.</p>
-<p>The <a href="../../demo/diagnostics/">live diagnostics demo</a> shows the
-complete integration: scoped counters and timers around real A* and queued
-work, snapshot capture on the recording thread, and the reference panels in a
-Dear ImGui GLFW/WebGL2 host. Its allocation panel is explicitly
-consumer-instrumented; it reports a demo-owned transient allocator, not hidden
-allocations inside tess scratch objects.</p>
-<p>World overview, chunk inspection, and boolean-field edit-intent helpers are
-also available from <code>tess/debug/imgui/tools.h</code>. They require only
-<code>TESS_ENABLE_IMGUI</code>, accept const worlds, and return edits for the application
-to validate and apply; they do not turn diagnostics on or mutate the world.</p>
-<h2 id="learn-and-specify">Learn and specify</h2>
+<h1 id="instrument-a-real-colony-workload">Instrument a real colony workload</h1>
+<p>Diagnostics answer what one real workload did; they should not replace it with
+a convenient synthetic loop. This tutorial compiles the shared 128×128 colony
+model in a separate diagnostics-enabled host, records its queued wall edits,
+bounded path planning, schedule timings, and goal lifecycle, then renders
+read-only snapshots.</p>
+<p><iframe
+  class="diagnostics-frame"
+  src="../../demo/diagnostics/"
+  title="Interactive colony diagnostics tutorial"
+  loading="lazy">
+  The diagnostics tutorial requires WebAssembly and WebGL2 support.
+</iframe>
+</p>
+<p><a class="md-button" href="../../demo/diagnostics/">Open the standalone diagnostics demo</a></p>
+<div class="admonition info">
+<p class="admonition-title">API used</p>
+<p><a href="https://tess.owx.dev/api/classtess_1_1diagnostics_1_1ScopedPathCounters.html"><code>tess::diagnostics::ScopedPathCounters</code></a> ·
+<a href="https://tess.owx.dev/api/structtess_1_1diagnostics_1_1DiagnosticsSnapshot.html"><code>tess::diagnostics::DiagnosticsSnapshot</code></a> ·
+<a href="https://tess.owx.dev/api/structtess_1_1diagnostics_1_1FlowAccounting.html"><code>tess::diagnostics::FlowAccounting</code></a> ·
+<a href="https://tess.owx.dev/api/structtess_1_1diagnostics_1_1FlowHealthSnapshot.html"><code>tess::diagnostics::FlowHealthSnapshot</code></a></p>
+</div>
+<h2 id="compile-the-whole-host-consistently">Compile the whole host consistently</h2>
+<p><code>TESS_ENABLE_DIAGNOSTICS</code> changes which counter types exist and which inline
+instrumentation sites execute. Define it for the target, not for one source
+file. The native self-check and WebAssembly host each compile both the
+diagnostics adapter and <code>web_colony/colony_model.cc</code> under the same definition.
+Shipping builds leave it undefined, so the counter and trace sites compile
+away.</p>
+<p>Dear ImGui remains consumer-owned. Only the browser artifact defines
+<code>TESS_ENABLE_IMGUI</code>, fetches the pinned Dear ImGui source, and includes tess's
+reference panels. Tess itself neither links nor fetches the UI toolkit.</p>
+<h2 id="attach-lifecycle-accounting-before-admission">Attach lifecycle accounting before admission</h2>
+<p>The colony constructor accepts one example-local <code>FlowAccounting</code> pointer and
+attaches it before <code>initialize_agents</code> admits the first goals. The model then
+records admission, completion, cancellation, failure, and supersession at the
+transition where each outcome becomes known. Reconstructing those histories
+from the current agent array would lose the distinction between outcomes.</p>
+<p>This is <strong><abbr title="Admission, terminal-outcome, outstanding-inventory, residence, and bounded-work accounting for one work lifecycle; distinct from a pathfinding flow field.">lifecycle flow accounting</abbr></strong>. It is not a pathfinding <abbr title="Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr>:</p>
 <ul>
-<li>Specify: <a href="../../architecture/diagnostics/">diagnostics note</a> — gates,
-  counters, trace buffers, warning sinks, panel embedding.</li>
-<li>Practical default: one <code>dev</code> preset with diagnostics on, shipping
-  presets without.</li>
+<li><abbr title="Admission, terminal-outcome, outstanding-inventory, residence, and bounded-work accounting for one work lifecycle; distinct from a pathfinding flow field.">lifecycle flow accounting</abbr> conserves admitted work through terminal and
+  outstanding buckets;</li>
+<li>a pathfinding <abbr title="Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr> retains per-tile movement directions toward a
+  destination.</li>
 </ul>
+<p>The demo shows both conservation identities:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>offered = admitted + rejected + coalesced
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>admitted = terminal outcomes + outstanding
+</code></pre></div>
+<p>It also shows the outstanding high-water mark, terminal outcomes, planning
+work, and the current inventory. A broken identity is a correctness failure,
+not a threshold warning.</p>
+<h2 id="capture-on-the-recording-thread">Capture on the recording thread</h2>
+<p>Path, queued-phase, allocation, and trace sinks are thread-local. The host
+installs the path, queued-phase, and trace scopes around one colony tick. It
+then installs the allocation scope separately around the consumer-owned
+presentation snapshot. After both operations destroy their scopes, the host
+calls <code>capture_diagnostics</code> and captures <code>FlowHealthSnapshot</code> at the same
+quiescent point. The snapshots are plain values that the render pass may read
+without touching a live sink.</p>
+<p>The first tick proves the complete workload:</p>
+<ol>
+<li>a queued wall edit executes and publishes dirty work;</li>
+<li>topology and bounded path planning run through the colony schedule;</li>
+<li>path and queued counters receive real events;</li>
+<li>scheduler and task duration spans reach the trace buffer;</li>
+<li>a consumer-owned presentation snapshot produces balanced allocation and
+   deallocation events;</li>
+<li>the goal accountant satisfies both conservation identities;</li>
+<li>Dear ImGui submits a non-empty frame.</li>
+</ol>
+<p>Pause freezes simulation ticks without fabricating new samples. Reset creates
+a fresh colony and a fresh accounting history. Editing the selected tile is a
+real queued colony operation, so the queued-work text changes only after the
+next fixed tick applies it.</p>
+<h2 id="read-allocation-zero-honestly">Read allocation zero honestly</h2>
+<p>Allocation diagnostics are consumer-instrumented. Tess does not intercept
+hidden allocations in an adopter's runtime. This demo records a bounded,
+consumer-owned presentation snapshot during readiness; after capacity has
+been reserved, ordinary warm ticks may correctly show zero allocations and
+zero frees. Zero is evidence about the installed hooks and measured interval,
+not a claim that every layer of the process allocated nothing.</p>
+<h2 id="other-branches">Other branches</h2>
+<ul>
+<li><strong>Diagnostics off:</strong> shipping builds need zero counter and trace surface.</li>
+<li><strong>Counters and traces:</strong> development builds need complete workload evidence.</li>
+<li><strong>Dear ImGui host:</strong> an interactive tool owns ImGui and renders snapshots.</li>
+</ul>
+<p>World overview, chunk inspection, and boolean edit-intent helpers remain
+available from <code>tess/debug/imgui/tools.h</code>. They accept const worlds and return
+application-owned edit intents; they do not grant the panel mutation
+authority.</p>
+<p>For the complete contracts and thread-local limits, read the
+<a href="../../architecture/diagnostics/">diagnostics architecture</a>.</p>
 
 
 
