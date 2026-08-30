@@ -191,6 +191,11 @@ jobs:
           python3 "$PUBLICATION_TOOL" check-doxygen-label \
             build/docs-api/docs/html/index.html \
             --label "$SELECTED_VERSION_LABEL"
+          if [ -f docs/doxygen-layout.xml ]; then
+            python3 \
+              build/publication/tools/check_doxygen_navigation.py \
+              build/docs-api/docs/html
+          fi
 
       - name: Build WebAssembly example
         env:

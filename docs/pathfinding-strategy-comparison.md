@@ -14,6 +14,14 @@ every path request genuinely independent? tess exposes a different call shape
 for each case, letting an application reuse only the work its own workload
 repeats.
 
+!!! info "API used"
+
+    [`tess::astar_path`][api-astar-path],
+    [`tess::cached_astar_path`][api-cached-astar-path],
+    [`tess::weighted_path_batch`][api-weighted-path-batch],
+    [`tess::DistanceFieldProduct`][api-distance-field-product], and
+    [`tess::FieldProductCache`][api-field-product-cache].
+
 !!! info "What a request means"
 
     A **request** is one path query: one start, one goal, and one resulting
@@ -483,3 +491,8 @@ its supporting contracts exist.
 [movement-screening]: https://github.com/kindjie/tess/blob/main/docs/planning/local-movement-resolution.md#evidence
 [execution-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md
 [spatial-coordination]: architecture/spatial-coordination.md
+[api-astar-path]: https://tess.owx.dev/api/classtess_1_1PathScratch.html#a7b7d735ab95ab0db2275b679188873b4
+[api-cached-astar-path]: https://tess.owx.dev/api/classtess_1_1PathScratch.html#aa95ff184a9767db00624e49b36b8d090
+[api-weighted-path-batch]: https://tess.owx.dev/api/classtess_1_1DistanceFieldScratch.html#a2578c1d6fe0cee9d288168f7d9821811
+[api-distance-field-product]: https://tess.owx.dev/api/classtess_1_1DistanceFieldProduct.html
+[api-field-product-cache]: https://tess.owx.dev/api/classtess_1_1FieldProductCache.html

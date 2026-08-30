@@ -549,6 +549,8 @@ jobs:
           tests/test_finalize_generated_pages.py
           tests/test_check_page_descriptions.py
           tests/test_docs_navigation.py
+          tests/test_check_doxygen_navigation.py
+          tests/test_doxygen_integration.py
           tests/test_measure_traffic_lab.py
           tests/test_browser_demo_resources.py
           tests/test_compatibility_snapshots.py

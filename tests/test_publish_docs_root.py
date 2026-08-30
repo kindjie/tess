@@ -118,10 +118,17 @@ def _make_pages_tree(root: Path) -> None:
     f'<link rel="canonical" href="{SITE}main/guide/">'
     "</head><body>"
     f'<a href="{SITE}api/">API</a>'
+    f'<a href="{SITE}api/class.html#member">Symbol</a>'
     f'<a href="{SITE}root-only/">root only</a>'
     "</body></html>",
   )
   _write(root / "main" / "api" / "index.html", _version_page("main", "api/"))
+  _write(
+    root / "main" / "api" / "class.html",
+    _version_page("main", "api/class.html").replace(
+      "</body>", '<div id="member"></div></body>'
+    ),
+  )
   _write(root / "dev" / "index.html", _version_page("dev"))
   # dev carries correct tree-local metadata; its escapes are the mkdocs
   # nav api link and one link to a page that only exists at the root.
@@ -558,6 +565,7 @@ def test_prepare_localizes_resolvable_anchors_and_preserves_escapes(
 
   main_guide = (tmp_path / "main" / "guide" / "index.html").read_text()
   assert 'href="/main/api/"' in main_guide
+  assert 'href="/main/api/class.html#member"' in main_guide
   assert f'href="{SITE}root-only/"' in main_guide
 
   frozen = (tmp_path / "0.13" / "index.html").read_text()

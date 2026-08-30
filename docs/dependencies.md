@@ -93,23 +93,28 @@ must accompany published results.
 
 ## Doxygen
 
+- Minimum version: `1.17.0`
 - Documentation: https://www.doxygen.nl/manual/
 - Repository and releases: https://github.com/doxygen/doxygen
 
 Optional, docs-only tool dependency for the opt-in `tess_docs` target
 (`TESS_BUILD_DOCS=ON`), which generates a local HTML API reference via
 CMake's `doxygen_add_docs`. Nothing in the library, tests, benchmarks,
-or normal CI requires it; `find_package(Doxygen REQUIRED)` runs only when the
-option is enabled. Local builds accept the installed version and are developed
-against Doxygen 1.17.0. The Pages workflow pins the official 1.17.0 Linux
-binary and verifies its published SHA-256 digest before extraction.
+or normal CI requires it; `find_package(Doxygen 1.17 REQUIRED)` runs only when
+the option is enabled. Local builds require Doxygen 1.17.0 or newer because
+the complete layout uses that schema. The Pages workflow pins the official
+1.17.0 Linux binary and verifies its published SHA-256 digest before
+extraction.
 Documentation-only `DOXYGEN_PREDEFINED` gates make the EnTT and Flecs
 adapters, diagnostics, ImGui panels, and WebGPU APIs visible in the reference
 without their third-party headers. The generated reference excludes
 `tess::detail`, omits per-member missing-comment warnings to match the
 repository's namespace-scope comment policy, and fails on remaining Doxygen
 warnings before its HTML is copied under `/api/` in the combined Pages
-artifact.
+artifact. `docs/doxygen-layout.xml` is the complete warning-clean layout for
+the pinned Pages version, extended with relative Docs, Learn, and Reference
+tabs. `tools/check_doxygen_navigation.py` validates those generated menu links
+and representative API pages before publication.
 
 ## Documentation site
 

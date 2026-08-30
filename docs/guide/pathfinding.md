@@ -12,6 +12,14 @@ and other headless spatial systems. It provides optimal unit-cost and weighted
 A* over caller-owned tile data, plus reuse strategies for workloads with many
 agents or repeated goals. It does not require an engine, renderer, or ECS.
 
+!!! info "API used"
+
+    [`tess::astar_path`][api-astar-path],
+    [`tess::cached_astar_path`][api-cached-astar-path],
+    [`tess::weighted_path_batch`][api-weighted-path-batch],
+    [`tess::DistanceFieldProduct`][api-distance-field-product], and
+    [`tess::FieldProductCache`][api-field-product-cache].
+
 ## Start with A*
 
 [Install tess](../packaging.md), include `<tess/pathfinding.h>`, define a world
@@ -171,3 +179,9 @@ const auto nearest = tess::nearest_target<World, PassableTag>(
     At planning time, callers can price congested tiles or set
     `equal_cost_tie_seed` to distribute routes of equal cost. See
     [simulation](../architecture/simulation.md).
+
+[api-astar-path]: https://tess.owx.dev/api/classtess_1_1PathScratch.html#a7b7d735ab95ab0db2275b679188873b4
+[api-cached-astar-path]: https://tess.owx.dev/api/classtess_1_1PathScratch.html#aa95ff184a9767db00624e49b36b8d090
+[api-weighted-path-batch]: https://tess.owx.dev/api/classtess_1_1DistanceFieldScratch.html#a2578c1d6fe0cee9d288168f7d9821811
+[api-distance-field-product]: https://tess.owx.dev/api/classtess_1_1DistanceFieldProduct.html
+[api-field-product-cache]: https://tess.owx.dev/api/classtess_1_1FieldProductCache.html

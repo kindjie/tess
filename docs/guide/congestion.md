@@ -13,6 +13,13 @@ the retained recipe and selected experimental policies; the numbers
 below come from 28 pre-registered experiment arms whose captures live
 in the repository's evidence records.
 
+!!! info "API used"
+
+    [`tess::movement::OverlayCost`][api-overlay-cost],
+    [`tess::PathAgentState`][api-path-agent-state],
+    [`tess::PathAgentRoutes`][api-path-agent-routes], and
+    [`tess::PathAgentReplanQueue`][api-path-agent-replan-queue].
+
 **Validated caller recipe.** Nearby-agent pricing was tested across
 seven scenarios, all 64 supported populations, and two platforms.
 
@@ -315,3 +322,8 @@ library behaviour.
 - `examples/congestion_pricing.cc` is the compile-checked, copyable
   implementation of the full protocol — signal, publish, replan
   scoping, and restore — against public APIs only.
+
+[api-overlay-cost]: https://tess.owx.dev/api/structtess_1_1movement_1_1OverlayCost.html
+[api-path-agent-state]: https://tess.owx.dev/api/structtess_1_1PathAgentState.html
+[api-path-agent-routes]: https://tess.owx.dev/api/structtess_1_1PathAgentRoutes.html
+[api-path-agent-replan-queue]: https://tess.owx.dev/api/classtess_1_1PathAgentReplanQueue.html
