@@ -570,6 +570,8 @@
       
         
       
+        
+      
     
     
     
@@ -763,6 +765,34 @@
     
   
     Flow-style steering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/colony-composition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Colony composition
   
 
     
@@ -2255,8 +2285,12 @@ and explicit at-goal and unreachable states.</p>
 <p>Use this path after basic pathfinding when many independent agents share a
 destination and retaining complete paths would duplicate guidance.</p>
 <h2 id="colony-simulation">Colony simulation</h2>
-<p>The colony family shows how focused agent movement grows into a complete
-fixed-step composition:</p>
+<p>The <a href="../tutorial/colony-composition/">colony composition tutorial</a> follows one
+fixed tick from queued wall edits through topology, bounded planning,
+movement, and <code>DeltaFrame</code> presentation. Its article-sized live view uses the
+same model as the full standalone demo.</p>
+<p>The wider colony family shows how focused agent movement grows into that
+complete fixed-step composition:</p>
 <ol>
 <li><a href="https://github.com/kindjie/tess/blob/main/examples/path_agents.cc"><code>path_agents.cc</code></a> isolates goal assignment, bounded planning,
    movement, and blocked-path handling.</li>

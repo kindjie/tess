@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Presenting tess worlds: DeltaFrame render bridging, versioned change sets, and keeping the renderer outside the simulation.">
+        <meta name="description" content="Build a fixed-step colony from queued terrain edits, dirty topology, bounded planning, joint movement, and versioned DeltaFrame presentation.">
       
       
       
-        <link rel="canonical" href="https://tess.owx.dev/main/guide/presentation/">
+        <link rel="canonical" href="https://tess.owx.dev/main/tutorial/colony-composition/">
       
       
-        <link rel="prev" href="../entities/">
+        <link rel="prev" href="../flow-steering/">
       
       
-        <link rel="next" href="../diagnostics/">
+        <link rel="next" href="../../examples/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Presentation - tess</title>
+        <title>Compose a Deterministic Colony - tess</title>
       
     
     
@@ -56,15 +56,15 @@
     
     <meta property="og:type" content="website">
   <meta property="og:site_name" content="tess">
-  <meta property="og:title" content="Presentation - tess">
-  <meta property="og:description" content="Presenting tess worlds: DeltaFrame render bridging, versioned change sets, and keeping the renderer outside the simulation.">
-  <meta property="og:url" content="https://tess.owx.dev/main/guide/presentation/">
+  <meta property="og:title" content="Compose a Deterministic Colony - tess">
+  <meta property="og:description" content="Build a fixed-step colony from queued terrain edits, dirty topology, bounded planning, joint movement, and versioned DeltaFrame presentation.">
+  <meta property="og:url" content="https://tess.owx.dev/main/tutorial/colony-composition/">
   <meta property="og:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1280">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Presentation - tess">
-  <meta name="twitter:description" content="Presenting tess worlds: DeltaFrame render bridging, versioned change sets, and keeping the renderer outside the simulation.">
+  <meta name="twitter:title" content="Compose a Deterministic Colony - tess">
+  <meta name="twitter:description" content="Build a fixed-step colony from queued terrain edits, dirty topology, bounded planning, joint movement, and versioned DeltaFrame presentation.">
   <meta name="twitter:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
 
   </head>
@@ -86,7 +86,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#presentation" class="md-skip">
+        <a href="#compose-a-deterministic-colony" class="md-skip">
           Skip to content
         </a>
       
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Presentation
+              Compose a Deterministic Colony
             
           </span>
         </div>
@@ -253,10 +253,12 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
+      <li class="md-tabs__item md-tabs__item--active">
         <a href="../../getting-started/" class="md-tabs__link">
           
   
@@ -275,13 +277,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
           
   
   
@@ -436,8 +436,10 @@
       
   
   
+    
   
   
+  
     
     
       
@@ -453,19 +455,22 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
             
   
   
@@ -483,7 +488,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -554,8 +559,10 @@
                 
   
   
+    
   
   
+  
     
     
       
@@ -570,18 +577,21 @@
     
       
       
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
         
           
-          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
             
   
   
@@ -599,7 +609,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -645,7 +655,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../tutorial/flow-steering/" class="md-nav__link">
+      <a href="../flow-steering/" class="md-nav__link">
         
   
   
@@ -670,10 +680,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../tutorial/colony-composition/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Colony composition
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -689,6 +726,103 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-five-stage-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The five-stage composition
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-admit-queued-world-edits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Admit queued world edits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-rebuild-topology-only-when-dirty" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Rebuild topology only when dirty
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-bound-planning-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Bound planning work
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-commit-movement-after-planning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Commit movement after planning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-publish-presentation-and-recover-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Publish presentation and recover gaps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-carry-into-your-own-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to carry into your own host
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -741,8 +875,6 @@
       
   
   
-    
-  
   
   
     
@@ -772,23 +904,20 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../" class="md-nav__link ">
+            <a href="../../guide/" class="md-nav__link ">
               
   
   
@@ -806,13 +935,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -832,7 +961,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../residency/" class="md-nav__link">
+      <a href="../../guide/residency/" class="md-nav__link">
         
   
   
@@ -860,7 +989,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../writes/" class="md-nav__link">
+      <a href="../../guide/writes/" class="md-nav__link">
         
   
   
@@ -888,7 +1017,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../pathfinding/" class="md-nav__link">
+      <a href="../../guide/pathfinding/" class="md-nav__link">
         
   
   
@@ -916,7 +1045,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../congestion/" class="md-nav__link">
+      <a href="../../guide/congestion/" class="md-nav__link">
         
   
   
@@ -944,7 +1073,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../topology/" class="md-nav__link">
+      <a href="../../guide/topology/" class="md-nav__link">
         
   
   
@@ -972,7 +1101,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../entities/" class="md-nav__link">
+      <a href="../../guide/entities/" class="md-nav__link">
         
   
   
@@ -997,37 +1126,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Presentation
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../guide/presentation/" class="md-nav__link">
         
   
   
@@ -1043,59 +1145,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#branches" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Branches
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-it-looks-like" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What it looks like
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#learn-and-specify" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Learn and specify
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1108,7 +1157,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../diagnostics/" class="md-nav__link">
+      <a href="../../guide/diagnostics/" class="md-nav__link">
         
   
   
@@ -2169,10 +2218,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#branches" class="md-nav__link">
+  <a href="#the-five-stage-composition" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Branches
+        The five-stage composition
       
     </span>
   </a>
@@ -2180,10 +2229,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-it-looks-like" class="md-nav__link">
+  <a href="#1-admit-queued-world-edits" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What it looks like
+        1. Admit queued world edits
       
     </span>
   </a>
@@ -2191,10 +2240,54 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#learn-and-specify" class="md-nav__link">
+  <a href="#2-rebuild-topology-only-when-dirty" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Learn and specify
+        2. Rebuild topology only when dirty
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-bound-planning-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Bound planning work
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-commit-movement-after-planning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Commit movement after planning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-publish-presentation-and-recover-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Publish presentation and recover gaps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-carry-into-your-own-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to carry into your own host
       
     </span>
   </a>
@@ -2221,68 +2314,170 @@
   
 
 
-<h1 id="presentation">Presentation</h1>
-<p><strong>The decision:</strong> does anything observe the world on a different cadence,
-thread, or process than the <abbr title="One fixed traversal of the sealed simulation schedule.">simulation tick</abbr>? If yes, publish versioned
-<code>DeltaFrame</code>s; if no, omit the render bridge — it is optional, and
-nothing else depends on it.</p>
-<h2 id="branches">Branches</h2>
-<table>
-<thead>
-<tr>
-<th>Branch</th>
-<th>Pick when</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Headless</td>
-<td>servers, batch experiments, tests: no observer exists, so skip <code>DeltaCollector</code> entirely</td>
-</tr>
-<tr>
-<td>DeltaFrame consumer</td>
-<td>any renderer, UI, or network mirror: the consumer owns shadow state, applies immutable versioned frames, and resynchronizes on gaps</td>
-</tr>
-</tbody>
-</table>
-<p>Consumers never rescan the world: frame records carry either individual
-changed tiles or box-granular dirty bounds, and the consumer re-reads
-the named tiles — or repaints the recorded box — from the authoritative
-world (or receives values over its own channel). Frame versions make
-missed frames detectable and recovery explicit rather than silent.</p>
-<h2 id="what-it-looks-like">What it looks like</h2>
-<!-- tess-snippet: getting-render-deltas source=examples/documentation.cc -->
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">tess</span><span class="o">::</span><span class="n">collect_tile_deltas</span><span class="p">(</span><span class="n">deltas</span><span class="p">,</span><span class="w"> </span><span class="n">world</span><span class="p">,</span><span class="w"> </span><span class="n">kTerrainDirty</span><span class="p">);</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">frame</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">deltas</span><span class="p">.</span><span class="n">publish</span><span class="p">();</span>
+<h1 id="compose-a-deterministic-colony">Compose a deterministic colony</h1>
+<p>The basic pathfinding tutorial answers one route query. A simulation has to
+decide when edits become visible, how much planning work one tick may perform,
+when movement commits, and how a renderer recovers if it misses a change.
+This tutorial follows those decisions through the existing 128×128 colony
+model. It does not change the model's coordinates, agent goals, or movement
+semantics.</p>
+<p><iframe
+  class="colony-frame"
+  src="../../demo/colony/?presentation=article"
+  title="Interactive colony composition tutorial"
+  loading="lazy">
+  The colony tutorial requires a browser with WebAssembly support.
+</iframe>
+</p>
+<p><a class="md-button" href="../../demo/colony/">Open the full colony demo</a></p>
+<p>The article view deliberately offers fewer controls. The standalone view keeps
+the complete 1–1,024-agent controls, strategy switches, wall clearing, and
+pointer painting. Both compile and run the same C++ model.</p>
+<div class="admonition info">
+<p class="admonition-title">API used</p>
+<p><a href="https://tess.owx.dev/api/classtess_1_1AutoExecTask.html"><code>tess::AutoExecTask</code></a> ·
+<a href="https://tess.owx.dev/api/classtess_1_1Schedule.html"><code>tess::Schedule</code></a> ·
+<a href="https://tess.owx.dev/api/classtess_1_1PathAgentReplanQueue.html"><code>tess::PathAgentReplanQueue</code></a> ·
+<a href="https://tess.owx.dev/api/classtess_1_1DeltaFrame.html"><code>tess::DeltaFrame</code></a></p>
+</div>
+<h2 id="the-five-stage-composition">The five-stage composition</h2>
+<p>One fixed tick has a single authority order:</p>
+<ol>
+<li>admit queued world edits;</li>
+<li>run a dirty-driven topology rebuild;</li>
+<li>spend the bounded path planning budget;</li>
+<li>perform the movement commit;</li>
+<li>publish <code>DeltaFrame</code> presentation and recovery data.</li>
+</ol>
+<p>That order is more important than any one task. Planning never observes a
+half-applied wall, movement never precedes the resulting topology update, and
+the renderer remains a consumer rather than another writer.</p>
+<h2 id="1-admit-queued-world-edits">1. Admit queued world edits</h2>
+<p>Pointer input asks the model to build or erase a wall. Admission is immediate,
+but accepted mutation waits for the schedule's <code>PreUpdate</code> phase. The model
+deduplicates a pending edit, refuses to build over an occupied tile, and queues
+one chunk-scoped operation. This gives every run the same edit/topology/move
+order even though browser events arrive between animation frames.</p>
+<!-- tess-snippet: colony-queued-edits source=examples/web_colony/colony_model.cc -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">auto</span><span class="w"> </span><span class="n">ColonyModel</span><span class="o">::</span><span class="n">Impl</span><span class="o">::</span><span class="n">set_wall</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">Coord3</span><span class="w"> </span><span class="n">coord</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">built</span><span class="p">)</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="c1">// Example: queue a world edit. Admission is synchronous, but mutation is</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="c1">// deferred to the PreUpdate AutoExec task so dirty publication, topology,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="c1">// and movement retain one deterministic schedule order.</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="c1">// JavaScript and the Wasm model run on one thread: no fixed tick can move</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="c1">// an agent between this admission check and the next PreUpdate build. Keep</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="c1">// the invariant every other colony writer already follows -- construction</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="c1">// never turns an occupied source into impassable terrain.</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">pending</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">find_if</span><span class="p">(</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="n">pending_walls</span><span class="p">.</span><span class="n">begin</span><span class="p">(),</span><span class="w"> </span><span class="n">pending_walls</span><span class="p">.</span><span class="n">end</span><span class="p">(),</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">      </span><span class="p">[</span><span class="n">coord</span><span class="p">](</span><span class="k">const</span><span class="w"> </span><span class="n">WallEdit</span><span class="o">&amp;</span><span class="w"> </span><span class="n">edit</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">edit</span><span class="p">.</span><span class="n">coord</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">coord</span><span class="p">;</span><span class="w"> </span><span class="p">});</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">effective</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pending</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">pending_walls</span><span class="p">.</span><span class="n">end</span><span class="p">()</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">                             </span><span class="o">?</span><span class="w"> </span><span class="n">pending</span><span class="o">-&gt;</span><span class="n">built</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">                             </span><span class="o">:</span><span class="w"> </span><span class="n">world</span><span class="p">.</span><span class="n">field</span><span class="o">&lt;</span><span class="n">ConstructionTag</span><span class="o">&gt;</span><span class="p">(</span><span class="n">coord</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">effective</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">built</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">built</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">world</span><span class="p">.</span><span class="n">field</span><span class="o">&lt;</span><span class="n">OccupancyTag</span><span class="o">&gt;</span><span class="p">(</span><span class="n">coord</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">pending</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">pending_walls</span><span class="p">.</span><span class="n">end</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">    </span><span class="n">pending</span><span class="o">-&gt;</span><span class="n">built</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">built</span><span class="p">;</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">  </span><span class="n">pending_walls</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">WallEdit</span><span class="p">{</span><span class="n">coord</span><span class="p">,</span><span class="w"> </span><span class="n">built</span><span class="p">});</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">chunk_key</span><span class="o">&lt;</span><span class="n">Shape</span><span class="o">&gt;</span><span class="p">(</span><span class="n">tess</span><span class="o">::</span><span class="n">chunk_coord</span><span class="o">&lt;</span><span class="n">Shape</span><span class="o">&gt;</span><span class="p">(</span><span class="n">coord</span><span class="p">));</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">  </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">ops</span><span class="p">.</span><span class="n">update_field</span><span class="p">(</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">      </span><span class="n">tess</span><span class="o">::</span><span class="n">DomainDesc</span><span class="o">::</span><span class="n">explicit_chunks</span><span class="p">({</span><span class="o">&amp;</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">}),</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">      </span><span class="n">tess</span><span class="o">::</span><span class="n">FieldAccessDesc</span><span class="p">{</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">kTerrainDirty</span><span class="p">.</span><span class="n">value</span><span class="p">,</span><span class="w"> </span><span class="n">kTerrainDirty</span><span class="p">},</span>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">      </span><span class="n">tess</span><span class="o">::</span><span class="n">WritePolicy</span><span class="o">::</span><span class="n">UniquePerChunk</span><span class="p">);</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="p">}</span>
 </code></pre></div>
 <!-- /tess-snippet -->
 
-<p>The frame <strong>borrows</strong> the collector's storage; it does not own it. Its
-spans stay valid until the next <code>publish()</code> or <code>reserve()</code> on that
-collector — apply the frame, or copy what you need out of it, before
-publishing again. Its <code>header</code> is a value and outlives all of that, which
-is why version and gap checks are safe to keep.</p>
-<p>A <code>DeltaCollector</code> is also not copyable, and a moved-from one behaves as
-if cleared: its next frame is truncated so your consumer resyncs rather
-than silently accepting an empty one. Reuse it by assigning a fresh
-collector, or by <code>clear()</code> and a baseline.</p>
-<p>That matters most for the branch this page recommends. "Different
-cadence, thread, or process" describes the <em>consumer</em>, not the frame: a
-<code>DeltaCollector</code> is externally synchronized like every other tess
-scratch, so what crosses a thread or socket is applied shadow state or a
-copy of the records — never the <code>DeltaFrame</code> itself, whose spans point
-into memory the simulation thread is about to refill. Holding a frame
-across a publish reads records that are being overwritten, and because
-that storage stays live and owned throughout, no sanitizer will flag it.</p>
-<h2 id="learn-and-specify">Learn and specify</h2>
-<ul>
-<li>Teach: <a href="../../getting-started/">getting-started §8</a>, rung 8;
-  <code>examples/render_delta_consumer.cc</code> rebuilds a shadow grid from frames
-  alone, and <code>examples/colony_2d.cc</code> shows the bridge inside a full
-  schedule loop.</li>
-<li>Specify: <a href="../../architecture/simulation/">simulation note</a> — collection,
-  publication, versioning, resync.</li>
-</ul>
+<p>The browser remembers only wall commands that the model admitted. That is
+presentation convenience across reset, not permission for JavaScript to own
+occupancy or terrain truth.</p>
+<h2 id="2-rebuild-topology-only-when-dirty">2. Rebuild topology only when dirty</h2>
+<p>The build task marks the terrain dirty. A <code>Pathing</code> task with an <code>OnDirty</code>
+cadence then collects exactly the affected chunks and incrementally refreshes
+the region graph. No terrain change means no topology work.</p>
+<!-- tess-snippet: colony-schedule-order source=examples/web_colony/colony_model.cc -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">schedule</span><span class="p">.</span><span class="n">reserve_tasks</span><span class="p">(</span><span class="mi">3</span><span class="p">);</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">schedule</span><span class="p">.</span><span class="n">add_task</span><span class="p">(</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="p">{</span><span class="s">&quot;build&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">SimPhase</span><span class="o">::</span><span class="n">PreUpdate</span><span class="p">,</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">Cadence</span><span class="o">::</span><span class="n">every_tick</span><span class="p">()},</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="o">*</span><span class="n">build_task</span><span class="p">);</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">schedule</span><span class="p">.</span><span class="n">add_task</span><span class="p">({</span><span class="s">&quot;topology&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">SimPhase</span><span class="o">::</span><span class="n">Pathing</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">                         </span><span class="n">tess</span><span class="o">::</span><span class="n">Cadence</span><span class="o">::</span><span class="n">on_dirty</span><span class="p">(</span><span class="n">kTerrainDirty</span><span class="p">)},</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">                        </span><span class="n">topology_task</span><span class="p">);</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="c1">// Pathing follows PreUpdate in the same fixed tick, so walls built above</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="c1">// refresh topology before the Movement task can plan against them.</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">schedule</span><span class="p">.</span><span class="n">add_task</span><span class="p">(</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="p">{</span><span class="s">&quot;agents&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">SimPhase</span><span class="o">::</span><span class="n">Movement</span><span class="p">,</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">Cadence</span><span class="o">::</span><span class="n">every_tick</span><span class="p">()},</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="n">agent_task</span><span class="p">);</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="n">schedule</span><span class="p">.</span><span class="n">seal</span><span class="p">();</span>
+</code></pre></div>
+<!-- /tess-snippet -->
+
+<p>A topology revision also invalidates route-selection snapshots and requests
+canonical replans. This is why dirty tracking is correctness state rather than
+merely an optimization hint.</p>
+<h2 id="3-bound-planning-work">3. Bound planning work</h2>
+<p>New and invalidated goals enter caller-owned queues. The retained-route modes
+admit at most eight exact queries per fixed tick across the optional
+route-spreading queues, canonical replans, and recovery probes. A count budget
+does not cap the cost of one search, but it prevents an unbounded number of
+searches from landing in one tick.</p>
+<p>The standalone <code>replan every tick</code> comparison deliberately drops retained
+routes and synchronously queries every active agent. In that mode, the
+eight-query limit applies only to recovery classification, not the all-agent
+comparison pass.</p>
+<p>Agents whose query has not reached the front of the FIFO wait with textual
+<code>pending plans</code> state. The model never fabricates a path to keep the picture
+moving.</p>
+<h2 id="4-commit-movement-after-planning">4. Commit movement after planning</h2>
+<p>The movement task consumes retained routes only after the planning stage. Its
+joint movement pass resolves chains and rotations together and deliberately
+permits swaps for these point-like colonists. Occupancy and reservation writes
+commit inside that pass.</p>
+<p>The policy is part of this example's agent semantics, not a universal claim
+about collision avoidance. A production game with physical bodies may forbid
+swaps or add a separate local-avoidance layer.</p>
+<h2 id="5-publish-presentation-and-recover-gaps">5. Publish presentation and recover gaps</h2>
+<p>After scheduled ticks, the model collects dirty terrain into a versioned
+<code>DeltaFrame</code>. A frame is invalidation: the consumer re-reads authoritative
+world values for covered coordinates. If the consumer version cannot accept
+an incremental frame, continuing with later deltas would preserve a gap, so
+the model publishes a complete baseline instead.</p>
+<!-- tess-snippet: colony-delta-recovery source=examples/web_colony/colony_model.cc -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kt">void</span><span class="w"> </span><span class="nf">ColonyModel::Impl::publish_render_frame</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="n">tess</span><span class="o">::</span><span class="n">collect_tile_deltas</span><span class="p">(</span><span class="n">deltas</span><span class="p">,</span><span class="w"> </span><span class="n">world</span><span class="p">,</span><span class="w"> </span><span class="n">kTerrainDirty</span><span class="p">);</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">consume_frame</span><span class="p">(</span><span class="n">deltas</span><span class="p">.</span><span class="n">publish</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="c1">// Example: recover a rejected DeltaFrame. A version gap or truncation is</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="c1">// structural, so skipping it and resuming incrementals cannot repair the</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="c1">// shadow. Publish a complete baseline and adopt its version instead.</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="n">tess</span><span class="o">::</span><span class="n">collect_baseline</span><span class="p">(</span><span class="n">deltas</span><span class="p">,</span><span class="w"> </span><span class="n">world</span><span class="p">,</span><span class="w"> </span><span class="n">kTerrainDirty</span><span class="p">);</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">consume_frame</span><span class="p">(</span><span class="n">deltas</span><span class="p">.</span><span class="n">publish</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="n">TESS_ASSERT</span><span class="p">(</span><span class="nb">false</span><span class="p">);</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="p">}</span>
+</code></pre></div>
+<!-- /tess-snippet -->
+
+<p>Agent drawing uses a parallel presentation boundary. C++ snapshots the
+previous and current integer-tile positions around each fixed tick and exports
+the accumulator alpha. JavaScript interpolates those read-only endpoints onto
+a responsive high-DPI canvas. Fractional coordinates are browser-only
+presentation state: they never feed back into goals, occupancy, pathfinding,
+or the next <abbr title="One fixed traversal of the sealed simulation schedule.">simulation tick</abbr>.</p>
+<h2 id="what-to-carry-into-your-own-host">What to carry into your own host</h2>
+<p>Keep one explicit order from accepted writes to derived topology, bounded
+planning, movement, and presentation. Give render consumers a version and a
+baseline recovery path. Finally, separate smooth drawing from simulation
+truth: interpolation can be discarded and recreated without changing the
+colony outcome.</p>
 
 
 
@@ -2321,7 +2516,7 @@ that storage stays live and owned throughout, no sanitizer will flag it.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../entities/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Entities and ECS">
+          <a href="../flow-steering/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Flow-style steering">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2331,20 +2526,20 @@ that storage stays live and owned throughout, no sanitizer will flag it.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Entities and ECS
+                Flow-style steering
               </div>
             </div>
           </a>
         
         
           
-          <a href="../diagnostics/" class="md-footer__link md-footer__link--next" aria-label="Next: Diagnostics guide">
+          <a href="../../examples/" class="md-footer__link md-footer__link--next" aria-label="Next: Examples">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Diagnostics guide
+                Examples
               </div>
             </div>
             <div class="md-footer__button md-icon">
