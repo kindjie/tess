@@ -26,6 +26,7 @@ do not expand that set.
 
 <iframe class="sparse-stream-frame"
   src="../../demo/sparse-stream/"
+  aria-label="Interactive procedural sparse-stream tutorial"
   title="Interactive procedural sparse-stream tutorial">
   <p>Your browser cannot embed this example.
     <a href="../../demo/sparse-stream/">Open the sparse-stream example in a

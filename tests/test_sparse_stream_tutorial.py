@@ -137,6 +137,7 @@ def test_tutorial_teaches_the_supported_boundary_and_production_extensions():
   assert 'class="sparse-stream-frame"' in tutorial
   assert 'src="../../demo/sparse-stream/"' in tutorial
   assert 'title="Interactive procedural sparse-stream tutorial"' in tutorial
+  assert 'aria-label="Interactive procedural sparse-stream tutorial"' in tutorial
   assert "Open the sparse-stream example in a separate page" in tutorial
   assert "sparse-stream-residency-order" in model
   assert ".sparse-stream-frame" in styles
