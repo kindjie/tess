@@ -78,6 +78,48 @@ em++ \
   -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
   -o "$flow_steering/tess-flow-steering.js"
 
+# Procedural sparse stream: a bounded large world with a 32-page LRU set,
+# published under $output/sparse-stream/.
+sparse_stream="$output/sparse-stream"
+mkdir -p "$sparse_stream"
+cp "$root/examples/web_sparse_stream/site/index.html" "$sparse_stream/"
+cp "$root/examples/web_sparse_stream/site/style.css" "$sparse_stream/"
+cp "$root/examples/web_sparse_stream/site/app.js" "$sparse_stream/"
+cp "$root/examples/web_pathfinder/site/favicon.svg" "$sparse_stream/"
+cp "$root/docs/assets/tess-logo-dark.svg" "$sparse_stream/logo.svg"
+
+sparse_exports='["_tess_sparse_reset","_tess_sparse_tick"'
+sparse_exports+=',"_tess_sparse_status","_tess_sparse_camera_chunk_x"'
+sparse_exports+=',"_tess_sparse_camera_chunk_y","_tess_sparse_resident_count"'
+sparse_exports+=',"_tess_sparse_capacity","_tess_sparse_required_count"'
+sparse_exports+=',"_tess_sparse_new_count","_tess_sparse_retained_count"'
+sparse_exports+=',"_tess_sparse_evicted_count","_tess_sparse_required_chunk_x"'
+sparse_exports+=',"_tess_sparse_required_chunk_y","_tess_sparse_new_chunk_x"'
+sparse_exports+=',"_tess_sparse_new_chunk_y","_tess_sparse_retained_chunk_x"'
+sparse_exports+=',"_tess_sparse_retained_chunk_y"'
+sparse_exports+=',"_tess_sparse_evicted_chunk_x"'
+sparse_exports+=',"_tess_sparse_evicted_chunk_y","_tess_sparse_agent_count"'
+sparse_exports+=',"_tess_sparse_agent_x","_tess_sparse_agent_y"'
+sparse_exports+=',"_tess_sparse_agent_goal_x","_tess_sparse_agent_goal_y"'
+sparse_exports+=',"_tess_sparse_agent_status","_tess_sparse_step_count"]'
+
+em++ \
+  -std=c++20 \
+  -O3 \
+  -DNDEBUG \
+  -I"$root/include" \
+  -I"$config/generated/include" \
+  "$root/examples/web_sparse_stream/sparse_stream_model.cc" \
+  "$root/examples/web_sparse_stream/sparse_stream_wasm.cc" \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sENVIRONMENT=web \
+  -sFILESYSTEM=0 \
+  -sMODULARIZE=1 \
+  -sEXPORT_NAME=createTessSparseStream \
+  -sEXPORTED_FUNCTIONS="$sparse_exports" \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
+  -o "$sparse_stream/tess-sparse-stream.js"
+
 # Pathfinding strategy comparison: the native example's shared C++ model with
 # a read-only browser adapter, published under $output/strategies/.
 strategies="$output/strategies"

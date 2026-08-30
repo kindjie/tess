@@ -29,6 +29,34 @@ target_link_libraries(tess_documentation PRIVATE tess::tess)
 tess_apply_project_options(tess_documentation)
 
 add_executable(
+  tess_web_sparse_stream_model
+  web_sparse_stream/sparse_stream_model.cc
+  web_sparse_stream/sparse_stream_native.cc
+)
+target_link_libraries(tess_web_sparse_stream_model PRIVATE tess::tess)
+tess_apply_project_options(tess_web_sparse_stream_model)
+if(BUILD_TESTING)
+  add_test(
+    NAME tess_web_sparse_stream_self_check
+    COMMAND tess_web_sparse_stream_model
+  )
+  set_tests_properties(
+    tess_web_sparse_stream_self_check
+    PROPERTIES
+      LABELS "target:tess_web_sparse_stream_model;subsystem:path;subsystem:storage"
+      PASS_REGULAR_EXPRESSION "procedural sparse stream model: ok"
+  )
+endif()
+
+add_library(
+  tess_web_sparse_stream_wasm_adapter OBJECT
+  web_sparse_stream/sparse_stream_model.cc
+  web_sparse_stream/sparse_stream_wasm.cc
+)
+target_link_libraries(tess_web_sparse_stream_wasm_adapter PRIVATE tess::tess)
+tess_apply_project_options(tess_web_sparse_stream_wasm_adapter)
+
+add_executable(
   tess_web_flow_steering_model
   web_flow_steering/flow_steering_model.cc
   web_flow_steering/flow_steering_native.cc

@@ -56,6 +56,16 @@ Use it after the colony composition tutorial when you need to distinguish
 instrumentation counters from lifecycle conservation and from pathfinding
 flow fields.
 
+## Procedural sparse streaming
+
+The [procedural sparse-stream tutorial](tutorial/procedural-sparse-stream.md)
+holds a large bounded world to 32 resident pages. Its shared native and Wasm
+model demonstrates deterministic chunk generation, an ordered 5×5 camera
+window update, LRU eviction, and agents that retry indeterminate routes.
+
+Use it after basic pathfinding and the residency guide when a complete dense
+world would exceed the available memory budget.
+
 ## Pathfinding strategies
 
 The strategy family connects API call shape to measured workload shape:

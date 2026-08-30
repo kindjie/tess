@@ -445,6 +445,9 @@ jobs:
           cp -R "$GITHUB_WORKSPACE/build/generated/demo" docs/demo
           test -f docs/api/index.html
           test -d docs/demo/colony
+          if [[ -d examples/web_sparse_stream ]]; then
+            test -d docs/demo/sparse-stream
+          fi
           if [[ -d examples/web_flow_steering ]]; then
             test -d docs/demo/flow-steering
           fi

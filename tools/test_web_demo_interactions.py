@@ -849,6 +849,147 @@ def test_diagnostics(
       raise RuntimeError(f"diagnostics tutorial iframe diverged: {embedded}")
 
 
+def test_sparse_stream(
+  browser: str,
+  base_url: str,
+  docs_url: str,
+  timeout: float,
+) -> None:
+  """Verify bounded residency, camera following, controls, and embedding."""
+  url = f"{base_url.rstrip('/')}/sparse-stream/?browser-test=1"
+  with open_page(browser, url, 1366, 768, timeout) as page:
+    page.wait_for(
+      "document.documentElement.dataset.tessSparseStream === 'ready'"
+    )
+    initial = page.evaluate(
+      "(() => ({"
+      "snapshot: window.tessSparseStreamTest.snapshot(),"
+      "label: document.querySelector('#pause').textContent.trim(),"
+      "keyboard: [...document.querySelectorAll('button')].every("
+      "(control) => control.tabIndex >= 0 && !control.disabled),"
+      "text: document.querySelector('#residency-status').textContent,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth"
+      "}))()"
+    )
+    if (
+      not isinstance(initial, dict)
+      or initial["snapshot"]["step"] != 0
+      or initial["snapshot"]["required"] != 25
+      or initial["snapshot"]["newly"] != 25
+      or initial["snapshot"]["resident"] != 25
+      or initial["snapshot"]["capacity"] != 32
+      or initial["snapshot"]["status"] != 0
+      or initial["label"] != "Start"
+      or not initial["keyboard"]
+      or not initial["noOverflow"]
+      or "required" not in initial["text"].lower()
+      or "evicted" not in initial["text"].lower()
+    ):
+      raise RuntimeError(f"sparse stream initial state diverged: {initial}")
+
+    page.evaluate("document.querySelector('#pause').focus()")
+    press_enter(page)
+    page.wait_for("window.tessSparseStreamTest.snapshot().step > 0")
+    press_enter(page)
+    before = page.evaluate("window.tessSparseStreamTest.snapshot()")
+    after = page.evaluate("window.tessSparseStreamTest.step(72)")
+    if (
+      not isinstance(after, dict)
+      or after["step"] <= before["step"]
+      or after["cameraX"] <= initial["snapshot"]["cameraX"]
+      or after["newly"] <= 0
+      or after["evicted"] <= 0
+      or after["resident"] > after["capacity"]
+      or after["required"] != 25
+      or after["waiting"] < 0
+      or after["moving"] + after["waiting"] + after["atGoal"] != 4
+    ):
+      raise RuntimeError(f"sparse stream transition diverged: {after}")
+
+    page.evaluate("document.querySelector('#reset').focus()")
+    press_enter(page)
+    page.wait_for("window.tessSparseStreamTest.snapshot().step === 0")
+
+  with open_page(browser, url, 390, 844, timeout) as page:
+    page.command(
+      "Emulation.setEmulatedMedia",
+      {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]},
+    )
+    page.command("Page.reload", {"ignoreCache": True})
+    page.wait_for(
+      "document.documentElement.dataset.tessSparseStream === 'ready'"
+    )
+    time.sleep(0.4)
+    reduced = page.evaluate(
+      "(() => ({"
+      "step: window.tessSparseStreamTest.snapshot().step,"
+      "label: document.querySelector('#pause').textContent.trim(),"
+      "matches: matchMedia("
+      "'(prefers-reduced-motion: reduce)').matches,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth"
+      "}))()"
+    )
+    if (
+      not isinstance(reduced, dict)
+      or reduced["step"] != 0
+      or reduced["label"] != "Step"
+      or not reduced["matches"]
+      or not reduced["noOverflow"]
+    ):
+      raise RuntimeError(f"sparse stream reduced motion diverged: {reduced}")
+    page.evaluate("document.querySelector('#pause').click()")
+    page.wait_for("window.tessSparseStreamTest.snapshot().step === 1")
+
+  with open_page(browser, url, 844, 390, timeout) as page:
+    page.wait_for(
+      "document.documentElement.dataset.tessSparseStream === 'ready'"
+    )
+    landscape = page.evaluate(
+      "(() => ({"
+      "needsScroll: document.documentElement.scrollHeight > innerHeight,"
+      "canScroll: getComputedStyle(document.documentElement).overflowY !== "
+      "'hidden',"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth"
+      "}))()"
+    )
+    if (
+      not isinstance(landscape, dict)
+      or not landscape["needsScroll"]
+      or not landscape["canScroll"]
+      or not landscape["noOverflow"]
+    ):
+      raise RuntimeError(
+        f"sparse stream landscape scrolling diverged: {landscape}"
+      )
+    page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
+    page.wait_for("scrollY > 0")
+
+  tutorial_url = f"{docs_url.rstrip('/')}/tutorial/procedural-sparse-stream/"
+  with open_page(browser, tutorial_url, 390, 844, timeout) as page:
+    page.wait_for(
+      "document.querySelector('.sparse-stream-frame')?.contentDocument?."
+      "documentElement.dataset.tessSparseStream === 'ready'"
+    )
+    embedded = page.evaluate(
+      "(() => {"
+      "const frame = document.querySelector('.sparse-stream-frame');"
+      "const root = frame.contentDocument?.documentElement;"
+      "const frameOverflow = root ? "
+      "root.scrollWidth > root.clientWidth || "
+      "root.scrollHeight > root.clientHeight : true;"
+      "return {title: frame.title, frameOverflow,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth};"
+      "})()"
+    )
+    if (
+      not isinstance(embedded, dict)
+      or embedded["title"] != "Interactive procedural sparse-stream tutorial"
+      or embedded["frameOverflow"]
+      or not embedded["noOverflow"]
+    ):
+      raise RuntimeError(f"sparse stream tutorial iframe diverged: {embedded}")
+
+
 def test_docs_homepage(
   browser: str,
   docs_url: str,
@@ -1002,6 +1143,9 @@ def main() -> int:
     args.browser, args.base_url, args.docs_url, args.timeout
   )
   test_diagnostics(
+    args.browser, args.base_url, args.docs_url, args.timeout
+  )
+  test_sparse_stream(
     args.browser, args.base_url, args.docs_url, args.timeout
   )
   test_traffic_layout(

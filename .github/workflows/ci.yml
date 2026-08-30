@@ -234,11 +234,11 @@ jobs:
             echo "::endgroup::"
             ran=$((ran + 1))
           done
-          # EXACT, not a floor: the dev preset builds 22 examples, and a
+          # EXACT, not a floor: the dev preset builds 24 examples, and a
           # floor of 13 passed while one of them silently stopped building.
           # Bump this when adding an example -- a failure here means either
           # a new example or a missing one, and both want a human.
-          test "$ran" -eq 23
+          test "$ran" -eq 24
 
       # Documented example output is copied from real program runs; drift
       # between the docs and the compiled quickstart fails the build.
@@ -475,8 +475,8 @@ jobs:
             ran=$((ran + 1))
           done
           # This preset disables the two optional ECS integrations, so its
-          # controlled inventory is the other 21 example executables.
-          test "$ran" -eq 21
+          # controlled inventory is the other 22 example executables.
+          test "$ran" -eq 22
 
       - name: Exception-free installed consumer
         env:
@@ -554,6 +554,7 @@ jobs:
           tests/test_flow_steering_tutorial.py
           tests/test_colony_tutorial.py
           tests/test_colony_diagnostics.py
+          tests/test_sparse_stream_tutorial.py
           tests/test_measure_traffic_lab.py
           tests/test_browser_demo_resources.py
           tests/test_compatibility_snapshots.py
