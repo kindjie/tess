@@ -674,7 +674,7 @@ def test_flow_steering(
     )
     if (
       not isinstance(embedded, dict)
-      or embedded["title"] != "Interactive flow-style steering tutorial"
+      or embedded["title"] != "Interactive flow field steering tutorial"
       or embedded["frameOverflow"]
       or not embedded["noOverflow"]
     ):
