@@ -373,7 +373,9 @@ def test_flow_steering(
       "document.querySelector('#announcement').textContent.includes("
       "'whole-number coordinates')"
     )
-    time.sleep(0.4)
+    time.sleep(0.2)
+    page.evaluate("window.dispatchEvent(new Event('resize'))")
+    time.sleep(0.2)
     rejection = page.evaluate(
       "(() => ({"
       "summary: document.querySelector('#summary').textContent,"

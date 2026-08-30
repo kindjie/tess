@@ -44,7 +44,7 @@ there is no route through the currently passable topology. Both states hold
 the agent and appear in the textual status beneath the canvas.
 
 For a unit-cost orthogonal world, a legal move must have a distance exactly
-one less than the current cell. Merely choosing the smallest neighbouring
+one less than the current tile. Merely choosing the smallest neighbouring
 number would hide the invariant this example is meant to teach.
 
 The compiled model uses north, east, south, then west as its fixed direction
@@ -95,14 +95,14 @@ for (auto& agent : impl_->agents) {
 <!-- /tess-snippet -->
 
 This is on-demand next-step selection, not complete-path reconstruction. The
-agent stores only its current cell and state. A complete path remains useful
+agent stores only its current tile and state. A complete path remains useful
 when a consumer needs to inspect, reserve, serialize, or compare the whole
 route before movement begins.
 
 ## Distance labels are not retained directions
 
 A retained direction field stores the chosen outgoing direction at every
-cell. That saves neighbour reads during movement, but consumes additional
+tile. That saves neighbour reads during movement, but consumes additional
 memory and bakes one tie policy into the product. Retaining directions becomes
 worthwhile when very large agent counts repeatedly read an unchanged field
 and profiling shows that next-step selection matters.
@@ -114,14 +114,19 @@ promise that all distant labels can remain materialized.
 
 ## Weighted costs change the equality
 
-The “one less” rule depends on every move costing one. In a weighted world,
-a valid descent satisfies the entry-cost Bellman equality:
+The “one less” rule depends on every move costing one. In the general weighted
+case, a valid descent satisfies the transition-cost Bellman equality:
 
-`current_distance = entry_cost(neighbour) + neighbour_distance`
+`current_distance = transition_cost(current, neighbour) + neighbour_distance`
+
+For the default orthogonal entry-cost model,
+`transition_cost(current, neighbour)` is `entry_cost(neighbour)`, so the rule
+specializes to the entry-cost Bellman equality.
 
 Use the same cost convention that built the product; do not simply choose the
-smallest label. That equality proves the selected edge lies on a minimum-cost
-continuation.
+smallest label. Diagonal step multipliers and provider-defined edges are part
+of that transition cost. The equality proves the selected edge lies on a
+minimum-cost continuation.
 
 ## Guidance is only one layer
 

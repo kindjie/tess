@@ -24,6 +24,7 @@ let api;
 let paused = true;
 let lastStep = 0;
 let stepCount = 0;
+let visibleNotice = "";
 
 function bind(module, name, result, arguments_) {
   return module.cwrap(`tess_flow_${name}`, result, arguments_);
@@ -37,6 +38,7 @@ function setPauseLabel() {
 
 function reportGoalRejection(message) {
   paused = true;
+  visibleNotice = message;
   setPauseLabel();
   summary.textContent = message;
   announcement.textContent = message;
@@ -123,7 +125,8 @@ function draw() {
   movingStatus.textContent = `Moving: ${moving}`;
   goalStatus.textContent = `At goal: ${atGoal}`;
   unreachableStatus.textContent = `Unreachable: ${unreachable}`;
-  summary.textContent = `Goal (${goalX}, ${goalY}) · step ${stepCount}`;
+  summary.textContent = visibleNotice ||
+    `Goal (${goalX}, ${goalY}) · step ${stepCount}`;
   document.documentElement.dataset.step = String(stepCount);
 }
 
@@ -176,6 +179,7 @@ function chooseGoal(x, y, announceChange = true) {
       button.dataset.goalPreset === `${x},${y}` ? "true" : "false");
   }
   stepCount = 0;
+  visibleNotice = "";
   draw();
   if (announceChange) {
     announcement.textContent = `Goal changed to (${x}, ${y}).`;
@@ -184,16 +188,22 @@ function chooseGoal(x, y, announceChange = true) {
 
 pauseButton.addEventListener("click", () => {
   if (reducedMotion.matches) {
+    visibleNotice = "";
     tick();
     return;
   }
   paused = !paused;
+  if (!paused && visibleNotice) {
+    visibleNotice = "";
+    draw();
+  }
   lastStep = performance.now();
   setPauseLabel();
   announcement.textContent = paused ? "Movement paused." : "Movement started.";
 });
 
 resetButton.addEventListener("click", () => {
+  visibleNotice = "";
   api.reset();
   paused = true;
   stepCount = 0;

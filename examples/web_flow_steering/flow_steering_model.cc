@@ -81,7 +81,7 @@ struct FlowSteeringModel::Impl {
       }
     }
 
-    // A passable cell enclosed by four walls remains in the world but cannot
+    // A passable tile enclosed by four walls remains in the world but cannot
     // reach an outside goal. Its agent must hold rather than improvise.
     set_wall(28, 19);
     set_wall(29, 20);

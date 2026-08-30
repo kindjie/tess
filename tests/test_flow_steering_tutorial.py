@@ -72,6 +72,9 @@ def test_wasm_host_exposes_state_without_reimplementing_steering():
 def test_tutorial_teaches_the_supported_boundary_and_embeds_accessibly():
   """The article explains the model and keeps adjacent concerns separate."""
   tutorial = read("docs/tutorial/flow-steering.md")
+  terminology = read("docs/terminology.md")
+  abbreviations = read("includes/abbreviations.md")
+  model = read("examples/web_flow_steering/flow_steering_model.cc")
   styles = read("docs/stylesheets/extra.css")
   nav = read("mkdocs.yml")
   index = read("docs/tutorials.md")
@@ -104,6 +107,13 @@ def test_tutorial_teaches_the_supported_boundary_and_embeds_accessibly():
   assert "Flow-style steering: tutorial/flow-steering.md" in nav
   assert "flow-style steering" in index.lower()
   assert "web_flow_steering" in examples
+  assert "flow-style steering" in terminology
+  assert "flow-style steering" in abbreviations
+  assert "lifecycle flow accounting" in terminology
+  assert "transition_cost(current, neighbour)" in tutorial
+  assert "entry_cost(neighbour)" in tutorial
+  assert "current cell" not in tutorial
+  assert "current cell" not in model
 
 
 def test_browser_surface_is_accessible_responsive_and_motion_aware():
@@ -153,6 +163,7 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
   assert "distanceLabels" in interactions
   assert "whole-number coordinates" in interactions
   assert "announcement" in interactions
+  assert "dispatchEvent(new Event('resize'))" in interactions
   assert "noOverflow" in interactions
   assert "frameOverflow" in interactions
 
