@@ -21,6 +21,10 @@ def test_native_model_owns_the_bounded_streaming_protocol():
   assert "chunk_size = 32" in header
   assert "resident_capacity = 32" in header
   assert "camera_window_width = 5" in header
+  assert (
+    "Restores the initial camera, agents, and goals, then materializes\n"
+    "  /// the initial resident window."
+  ) in header
   assert "tess::SparseResidentWorld" in model
   assert "tess::MissingChunkPolicy::ReportIndeterminate" in model
   assert "required.size() > impl_->world.capacity()" in model
@@ -144,6 +148,7 @@ def test_tutorial_teaches_the_supported_boundary_and_production_extensions():
 def test_browser_surface_is_accessible_responsive_and_motion_aware():
   html = read("examples/web_sparse_stream/site/index.html")
   app = read("examples/web_sparse_stream/site/app.js")
+  styles = read("examples/web_sparse_stream/site/style.css")
   interactions = read("tools/test_web_demo_interactions.py")
 
   assert 'id="pause"' in html
@@ -167,6 +172,10 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
   assert "prefers-reduced-motion" in interactions
   assert "noOverflow" in interactions
   assert "frameOverflow" in interactions
+  assert "overflow-x: hidden" in styles
+  assert "overflow-y: auto" in styles
+  assert "with open_page(browser, url, 844, 390, timeout)" in interactions
+  assert "scrollHeight > innerHeight" in interactions
 
 
 def test_ci_schedules_static_native_wasm_and_browser_checks():

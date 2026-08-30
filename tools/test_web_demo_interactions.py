@@ -940,6 +940,30 @@ def test_sparse_stream(
     page.evaluate("document.querySelector('#pause').click()")
     page.wait_for("window.tessSparseStreamTest.snapshot().step === 1")
 
+  with open_page(browser, url, 844, 390, timeout) as page:
+    page.wait_for(
+      "document.documentElement.dataset.tessSparseStream === 'ready'"
+    )
+    landscape = page.evaluate(
+      "(() => ({"
+      "needsScroll: document.documentElement.scrollHeight > innerHeight,"
+      "canScroll: getComputedStyle(document.documentElement).overflowY !== "
+      "'hidden',"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth"
+      "}))()"
+    )
+    if (
+      not isinstance(landscape, dict)
+      or not landscape["needsScroll"]
+      or not landscape["canScroll"]
+      or not landscape["noOverflow"]
+    ):
+      raise RuntimeError(
+        f"sparse stream landscape scrolling diverged: {landscape}"
+      )
+    page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
+    page.wait_for("scrollY > 0")
+
   tutorial_url = f"{docs_url.rstrip('/')}/tutorial/procedural-sparse-stream/"
   with open_page(browser, tutorial_url, 390, 844, timeout) as page:
     page.wait_for(

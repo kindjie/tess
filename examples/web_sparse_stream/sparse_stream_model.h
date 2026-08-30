@@ -36,7 +36,8 @@ class SparseStreamModel {
   SparseStreamModel(SparseStreamModel&&) = delete;
   auto operator=(SparseStreamModel&&) -> SparseStreamModel& = delete;
 
-  /// Restores the initial camera, agents, goals, and empty resident set.
+  /// Restores the initial camera, agents, and goals, then materializes
+  /// the initial resident window.
   void reset();
 
   /// Streams once, retries each route, and advances agents by at most one tile.
