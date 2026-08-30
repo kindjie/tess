@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Block kernel layer of the tess C++20 library: resolved lazy pipelines, fused terminals, and allocation-free span queries.">
+        <meta name="description" content="Stream deterministic 32×32 chunks through a bounded 32-page Tess resident set while agents retry routes at unavailable-data boundaries.">
       
       
       
-        <link rel="canonical" href="https://tess.owx.dev/main/architecture/block/">
+        <link rel="canonical" href="https://tess.owx.dev/main/tutorial/procedural-sparse-stream/">
       
       
-        <link rel="prev" href="../persistence/">
+        <link rel="prev" href="../colony-composition/">
       
       
-        <link rel="next" href="../no-exceptions/">
+        <link rel="next" href="../../examples/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Block kernels - tess</title>
+        <title>Stream a Procedural Sparse World - tess</title>
       
     
     
@@ -56,15 +56,15 @@
     
     <meta property="og:type" content="website">
   <meta property="og:site_name" content="tess">
-  <meta property="og:title" content="Block kernels - tess">
-  <meta property="og:description" content="Block kernel layer of the tess C++20 library: resolved lazy pipelines, fused terminals, and allocation-free span queries.">
-  <meta property="og:url" content="https://tess.owx.dev/main/architecture/block/">
+  <meta property="og:title" content="Stream a Procedural Sparse World - tess">
+  <meta property="og:description" content="Stream deterministic 32×32 chunks through a bounded 32-page Tess resident set while agents retry routes at unavailable-data boundaries.">
+  <meta property="og:url" content="https://tess.owx.dev/main/tutorial/procedural-sparse-stream/">
   <meta property="og:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1280">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Block kernels - tess">
-  <meta name="twitter:description" content="Block kernel layer of the tess C++20 library: resolved lazy pipelines, fused terminals, and allocation-free span queries.">
+  <meta name="twitter:title" content="Stream a Procedural Sparse World - tess">
+  <meta name="twitter:description" content="Stream deterministic 32×32 chunks through a bounded 32-page Tess resident set while agents retry routes at unavailable-data boundaries.">
   <meta name="twitter:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
 
   </head>
@@ -86,7 +86,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#block-foundation" class="md-skip">
+        <a href="#stream-a-procedural-sparse-world" class="md-skip">
           Skip to content
         </a>
       
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Block kernels
+              Stream a Procedural Sparse World
             
           </span>
         </div>
@@ -253,10 +253,12 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
+      <li class="md-tabs__item md-tabs__item--active">
         <a href="../../getting-started/" class="md-tabs__link">
           
   
@@ -297,12 +299,10 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
+      <li class="md-tabs__item">
         <a href="../../reference/" class="md-tabs__link">
           
   
@@ -436,8 +436,10 @@
       
   
   
+    
   
   
+  
     
     
       
@@ -453,19 +455,22 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
             
   
   
@@ -483,7 +488,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -554,8 +559,10 @@
                 
   
   
+    
   
   
+  
     
     
       
@@ -572,18 +579,21 @@
     
       
       
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
         
           
-          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
             
   
   
@@ -601,7 +611,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -647,7 +657,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../tutorial/flow-steering/" class="md-nav__link">
+      <a href="../flow-steering/" class="md-nav__link">
         
   
   
@@ -675,7 +685,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../tutorial/colony-composition/" class="md-nav__link">
+      <a href="../colony-composition/" class="md-nav__link">
         
   
   
@@ -700,10 +710,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../tutorial/procedural-sparse-stream/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Procedural sparse stream
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -719,6 +756,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#deterministic-terrain-with-fixed-crossings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deterministic terrain with fixed crossings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fail-before-mutation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fail before mutation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-safe-residency-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One safe residency order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unavailable-is-not-unreachable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unavailable is not unreachable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-a-production-streamer-adds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a production streamer adds
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1085,8 +1197,6 @@
       
   
   
-    
-  
   
   
     
@@ -1138,23 +1248,20 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../" class="md-nav__link ">
+            <a href="../../architecture/" class="md-nav__link ">
               
   
   
@@ -1172,13 +1279,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1254,7 +1361,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../compatibility/" class="md-nav__link">
+      <a href="../../architecture/compatibility/" class="md-nav__link">
         
   
   
@@ -1282,7 +1389,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../shape/" class="md-nav__link">
+      <a href="../../architecture/shape/" class="md-nav__link">
         
   
   
@@ -1310,7 +1417,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../storage/" class="md-nav__link">
+      <a href="../../architecture/storage/" class="md-nav__link">
         
   
   
@@ -1338,7 +1445,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../persistence/" class="md-nav__link">
+      <a href="../../architecture/persistence/" class="md-nav__link">
         
   
   
@@ -1363,37 +1470,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Block kernels
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../architecture/block/" class="md-nav__link">
         
   
   
@@ -1409,48 +1489,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#public-surface" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Public Surface
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#remaining-tdd-differences" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Remaining TDD Differences
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1463,7 +1501,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../no-exceptions/" class="md-nav__link">
+      <a href="../../architecture/no-exceptions/" class="md-nav__link">
         
   
   
@@ -1491,7 +1529,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../query/" class="md-nav__link">
+      <a href="../../architecture/query/" class="md-nav__link">
         
   
   
@@ -1519,7 +1557,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../maintenance/" class="md-nav__link">
+      <a href="../../architecture/maintenance/" class="md-nav__link">
         
   
   
@@ -1547,7 +1585,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../path/" class="md-nav__link">
+      <a href="../../architecture/path/" class="md-nav__link">
         
   
   
@@ -1575,7 +1613,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../topology/" class="md-nav__link">
+      <a href="../../architecture/topology/" class="md-nav__link">
         
   
   
@@ -1603,7 +1641,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spatial-coordination/" class="md-nav__link">
+      <a href="../../architecture/spatial-coordination/" class="md-nav__link">
         
   
   
@@ -1631,7 +1669,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../queued-operations/" class="md-nav__link">
+      <a href="../../architecture/queued-operations/" class="md-nav__link">
         
   
   
@@ -1659,7 +1697,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../simulation/" class="md-nav__link">
+      <a href="../../architecture/simulation/" class="md-nav__link">
         
   
   
@@ -1687,7 +1725,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../ecs/" class="md-nav__link">
+      <a href="../../architecture/ecs/" class="md-nav__link">
         
   
   
@@ -1715,7 +1753,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../diagnostics/" class="md-nav__link">
+      <a href="../../architecture/diagnostics/" class="md-nav__link">
         
   
   
@@ -1743,7 +1781,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../gpu/" class="md-nav__link">
+      <a href="../../architecture/gpu/" class="md-nav__link">
         
   
   
@@ -2188,10 +2226,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#public-surface" class="md-nav__link">
+  <a href="#deterministic-terrain-with-fixed-crossings" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Public Surface
+        Deterministic terrain with fixed crossings
       
     </span>
   </a>
@@ -2199,10 +2237,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#remaining-tdd-differences" class="md-nav__link">
+  <a href="#fail-before-mutation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Remaining TDD Differences
+        Fail before mutation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-safe-residency-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One safe residency order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unavailable-is-not-unreachable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unavailable is not unreachable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-a-production-streamer-adds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a production streamer adds
       
     </span>
   </a>
@@ -2229,182 +2300,156 @@
   
 
 
-<h1 id="block-foundation">Block Foundation</h1>
-<p>The current block layer is a minimal serial domain executor over always-resident
-world storage. It lives in <code>include/tess/block/block.h</code> and is exported by
-<code>tess/tess.h</code>.</p>
-<h2 id="public-surface">Public Surface</h2>
-<ul>
-<li><code>WritePolicy</code> records intended write discipline: <code>ReadOnly</code>,
-  <code>UniquePerTile</code>, <code>UniquePerChunk</code>, and <code>Unsafe</code>.
-  <code>is_valid_write_policy(policy)</code> validates a runtime policy value against
-  that enumerator set.</li>
-<li><code>ChunkDomain</code> is a non-owning <code>std::span&lt;const ChunkKey&gt;</code> wrapper.</li>
-<li><code>OwnedChunkDomain</code> owns sorted chunk keys returned by allocating domain
-  builders and can be adapted to <code>ChunkDomain</code> while the owner lives.</li>
-<li><code>chunk_domain(span)</code> adapts a prebuilt key span without allocation.</li>
-<li><code>explicit_chunk_domain(span)</code> copies and sorts explicit keys in ascending
-  <code>ChunkKey</code> order.</li>
-<li><code>dirty_chunk_domain(world, mask)</code> and <code>active_chunk_domain(world, mask)</code>
-  return owning domains using the current always-resident metadata queries.</li>
-<li><code>BlockScratch</code> owns caller-reusable temporary storage backed by a heap
-  <code>std::byte[]</code> buffer aligned for <code>std::max_align_t</code>. <code>reserve_bytes(bytes)</code>
-  grows the backing store when needed by allocating a fresh buffer: growth
-  invalidates previously returned spans and does not preserve contents,
-  while <code>used_bytes()</code> accounting carries over. <code>reset()</code> rewinds the bump
-  offset, and <code>capacity_bytes()</code>, <code>used_bytes()</code>, and <code>remaining_bytes()</code>
-  expose byte accounting. The class is move-only.</li>
-<li><code>BlockScratch::reserve_bytes_checked(bytes)</code> returns <code>ReserveStatus</code> and
-  leaves the object unchanged when rounded capacity would overflow. The
-  existing <code>reserve_bytes(bytes)</code> retains <code>std::bad_alloc</code> in enabled builds
-  and fails fast for that deterministic error when exceptions are disabled.</li>
-<li><code>BlockScratch::allocate&lt;T&gt;(count)</code> returns an aligned <code>std::span&lt;T&gt;</code> from
-  the current bump offset. It does not allocate when existing capacity is
-  sufficient. Zero-count requests, byte-count overflow, and capacity
-  exhaustion all return an empty span and leave <code>used_bytes()</code> unchanged.
-  <code>T</code> must be trivially default-constructible and trivially destructible
-  (implicit-lifetime), so the spans over the implicitly created objects in
-  the <code>std::byte</code> array storage are well-defined.</li>
-<li><code>BlockDiagnostics</code> owns caller-reusable counters for serial block execution.
-  It currently records <code>scratch_allocation_failures</code>, with explicit
-  <code>record_scratch_allocation_failure()</code> and <code>reset()</code> calls.</li>
-<li><code>BlockCtx&lt;World, Policy&gt;</code> is a non-owning serial execution context over a
-  world, <code>ChunkDomain</code>, compile-time <code>WritePolicy</code>, and optional
-  <code>BlockScratch</code> and <code>BlockDiagnostics</code>. Callers must keep the world, domain
-  key storage, scratch storage, and diagnostics storage alive for the context
-  lifetime.</li>
-<li><code>block_ctx&lt;Policy&gt;(world, domain)</code> constructs a policy-typed <code>BlockCtx</code>
-  without allocation.</li>
-<li><code>block_ctx&lt;Policy&gt;(world, domain, scratch)</code> constructs a policy-typed
-  <code>BlockCtx</code> with a non-owning scratch pointer.</li>
-<li><code>block_ctx&lt;Policy&gt;(world, domain, diagnostics)</code> constructs a policy-typed
-  <code>BlockCtx</code> with a non-owning diagnostics pointer.</li>
-<li><code>block_ctx&lt;Policy&gt;(world, domain, scratch, diagnostics)</code> constructs a
-  policy-typed <code>BlockCtx</code> with both optional caller-owned facilities.</li>
-<li><code>BlockCtx::world()</code>, <code>domain()</code>, <code>policy()</code>, <code>size()</code>, and <code>empty()</code> expose
-  the context inputs and domain state.</li>
-<li><code>BlockCtx::scratch()</code> returns the optional scratch pointer, and
-  <code>BlockCtx::reset_scratch()</code> rewinds it when present. Context iteration does
-  not reset scratch automatically; callers choose whether scratch lifetime is
-  per domain, per chunk, or per algorithm.</li>
-<li><code>BlockCtx::diagnostics()</code> returns the optional diagnostics pointer, and
-  <code>BlockCtx::reset_diagnostics()</code> clears it when present. Scratch exhaustion is
-  still reported explicitly by caller code after <code>allocate&lt;T&gt;</code> returns an empty
-  span.</li>
-<li><code>BlockCtx::chunk_view(key)</code> returns an explicit chunk view for a chunk key.
-  <code>ReadOnly</code> contexts expose <code>ChunkView&lt;const World&gt;</code> even when the stored
-  world object is mutable. Other current policies expose <code>ChunkView&lt;World&gt;</code>.</li>
-<li><code>BlockCtx::for_each_chunk(fn)</code> walks the domain serially and invokes
-  <code>fn(view)</code> with the policy-selected view type.</li>
-<li><code>for_each_chunk&lt;Policy&gt;(world, domain, fn)</code> constructs a policy-typed
-  context and walks the domain serially without allocation.</li>
-<li><code>for_each_chunk(world, domain, policy, fn)</code> validates and dispatches the
-  runtime policy. <code>ReadOnly</code> invokes <code>fn(view)</code> with <code>ChunkView&lt;const World&gt;</code>
-  for mutable worlds; other current policies invoke <code>ChunkView&lt;World&gt;</code>. Because
-  the policy is runtime but the callback type is compile-time, callbacks passed
-  to this overload must accept the selected policy view type; selecting an
-  invalid runtime policy value or incompatible callback/policy pair is a
-  programmer error and fails fast. Prefer
-  <code>for_each_chunk&lt;Policy&gt;(world, domain, fn)</code> or <code>BlockCtx&lt;World, Policy&gt;</code>
-  when the policy is already known.</li>
-<li>Parallel-ready ownership validation currently lives above the raw block API
-  in queued-operation phase planning. <code>plan_parallel_execution_phases(plan)</code>
-  accepts only <code>ReadOnly</code> and <code>UniquePerChunk</code> planned operations, keeps
-  same-chunk mutable work in separate phases, and rejects <code>UniquePerTile</code> until
-  tile subdomains exist.</li>
-<li><code>ChunkView&lt;World&gt;</code> exposes the resolved page, metadata, key, chunk
-  coordinate, chunk bounds, typed field spans through <code>ChunkPage</code>, and
-  chunk-local tile helpers.</li>
-<li><code>ChunkView&lt;World&gt;::local_coord(LocalTileId)</code> and
-  <code>ChunkView&lt;World&gt;::local_tile_id(LocalCoord3)</code> convert local tile positions
-  using row-major chunk-local order.</li>
-<li><code>ChunkView&lt;World&gt;::local_bounds()</code> returns the signed local candidate box
-  <code>{Coord3{0, 0, 0}, ShapeTraits&lt;Shape&gt;::chunk}</code>.</li>
-<li><code>ChunkView&lt;World&gt;::contains_local(Coord3)</code> and
-  <code>ChunkView&lt;World&gt;::try_local_coord(Coord3)</code> validate signed local candidate
-  coordinates before converting them to unsigned <code>LocalCoord3</code>.</li>
-<li><code>ChunkView&lt;World&gt;::is_boundary(LocalCoord3)</code> reports whether a valid local
-  tile touches any non-degenerate chunk face, and
-  <code>ChunkView&lt;World&gt;::is_interior(LocalCoord3)</code> is its inverse for valid local
-  coordinates. Axes with chunk extent <code>1</code> do not make every tile a boundary.</li>
-<li><code>ChunkView&lt;World&gt;::world_coord(LocalCoord3)</code> and
-  <code>ChunkView&lt;World&gt;::world_coord(LocalTileId)</code> convert local positions to
-  world coordinates for the current chunk.</li>
-<li><code>ChunkView&lt;World&gt;::world_coord(Coord3)</code> converts signed local candidates,
-  including one-step-out candidates, to world coordinates for the current
-  chunk.</li>
-<li><code>ChunkView&lt;World&gt;::for_each_tile(fn)</code> invokes
-  <code>fn(LocalTileId, LocalCoord3)</code> for every local tile in ascending
-  <code>LocalTileId</code> order.</li>
-<li><code>block_tiles(ctx)</code> and <code>block_chunks(ctx)</code> begin block-preserving lazy
-  pipelines. <code>filter</code>, <code>map</code>, and <code>flat_map</code> compose at compile time; no
-  intermediate collection is created. <code>block_tiles</code> emits <code>BlockTile</code> values
-  with the resolved chunk view, local id and coordinate, and world coordinate.
-  A pipeline owns its cheap <code>BlockCtx</code> value, so a temporary
-  <code>block_ctx(...)</code> is safe. The context still borrows the world, domain-key
-  storage, scratch, and diagnostics, which must outlive the terminal.</li>
-<li><code>pipeline_from(span)</code> applies the same lazy adapters to caller-owned
-  sequences and frontiers.</li>
-<li><code>flat_map</code> preserves whether its mapper returned a range by reference and
-  extends a returned temporary through the nested iteration. Mutating a
-  referenced range through the terminal therefore affects the caller-owned
-  range rather than an implicit copy.</li>
-<li><code>Pipeline::for_each</code> and <code>Pipeline::reduce</code> are fused terminals.
-  <code>collect_into</code> uses caller-owned bounded storage and reports both written
-  and required counts through <code>PipelineCollectResult</code>.
-  <code>to_sequence_allocating</code> is the deliberately explicit allocating terminal.</li>
-<li><code>PipelineDiagnostics</code> records blocks and items read, items filtered and
-  emitted, explicit materializations, and bounded-capacity failures. It is
-  optional and caller-owned.</li>
-</ul>
-<p>Iteration is deterministic when domains are produced by the provided builders:
-each sorts by ascending <code>ChunkKey</code>. That matters on sparse worlds, where the
-underlying scans enumerate in residency order — a function of load and
-eviction history rather than of world content — so a domain built from a raw
-scan is not reproducible across runs and a non-commutative kernel would not
-be either. The builders already allocate a vector and absorb the sort; the
-scans stay unordered. <code>dirty_chunks()</code>/<code>active_chunks()</code> return a newly
-allocated vector, so only the caller-owned
-<code>collect_dirty_chunks()</code>/<code>collect_active_chunks()</code> avoid allocating, and
-only when the output vector already has capacity.
-The hot executor path does not allocate when passed a prebuilt <code>ChunkDomain</code>.
-Policy-typed <code>ReadOnly</code> contexts enforce const page, metadata, and field span
-access at compile time. Prebuilt <code>BlockCtx</code> iteration is also allocation-free,
-including use of pre-reserved <code>BlockScratch</code> during chunk and tile iteration.
-Scratch allocation can occur during <code>reserve_bytes</code>, but not during
-<code>allocate&lt;T&gt;</code> when capacity is sufficient. Chunk-local tile iteration does not
-materialize ranges or decode global <code>TileKey</code> values.</p>
-<p>Boundary and local-candidate helpers only describe the current chunk. They do
-not define movement legality, neighbor ordering, direction enums, halo loading,
-transition providers, or cross-chunk field access. Topology and path systems
-use signed local candidates plus <code>contains_local</code> to decide whether a candidate
-remains inside the chunk or needs an explicit transition.</p>
-<h2 id="remaining-tdd-differences">Remaining TDD Differences</h2>
-<p>The historical block-kernel pipeline TDD describes a richer staged executor.
-The raw block layer intentionally remains smaller than the queued execution
-layer built above it:</p>
-<ul>
-<li><code>BlockCtx</code> is a serial resolved-chunk context. Planning, phase grouping, and
-  worker-pool dispatch live in queued operations and simulation rather than in
-  the raw view.</li>
-<li>Scratch and diagnostic pointers are caller-owned and optional. The raw layer
-  does not provide planner-owned arenas or cross-thread diagnostic reduction.</li>
-<li>Only <code>ReadOnly</code> is enforced, and only through policy-typed block
-  contexts and <code>for_each_chunk&lt;Policy&gt;</code>. <code>UniquePerTile</code>, <code>UniquePerChunk</code>,
-  and <code>Unsafe</code> still record intended write discipline without ownership checks
-  in raw block iteration. Queued-operation phase planning adds the first
-  conservative parallel ownership check for planned <code>UniquePerChunk</code> work.</li>
-<li>Direct block iteration remains serial. Planned <code>UniquePerChunk</code> operations
-  can run through the production worker-pool phase executor.</li>
-<li>Domains are chunk-key spans over always-resident storage only; sparse
-  residency, tile subranges, and dynamic residency transitions are not covered.</li>
-<li>Field access stays on <code>ChunkPage</code> spans instead of introducing kernel
-  parameter binding or generated accessors.</li>
-</ul>
-<p>Sparse block domains and tile subranges are not part of this layer. The shipped
-pipeline is deliberately an inlined serial composition layer over resolved
-block sources; worker ownership and phase scheduling remain in queued
-operations.</p>
+<h1 id="stream-a-procedural-sparse-world">Stream a procedural sparse world</h1>
+<p>This tutorial models a <strong>large and bounded</strong> 4,096×4,096 tile world. It is
+not infinite: its 128×128 chunk grid has known edges, even though only a small
+part exists in memory at once. Terrain is generated in 32×32 chunks from a
+fixed seed and chunk coordinates.</p>
+<p>The live model keeps a 32-page sparse resident set. Its camera asks for a
+deduplicated 5×5 camera window, so the normal required set is 25 pages. Four
+agents and their local goals stay inside the inner 3×3 chunks; they therefore
+do not expand that set.</p>
+<div class="admonition info">
+<p class="admonition-title">API used</p>
+<p><a href="https://tess.owx.dev/api/classtess_1_1World.html"><code>tess::World</code></a> specialized with <code>SparseResident</code> owns the
+fixed-budget least-recently-used set. <a href="https://tess.owx.dev/api/classtess_1_1PathScratch.html#a7b7d735ab95ab0db2275b679188873b4"><code>tess::astar_path</code></a>
+searches only resident pages, and <code>MissingChunkPolicy::ReportIndeterminate</code>
+distinguishes unavailable data from a proven missing route.</p>
+</div>
+<iframe class="sparse-stream-frame"
+  src="../../demo/sparse-stream/"
+  title="Interactive procedural sparse-stream tutorial">
+  <p>Your browser cannot embed this example.
+    <a href="../../demo/sparse-stream/">Open the sparse-stream example in a
+    separate page</a>.</p>
+</iframe>
+
+<p><a href="../../demo/sparse-stream/">Open the sparse-stream example in a separate page</a>.</p>
+<p>The blue outline is the current required window. Green pages were newly
+generated at the most recent camera boundary, dark-blue pages were retained,
+and pink outlines show pages the existing least-recently-used policy evicted.
+The model starts paused; <strong>Start</strong>, <strong>Pause</strong>, and <strong>Reset</strong> are ordinary DOM
+controls. Reduced-motion visitors get an explicit <strong>Step</strong> control instead of
+automatic animation.</p>
+<h2 id="deterministic-terrain-with-fixed-crossings">Deterministic terrain with fixed crossings</h2>
+<p>Each new page is generated only from the world seed and global tile
+coordinate. Every chunk has a passable horizontal and vertical centre line,
+creating fixed cross-chunk corridor openings. A coordinate hash adds obstacles
+away from those corridors.</p>
+<p>That split is useful for a first streaming model: regeneration is interesting,
+but the camera-following route remains easy to verify. The native self-check
+evicts one page, regenerates the same chunk with the same seed, and compares
+every field byte. The regenerated values must be byte-identical.</p>
+<h2 id="fail-before-mutation">Fail before mutation</h2>
+<p>Capacity is checked against the complete required union before <code>touch()</code> or
+<code>ensure_resident()</code> runs. If the union exceeds capacity, the model reports a
+capacity status and must <strong>fail before mutation</strong>. A native fixture constructs
+the same protocol with a 24-page capacity; its 25-page request fails while the
+resident count remains zero.</p>
+<p>This is back-pressure at a clean boundary. Partially applying a window would
+make the result depend on iteration order and could evict useful pages before
+the model knows it cannot satisfy the request.</p>
+<h2 id="one-safe-residency-order">One safe residency order</h2>
+<p>Residency mutation invalidates borrowed page references, spans, resident-key
+views, and slot indices. The model therefore uses one explicit order:</p>
+<ol>
+<li>snapshot the previous resident keys;</li>
+<li>touch already-resident required pages first;</li>
+<li>materialize missing required pages;</li>
+<li>generate only newly materialized pages;</li>
+<li>finish and classify every residency mutation;</li>
+<li>reacquire spans and references, then begin pathfinding.</li>
+</ol>
+<!-- tess-snippet: sparse-stream-residency-order source=examples/web_sparse_stream/sparse_stream_model.cc -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">previous_span</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">world</span><span class="p">.</span><span class="n">resident_chunk_keys</span><span class="p">();</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">tess</span><span class="o">::</span><span class="n">ChunkKey</span><span class="o">&gt;</span><span class="w"> </span><span class="n">previous_resident</span><span class="p">(</span><span class="n">previous_span</span><span class="p">.</span><span class="n">begin</span><span class="p">(),</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">                                                    </span><span class="n">previous_span</span><span class="p">.</span><span class="n">end</span><span class="p">());</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">required</span><span class="p">.</span><span class="n">size</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">world</span><span class="p">.</span><span class="n">capacity</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">stream_status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">StreamStatus</span><span class="o">::</span><span class="n">CapacityExceeded</span><span class="p">;</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">stream_status</span><span class="p">;</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="p">}</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">required</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">world</span><span class="p">.</span><span class="n">is_resident</span><span class="p">(</span><span class="n">key</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">world</span><span class="p">.</span><span class="n">touch</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="p">}</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="k">auto</span><span class="w"> </span><span class="n">materialized</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">required</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">world</span><span class="p">.</span><span class="n">is_resident</span><span class="p">(</span><span class="n">key</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">materialized</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">      </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">newly_generated</span><span class="p">.</span><span class="n">clear</span><span class="p">();</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">      </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">evicted</span><span class="p">.</span><span class="n">clear</span><span class="p">();</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">      </span><span class="n">materialized</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">world</span><span class="p">.</span><span class="n">ensure_resident</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">    </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">newly_generated</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="p">}</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">materialized</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">newly_generated</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">    </span><span class="n">generate_chunk</span><span class="p">(</span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">world</span><span class="p">,</span><span class="w"> </span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">seed</span><span class="p">);</span>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">    </span><span class="o">++</span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">generated_pages</span><span class="p">;</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="p">}</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">retained</span><span class="p">.</span><span class="n">clear</span><span class="p">();</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">previous_resident</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">world</span><span class="p">.</span><span class="n">is_resident</span><span class="p">(</span><span class="n">key</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">    </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">retained</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">  </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">materialized</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">    </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">evicted</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="p">}</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">refresh_view</span><span class="p">();</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="w"> </span><span class="n">index</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">index</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">agents</span><span class="p">.</span><span class="n">size</span><span class="p">();</span><span class="w"> </span><span class="o">++</span><span class="n">index</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">  </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">agents</span><span class="p">[</span><span class="n">index</span><span class="p">];</span>
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">agent</span><span class="p">.</span><span class="n">position</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="n">goal</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">    </span><span class="n">agent</span><span class="p">.</span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentStatus</span><span class="o">::</span><span class="n">AtGoal</span><span class="p">;</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">    </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">choose_next_goal</span><span class="p">(</span><span class="n">agent</span><span class="p">);</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">astar_path</span><span class="o">&lt;</span><span class="n">World</span><span class="p">,</span><span class="w"> </span><span class="n">PassableTag</span><span class="o">&gt;</span><span class="p">(</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">      </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">world</span><span class="p">,</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">PathRequest</span><span class="p">{</span><span class="n">agent</span><span class="p">.</span><span class="n">position</span><span class="p">,</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="n">goal</span><span class="p">},</span>
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">      </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">scratch</span><span class="p">[</span><span class="n">index</span><span class="p">],</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">MissingChunkPolicy</span><span class="o">::</span><span class="n">ReportIndeterminate</span><span class="p">);</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">status</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">PathStatus</span><span class="o">::</span><span class="n">Found</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">path</span><span class="p">.</span><span class="n">size</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">    </span><span class="n">agent</span><span class="p">.</span><span class="n">position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">Coord2</span><span class="p">{</span><span class="n">result</span><span class="p">.</span><span class="n">path</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">path</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">y</span><span class="p">};</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">    </span><span class="n">agent</span><span class="p">.</span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="n">position</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="n">goal</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">AgentStatus</span><span class="o">::</span><span class="n">AtGoal</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">                                                </span><span class="o">:</span><span class="w"> </span><span class="n">AgentStatus</span><span class="o">::</span><span class="n">Moving</span><span class="p">;</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">  </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">status</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">tess</span><span class="o">::</span><span class="n">PathStatus</span><span class="o">::</span><span class="n">Found</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">    </span><span class="n">agent</span><span class="p">.</span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentStatus</span><span class="o">::</span><span class="n">AtGoal</span><span class="p">;</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a><span class="w">  </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a><span class="w">    </span><span class="n">agent</span><span class="p">.</span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentStatus</span><span class="o">::</span><span class="n">Waiting</span><span class="p">;</span>
+<a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="p">}</span>
+</code></pre></div>
+<!-- /tess-snippet -->
+
+<p>There is no explicit eviction call. Once the fixed resident set is full,
+<code>ensure_resident()</code> selects a least-recently-used victim. Touching required
+pages before adding missing pages keeps the entire required window ahead of
+non-required candidates in that policy.</p>
+<h2 id="unavailable-is-not-unreachable">Unavailable is not unreachable</h2>
+<p>An agent route can meet a non-resident page. With
+<code>ReportIndeterminate</code>, Tess reports <code>PathStatus::Indeterminate</code> instead of
+claiming <code>NoPath</code>. The agent waits textually and retries after the next
+streaming pass. The native fixture first searches across a missing bridge
+chunk, then materializes it and proves that the retry finds the route.</p>
+<p>Normal goals remain inside the resident halo, so the live agents progress.
+This keeps the example focused on residency mechanics rather than pretending
+that a short local query solves long paths crossing unavailable regions.</p>
+<h2 id="what-a-production-streamer-adds">What a production streamer adds</h2>
+<p>The synchronous generator is deliberately small. A production system usually
+adds <strong>asynchronous generation</strong> or I/O, <strong>persistence of edits</strong>,
+<strong>predictive prefetching</strong>, <strong>separate rendering and simulation radii</strong>,
+page <strong>pinning</strong>, explicit <strong>back-pressure</strong>, and policies for <strong>long paths
+crossing unavailable regions</strong>.</p>
+<p>The first version keeps persistent edits out of scope: evicting a chunk
+discards changes, so the deterministic generator recreates the baseline only.
+This tutorial also keeps collision avoidance separate. The four agents move
+independently through global tiles; residency and route availability do not
+arbitrate simultaneous occupancy.</p>
 
 
 
@@ -2443,7 +2488,7 @@ operations.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../persistence/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Persistence">
+          <a href="../colony-composition/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Colony composition">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2453,20 +2498,20 @@ operations.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Persistence
+                Colony composition
               </div>
             </div>
           </a>
         
         
           
-          <a href="../no-exceptions/" class="md-footer__link md-footer__link--next" aria-label="Next: Exception-free builds">
+          <a href="../../examples/" class="md-footer__link md-footer__link--next" aria-label="Next: Examples">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Exception-free builds
+                Examples
               </div>
             </div>
             <div class="md-footer__button md-icon">

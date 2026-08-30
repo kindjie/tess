@@ -24,6 +24,15 @@
   background: #0b1020;
 }
 
+.sparse-stream-frame {
+  display: block;
+  width: 100%;
+  height: 47rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.7rem;
+  background: #0b1020;
+}
+
 .colony-frame {
   display: block;
   width: 100%;
@@ -44,6 +53,7 @@
 
 @media (max-width: 40rem) {
   .flow-steering-frame { height: 66rem; }
+  .sparse-stream-frame { height: 38rem; }
   .colony-frame { height: 48rem; }
   .diagnostics-frame { height: 120rem; }
 }

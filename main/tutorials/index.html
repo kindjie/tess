@@ -572,6 +572,8 @@
       
         
       
+        
+      
     
     
     
@@ -720,6 +722,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#procedural-sparse-streaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Procedural sparse streaming
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pathfinding-strategies" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -804,6 +817,34 @@
     
   
     Colony composition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/procedural-sparse-stream/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Procedural sparse stream
   
 
     
@@ -2240,6 +2281,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#procedural-sparse-streaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Procedural sparse streaming
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pathfinding-strategies" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2332,6 +2384,13 @@ read-only values to Dear ImGui and accessible DOM status.</p>
 <p>Use it after the colony composition tutorial when you need to distinguish
 instrumentation counters from lifecycle conservation and from pathfinding
 flow fields.</p>
+<h2 id="procedural-sparse-streaming">Procedural sparse streaming</h2>
+<p>The <a href="../tutorial/procedural-sparse-stream/">procedural sparse-stream tutorial</a>
+holds a large bounded world to 32 resident pages. Its shared native and Wasm
+model demonstrates deterministic chunk generation, an ordered 5×5 camera
+window update, LRU eviction, and agents that retry indeterminate routes.</p>
+<p>Use it after basic pathfinding and the residency guide when a complete dense
+world would exceed the available memory budget.</p>
 <h2 id="pathfinding-strategies">Pathfinding strategies</h2>
 <p>The strategy family connects API call shape to measured workload shape:</p>
 <ol>
