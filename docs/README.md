@@ -9,6 +9,8 @@ Published on the documentation site:
 
 - [Getting Started](getting-started.md): tutorial from shapes and schemas
   to the schedule loop and render bridge.
+- [Tutorials](tutorials.md): connected learning paths for pathfinding,
+  colony composition, strategy selection, and congestion pricing.
 - [Decision guide](guide/README.md): one page per architectural decision
   — branches, criteria, and links into the tutorial and concept notes.
 - [Installation](packaging.md): supported installation paths and registry
@@ -18,6 +20,8 @@ Published on the documentation site:
   headless-server framings of the shipped examples.
 - [Architecture](architecture/README.md): maintained design notes that should
   track implementation.
+- [Reference](reference.md): landing page for architecture, terminology,
+  compatibility evidence, and generated API documentation.
 - [Terminology](terminology.md): canonical nouns, actions, states, time units,
   and qualifiers shared by the public API and maintained documentation.
 - [Performance](performance.md): adopter-facing benchmark expectations and

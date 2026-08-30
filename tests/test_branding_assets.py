@@ -325,12 +325,10 @@ def test_mkdocs_navigation_includes_persistence_architecture():
   config = read("mkdocs.yml")
 
   assert "Persistence: architecture/persistence.md" in config
-  assert "      - Interactive comparison: pathfinding-strategy-comparison.md" in (
+  assert "      - Strategy comparison: pathfinding-strategy-comparison.md" in (
     config
   )
-  assert "  - Pathfinding comparison: pathfinding-strategy-comparison.md" not in (
-    config
-  )
+  assert "      - Interactive comparison:" not in config
 
 
 def test_terminology_reference_and_global_tooltips_stay_synchronized():

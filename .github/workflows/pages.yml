@@ -305,9 +305,16 @@ jobs:
             >build/web-traffic-dom.html
           grep -q 'data-tess-traffic="ready"' build/web-traffic-dom.html
           grep -q 'C++ update' build/web-traffic-dom.html
-          python3 tools/test_web_demo_interactions.py \
-            --browser google-chrome \
+          interaction_args=(
+            --browser google-chrome
             --base-url http://127.0.0.1:8000/demo/
+          )
+          if python3 tools/test_web_demo_interactions.py \
+            --help | grep -q -- '--docs-url'; then
+            interaction_args+=(--docs-url http://127.0.0.1:8000/)
+          fi
+          python3 tools/test_web_demo_interactions.py \
+            "${interaction_args[@]}"
           google-chrome \
             --headless=new \
             --no-sandbox \

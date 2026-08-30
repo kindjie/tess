@@ -3,7 +3,8 @@
 - `tests/test_publish_docs_root.py`: synthetic publication-tree coverage for
   exact main, stable, RC, and trusted-manual selection; selector ordering and
   hidden immutable RCs across GA patches; exact Doxygen labels for historical
-  sources; source-versus-current build-check authority; the GA transition; the
+  sources; source-versus-current build-check authority; capability-gated
+  browser-smoke arguments for historical sources; the GA transition; the
   stable root copy and identity repair; exact
   `/latest/` and `/dev/` compatibility redirects; retained
   non-HTML compatibility assets; root-only sitemap URLs; version-tree

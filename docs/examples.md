@@ -17,95 +17,61 @@ cmake --build --preset examples
 ./build/examples/examples/tess_quickstart
 ```
 
-## Start here
+## Guided tutorials
 
-- [Live pathfinder](../demo/) — the interactive
-  WebAssembly demo, built from the same C++20 headers as the library and
-  published with this site.
-- [Live strategy comparison](../demo/strategies/) — the
-  native pathfinding-strategy model compiled to WebAssembly: four call shapes,
-  a shared obstacle course, C++-reported paths and reuse counters, and distinct
-  route, batch, and map-wide field data products without browser timing claims.
-- [Live colony](../demo/colony/) — the scale demo:
-  up to 1,024 agents shuttling between the edges and replanning around
-  walls you draw (walls survive resets), with completed and crowd-turnaround
-  leg counters, smooth presentation-only movement, a C++-update cost readout,
-  and a retained-routes vs replan-every-tick toggle.
-- [Congestion lab](../demo/congestion/) — the
-  colony simulation with the supported-coverage nearby-agent recipe,
-  five additional screened policies, two rejected controls, and three
-  period or price-cap variants selectable live, with a price overlay,
-  wall painting, and the shipped equal-cost route-spreading toggle.
-  The [congestion pricing guide](guide/congestion.md) states the
-  evidence tier and boundary for each result; the native runner
-  executes the same model without browser presentation.
-- [Tower](../demo/tower/) — a six-floor world
-  where solid slabs separate the floors and stairwell columns are the only
-  tiles joining them, so an agent crossing floors follows one route
-  through three dimensions rather than switching between stacked maps.
-  Closing a stairwell prices it instead of sealing it, so routes divert
-  while anyone on the stairs can still walk out. Isometric 2D canvas with
-  touch controls; an early version whose geometry is deliberately simple.
-- [Live diagnostics](../demo/diagnostics/) — real Dear ImGui
-  panels over path, queued-phase, timing, trace, and consumer-instrumented
-  allocation snapshots. Mirrored HTML controls keep the demo keyboard
-  operable and make its runtime state visible to browser automation.
-- [`quickstart.cc`][quickstart] — the complete program on the
-  [home page](index.md): a world, a schema, and an A* query.
-- [`colony_2d.cc`][colony_2d] — the flagship composition: queued
-  construction edits through the auto-exec schedule task, an OnDirty
-  topology rebuild, movement-class agents routing around the new wall, and
-  a DeltaFrame render consumer, all in one `tess::Schedule` loop.
+The [tutorials index](tutorials.md) connects related artifacts into four
+learning paths instead of presenting each model, host, and article as a
+separate starting point:
 
-## Pathfinding and topology
+- **Basic pathfinding** combines the
+  [getting-started tutorial](getting-started.md), the
+  [live pathfinder](../demo/), and [`quickstart.cc`][quickstart].
+- **Colony simulation** grows from [`path_agents.cc`][path_agents] into the
+  [`colony_2d.cc` model][colony_2d], its native check, and the
+  [`web_colony` host][web_colony_src].
+- **Pathfinding strategies** connects the
+  [`pathfinding_strategies_model.cc` model][pathfinding_strategies], the
+  [interactive comparison](../demo/strategies/), and the
+  [benchmark-backed article](pathfinding-strategy-comparison.md).
+- **Congestion pricing** connects the
+  [`congestion_pricing.cc` recipe][congestion_pricing], the
+  [`web_congestion` model][web_congestion_src], the
+  [decision guide](guide/congestion.md), and
+  [Congestion Lab](../demo/congestion/).
 
-- [`queued_path.cc`][queued_path] — a small end-to-end queued-edit plus A*
-  pathfinding prototype.
-- [`pathfinding_strategies_model.cc`][pathfinding_strategies] — one small
-  world comparing plain A*, exact route caching, weighted batches, and
-  shared-goal distance fields; its named regions feed the
-  [strategy comparison](pathfinding-strategy-comparison.md).
-- [`stairs_3d.cc`][stairs_3d] — the `StairTransitions` provider connecting
-  two z-levels, with reachability, the path-runtime precheck, and an
-  incremental update after demolishing the stair.
+### Colony composition map
 
-## Scale: many agents and large worlds
+The colony model labels five reusable composition patterns directly in the
+source: queueing a world edit, rebuilding derived topology on dirty input,
+running bounded pathing before movement, consuming a `DeltaFrame` as
+invalidation, and recovering a rejected frame with a full baseline. The
+`ColonyModel` interface also makes the simulation/presentation boundary
+explicit: tess owns integer-tile fixed-tick state, while the browser
+interpolates read-only previous/current snapshots with the accumulator alpha.
+The fractional coordinates never return to simulation state.
 
-- [`path_agents.cc`][path_agents] — a multi-agent path-agent tick loop
-  with goal assignment, dirty-driven replanning, and blocked-path
-  handling; the focused subset of what [`colony_2d.cc`][colony_2d]
-  composes into a full frame.
-- [`ant_farm_vertical.cc`][ant_farm] — a degenerate-axis vertical world
-  (x-z cross-section) where many ants share one distance-field product
-  through the byte-budgeted `FieldProductCache` instead of searching
-  independently.
-- [`web_colony`][web_colony_src] — the source of the
-  [live colony demo](../demo/colony/): the colony_2d
-  composition compiled to WebAssembly. Its model, Wasm adapter, native
-  self-check, browser controller, and page are separate so the library
-  patterns are visible without platform glue interrupting them.
-- [`congestion_pricing.cc`][congestion_pricing] — a compile-checked
-  congestion-pricing recipe against public APIs only: it computes tile
-  prices, marks the changed chunks, requests replans for affected
-  retained routes through the experimental route-crossing helper, and
-  clears the surcharge when disabled. Terrain and congestion live in
-  separate fields summed by the movement class, so pricing never
-  overwrites the caller's terrain. Snippet-synced into the
-  [congestion pricing guide](guide/congestion.md).
-- [`web_congestion`][web_congestion_src] — the source of the
-  [congestion lab](../demo/congestion/): wraps
-  the colony model through its native seam so the tutorial stays clean
-  while every pricing experiment lives here.
-- [`web_traffic`][web_traffic_src] — the source of the
-  [Traffic Lab](../demo/traffic/): a deterministic
-  1024×512 congestion overview with static terrain caching, separately
-  rendered agents, and an eight-search planning budget. Static barrier
-  scenarios supply their known gate crossings to exact weighted segments;
-  open scenarios retain direct weighted A*.
-- [`sparse_stream.cc`][sparse_stream] — budget-bounded sparse residency:
-  a 1,024-chunk world held to a 16-page budget (64x less resident field
-  storage), and a path query that reports `Indeterminate` until the
-  missing bridge chunk is streamed in and the retry succeeds.
+## Interactive labs
+
+- [Live pathfinder](../demo/) — the basic routing learning path compiled to
+  WebAssembly from the same C++20 headers as the library.
+- [Live strategy comparison](../demo/strategies/) — four call shapes over one
+  obstacle course with C++-reported paths and reuse counters, without browser
+  timing claims.
+- [Live colony](../demo/colony/) — up to 1,024 agents replanning around walls,
+  with deterministic simulation state and presentation-only interpolation.
+- [Live diagnostics](../demo/diagnostics/) — Dear ImGui path, queued-phase,
+  timing, trace, and consumer allocation panels with mirrored HTML controls.
+- [Congestion Lab](../demo/congestion/) — the colony workload with supported,
+  rejected, and experimental pricing variants identified by the guide.
+- [Traffic Lab](../demo/traffic/) — a deterministic 1024×512 crowd overview
+  with static terrain caching and an eight-search planning budget.
+- [Tower](../demo/tower/) — a six-floor world whose stair transitions create
+  one routed three-dimensional topology rather than stacked maps.
+- [WebGPU](../demo/webgpu/) — the optional GPU transport and submission
+  boundary. It is an integration lab, not a GPU pathfinder.
+
+Congestion Lab, Traffic Lab, Tower, and WebGPU remain distinct advanced labs
+or integrations; they do not need dedicated tutorials yet.
 
 ### Measuring Traffic Lab
 
@@ -151,36 +117,49 @@ The bounded 4,096-sample capture keeps update/planning, render, and JavaScript
 frame-callback distributions separate and records catch-up frames. Normal
 previews retain only the inexpensive live exponential averages.
 
-## Colony tutorial map
+## Focused C++ recipes
 
-The colony model labels five reusable composition patterns directly in the
-source: queueing a world edit, rebuilding derived topology on dirty input,
-running bounded pathing before movement, consuming a `DeltaFrame` as
-invalidation, and recovering a rejected frame with a full baseline. The
-`ColonyModel` interface also makes the simulation/presentation boundary
-explicit: tess owns integer-tile fixed-tick state, while the browser
-interpolates read-only previous/current snapshots with the accumulator alpha.
-The fractional coordinates never return to simulation state.
+- [`quickstart.cc`][quickstart] — one world, one schema, and one A* query;
+  this is the complete program shown on the [home page](index.md).
+- [`queued_path.cc`][queued_path] — a small queued-edit plus A* pathfinding
+  prototype.
+- [`pathfinding_strategies_model.cc`][pathfinding_strategies] — plain A*,
+  exact route caching, weighted batches, and shared-goal distance fields in
+  one self-checking world.
+- [`stairs_3d.cc`][stairs_3d] — a `StairTransitions` provider, reachability
+  precheck, and incremental update after demolishing a stair.
+- [`path_agents.cc`][path_agents] — goal assignment, dirty-driven replanning,
+  bounded work, and blocked-path handling for multiple agents.
+- [`colony_2d.cc`][colony_2d] — queued construction, OnDirty topology,
+  movement-class agents, and `DeltaFrame` consumption in one schedule loop.
+- [`ant_farm_vertical.cc`][ant_farm] — many agents sharing a cached distance
+  field in a degenerate-axis vertical world.
+- [`congestion_pricing.cc`][congestion_pricing] — separate terrain and
+  congestion fields, affected-route replanning, and clean disable behavior
+  using public APIs.
+- [`sparse_stream.cc`][sparse_stream] — a 1,024-chunk world held to a 16-page
+  budget whose query reports `Indeterminate` until required data is resident.
+- [`chunk_maintenance.cc`][chunk_maintenance] — external ownership of a
+  versioned derived summary with explicit immediate and deferred backends.
+- [`render_delta_consumer.cc`][render_delta] — a standalone consumer that
+  rebuilds a shadow grid from published `DeltaFrame` values.
 
-## Integration boundaries
+## Optional integrations
 
-- [`chunk_maintenance.cc`][chunk_maintenance] — a stable external owner that
-  rebuilds a versioned derived summary, checks dirty-mask and content-version
-  state, and keeps scheduler handles out of the world. Its default immediate
-  backend is synchronous; deferred FIFO,
-  queued-coalescing, and dirty-bit backends remain explicit experiments. The
-  install smoke builds and runs a self-contained version of this workflow
-  against the installed package.
 - [`custom_ecs_min.cc`][custom_ecs] — the ECS adapter concepts implemented
   by a deliberately non-EnTT-shaped micro ECS.
 - [`entt_pawns.cc`][entt_pawns] — the EnTT adapter driving registry-owned
   pawns (built when `TESS_ENABLE_ENTT` is on).
 - [`flecs_pawns.cc`][flecs_pawns] — the Flecs adapter driving world-owned
   pawns (built when `TESS_ENABLE_FLECS` is on).
-- [`render_delta_consumer.cc`][render_delta] — a standalone DeltaFrame
-  consumer rebuilding a shadow grid from published frames.
 - [`web_pathfinder`][web_pathfinder] — the source of the live demo above:
   a single-threaded WebAssembly build with a small JavaScript shell.
+- [`web_colony`][web_colony_src] — the colony model, native check, Wasm
+  adapter, browser controller, and page kept in separate layers.
+- [`web_congestion`][web_congestion_src] — screened congestion policies over
+  the colony model, with the same model exercised by a native runner.
+- [`web_traffic`][web_traffic_src] — the Traffic Lab model and its separately
+  rendered browser presentation.
 - [`web_diagnostics`][web_diagnostics] — a dependency-free native model
   self-check plus the Dear ImGui GLFW/WebGL2 browser host used by the
   [live diagnostics demo](../demo/diagnostics/).

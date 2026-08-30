@@ -24,11 +24,86 @@ candidate `v1.0.0-rc.1`) and the path to 1.0 in the
 { .tess-version }
 
 [Get started](getting-started.md){ .md-button .md-button--primary }
-[Try the live pathfinder](demo/){ .md-button }
-[Watch a colony scale](demo/colony/){ .md-button }
-[Climb a tower](demo/tower/){ .md-button }
-[Inspect live diagnostics](demo/diagnostics/){ .md-button }
+[Explore tutorials](tutorials.md){ .md-button }
 [API reference](api/){ .md-button }
+
+</div>
+
+## Live demonstrations
+
+<div class="grid cards tess-demo-cards" markdown>
+
+- :material-map-marker-path:{ .lg .middle } __Live pathfinder__
+
+    ---
+
+    Move endpoints, paint obstacles, and inspect a real A* query compiled from
+    the C++20 library.
+
+    [:octicons-arrow-right-24: Open pathfinder](demo/)
+
+- :material-routes:{ .lg .middle } __Strategy comparison__
+
+    ---
+
+    Compare A*, route caching, weighted batches, and shared-goal fields by
+    their call shape and reuse counters.
+
+    [:octicons-arrow-right-24: Compare strategies](demo/strategies/)
+
+- :material-city:{ .lg .middle } __Colony simulation__
+
+    ---
+
+    Watch up to 1,024 agents replan around queued wall edits in a deterministic
+    fixed-step model.
+
+    [:octicons-arrow-right-24: Run colony](demo/colony/)
+
+- :material-chart-timeline-variant:{ .lg .middle } __Live diagnostics__
+
+    ---
+
+    Inspect path, queued-phase, trace, timing, and consumer allocation
+    snapshots through Dear ImGui and mirrored HTML controls.
+
+    [:octicons-arrow-right-24: Inspect diagnostics](demo/diagnostics/)
+
+- :material-transit-connection-variant:{ .lg .middle } __Congestion Lab__
+
+    ---
+
+    Explore supported, rejected, and experimental congestion-pricing variants
+    over the colony workload.
+
+    [:octicons-arrow-right-24: Open Congestion Lab](demo/congestion/)
+
+- :material-highway:{ .lg .middle } __Traffic Lab__
+
+    ---
+
+    Run a large deterministic crowd model with explicit planning budgets and
+    separately reported browser presentation costs.
+
+    [:octicons-arrow-right-24: Open Traffic Lab](demo/traffic/)
+
+- :material-tower-fire:{ .lg .middle } __Tower__
+
+    ---
+
+    Route through one six-floor world whose stair transitions connect the
+    vertical topology.
+
+    [:octicons-arrow-right-24: Climb the tower](demo/tower/)
+
+- :material-expansion-card-variant:{ .lg .middle } __WebGPU integration__
+
+    ---
+
+    Exercise the optional GPU transport and submission boundary; pathfinding
+    itself remains on the CPU.
+
+    [:octicons-arrow-right-24: Inspect WebGPU](demo/webgpu/)
 
 </div>
 
@@ -128,23 +203,23 @@ compile definitions.
 
     [:octicons-arrow-right-24: Tutorial](getting-started.md)
 
-- :material-play-box-multiple:{ .lg .middle } __Examples__
+- :material-school:{ .lg .middle } __Tutorials__
 
     ---
 
-    An annotated catalog of self-checking programs, from the quickstart
-    to the flagship colony simulation.
+    Connected learning paths for basic routing, colony composition, strategy
+    selection, and congestion pricing.
 
-    [:octicons-arrow-right-24: Example catalog](examples.md)
+    [:octicons-arrow-right-24: Explore tutorials](tutorials.md)
 
-- :material-layers-triple:{ .lg .middle } __Concepts__
+- :material-book-open-variant:{ .lg .middle } __Reference__
 
     ---
 
-    Maintained design notes for every layer, from shapes and storage to
-    simulation and diagnostics.
+    Architecture contracts, terminology, compatibility evidence, and the
+    generated C++ API.
 
-    [:octicons-arrow-right-24: Architecture overview](architecture/README.md)
+    [:octicons-arrow-right-24: Reference map](reference.md)
 
 - :material-speedometer:{ .lg .middle } __Performance__
 
