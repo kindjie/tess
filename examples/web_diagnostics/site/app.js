@@ -145,10 +145,15 @@
       passable.addEventListener("change", () => {
         const requested = passable.checked;
         if (selection()) {
-          api.setPassable(
+          const accepted = api.setPassable(
             Number(selectedX.value), Number(selectedY.value),
             requested ? 1 : 0
-          );
+          ) === 1;
+          if (!accepted) {
+            passable.checked = api.selectedPassable() === 1;
+            status.textContent =
+              "Wall edit rejected because the selected tile is occupied.";
+          }
           sync();
         }
       });

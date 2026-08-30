@@ -732,10 +732,42 @@ def test_diagnostics(
     ) != frozen:
       raise RuntimeError("keyboard pause did not freeze colony diagnostics")
 
+    occupied_x = page.evaluate(
+      "(() => {"
+      "for (let x = 16; x <= 48; ++x) {"
+      "if (window.tessDiagnosticsTest.setPassable(x, 0, 0) === 0) {"
+      "return x;"
+      "}"
+      "window.tessDiagnosticsTest.setPassable(x, 0, 1);"
+      "}"
+      "return -1;"
+      "})()"
+    )
+    if not isinstance(occupied_x, int) or occupied_x < 0:
+      raise RuntimeError("could not locate an occupied colony tile")
     page.evaluate(
       "(() => {"
-      "const input = document.querySelector('#selected-x');"
-      "input.value = '65'; input.dispatchEvent(new Event('change'));"
+      "const x = document.querySelector('#selected-x');"
+      "const y = document.querySelector('#selected-y');"
+      f"x.value = '{occupied_x}';"
+      "x.dispatchEvent(new Event('change'));"
+      "y.value = '0';"
+      "y.dispatchEvent(new Event('change'));"
+      "document.querySelector('#passable').focus();"
+      "})()"
+    )
+    if not page.evaluate("document.querySelector('#passable').checked"):
+      raise RuntimeError("occupied colony tile was not initially passable")
+    press_space(page)
+    if not page.evaluate("document.querySelector('#passable').checked"):
+      raise RuntimeError("rejected wall edit left the checkbox stale")
+
+    page.evaluate(
+      "(() => {"
+      "const x = document.querySelector('#selected-x');"
+      "const y = document.querySelector('#selected-y');"
+      "x.value = '65'; x.dispatchEvent(new Event('change'));"
+      "y.value = '48'; y.dispatchEvent(new Event('change'));"
       "document.querySelector('#passable').focus();"
       "})()"
     )

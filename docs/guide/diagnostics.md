@@ -72,8 +72,10 @@ not a threshold warning.
 ## Capture on the recording thread
 
 Path, queued-phase, allocation, and trace sinks are thread-local. The host
-installs all four scopes around one colony tick, destroys the scopes, and only
-then calls `capture_diagnostics`. It captures `FlowHealthSnapshot` at the same
+installs the path, queued-phase, and trace scopes around one colony tick. It
+then installs the allocation scope separately around the consumer-owned
+presentation snapshot. After both operations destroy their scopes, the host
+calls `capture_diagnostics` and captures `FlowHealthSnapshot` at the same
 quiescent point. The snapshots are plain values that the render pass may read
 without touching a live sink.
 

@@ -76,3 +76,12 @@ def test_accessible_surface_and_docs_name_lifecycle_flow_accounting():
   assert "reserved warm ticks" in architecture.lower()
   assert "lifecycle flow accounting" in terminology.lower()
   assert "lifecycle flow accounting" in abbreviations.lower()
+
+
+def test_rejected_wall_edit_restores_the_accessible_control():
+  app = read("examples/web_diagnostics/site/app.js")
+
+  handler = app.split('passable.addEventListener("change"', 1)[1]
+  handler = handler.split("const applyMotionPreference", 1)[0]
+  assert "const accepted = api.setPassable" in handler
+  assert "passable.checked = api.selectedPassable() === 1" in handler
