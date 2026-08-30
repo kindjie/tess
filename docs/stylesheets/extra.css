@@ -9,7 +9,7 @@
 .strategy-demo-frame {
   display: block;
   width: 100%;
-  height: 92rem;
+  height: 94rem;
   border: 1px solid var(--md-default-fg-color--lightest);
   border-radius: 0.7rem;
   background: #0d0c13;
@@ -45,7 +45,7 @@
 .diagnostics-frame {
   display: block;
   width: 100%;
-  height: 90rem;
+  height: 94rem;
   border: 1px solid var(--md-default-fg-color--lightest);
   border-radius: 0.7rem;
   background: #0d0c13;
