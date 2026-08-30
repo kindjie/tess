@@ -45,6 +45,17 @@ complete fixed-step composition:
 Use this family when you want to understand the boundary between simulation
 state, retained paths, and presentation state.
 
+## Colony diagnostics
+
+The [colony diagnostics tutorial](guide/diagnostics.md) compiles that same
+model in a separately gated host. It captures real path, queued-phase, timing,
+allocation, and lifecycle-flow snapshots on the recording thread, then hands
+read-only values to Dear ImGui and accessible DOM status.
+
+Use it after the colony composition tutorial when you need to distinguish
+instrumentation counters from lifecycle conservation and from pathfinding
+flow fields.
+
 ## Pathfinding strategies
 
 The strategy family connects API call shape to measured workload shape:

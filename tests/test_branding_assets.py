@@ -1106,7 +1106,7 @@ def test_wasm_diagnostics_demo_has_real_accessible_integration_contract():
 
   for control in (
     'id="paused"',
-    'id="intensity"',
+    'id="reset"',
     'id="selected-x"',
     'id="selected-y"',
     'id="passable"',
@@ -1121,11 +1121,10 @@ def test_wasm_diagnostics_demo_has_real_accessible_integration_contract():
   for export in (
     "tess_diagnostics_status",
     "tess_diagnostics_set_paused",
-    "tess_diagnostics_set_intensity",
+    "tess_diagnostics_reset",
     "tess_diagnostics_select",
     "tess_diagnostics_set_passable",
     "tess_diagnostics_paused",
-    "tess_diagnostics_intensity",
     "tess_diagnostics_selected_x",
     "tess_diagnostics_selected_y",
     "tess_diagnostics_selected_passable",
@@ -1133,18 +1132,16 @@ def test_wasm_diagnostics_demo_has_real_accessible_integration_contract():
     assert export in app
     assert f"_{export}" in build_script
 
-  assert "ScopedTimer" in model
-  assert '"path_search"' in model
-  assert '"queued_phase"' in model
+  assert "make_unique<web_colony::ColonyModel>" in model
+  assert "flow_accounting_" in model
   assert "consumer-instrumented" in wasm
   assert "ImGui::GetDrawData()->TotalVtxCount" in wasm
   assert "draw_diagnostics_panel" in wasm
-  assert "draw_world_overview" in wasm
-  assert "draw_chunk_inspector" in wasm
-  assert "draw_bool_field_editor" in wasm
+  assert "draw_flow_health_panel" in wasm
   assert "ImGui_ImplGlfw_InstallEmscriptenCallbacks" in wasm
   assert "readiness_without_each_required_signal_is_false" in native
-  assert "expected_path_outcomes_remain_operational" in native
+  assert "wall_edit_produces_queued_work" in native
+  assert "flow_identities_hold" in native
   assert "passable.checked = api.selectedPassable() === 1" in app
   assert "verifyMirroredControls" in app
 

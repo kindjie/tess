@@ -9,6 +9,7 @@
 *[distance field]: Retained shortest-distance data built from one or more goals for repeated path reads.
 *[flow-style steering]: On-demand local steps selected from retained distance labels; distinct from a retained flow field and lifecycle flow accounting diagnostics.
 *[flow field]: Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.
+*[lifecycle flow accounting]: Admission, terminal-outcome, outstanding-inventory, residence, and bounded-work accounting for one work lifecycle; distinct from a pathfinding flow field.
 *[route cache]: Capacity-bounded retained storage for reusable route results.
 *[settle]: A movement-tier run to a no-progress fixpoint, classified after termination.
 *[terminal classification]: The five-way per-agent outcome a settle assigns: arrived, goal-occupied, sealed, wedged, or censored.

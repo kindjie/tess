@@ -48,6 +48,7 @@ remain authoritative for the full contracts.
 | **distance field** | Retained shortest-distance data built from one or more goals for repeated path reads. See [pathfinding](architecture/path.md). |
 | **flow-style steering** | On-demand selection of a descending neighbouring tile from retained distance labels. It retains no directions and is distinct from both a flow field and lifecycle flow accounting diagnostics. See the [tutorial](tutorial/flow-steering.md). |
 | **flow field** | Per-tile movement directions derived from distance-to-goal data so agents can choose local steps without reconstructing full paths. Designed, not currently shipped; see the [pathfinding comparison](pathfinding-strategy-comparison.md#distance-fields-and-flow-fields). |
+| **lifecycle flow accounting** | Admission, terminal-outcome, outstanding-inventory, residence, and bounded-work accounting for one work lifecycle. It proves conservation identities and is not a pathfinding flow field. See the [diagnostics tutorial](guide/diagnostics.md#attach-lifecycle-accounting-before-admission). |
 | **route cache** | Capacity-bounded retained storage for reusable route results. |
 
 ## Actions

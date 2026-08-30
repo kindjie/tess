@@ -1,7 +1,16 @@
 #pragma once
 
+#include <tess/diagnostics/diagnostics.h>
+#if TESS_DIAGNOSTICS_ENABLED
+#include <tess/diagnostics/trace.h>
+#endif
+
 #include <cstdint>
 #include <memory>
+
+namespace tess::diagnostics {
+struct FlowAccounting;
+}
 
 namespace tess::examples::web_colony {
 
@@ -18,7 +27,8 @@ inline constexpr int max_agents = 1024;
  */
 class ColonyModel {
  public:
-  explicit ColonyModel(int agent_count);
+  explicit ColonyModel(int agent_count,
+                       diagnostics::FlowAccounting* flow_accounting = nullptr);
   ~ColonyModel();
 
   ColonyModel(const ColonyModel&) = delete;
@@ -33,6 +43,12 @@ class ColonyModel {
   void set_replan_each_tick(bool enabled) noexcept;
   void set_spread_congested_routes(bool enabled) noexcept;
   [[nodiscard]] auto tick(double dt_seconds) -> double;
+#if TESS_DIAGNOSTICS_ENABLED
+  [[nodiscard]] auto tick_with_diagnostics(
+      double dt_seconds, diagnostics::PathCounters& path,
+      diagnostics::QueuedPhaseCounters& queued, diagnostics::TraceBuffer& trace)
+      -> double;
+#endif
   [[nodiscard]] auto relaunch() -> int;
 
   [[nodiscard]] auto leg() const noexcept -> int;
@@ -47,6 +63,8 @@ class ColonyModel {
   [[nodiscard]] auto planning_pending() const noexcept -> int;
   [[nodiscard]] auto advanced_last_tick() const noexcept -> int;
   [[nodiscard]] auto movement_waits_last_tick() const noexcept -> int;
+  [[nodiscard]] auto planning_queries_last_tick() const noexcept -> int;
+  [[nodiscard]] auto planning_expansions_last_tick() const noexcept -> int;
 
   [[nodiscard]] auto tiles() const noexcept -> const std::uint8_t*;
   [[nodiscard]] auto current_agents() const noexcept -> const std::int16_t*;

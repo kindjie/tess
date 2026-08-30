@@ -169,9 +169,9 @@ previews retain only the inexpensive live exponential averages.
   the colony model, with the same model exercised by a native runner.
 - [`web_traffic`][web_traffic_src] — the Traffic Lab model and its separately
   rendered browser presentation.
-- [`web_diagnostics`][web_diagnostics] — a dependency-free native model
-  self-check plus the Dear ImGui GLFW/WebGL2 browser host used by the
-  [live diagnostics demo](../demo/diagnostics/).
+- [`web_diagnostics`][web_diagnostics] — a separately compiled diagnostics
+  host over the shared colony model, with a native self-check and the Dear
+  ImGui GLFW/WebGL2 [browser tutorial](../demo/diagnostics/).
 
 [quickstart]: https://github.com/kindjie/tess/blob/main/examples/quickstart.cc
 [colony_2d]: https://github.com/kindjie/tess/blob/main/examples/colony_2d.cc

@@ -242,7 +242,8 @@ struct ColonyModel::Impl {
     }
   }
 
-  explicit Impl(int agent_count);
+  explicit Impl(int agent_count,
+                tess::diagnostics::FlowAccounting* flow_accounting);
   void initialize_world();
   void reserve_working_memory(std::size_t agent_count);
   void initialize_agents(std::size_t agent_count);
@@ -567,6 +568,8 @@ struct ColonyModel::Impl {
       // around logical movement; catch-up frames naturally retain only the
       // last pair, which is the pair rendered with the accumulator remainder.
       demo->snapshot_before_movement();
+      tess::observe_path_agent_flow_tick(demo->tick_state, demo->agents,
+                                         context.clock.tick);
       demo->sync_settled_obstacles();
       demo->update_route_diversity(context.clock.tick);
       demo->update_wide_merge_routes();

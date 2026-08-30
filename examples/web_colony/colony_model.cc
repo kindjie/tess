@@ -5,10 +5,12 @@
 
 namespace tess::examples::web_colony {
 
-ColonyModel::Impl::Impl(int agent_count) {
+ColonyModel::Impl::Impl(int agent_count,
+                        tess::diagnostics::FlowAccounting* flow_accounting) {
   const auto count = static_cast<std::size_t>(agent_count);
   initialize_world();
   reserve_working_memory(count);
+  tick_state.flow_accounting = flow_accounting;
   initialize_agents(count);
   configure_build_task();
   configure_schedule();
@@ -155,8 +157,10 @@ void ColonyModel::Impl::publish_render_frame() {
 }
 // [colony-delta-recovery]
 
-ColonyModel::ColonyModel(int agent_count)
-    : impl_(std::make_unique<Impl>(std::clamp(agent_count, 1, kMaxAgents))) {}
+ColonyModel::ColonyModel(int agent_count,
+                         diagnostics::FlowAccounting* flow_accounting)
+    : impl_(std::make_unique<Impl>(std::clamp(agent_count, 1, kMaxAgents),
+                                   flow_accounting)) {}
 
 ColonyModel::~ColonyModel() = default;
 
@@ -186,6 +190,20 @@ void ColonyModel::set_spread_congested_routes(bool enabled) noexcept {
 auto ColonyModel::tick(double dt_seconds) -> double {
   return impl_->tick(dt_seconds);
 }
+
+#if TESS_DIAGNOSTICS_ENABLED
+auto ColonyModel::tick_with_diagnostics(
+    double dt_seconds, diagnostics::PathCounters& path,
+    diagnostics::QueuedPhaseCounters& queued, diagnostics::TraceBuffer& trace)
+    -> double {
+  diagnostics::ScopedTrace trace_scope{trace};
+  diagnostics::ScopedPathCounters path_scope{path};
+  diagnostics::ScopedQueuedPhaseCounters queued_scope{queued};
+  diagnostics::ScopedTimer timer{diagnostics::TraceCategory::General,
+                                 "colony_diagnostics_frame"};
+  return impl_->tick(dt_seconds);
+}
+#endif
 
 auto ColonyModel::relaunch() -> int { return impl_->relaunch(); }
 
@@ -231,6 +249,14 @@ auto ColonyModel::advanced_last_tick() const noexcept -> int {
 
 auto ColonyModel::movement_waits_last_tick() const noexcept -> int {
   return static_cast<int>(impl_->last_movement_waits);
+}
+
+auto ColonyModel::planning_queries_last_tick() const noexcept -> int {
+  return static_cast<int>(impl_->last_planning_queries);
+}
+
+auto ColonyModel::planning_expansions_last_tick() const noexcept -> int {
+  return static_cast<int>(impl_->last_planning_expansions);
 }
 
 auto ColonyModel::tiles() const noexcept -> const std::uint8_t* {

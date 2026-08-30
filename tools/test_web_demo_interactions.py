@@ -27,6 +27,7 @@ class BrowserPage:
     width: int,
     height: int,
     timeout: float,
+    gpu: bool = False,
   ) -> None:
     """Launch a page at the requested viewport."""
     self.deadline = time.monotonic() + timeout
@@ -38,19 +39,27 @@ class BrowserPage:
         prefix="tess-browser-test-", ignore_cleanup_errors=True
       )
       profile = Path(self.profile_dir.name)
+      arguments = [
+        browser,
+        "--headless=new",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--no-sandbox",
+        "--remote-debugging-port=0",
+        f"--user-data-dir={profile}",
+        f"--window-size={width},{height}",
+      ]
+      if gpu:
+        arguments.extend([
+          "--use-gl=angle",
+          "--use-angle=swiftshader",
+          "--enable-unsafe-swiftshader",
+        ])
+      else:
+        arguments.append("--disable-gpu")
+      arguments.append(url)
       self.process = subprocess.Popen(
-        [
-          browser,
-          "--headless=new",
-          "--no-first-run",
-          "--no-default-browser-check",
-          "--no-sandbox",
-          "--disable-gpu",
-          "--remote-debugging-port=0",
-          f"--user-data-dir={profile}",
-          f"--window-size={width},{height}",
-          url,
-        ],
+        arguments,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
       )
@@ -149,9 +158,10 @@ def open_page(
   width: int,
   height: int,
   timeout: float,
+  gpu: bool = False,
 ) -> Iterator[BrowserPage]:
   """Yield a browser page and always close it."""
-  page = BrowserPage(browser, url, width, height, timeout)
+  page = BrowserPage(browser, url, width, height, timeout, gpu)
   try:
     yield page
   finally:
@@ -208,6 +218,20 @@ def press_enter(page: BrowserPage) -> None:
   page.command(
     "Input.dispatchKeyEvent",
     {"type": "keyDown", "text": "\r", "unmodifiedText": "\r", **params},
+  )
+  page.command("Input.dispatchKeyEvent", {"type": "keyUp", **params})
+
+
+def press_space(page: BrowserPage) -> None:
+  """Send one keyboard Space activation through DevTools."""
+  params: dict[str, object] = {
+    "key": " ",
+    "code": "Space",
+    "windowsVirtualKeyCode": 32,
+  }
+  page.command(
+    "Input.dispatchKeyEvent",
+    {"type": "keyDown", "text": " ", "unmodifiedText": " ", **params},
   )
   page.command("Input.dispatchKeyEvent", {"type": "keyUp", **params})
 
@@ -657,6 +681,142 @@ def test_flow_steering(
       raise RuntimeError(f"flow steering iframe diverged: {embedded}")
 
 
+def test_diagnostics(
+  browser: str,
+  base_url: str,
+  docs_url: str,
+  timeout: float,
+) -> None:
+  """Verify real colony work, keyboard controls, text, and motion policy."""
+  url = f"{base_url.rstrip('/')}/diagnostics/"
+  with open_page(browser, url, 1366, 768, timeout, gpu=True) as page:
+    page.wait_for(
+      "document.documentElement.dataset.tessDiagnostics === 'ready' && "
+      "window.tessDiagnosticsTest"
+    )
+    initial = page.evaluate("window.tessDiagnosticsTest.snapshot()")
+    if (
+      not isinstance(initial, dict)
+      or initial["fixedTicks"] <= 0
+      or initial["pathPassabilityChecks"] <= 0
+      or initial["queuedPhaseCalls"] <= 0
+      or initial["queuedDirtyMerged"] <= 0
+      or initial["flowOffered"] != initial["flowAdmitted"]
+      or initial["flowHighWater"] != 128
+      or not initial["admissionOk"]
+      or not initial["retentionOk"]
+    ):
+      raise RuntimeError(f"colony diagnostics evidence diverged: {initial}")
+    text_state = page.evaluate(
+      "(() => ({"
+      "admission: document.querySelector('#flow-admission').textContent,"
+      "retention: document.querySelector('#flow-retention').textContent,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth"
+      "}))()"
+    )
+    if (
+      not isinstance(text_state, dict)
+      or "holds" not in text_state["admission"]
+      or "holds" not in text_state["retention"]
+      or not text_state["noOverflow"]
+    ):
+      raise RuntimeError(f"diagnostics text/layout diverged: {text_state}")
+
+    page.evaluate("document.querySelector('#paused').focus()")
+    press_space(page)
+    page.wait_for("document.querySelector('#paused').checked")
+    frozen = page.evaluate("window.tessDiagnosticsTest.snapshot().fixedTicks")
+    time.sleep(0.3)
+    if page.evaluate(
+      "window.tessDiagnosticsTest.snapshot().fixedTicks"
+    ) != frozen:
+      raise RuntimeError("keyboard pause did not freeze colony diagnostics")
+
+    page.evaluate(
+      "(() => {"
+      "const input = document.querySelector('#selected-x');"
+      "input.value = '65'; input.dispatchEvent(new Event('change'));"
+      "document.querySelector('#passable').focus();"
+      "})()"
+    )
+    before_queue = page.evaluate(
+      "window.tessDiagnosticsTest.snapshot().queuedPhaseCalls"
+    )
+    press_space(page)
+    page.evaluate("document.querySelector('#paused').focus()")
+    press_space(page)
+    page.wait_for(
+      "window.tessDiagnosticsTest.snapshot().queuedPhaseCalls > "
+      f"{before_queue}"
+    )
+
+    page.evaluate("document.querySelector('#reset').focus()")
+    press_enter(page)
+    page.wait_for(
+      "window.tessDiagnosticsTest.snapshot().flowAdmitted === 128 && "
+      "window.tessDiagnosticsTest.snapshot().flowHighWater === 128"
+    )
+
+  with open_page(browser, url, 390, 844, timeout, gpu=True) as page:
+    page.command(
+      "Emulation.setEmulatedMedia",
+      {
+        "media": "screen",
+        "features": [
+          {"name": "prefers-reduced-motion", "value": "reduce"},
+        ],
+      },
+    )
+    page.command("Page.reload", {"ignoreCache": True})
+    page.wait_for(
+      "document.documentElement.dataset.tessDiagnostics === 'ready' && "
+      "document.querySelector('#paused').checked"
+    )
+    reduced = page.evaluate(
+      "(() => ({"
+      "ticks: window.tessDiagnosticsTest.snapshot().fixedTicks,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth,"
+      "controls: Boolean(document.querySelector('#reset').offsetParent)"
+      "}))()"
+    )
+    time.sleep(0.3)
+    if (
+      not isinstance(reduced, dict)
+      or not reduced["noOverflow"]
+      or not reduced["controls"]
+      or page.evaluate(
+        "window.tessDiagnosticsTest.snapshot().fixedTicks"
+      ) != reduced["ticks"]
+    ):
+      raise RuntimeError(
+        f"narrow reduced-motion diagnostics diverged: {reduced}"
+      )
+
+  guide_url = f"{docs_url.rstrip('/')}/guide/diagnostics/"
+  with open_page(browser, guide_url, 390, 844, timeout, gpu=True) as page:
+    page.wait_for(
+      "document.querySelector('.diagnostics-frame')?.contentDocument?."
+      "documentElement.dataset.tessDiagnostics === 'ready'"
+    )
+    embedded = page.evaluate(
+      "(() => {"
+      "const frame = document.querySelector('.diagnostics-frame');"
+      "const inner = frame.contentDocument?.documentElement;"
+      "return {title: frame.title,"
+      "frameOverflow: inner ? inner.scrollWidth > inner.clientWidth || "
+      "inner.scrollHeight > inner.clientHeight : true,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth};"
+      "})()"
+    )
+    if (
+      not isinstance(embedded, dict)
+      or embedded["title"] != "Interactive colony diagnostics tutorial"
+      or embedded["frameOverflow"]
+      or not embedded["noOverflow"]
+    ):
+      raise RuntimeError(f"diagnostics tutorial iframe diverged: {embedded}")
+
+
 def test_docs_homepage(
   browser: str,
   docs_url: str,
@@ -807,6 +967,9 @@ def main() -> int:
     args.browser, args.base_url, args.docs_url, args.timeout
   )
   test_flow_steering(
+    args.browser, args.base_url, args.docs_url, args.timeout
+  )
+  test_diagnostics(
     args.browser, args.base_url, args.docs_url, args.timeout
   )
   test_traffic_layout(
