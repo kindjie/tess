@@ -19,8 +19,7 @@
       </header>
 
       <section class="controls" aria-label="Steering controls">
-        <button id="pause" type="button" aria-pressed="true"
-          disabled>Start</button>
+        <button id="pause" type="button" disabled>Start</button>
         <button id="reset" type="button" disabled>Reset</button>
         <fieldset>
           <legend>Goal preset</legend>
@@ -34,9 +33,11 @@
         <fieldset class="coordinate-goal">
           <legend>Goal coordinate</legend>
           <label for="goal-x">X</label>
-          <input id="goal-x" type="number" min="0" value="27" disabled>
+          <input id="goal-x" type="number" min="0" max="31" step="1"
+            value="27" required disabled>
           <label for="goal-y">Y</label>
-          <input id="goal-y" type="number" min="0" value="4" disabled>
+          <input id="goal-y" type="number" min="0" max="23" step="1"
+            value="4" required disabled>
           <button id="set-goal" type="button" disabled>Set goal</button>
         </fieldset>
       </section>
@@ -44,7 +45,7 @@
       <canvas id="world" width="960" height="720"
         aria-label="Flow-style steering grid" aria-disabled="true"></canvas>
 
-      <section class="status" aria-live="polite" aria-atomic="true">
+      <section class="status">
         <p id="summary">Loading the WebAssembly model…</p>
         <ul>
           <li>
@@ -63,6 +64,8 @@
         <p>Independent agents may overlap. This global guidance does not
           perform collision avoidance.</p>
       </section>
+      <p id="announcement" class="visually-hidden" aria-live="polite"
+        aria-atomic="true"></p>
     </main>
 
     <script src="tess-flow-steering.js"></script>

@@ -119,7 +119,10 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
   assert 'id="set-goal"' in html
   assert 'data-goal-preset=' in html
   assert html.count(" disabled") >= 8
-  assert 'aria-live="polite"' in html
+  assert 'id="announcement"' in html
+  assert html.count('aria-live="polite"') == 1
+  assert 'class="status" aria-live=' not in html
+  assert "aria-pressed" not in html
   assert 'aria-label="Flow-style steering grid"' in html
   assert "Independent agents may overlap" in html
   assert "At goal" in html
@@ -127,6 +130,13 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
   assert "matchMedia(\"(prefers-reduced-motion: reduce)\")" in app
   assert "canvas.getBoundingClientRect().width" in app
   assert "dataset.distanceLabels" in app
+  assert "Number.isInteger" in app
+  assert "checkValidity()" in app
+  assert "is outside the world" in app
+  assert "is impassable" in app
+  assert 'canvas.addEventListener("click"' in app
+  assert 'canvas.addEventListener("pointerdown"' not in app
+  assert "aria-pressed" not in app
   assert "control.disabled = false" in app
   assert 'canvas.removeAttribute("aria-disabled")' in app
   assert "data.tessFlowSteering = \"ready\"" in app
@@ -140,6 +150,8 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
   assert "data-goal-preset" in interactions
   assert "#set-goal" in interactions
   assert "distanceLabels" in interactions
+  assert "whole-number coordinates" in interactions
+  assert "announcement" in interactions
   assert "noOverflow" in interactions
   assert "frameOverflow" in interactions
 

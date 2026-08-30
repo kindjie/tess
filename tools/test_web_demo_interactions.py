@@ -158,15 +158,21 @@ def open_page(
     page.close()
 
 
-def cell_center(page: BrowserPage, x: int, y: int) -> tuple[float, float]:
-  """Return viewport coordinates for a colony tile center."""
+def cell_center(
+  page: BrowserPage,
+  x: int,
+  y: int,
+  columns: int = 128,
+  rows: int = 128,
+) -> tuple[float, float]:
+  """Return viewport coordinates for one canvas-grid cell center."""
   value = page.evaluate(
     "(() => {"
     "const canvas = document.querySelector('#world');"
     "canvas.scrollIntoView({block: 'center'});"
     "const rect = canvas.getBoundingClientRect();"
-    f"return [rect.left + ({x} + 0.5) * rect.width / 128,"
-    f"rect.top + ({y} + 0.5) * rect.height / 128];"
+    f"return [rect.left + ({x} + 0.5) * rect.width / {columns},"
+    f"rect.top + ({y} + 0.5) * rect.height / {rows}];"
     "})()"
   )
   if not isinstance(value, list) or len(value) != 2:
@@ -206,9 +212,15 @@ def press_enter(page: BrowserPage) -> None:
   page.command("Input.dispatchKeyEvent", {"type": "keyUp", **params})
 
 
-def click_cell(page: BrowserPage, x: int, y: int) -> None:
-  """Click the center of one colony tile."""
-  point = cell_center(page, x, y)
+def click_cell(
+  page: BrowserPage,
+  x: int,
+  y: int,
+  columns: int = 128,
+  rows: int = 128,
+) -> None:
+  """Click the center of one canvas-grid cell."""
+  point = cell_center(page, x, y, columns, rows)
   mouse(page, "mousePressed", point, True)
   mouse(page, "mouseReleased", point)
 
@@ -301,9 +313,14 @@ def test_flow_steering(
     initial = page.evaluate(
       "(() => ({"
       "step: Number(document.documentElement.dataset.step),"
-      "paused: document.querySelector('#pause').getAttribute("
+      "label: document.querySelector('#pause').textContent.trim(),"
+      "pressed: document.querySelector('#pause').hasAttribute("
       "'aria-pressed'),"
       "states: document.querySelector('.status').textContent,"
+      "statusLive: document.querySelector('.status').hasAttribute("
+      "'aria-live'),"
+      "announcement: document.querySelector('#announcement').getAttribute("
+      "'aria-live'),"
       "keyboard: [...document.querySelectorAll('button,input')].every("
       "(control) => control.tabIndex >= 0 && !control.disabled),"
       "distanceLabels: document.documentElement.dataset.distanceLabels,"
@@ -313,7 +330,10 @@ def test_flow_steering(
     if (
       not isinstance(initial, dict)
       or initial["step"] != 0
-      or initial["paused"] != "true"
+      or initial["label"] != "Start"
+      or initial["pressed"]
+      or initial["statusLive"]
+      or initial["announcement"] != "polite"
       or not initial["keyboard"]
       or initial["distanceLabels"] != "true"
       or not initial["noOverflow"]
@@ -325,6 +345,9 @@ def test_flow_steering(
     page.evaluate("document.querySelector('#pause').focus()")
     press_enter(page)
     page.wait_for("Number(document.documentElement.dataset.step) > 0")
+    if page.evaluate("document.querySelector('#pause').textContent.trim()") \
+        != "Pause":
+      raise RuntimeError("flow steering start action did not become Pause")
     page.evaluate(
       "document.querySelector('[data-goal-preset=\"3,12\"]').focus()"
     )
@@ -341,6 +364,37 @@ def test_flow_steering(
       raise RuntimeError(f"keyboard goal selection diverged: {goal}")
 
     page.evaluate(
+      "document.querySelector('#goal-x').value = '10.5';"
+      "document.querySelector('#goal-y').value = '10';"
+      "document.querySelector('#set-goal').focus()"
+    )
+    press_enter(page)
+    page.wait_for(
+      "document.querySelector('#announcement').textContent.includes("
+      "'whole-number coordinates')"
+    )
+
+    page.evaluate(
+      "document.querySelector('#goal-x').value = '32';"
+      "document.querySelector('#goal-y').value = '10'"
+    )
+    press_enter(page)
+    page.wait_for(
+      "document.querySelector('#announcement').textContent.includes("
+      "'outside the world')"
+    )
+
+    page.evaluate(
+      "document.querySelector('#goal-x').value = '8';"
+      "document.querySelector('#goal-y').value = '2'"
+    )
+    press_enter(page)
+    page.wait_for(
+      "document.querySelector('#announcement').textContent.includes("
+      "'is impassable')"
+    )
+
+    page.evaluate(
       "document.querySelector('#goal-x').value = '10';"
       "document.querySelector('#goal-y').value = '10';"
       "document.querySelector('#set-goal').focus()"
@@ -349,6 +403,12 @@ def test_flow_steering(
     page.wait_for(
       "document.querySelector('#summary').textContent.includes("
       "'Goal (10, 10)')"
+    )
+
+    click_cell(page, 12, 11, 32, 24)
+    page.wait_for(
+      "document.querySelector('#summary').textContent.includes("
+      "'Goal (12, 11)')"
     )
 
   with open_page(browser, url, 390, 844, timeout) as page:

@@ -8,6 +8,7 @@ const summary = document.querySelector("#summary");
 const movingStatus = document.querySelector("#moving");
 const goalStatus = document.querySelector("#at-goal");
 const unreachableStatus = document.querySelector("#unreachable");
+const announcement = document.querySelector("#announcement");
 const presetButtons = [...document.querySelectorAll("[data-goal-preset]")];
 const goalXInput = document.querySelector("#goal-x");
 const goalYInput = document.querySelector("#goal-y");
@@ -29,7 +30,6 @@ function bind(module, name, result, arguments_) {
 }
 
 function setPauseLabel() {
-  pauseButton.setAttribute("aria-pressed", String(paused));
   pauseButton.textContent = reducedMotion.matches
     ? "Step"
     : paused ? "Start" : "Pause";
@@ -128,6 +128,8 @@ function tick() {
   if (moved === 0) {
     paused = true;
     setPauseLabel();
+    announcement.textContent =
+      "Movement stopped; agents are at the goal or unreachable.";
   }
 }
 
@@ -140,12 +142,27 @@ function animate(timestamp) {
   requestAnimationFrame(animate);
 }
 
-function chooseGoal(x, y) {
+function chooseGoal(x, y, announceChange = true) {
   if (!api) {
     return;
   }
+  if (!Number.isInteger(x) || !Number.isInteger(y) ||
+      x < 0 || x >= api.width() || y < 0 || y >= api.height()) {
+    const message = `Coordinate (${x}, ${y}) is outside the world.`;
+    summary.textContent = message;
+    announcement.textContent = message;
+    return;
+  }
+  if (!api.tilePassable(x, y)) {
+    const message = `Tile (${x}, ${y}) is impassable; choose a passable tile.`;
+    summary.textContent = message;
+    announcement.textContent = message;
+    return;
+  }
   if (!api.setGoal(x, y)) {
-    summary.textContent = `(${x}, ${y}) is blocked; choose a passable tile.`;
+    const message = `The goal at (${x}, ${y}) could not be rebuilt.`;
+    summary.textContent = message;
+    announcement.textContent = message;
     return;
   }
   goalXInput.value = String(x);
@@ -156,6 +173,9 @@ function chooseGoal(x, y) {
   }
   stepCount = 0;
   draw();
+  if (announceChange) {
+    announcement.textContent = `Goal changed to (${x}, ${y}).`;
+  }
 }
 
 pauseButton.addEventListener("click", () => {
@@ -166,6 +186,7 @@ pauseButton.addEventListener("click", () => {
   paused = !paused;
   lastStep = performance.now();
   setPauseLabel();
+  announcement.textContent = paused ? "Movement paused." : "Movement started.";
 });
 
 resetButton.addEventListener("click", () => {
@@ -174,6 +195,7 @@ resetButton.addEventListener("click", () => {
   stepCount = 0;
   setPauseLabel();
   chooseGoal(api.goalX(), api.goalY());
+  announcement.textContent = "Simulation reset.";
 });
 
 for (const button of presetButtons) {
@@ -184,10 +206,29 @@ for (const button of presetButtons) {
 }
 
 setGoalButton.addEventListener("click", () => {
-  chooseGoal(Number(goalXInput.value), Number(goalYInput.value));
+  const x = Number(goalXInput.value);
+  const y = Number(goalYInput.value);
+  const inputsValid = goalXInput.checkValidity() &&
+    goalYInput.checkValidity();
+  const outOfRange = goalXInput.validity.rangeUnderflow ||
+    goalXInput.validity.rangeOverflow || goalYInput.validity.rangeUnderflow ||
+    goalYInput.validity.rangeOverflow;
+  const invalidNumber = goalXInput.validity.valueMissing ||
+    goalYInput.validity.valueMissing || goalXInput.validity.badInput ||
+    goalYInput.validity.badInput || goalXInput.validity.stepMismatch ||
+    goalYInput.validity.stepMismatch || !Number.isInteger(x) ||
+    !Number.isInteger(y);
+  if (invalidNumber || (!inputsValid && !outOfRange)) {
+    const message = `Enter whole-number coordinates: X 0–${api.width() - 1} ` +
+      `and Y 0–${api.height() - 1}.`;
+    summary.textContent = message;
+    announcement.textContent = message;
+    return;
+  }
+  chooseGoal(x, y);
 });
 
-canvas.addEventListener("pointerdown", (event) => {
+canvas.addEventListener("click", (event) => {
   if (!api) {
     return;
   }
@@ -235,7 +276,7 @@ createTessFlowSteering().then((module) => {
   }
   canvas.removeAttribute("aria-disabled");
   api.reset();
-  chooseGoal(api.goalX(), api.goalY());
+  chooseGoal(api.goalX(), api.goalY(), false);
   setPauseLabel();
   const data = document.documentElement.dataset;
   data.tessFlowSteering = "ready";
