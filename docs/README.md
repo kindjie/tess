@@ -31,6 +31,9 @@ Published on the documentation site:
   paired API mechanics, an embedded C++/WebAssembly call-shape demo, and
   benchmark workload references for A*, route caches, weighted batches, and
   distance fields.
+- [Colony composition](tutorial/colony-composition.md): an embedded walkthrough
+  of queued edits, dirty topology, bounded planning, movement commit, and
+  `DeltaFrame` presentation over the shared 128x128 colony model.
 - [Roadmap](roadmap.md): released vs landed-but-unreleased vs release-gated,
   deferred, and out-of-scope work.
 - [Support](support.md): adopter help, issue, and compatibility guidance;

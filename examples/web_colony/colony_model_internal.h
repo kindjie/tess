@@ -685,38 +685,7 @@ struct ColonyModel::Impl {
   // in reverse declaration order, and the non-owning Schedule must go first.
   tess::Schedule schedule;
 
-  [[nodiscard]] auto set_wall(tess::Coord3 coord, bool built) -> bool {
-    // Example: queue a world edit. Admission is synchronous, but mutation is
-    // deferred to the PreUpdate AutoExec task so dirty publication, topology,
-    // and movement retain one deterministic schedule order.
-    // JavaScript and the Wasm model run on one thread: no fixed tick can move
-    // an agent between this admission check and the next PreUpdate build. Keep
-    // the invariant every other colony writer already follows -- construction
-    // never turns an occupied source into impassable terrain.
-    const auto pending = std::find_if(
-        pending_walls.begin(), pending_walls.end(),
-        [coord](const WallEdit& edit) { return edit.coord == coord; });
-    const auto effective = pending != pending_walls.end()
-                               ? pending->built
-                               : world.field<ConstructionTag>(coord) != 0;
-    if (effective == built) {
-      return true;
-    }
-    if (built && world.field<OccupancyTag>(coord)) {
-      return false;
-    }
-    if (pending != pending_walls.end()) {
-      pending->built = built;
-      return true;
-    }
-    pending_walls.push_back(WallEdit{coord, built});
-    const auto key = tess::chunk_key<Shape>(tess::chunk_coord<Shape>(coord));
-    (void)ops.update_field(
-        tess::DomainDesc::explicit_chunks({&key, 1}),
-        tess::FieldAccessDesc{0, kTerrainDirty.value, kTerrainDirty},
-        tess::WritePolicy::UniquePerChunk);
-    return true;
-  }
+  [[nodiscard]] auto set_wall(tess::Coord3 coord, bool built) -> bool;
 
   // Example: consume a DeltaFrame as invalidation, not copied tile payload.
   // Covered tiles are re-read from the authoritative world into the shadow.
@@ -750,20 +719,7 @@ struct ColonyModel::Impl {
     return true;
   }
 
-  void publish_render_frame() {
-    tess::collect_tile_deltas(deltas, world, kTerrainDirty);
-    if (consume_frame(deltas.publish())) {
-      return;
-    }
-
-    // Example: recover a rejected DeltaFrame. A version gap or truncation is
-    // structural, so skipping it and resuming incrementals cannot repair the
-    // shadow. Publish a complete baseline and adopt its version instead.
-    tess::collect_baseline(deltas, world, kTerrainDirty);
-    if (!consume_frame(deltas.publish())) {
-      TESS_ASSERT(false);
-    }
-  }
+  void publish_render_frame();
 
   // Advances the simulation by the measured real elapsed seconds. Returns
   // the average cost of one fixed tick in microseconds, or -1 when the

@@ -76,6 +76,7 @@ void ColonyModel::Impl::configure_build_task() {
 }
 
 void ColonyModel::Impl::configure_schedule() {
+  // [colony-schedule-order]
   schedule.reserve_tasks(3);
   (void)schedule.add_task(
       {"build", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()},
@@ -89,6 +90,7 @@ void ColonyModel::Impl::configure_schedule() {
       {"agents", tess::SimPhase::Movement, tess::Cadence::every_tick()},
       agent_task);
   schedule.seal();
+  // [colony-schedule-order]
 }
 
 void ColonyModel::Impl::initialize_render_consumer() {
@@ -100,6 +102,58 @@ void ColonyModel::Impl::initialize_render_consumer() {
     TESS_ASSERT(false);
   }
 }
+
+// [colony-queued-edits]
+auto ColonyModel::Impl::set_wall(tess::Coord3 coord, bool built) -> bool {
+  // Example: queue a world edit. Admission is synchronous, but mutation is
+  // deferred to the PreUpdate AutoExec task so dirty publication, topology,
+  // and movement retain one deterministic schedule order.
+  // JavaScript and the Wasm model run on one thread: no fixed tick can move
+  // an agent between this admission check and the next PreUpdate build. Keep
+  // the invariant every other colony writer already follows -- construction
+  // never turns an occupied source into impassable terrain.
+  const auto pending = std::find_if(
+      pending_walls.begin(), pending_walls.end(),
+      [coord](const WallEdit& edit) { return edit.coord == coord; });
+  const auto effective = pending != pending_walls.end()
+                             ? pending->built
+                             : world.field<ConstructionTag>(coord) != 0;
+  if (effective == built) {
+    return true;
+  }
+  if (built && world.field<OccupancyTag>(coord)) {
+    return false;
+  }
+  if (pending != pending_walls.end()) {
+    pending->built = built;
+    return true;
+  }
+  pending_walls.push_back(WallEdit{coord, built});
+  const auto key = tess::chunk_key<Shape>(tess::chunk_coord<Shape>(coord));
+  (void)ops.update_field(
+      tess::DomainDesc::explicit_chunks({&key, 1}),
+      tess::FieldAccessDesc{0, kTerrainDirty.value, kTerrainDirty},
+      tess::WritePolicy::UniquePerChunk);
+  return true;
+}
+// [colony-queued-edits]
+
+// [colony-delta-recovery]
+void ColonyModel::Impl::publish_render_frame() {
+  tess::collect_tile_deltas(deltas, world, kTerrainDirty);
+  if (consume_frame(deltas.publish())) {
+    return;
+  }
+
+  // Example: recover a rejected DeltaFrame. A version gap or truncation is
+  // structural, so skipping it and resuming incrementals cannot repair the
+  // shadow. Publish a complete baseline and adopt its version instead.
+  tess::collect_baseline(deltas, world, kTerrainDirty);
+  if (!consume_frame(deltas.publish())) {
+    TESS_ASSERT(false);
+  }
+}
+// [colony-delta-recovery]
 
 ColonyModel::ColonyModel(int agent_count)
     : impl_(std::make_unique<Impl>(std::clamp(agent_count, 1, kMaxAgents))) {}

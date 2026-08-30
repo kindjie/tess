@@ -86,6 +86,7 @@ nav:
       - Tutorials:
           - Tutorials: tutorials.md
           - Flow-style steering: tutorial/flow-steering.md
+          - Colony composition: tutorial/colony-composition.md
       - Examples: examples.md
   - Guides:
       - Guides: guide/README.md

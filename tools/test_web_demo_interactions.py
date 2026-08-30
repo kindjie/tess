@@ -298,6 +298,176 @@ def test_colony(browser: str, base_url: str, timeout: float) -> None:
       raise RuntimeError("fast drag did not interpolate every wall tile")
 
 
+def test_colony_article(
+  browser: str,
+  base_url: str,
+  docs_url: str,
+  timeout: float,
+) -> None:
+  """Verify compact controls, motion policy, and the tutorial embed."""
+  url = (
+    f"{base_url.rstrip('/')}/colony/"
+    "?presentation=article&browser-test=1"
+  )
+  with open_page(browser, url, 390, 844, timeout) as page:
+    page.command(
+      "Emulation.setDeviceMetricsOverride",
+      {
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 2,
+        "mobile": False,
+      },
+    )
+    page.command(
+      "Emulation.setEmulatedMedia",
+      {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]},
+    )
+    page.command("Page.reload", {"ignoreCache": True})
+    page.wait_for(
+      "document.documentElement.dataset.tessColony === 'ready'"
+    )
+    time.sleep(0.4)
+    initial = page.evaluate(
+      "(() => ({"
+      "article: document.body.classList.contains('article-mode'),"
+      "ticks: Number(document.documentElement.dataset.tickUpdates),"
+      "label: document.querySelector('#pause').textContent.trim(),"
+      "advancedHidden: [...document.querySelectorAll("
+      "'[data-advanced-control]')].every((control) => "
+      "getComputedStyle(control).display === 'none'),"
+      "keyboard: [...document.querySelectorAll("
+      "'.toolbar button:not([data-advanced-control])')].every("
+      "(control) => control.tabIndex >= 0 && !control.disabled),"
+      "status: document.querySelector('.status').textContent.trim(),"
+      "matches: matchMedia("
+      "'(prefers-reduced-motion: reduce)').matches,"
+      "backingWidth: document.querySelector('#world').width,"
+      "cssWidth: document.querySelector('#world')."
+      "getBoundingClientRect().width,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth"
+      "}))()"
+    )
+    if (
+      not isinstance(initial, dict)
+      or not initial["article"]
+      or initial["ticks"] != 0
+      or initial["label"] != "Step"
+      or not initial["advancedHidden"]
+      or not initial["keyboard"]
+      or not initial["matches"]
+      or initial["backingWidth"] < initial["cssWidth"] * 2 - 1
+      or not initial["noOverflow"]
+      or "Colony" not in initial["status"]
+    ):
+      raise RuntimeError(f"colony article initial state diverged: {initial}")
+
+    page.evaluate("document.querySelector('#article-wall').focus()")
+    press_enter(page)
+    page.wait_for("window.tessColonyTest.wallBuilt(64, 48)")
+    if page.evaluate(
+      "document.querySelector('#article-wall').textContent.trim()"
+    ) != "Remove centre wall":
+      raise RuntimeError("keyboard wall action did not become removal")
+    press_enter(page)
+    page.wait_for("!window.tessColonyTest.wallBuilt(64, 48)")
+
+    click_cell(page, 64, 48)
+    page.wait_for("window.tessColonyTest.wallBuilt(64, 48)")
+    if page.evaluate(
+      "document.querySelector('#article-wall').textContent.trim()"
+    ) != "Remove centre wall":
+      raise RuntimeError("canvas edit left the centre-wall label stale")
+    click_cell(page, 64, 48)
+    page.wait_for("!window.tessColonyTest.wallBuilt(64, 48)")
+
+    page.command(
+      "Emulation.setEmulatedMedia",
+      {
+        "features": [
+          {"name": "prefers-reduced-motion", "value": "no-preference"}
+        ]
+      },
+    )
+    page.wait_for(
+      "!matchMedia('(prefers-reduced-motion: reduce)').matches && "
+      "document.querySelector('#pause').textContent.trim() === 'Resume'"
+    )
+    page.evaluate("document.querySelector('#pause').focus()")
+    press_enter(page)
+    page.wait_for(
+      "document.querySelector('#pause').textContent.trim() === 'Pause'"
+    )
+    page.command(
+      "Emulation.setEmulatedMedia",
+      {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]},
+    )
+    page.wait_for(
+      "matchMedia('(prefers-reduced-motion: reduce)').matches && "
+      "document.querySelector('#pause').textContent.trim() === 'Step'"
+    )
+    frozen_ticks = page.evaluate(
+      "Number(document.documentElement.dataset.tickUpdates)"
+    )
+    time.sleep(0.3)
+    if page.evaluate(
+      "Number(document.documentElement.dataset.tickUpdates)"
+    ) != frozen_ticks:
+      raise RuntimeError("live reduced-motion change did not pause the colony")
+
+    page.evaluate("document.querySelector('#pause').focus()")
+    press_enter(page)
+    page.wait_for(
+      "Number(document.documentElement.dataset.tickUpdates) > 0"
+    )
+    if page.evaluate("document.querySelector('#pause').textContent.trim()") \
+        != "Step":
+      raise RuntimeError("reduced-motion colony step action changed mode")
+    if page.evaluate("window.tessColonyTest.renderAlpha()") != 1:
+      raise RuntimeError("reduced-motion step did not render current endpoints")
+
+    if page.evaluate(
+      "(() => { window.tessColonyTest.setAgentCount(1); "
+      "return window.tessColonyTest.advanceToTurnaround(); })()"
+    ) is not True:
+      raise RuntimeError("could not reach colony turnaround in browser test")
+    paused_leg = page.evaluate("window.tessColonyTest.leg()")
+    time.sleep(1.2)
+    if page.evaluate("window.tessColonyTest.leg()") != paused_leg:
+      raise RuntimeError("paused colony relaunched without another step")
+
+    page.evaluate("document.querySelector('#reset').focus()")
+    press_enter(page)
+    page.wait_for(
+      "Number(document.documentElement.dataset.tickUpdates) === 0"
+    )
+
+  article_url = f"{docs_url.rstrip('/')}/tutorial/colony-composition/"
+  with open_page(browser, article_url, 390, 844, timeout) as page:
+    page.wait_for(
+      "document.querySelector('.colony-frame')?.contentDocument?."
+      "documentElement.dataset.tessColony === 'ready'"
+    )
+    embedded = page.evaluate(
+      "(() => {"
+      "const frame = document.querySelector('.colony-frame');"
+      "const root = frame.contentDocument?.documentElement;"
+      "const frameOverflow = root ? "
+      "root.scrollWidth > root.clientWidth || "
+      "root.scrollHeight > root.clientHeight : true;"
+      "return {title: frame.title, frameOverflow,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth};"
+      "})()"
+    )
+    if (
+      not isinstance(embedded, dict)
+      or embedded["title"] != "Interactive colony composition tutorial"
+      or embedded["frameOverflow"]
+      or not embedded["noOverflow"]
+    ):
+      raise RuntimeError(f"colony tutorial iframe diverged: {embedded}")
+
+
 def test_flow_steering(
   browser: str,
   base_url: str,
@@ -633,6 +803,9 @@ def main() -> int:
     args.browser, args.docs_url, 390, 844, True, False, args.timeout
   )
   test_colony(args.browser, args.base_url, args.timeout)
+  test_colony_article(
+    args.browser, args.base_url, args.docs_url, args.timeout
+  )
   test_flow_steering(
     args.browser, args.base_url, args.docs_url, args.timeout
   )
