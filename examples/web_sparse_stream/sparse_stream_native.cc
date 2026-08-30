@@ -23,6 +23,13 @@ constexpr auto kSeed = 0x7a11ce5eedULL;
   return sparse::verify_indeterminate_retry(kSeed);
 }
 
+[[nodiscard]] auto check_generates_only_newly_materialized_pages() -> bool {
+  sparse::SparseStreamModel model{sparse::resident_capacity, kSeed};
+  const auto generated = model.generated_page_count();
+  return model.tick() == sparse::StreamStatus::Ready &&
+         model.generated_page_count() == generated;
+}
+
 [[nodiscard]] auto check_determinism_and_legal_steps() -> bool {
   sparse::SparseStreamModel lhs{sparse::resident_capacity, kSeed};
   sparse::SparseStreamModel rhs{sparse::resident_capacity, kSeed};
@@ -62,7 +69,7 @@ constexpr auto kSeed = 0x7a11ce5eedULL;
   auto saw_new = model.new_count() == 25;
   auto saw_retained = false;
   auto saw_evicted = false;
-  for (int tick = 0; tick < 96; ++tick) {
+  for (int tick = 0; tick < 2200; ++tick) {
     if (model.required_count() != 25 ||
         model.resident_count() > sparse::resident_capacity) {
       return false;
@@ -92,7 +99,9 @@ constexpr auto kSeed = 0x7a11ce5eedULL;
 
 int main() {
   if (!check_capacity_preflight() || !check_regeneration_is_byte_identical() ||
-      !check_indeterminate_retry() || !check_determinism_and_legal_steps() ||
+      !check_indeterminate_retry() ||
+      !check_generates_only_newly_materialized_pages() ||
+      !check_determinism_and_legal_steps() ||
       !check_bounded_camera_follow_stream()) {
     std::cerr << "procedural sparse stream model: failed\n";
     return 1;

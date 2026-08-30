@@ -105,8 +105,11 @@ for (const auto key : impl_->required) {
     impl_->newly_generated.push_back(key);
   }
 }
-for (const auto key : impl_->newly_generated) {
-  generate_chunk(impl_->world, key, impl_->seed);
+if (materialized) {
+  for (const auto key : impl_->newly_generated) {
+    generate_chunk(impl_->world, key, impl_->seed);
+    ++impl_->generated_pages;
+  }
 }
 
 impl_->retained.clear();

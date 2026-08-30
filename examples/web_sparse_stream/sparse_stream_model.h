@@ -67,6 +67,7 @@ class SparseStreamModel {
   [[nodiscard]] auto agent_status(int index) const noexcept -> AgentStatus;
   [[nodiscard]] auto tile_passable(int x, int y) const noexcept -> bool;
   [[nodiscard]] auto step_count() const noexcept -> std::uint32_t;
+  [[nodiscard]] auto generated_page_count() const noexcept -> std::uint64_t;
 
  private:
   struct Impl;

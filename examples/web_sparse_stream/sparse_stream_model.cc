@@ -163,9 +163,10 @@ struct SparseStreamModel::Impl {
   }
 
   void choose_next_goal(Agent& agent) const {
-    auto next_x = static_cast<int>(agent.position.x) + kLocalGoalDistance;
+    const auto position_x = static_cast<int>(agent.position.x);
+    auto next_x = position_x + kLocalGoalDistance;
     if (next_x >= world_width - 2 * chunk_size) {
-      next_x = 2 * chunk_size + chunk_size / 2;
+      next_x = position_x - kLocalGoalDistance;
     }
     agent.goal.x = next_x;
     agent.goal.y = agent.position.y;
@@ -185,6 +186,7 @@ struct SparseStreamModel::Impl {
   int camera_y = 0;
   std::uint32_t steps = 0;
   std::uint64_t resident_checksum = 0;
+  std::uint64_t generated_pages = 0;
 };
 
 SparseStreamModel::SparseStreamModel(std::size_t page_capacity,
@@ -237,8 +239,11 @@ auto SparseStreamModel::tick() -> StreamStatus {
       impl_->newly_generated.push_back(key);
     }
   }
-  for (const auto key : impl_->newly_generated) {
-    generate_chunk(impl_->world, key, impl_->seed);
+  if (materialized) {
+    for (const auto key : impl_->newly_generated) {
+      generate_chunk(impl_->world, key, impl_->seed);
+      ++impl_->generated_pages;
+    }
   }
 
   impl_->retained.clear();
@@ -398,6 +403,10 @@ auto SparseStreamModel::tile_passable(int x, int y) const noexcept -> bool {
 
 auto SparseStreamModel::step_count() const noexcept -> std::uint32_t {
   return impl_->steps;
+}
+
+auto SparseStreamModel::generated_page_count() const noexcept -> std::uint64_t {
+  return impl_->generated_pages;
 }
 
 auto verify_regeneration_is_byte_identical(std::uint64_t seed) -> bool {

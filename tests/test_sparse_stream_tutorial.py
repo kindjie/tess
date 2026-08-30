@@ -32,15 +32,22 @@ def test_native_model_owns_the_bounded_streaming_protocol():
   assert residency.index("ensure_resident") < residency.index("generate_chunk")
   assert residency.index("generate_chunk") < residency.index("refresh_view")
   assert residency.index("refresh_view") < residency.index("astar_path")
+  assert (
+    "if (materialized) {\n"
+    "    for (const auto key : impl_->newly_generated)" in residency
+  )
 
   for invariant in (
     "check_capacity_preflight",
     "check_regeneration_is_byte_identical",
     "check_indeterminate_retry",
+    "check_generates_only_newly_materialized_pages",
     "check_determinism_and_legal_steps",
     "check_bounded_camera_follow_stream",
   ):
     assert invariant in native
+  bounded = native.split("check_bounded_camera_follow_stream", 1)[1]
+  assert "tick < 2200" in bounded
   assert "procedural sparse stream model: ok" in native
   assert "tess_web_sparse_stream_model" in cmake
   assert "tess_web_sparse_stream_wasm_adapter" in cmake
@@ -170,5 +177,9 @@ def test_ci_schedules_static_native_wasm_and_browser_checks():
   assert "tests/test_sparse_stream_tutorial.py" in ci
   assert "bash tools/build_web_demo.sh build/site/demo" in pages
   assert "python3 tools/test_web_demo_interactions.py" in pages
-  assert "test -d docs/demo/sparse-stream" in pages
+  assert "if [[ -d examples/web_sparse_stream ]]" in pages
+  sparse_guard = pages.split(
+    "if [[ -d examples/web_sparse_stream ]]", 1
+  )[1].split("fi", 1)[0]
+  assert "test -d docs/demo/sparse-stream" in sparse_guard
   assert '"sparse-stream": (' in finalizer
