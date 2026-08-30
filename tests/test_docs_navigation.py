@@ -97,13 +97,24 @@ def test_tutorial_and_example_catalogues_use_the_agreed_families():
   assert "WebGPU" in examples
 
 
-def test_pages_workflow_runs_responsive_homepage_browser_checks():
-  """The assembled homepage is part of the publication browser smoke."""
+def test_pages_workflow_runs_responsive_docs_browser_checks():
+  """The assembled homepage and authored embeds have responsive smoke."""
   workflow = read(".github/workflows/pages.yml")
   interaction_tool = read("tools/test_web_demo_interactions.py")
 
   assert "--docs-url http://127.0.0.1:8000/" in workflow
   assert "test_docs_homepage(" in interaction_tool
+  assert "test_authored_iframe_layouts(" in interaction_tool
+  assert "1272, 868" in interaction_tool
+  for selector in (
+    ".strategy-demo-frame",
+    ".strategy-scaling-frame",
+    ".colony-frame",
+    ".flow-steering-frame",
+    ".diagnostics-frame",
+    ".sparse-stream-frame",
+  ):
+    assert selector in interaction_tool
   assert "prefers-reduced-motion" in interaction_tool
   assert "document.documentElement.scrollWidth <= innerWidth" in (
     interaction_tool

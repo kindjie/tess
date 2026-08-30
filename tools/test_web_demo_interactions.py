@@ -1050,6 +1050,92 @@ def test_docs_homepage(
       page.wait_for("location.pathname.endsWith('/getting-started/')")
 
 
+def test_authored_iframe_layouts(
+  browser: str,
+  docs_url: str,
+  timeout: float,
+) -> None:
+  """Verify every authored embed at the sidebar-constrained desktop width."""
+  cases = (
+    (
+      "pathfinding-strategy-comparison/",
+      ".strategy-demo-frame",
+      "Interactive pathfinding strategy comparison",
+      "document.documentElement.dataset.tessStrategies === 'ready'",
+      False,
+    ),
+    (
+      "pathfinding-strategy-comparison/",
+      ".strategy-scaling-frame",
+      "Pathfinding operation-time scaling on Apple M3 Max and Steam Deck",
+      "document.readyState === 'complete'",
+      False,
+    ),
+    (
+      "tutorial/colony-composition/",
+      ".colony-frame",
+      "Interactive colony composition tutorial",
+      "document.documentElement.dataset.tessColony === 'ready'",
+      True,
+    ),
+    (
+      "tutorial/flow-steering/",
+      ".flow-steering-frame",
+      "Interactive flow field steering tutorial",
+      "document.documentElement.dataset.tessFlowSteering === 'ready'",
+      False,
+    ),
+    (
+      "guide/diagnostics/",
+      ".diagnostics-frame",
+      "Interactive colony diagnostics tutorial",
+      "document.documentElement.dataset.tessDiagnostics === 'ready'",
+      True,
+    ),
+    (
+      "tutorial/procedural-sparse-stream/",
+      ".sparse-stream-frame",
+      "Interactive procedural sparse-stream tutorial",
+      "document.documentElement.dataset.tessSparseStream === 'ready'",
+      False,
+    ),
+  )
+  for path, selector, title, ready, gpu in cases:
+    url = f"{docs_url.rstrip('/')}/{path}"
+    with open_page(browser, url, 1272, 868, timeout, gpu=gpu) as page:
+      page.wait_for("document.readyState === 'complete'")
+      page.evaluate(
+        f"document.querySelector({selector!r}).scrollIntoView("
+        "{block: 'center'})"
+      )
+      page.wait_for(
+        f"document.querySelector({selector!r})?.contentWindow?.{ready}"
+      )
+      layout = page.evaluate(
+        "(() => {"
+        f"const frame = document.querySelector({selector!r});"
+        "const root = frame.contentDocument?.documentElement;"
+        "return {title: frame.title,"
+        "clientWidth: root?.clientWidth,"
+        "clientHeight: root?.clientHeight,"
+        "scrollWidth: root?.scrollWidth,"
+        "scrollHeight: root?.scrollHeight,"
+        "frameOverflow: root ? root.scrollWidth > root.clientWidth || "
+        "root.scrollHeight > root.clientHeight : true,"
+        "pageOverflow: document.documentElement.scrollWidth > innerWidth};"
+        "})()"
+      )
+      if (
+        not isinstance(layout, dict)
+        or layout["title"] != title
+        or layout["frameOverflow"]
+        or layout["pageOverflow"]
+      ):
+        raise RuntimeError(
+          f"authored iframe {selector} diverged at 1272x868: {layout}"
+        )
+
+
 def test_traffic_layout(
   browser: str,
   base_url: str,
@@ -1134,6 +1220,9 @@ def main() -> int:
   )
   test_docs_homepage(
     args.browser, args.docs_url, 390, 844, True, False, args.timeout
+  )
+  test_authored_iframe_layouts(
+    args.browser, args.docs_url, args.timeout
   )
   test_colony(args.browser, args.base_url, args.timeout)
   test_colony_article(
