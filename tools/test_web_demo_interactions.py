@@ -1108,6 +1108,12 @@ def test_authored_iframe_layouts(
         f"document.querySelector({selector!r}).scrollIntoView("
         "{block: 'center'})"
       )
+      if selector == ".strategy-scaling-frame":
+        page.wait_for(
+          f"document.querySelector({selector!r})?.contentWindow?."
+          "location.pathname.endsWith("
+          "'/assets/path-strategy-scaling.html')"
+        )
       page.wait_for(
         f"document.querySelector({selector!r})?.contentWindow?.{ready}"
       )

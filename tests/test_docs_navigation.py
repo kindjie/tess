@@ -105,6 +105,7 @@ def test_pages_workflow_runs_responsive_docs_browser_checks():
   assert "--docs-url http://127.0.0.1:8000/" in workflow
   assert "test_docs_homepage(" in interaction_tool
   assert "test_authored_iframe_layouts(" in interaction_tool
+  assert "assets/path-strategy-scaling.html" in interaction_tool
   assert "1272, 868" in interaction_tool
   for selector in (
     ".strategy-demo-frame",
