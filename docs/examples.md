@@ -26,7 +26,8 @@ separate starting point:
 - **Basic pathfinding** combines the
   [getting-started tutorial](getting-started.md), the
   [live pathfinder](../demo/), and [`quickstart.cc`][quickstart].
-- **Colony simulation** grows from [`path_agents.cc`][path_agents] into the
+- **Colony simulation** grows from [`path_agents.cc`][path_agents] through the
+  [colony composition tutorial](tutorial/colony-composition.md) into the
   [`colony_2d.cc` model][colony_2d], its native check, and the
   [`web_colony` host][web_colony_src].
 - **Pathfinding strategies** connects the

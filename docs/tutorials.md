@@ -26,8 +26,13 @@ destination and retaining complete paths would duplicate guidance.
 
 ## Colony simulation
 
-The colony family shows how focused agent movement grows into a complete
-fixed-step composition:
+The [colony composition tutorial](tutorial/colony-composition.md) follows one
+fixed tick from queued wall edits through topology, bounded planning,
+movement, and `DeltaFrame` presentation. Its article-sized live view uses the
+same model as the full standalone demo.
+
+The wider colony family shows how focused agent movement grows into that
+complete fixed-step composition:
 
 1. [`path_agents.cc`][path_agents] isolates goal assignment, bounded planning,
    movement, and blocked-path handling.

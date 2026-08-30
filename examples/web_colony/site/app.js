@@ -8,10 +8,16 @@ const slider = document.getElementById('agents');
 const agentCount = document.getElementById('agent-count');
 const replan = document.getElementById('replan');
 const spread = document.getElementById('spread');
+const pauseButton = document.getElementById('pause');
 const resetButton = document.getElementById('reset');
 const clearButton = document.getElementById('clear-walls');
-const browserTestMode =
-    new URLSearchParams(window.location.search).has('browser-test');
+const searchParams = new URLSearchParams(window.location.search);
+const articleMode = searchParams.get('presentation') === 'article';
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const articleWallButton = document.getElementById('article-wall');
+const browserTestMode = searchParams.has('browser-test');
+
+document.body.classList.toggle('article-mode', articleMode);
 
 // Mirrors kWallMinX/kWallMaxX in colony_model_internal.h: painting is rejected
 // in the spawn band on the left and the turnaround band on the right.
@@ -26,6 +32,7 @@ let module = null;
 let width = 0;
 let height = 0;
 let tileSize = 0;
+let tickUpdates = 0;
 let emaUs = 0;
 let activePointer = null;
 let lastTile = null;
@@ -33,7 +40,42 @@ let strokeBuilt = true;
 let lastTimestamp = 0;
 let leg = 1;
 let turnaroundSince = 0;
+let paused = reducedMotion.matches;
+let stepRequested = false;
 const walls = new Set();
+
+function updatePauseLabel() {
+  pauseButton.textContent = reducedMotion.matches ?
+      'Step' :
+      (paused ? 'Resume' : 'Pause');
+}
+
+function updateArticleWallLabel() {
+  const key = 48 * width + 64;
+  articleWallButton.textContent = walls.has(key) ?
+      'Remove centre wall' : 'Add centre wall';
+}
+
+function toggleArticleWall() {
+  const built = !walls.has(48 * width + 64);
+  for (let y = 48; y < 80; y += 1) {
+    setWall(64, y, built);
+  }
+  updateArticleWallLabel();
+}
+
+function resizeCanvas() {
+  // CSS owns layout; the backing store follows its rendered width and the
+  // device pixel ratio so the 128x128 grid stays crisp on high-DPI displays.
+  const cssWidth = canvas.getBoundingClientRect().width;
+  const scale = Math.max(1, window.devicePixelRatio || 1);
+  const pixels = Math.max(width, Math.round(cssWidth * scale));
+  if (canvas.width !== pixels || canvas.height !== pixels) {
+    canvas.width = pixels;
+    canvas.height = pixels;
+  }
+  tileSize = canvas.width / width;
+}
 
 function setWall(x, y, built) {
   // Example: persist only edits the C++ model admitted. The browser remembers
@@ -94,9 +136,34 @@ function reset() {
     }
   }
   emaUs = 0;
+  tickUpdates = 0;
+  document.documentElement.dataset.tickUpdates = String(tickUpdates);
   leg = api.leg();
   turnaroundSince = 0;
   lastTimestamp = 0;
+  updateArticleWallLabel();
+}
+
+function drawTileGrid() {
+  if (!articleMode || tileSize < 2) {
+    return;
+  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgb(201 193 220 / 10%)';
+  ctx.lineWidth = Math.max(1, window.devicePixelRatio || 1);
+  for (let index = 1; index < width; index += 1) {
+    const offset = index * tileSize;
+    ctx.moveTo(offset, 0);
+    ctx.lineTo(offset, canvas.height);
+  }
+  for (let index = 1; index < height; index += 1) {
+    const offset = index * tileSize;
+    ctx.moveTo(0, offset);
+    ctx.lineTo(canvas.width, offset);
+  }
+  ctx.stroke();
+  ctx.restore();
 }
 
 function tileAt(event) {
@@ -154,6 +221,7 @@ function draw() {
     ctx.fillRect(x * tileSize + agentInset, y * tileSize + agentInset,
         agentSize, agentSize);
   }
+  drawTileGrid();
 }
 
 function frame(timestamp) {
@@ -162,7 +230,14 @@ function frame(timestamp) {
         0 :
         Math.max(0, Math.min((timestamp - lastTimestamp) / 1000, 0.25));
     lastTimestamp = timestamp;
-    const us = api.tick(dt);
+    const shouldTick = !paused || stepRequested;
+    const tickDt = stepRequested ? 1 / ticksPerSecond : dt;
+    const us = shouldTick ? api.tick(tickDt) : -1;
+    if (us >= 0) {
+      tickUpdates += 1;
+      document.documentElement.dataset.tickUpdates = String(tickUpdates);
+    }
+    stepRequested = false;
     if (us >= 0) {
       emaUs = emaUs === 0 ? us : emaUs * 0.9 + us * 0.1;
     }
@@ -281,6 +356,7 @@ createTessColony()
       width = api.width();
       height = api.height();
       tileSize = canvas.width / width;
+      resizeCanvas();
       reset();
 
       slider.addEventListener('input', () => {
@@ -295,6 +371,16 @@ createTessColony()
         api.setSpread(spread.checked ? 1 : 0);
         emaUs = 0;
       });
+      pauseButton.addEventListener('click', () => {
+        if (reducedMotion.matches) {
+          stepRequested = true;
+        } else {
+          paused = !paused;
+        }
+        lastTimestamp = 0;
+        updatePauseLabel();
+      });
+      articleWallButton.addEventListener('click', toggleArticleWall);
       resetButton.addEventListener('click', reset);
       clearButton.addEventListener('click', () => {
         walls.clear();
@@ -331,6 +417,7 @@ createTessColony()
       };
       canvas.addEventListener('pointerup', stopPainting);
       canvas.addEventListener('pointercancel', stopPainting);
+      window.addEventListener('resize', resizeCanvas);
 
       if (browserTestMode) {
         window.tessColonyTest = {
@@ -343,6 +430,12 @@ createTessColony()
       }
 
       document.documentElement.dataset.tessColony = 'ready';
+      document.documentElement.dataset.tickUpdates = '0';
+      for (const control of document.querySelectorAll('button, input')) {
+        control.disabled = false;
+      }
+      updatePauseLabel();
+      updateArticleWallLabel();
       message.textContent = 'Colony running';
       window.requestAnimationFrame(frame);
     })

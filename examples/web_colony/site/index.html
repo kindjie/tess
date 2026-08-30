@@ -11,7 +11,7 @@
   </head>
   <body>
     <main>
-      <header>
+      <header class="standalone-only">
         <a class="brand" href="../../" aria-label="Read the tess documentation">
           <img src="logo.svg" alt="tess">
         </a>
@@ -32,35 +32,51 @@
       </header>
 
       <section class="demo" aria-label="Interactive colony demo">
+        <div class="article-intro">
+          <p class="eyebrow">Colony composition</p>
+          <h1>One deterministic schedule</h1>
+          <p>
+            Watch queued edits, bounded planning, integer-tile movement, and
+            presentation-only interpolation share the same 128×128 model.
+          </p>
+        </div>
         <div class="toolbar" role="toolbar" aria-label="Colony controls">
-          <label>Agents
+          <label data-advanced-control="true">Agents
             <input id="agents" type="range" min="16" max="1024" step="16"
-                   value="128">
+                   value="128" disabled>
             <span id="agent-count">128</span>
           </label>
-          <label>
-            <input id="replan" type="checkbox">
+          <label data-advanced-control="true">
+            <input id="replan" type="checkbox" disabled>
             Replan every tick (drop retained routes)
           </label>
-          <label>
-            <input id="spread" type="checkbox" checked>
+          <label data-advanced-control="true">
+            <input id="spread" type="checkbox" checked disabled>
             Spread congested equal-cost routes
           </label>
-          <button id="reset">Reset</button>
-          <button id="clear-walls">Clear walls</button>
+          <button id="pause" disabled>Pause</button>
+          <button id="article-wall" class="article-only" disabled>
+            Add centre wall
+          </button>
+          <button id="reset" disabled>Reset</button>
+          <button id="clear-walls" data-advanced-control="true" disabled>
+            Clear walls
+          </button>
         </div>
         <canvas id="world" width="768" height="768"
                 aria-label="Colony world grid"></canvas>
         <p class="edit-hint">
           Drag empty space to draw; drag from a wall to erase.
         </p>
-        <div class="status" aria-live="polite">
-          <span id="message">Loading WebAssembly…</span>
+        <div class="status">
+          <span id="message" role="status" aria-live="polite">
+            Loading WebAssembly…
+          </span>
           <span id="metrics"></span>
         </div>
       </section>
 
-      <footer>
+      <footer class="standalone-only">
         <a href="../">Try the pathfinder demo</a>
         <a href="../tower/">Climb the tower</a>
         <a href="https://github.com/kindjie/tess/tree/main/examples/web_colony">
