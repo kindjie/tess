@@ -65,8 +65,8 @@ API_NOINDEX_PATTERNS = (
 # the generic site description.
 DEMO_DESCRIPTIONS = {
   "flow-steering": (
-    "Interactive tess flow-style steering tutorial using public distance "
-    "labels and deterministic next-step selection."
+    "Interactive tess flow field steering tutorial using public distance "
+    "labels without retaining per-tile directions."
   ),
   "sparse-stream": (
     "Procedural sparse-world demo: tess streams deterministic terrain "

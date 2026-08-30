@@ -130,9 +130,11 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
   html = read("examples/web_flow_steering/site/index.html")
   app = read("examples/web_flow_steering/site/app.js")
   interactions = read("tools/test_web_demo_interactions.py")
+  finalizer = read("tools/finalize_generated_pages.py")
 
   assert "<title>Flow field steering · tess</title>" in html
   assert "<h1>Flow field steering</h1>" in html
+  assert "Interactive tess flow field steering tutorial" in finalizer
   assert 'id="pause"' in html
   assert 'id="reset"' in html
   assert 'id="goal-x"' in html
