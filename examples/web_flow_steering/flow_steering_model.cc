@@ -15,7 +15,8 @@ using Shape = tess::Shape<tess::Extent3{width, height}, tess::Extent3{8, 8}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
-constexpr auto kTileCount = static_cast<std::size_t>(width * height);
+constexpr auto kTileCount =
+    static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
 constexpr tess::Coord2 kDefaultGoal{27, 4};
 
 // North, east, south, west. The first valid descent wins every tie.
