@@ -654,7 +654,7 @@
   <span class="md-ellipsis">
     
   
-    Flow-style steering
+    Flow field steering
   
 
     
@@ -2520,8 +2520,8 @@ remain authoritative for the full contracts.</p>
 <td>Retained shortest-distance data built from one or more goals for repeated path reads. See <a href="../architecture/path/">pathfinding</a>.</td>
 </tr>
 <tr>
-<td><strong><abbr title="On-demand local steps selected from retained distance labels; distinct from a retained flow field and lifecycle flow accounting diagnostics.">flow-style steering</abbr></strong></td>
-<td>On-demand selection of a descending neighbouring tile from retained distance labels. It retains no directions and is distinct from both a <abbr title="Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr> and <abbr title="Admission, terminal-outcome, outstanding-inventory, residence, and bounded-work accounting for one work lifecycle; distinct from a pathfinding flow field.">lifecycle flow accounting</abbr> diagnostics. See the <a href="../tutorial/flow-steering/">tutorial</a>.</td>
+<td><strong><abbr title="On-demand local steps selected from retained distance labels; Tess derives directions at read time instead of retaining a conventional flow field.">flow field steering</abbr></strong></td>
+<td>On-demand selection of a descending neighbouring tile from retained distance labels, also described as flow-style steering. Tess derives the direction at read time rather than retaining a conventional <abbr title="Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr>. This is distinct from <abbr title="Admission, terminal-outcome, outstanding-inventory, residence, and bounded-work accounting for one work lifecycle; distinct from a pathfinding flow field.">lifecycle flow accounting</abbr> diagnostics. See the <a href="../tutorial/flow-steering/">tutorial</a>.</td>
 </tr>
 <tr>
 <td><strong><abbr title="Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr></strong></td>

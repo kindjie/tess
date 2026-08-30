@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Follow tess learning paths for basic pathfinding, flow-style steering, colony simulation, strategy selection, and congestion-aware movement.">
+        <meta name="description" content="Follow tess learning paths for basic pathfinding, flow field steering, colony simulation, strategy selection, and congestion-aware movement.">
       
       
       
@@ -57,14 +57,14 @@
     <meta property="og:type" content="website">
   <meta property="og:site_name" content="tess">
   <meta property="og:title" content="Tutorials and Learning Paths - tess">
-  <meta property="og:description" content="Follow tess learning paths for basic pathfinding, flow-style steering, colony simulation, strategy selection, and congestion-aware movement.">
+  <meta property="og:description" content="Follow tess learning paths for basic pathfinding, flow field steering, colony simulation, strategy selection, and congestion-aware movement.">
   <meta property="og:url" content="https://tess.owx.dev/main/tutorials/">
   <meta property="og:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1280">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Tutorials and Learning Paths - tess">
-  <meta name="twitter:description" content="Follow tess learning paths for basic pathfinding, flow-style steering, colony simulation, strategy selection, and congestion-aware movement.">
+  <meta name="twitter:description" content="Follow tess learning paths for basic pathfinding, flow field steering, colony simulation, strategy selection, and congestion-aware movement.">
   <meta name="twitter:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
 
   </head>
@@ -689,10 +689,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#flow-style-steering" class="md-nav__link">
+  <a href="#flow-field-steering" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Flow-style steering
+        Flow field steering
       
     </span>
   </a>
@@ -788,7 +788,7 @@
   <span class="md-ellipsis">
     
   
-    Flow-style steering
+    Flow field steering
   
 
     
@@ -2248,10 +2248,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#flow-style-steering" class="md-nav__link">
+  <a href="#flow-field-steering" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Flow-style steering
+        Flow field steering
       
     </span>
   </a>
@@ -2350,12 +2350,12 @@ use the <a href="../demo/">live pathfinder</a> to change endpoints and obstacles
 the same core query runs in WebAssembly. Together they are the basic
 pathfinding learning path; this page does not introduce a competing beginner
 sequence.</p>
-<h2 id="flow-style-steering">Flow-style steering</h2>
-<p>The <a href="../tutorial/flow-steering/"><abbr title="On-demand local steps selected from retained distance labels; distinct from a retained flow field and lifecycle flow accounting diagnostics.">flow-style steering</abbr> tutorial</a> builds one
+<h2 id="flow-field-steering">Flow field steering</h2>
+<p>The <a href="../tutorial/flow-steering/"><abbr title="On-demand local steps selected from retained distance labels; Tess derives directions at read time instead of retaining a conventional flow field.">flow field steering</abbr> tutorial</a> builds one
 dense distance product for a shared goal, then moves independent agents by
-reading public distance labels. Its compiled native model and embedded
-WebAssembly view demonstrate deterministic next-step selection, goal rebuilds,
-and explicit at-goal and unreachable states.</p>
+reading public distance labels rather than retained directions. Its compiled
+native model and embedded WebAssembly view demonstrate deterministic next-step
+selection, goal rebuilds, and explicit at-goal and unreachable states.</p>
 <p>Use this path after basic pathfinding when many independent agents share a
 destination and retaining complete paths would duplicate guidance.</p>
 <h2 id="colony-simulation">Colony simulation</h2>
@@ -2484,13 +2484,13 @@ and optional integration by how it is best used.</p>
         
         
           
-          <a href="../tutorial/flow-steering/" class="md-footer__link md-footer__link--next" aria-label="Next: Flow-style steering">
+          <a href="../tutorial/flow-steering/" class="md-footer__link md-footer__link--next" aria-label="Next: Flow field steering">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Flow-style steering
+                Flow field steering
               </div>
             </div>
             <div class="md-footer__button md-icon">

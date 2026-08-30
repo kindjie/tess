@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Build one tess distance product and steer independent agents by reading deterministic next steps from its public distance labels.">
+        <meta name="description" content="Build flow field steering in tess from one DistanceFieldProduct, choosing deterministic next steps from public distance labels without retaining directions.">
       
       
       
@@ -27,7 +27,7 @@
     
     
       
-        <title>Flow-style Steering from Distance Labels - tess</title>
+        <title>Flow Field Steering from Distance Labels - tess</title>
       
     
     
@@ -56,15 +56,15 @@
     
     <meta property="og:type" content="website">
   <meta property="og:site_name" content="tess">
-  <meta property="og:title" content="Flow-style Steering from Distance Labels - tess">
-  <meta property="og:description" content="Build one tess distance product and steer independent agents by reading deterministic next steps from its public distance labels.">
+  <meta property="og:title" content="Flow Field Steering from Distance Labels - tess">
+  <meta property="og:description" content="Build flow field steering in tess from one DistanceFieldProduct, choosing deterministic next steps from public distance labels without retaining directions.">
   <meta property="og:url" content="https://tess.owx.dev/main/tutorial/flow-steering/">
   <meta property="og:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1280">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Flow-style Steering from Distance Labels - tess">
-  <meta name="twitter:description" content="Build one tess distance product and steer independent agents by reading deterministic next steps from its public distance labels.">
+  <meta name="twitter:title" content="Flow Field Steering from Distance Labels - tess">
+  <meta name="twitter:description" content="Build flow field steering in tess from one DistanceFieldProduct, choosing deterministic next steps from public distance labels without retaining directions.">
   <meta name="twitter:image" content="https://tess.owx.dev/main/assets/tess-social-preview.png">
 
   </head>
@@ -86,7 +86,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#flow-style-steering-from-distance-labels" class="md-skip">
+        <a href="#flow-field-steering-from-distance-labels" class="md-skip">
           Skip to content
         </a>
       
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Flow-style Steering from Distance Labels
+              Flow Field Steering from Distance Labels
             
           </span>
         </div>
@@ -673,7 +673,7 @@
   <span class="md-ellipsis">
     
   
-    Flow-style steering
+    Flow field steering
   
 
     
@@ -691,7 +691,7 @@
   <span class="md-ellipsis">
     
   
-    Flow-style steering
+    Flow field steering
   
 
     
@@ -728,10 +728,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#distance-labels-are-not-retained-directions" class="md-nav__link">
+  <a href="#distance-labels-are-not-a-retained-flow-field" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Distance labels are not retained directions
+        Distance labels are not a retained flow field
       
     </span>
   </a>
@@ -2226,10 +2226,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#distance-labels-are-not-retained-directions" class="md-nav__link">
+  <a href="#distance-labels-are-not-a-retained-flow-field" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Distance labels are not retained directions
+        Distance labels are not a retained flow field
       
     </span>
   </a>
@@ -2278,11 +2278,15 @@
   
 
 
-<h1 id="flow-style-steering-from-distance-labels">Flow-style steering from distance labels</h1>
-<p>When many agents share one destination, calculating a complete path for each
-agent repeats useful work. A single <code>DistanceFieldProduct</code> labels every
-reachable tile with its unit-cost distance to the goal. Each agent can then
-choose its next step on demand.</p>
+<h1 id="flow-field-steering-from-distance-labels">Flow field steering from distance labels</h1>
+<p>When many agents share one destination, <abbr title="On-demand local steps selected from retained distance labels; Tess derives directions at read time instead of retaining a conventional flow field.">flow field steering</abbr> lets them reuse
+global guidance instead of calculating a complete path for each agent. This
+tutorial builds that steering from a single <code>DistanceFieldProduct</code>, which
+labels every reachable tile with its unit-cost distance to the goal. Each
+agent chooses its next step on demand.</p>
+<p>Tess retains distance labels here, not the per-tile directions of a
+conventional <abbr title="Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr>. The result demonstrates the same shared-goal
+steering pattern while keeping tie-breaking visible and configurable.</p>
 <p>This tutorial uses a dense, unit-cost, orthogonal 32×24 world. The native
 self-check and the browser view run the same C++ model. The presentation
 starts paused; choose <strong>Start</strong>, a goal preset, or a passable tile in the grid.</p>
@@ -2294,13 +2298,14 @@ retains public distance labels for dense worlds. The model builds it with
 </div>
 <iframe class="flow-steering-frame"
   src="../../demo/flow-steering/"
-  title="Interactive flow-style steering tutorial">
+  title="Interactive flow field steering tutorial">
   <p>Your browser cannot embed this example.
-    <a href="../../demo/flow-steering/">Open the steering example in a
-    separate page</a>.</p>
+    <a href="../../demo/flow-steering/">Open the flow field steering example
+    in a separate page</a>.</p>
 </iframe>
 
-<p><a href="../../demo/flow-steering/">Open the steering example in a separate page</a>.</p>
+<p><a href="../../demo/flow-steering/">Open the <abbr title="On-demand local steps selected from retained distance labels; Tess derives directions at read time instead of retaining a conventional flow field.">flow field steering</abbr> example in a separate
+page</a>.</p>
 <p>The two agents starting on the same tile overlap deliberately. A shared field
 provides global guidance; it does not coordinate occupancy.</p>
 <h2 id="build-once-read-at-each-step">Build once, read at each step</h2>
@@ -2361,7 +2366,7 @@ several shortest continuations exist:</p>
 agent stores only its current tile and state. A complete path remains useful
 when a consumer needs to inspect, reserve, serialize, or compare the whole
 route before movement begins.</p>
-<h2 id="distance-labels-are-not-retained-directions">Distance labels are not retained directions</h2>
+<h2 id="distance-labels-are-not-a-retained-flow-field">Distance labels are not a retained <abbr title="Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr></h2>
 <p>A retained direction field stores the chosen outgoing direction at every
 tile. That saves neighbour reads during movement, but consumes additional
 memory and bakes one tie policy into the product. Retaining directions becomes
