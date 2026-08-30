@@ -85,12 +85,35 @@ button {
   cursor: pointer;
 }
 
+input {
+  width: 4.5rem;
+  min-height: 2.5rem;
+  padding: 0.45rem;
+  border: 1px solid #475569;
+  border-radius: 0.45rem;
+  background: #111827;
+  color: inherit;
+  font: inherit;
+}
+
+button:disabled,
+input:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 button:hover,
 button:focus-visible,
 button[aria-current="true"] {
   border-color: #60a5fa;
   background: #263b59;
   outline: none;
+}
+
+input:focus-visible {
+  border-color: #60a5fa;
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
 }
 
 canvas {

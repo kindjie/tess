@@ -304,8 +304,9 @@ def test_flow_steering(
       "paused: document.querySelector('#pause').getAttribute("
       "'aria-pressed'),"
       "states: document.querySelector('.status').textContent,"
-      "keyboard: [...document.querySelectorAll('button')].every("
-      "(button) => button.tabIndex >= 0),"
+      "keyboard: [...document.querySelectorAll('button,input')].every("
+      "(control) => control.tabIndex >= 0 && !control.disabled),"
+      "distanceLabels: document.documentElement.dataset.distanceLabels,"
       "noOverflow: document.documentElement.scrollWidth <= innerWidth"
       "}))()"
     )
@@ -314,6 +315,7 @@ def test_flow_steering(
       or initial["step"] != 0
       or initial["paused"] != "true"
       or not initial["keyboard"]
+      or initial["distanceLabels"] != "true"
       or not initial["noOverflow"]
       or "At goal" not in initial["states"]
       or "Unreachable" not in initial["states"]
@@ -338,6 +340,17 @@ def test_flow_steering(
     if not isinstance(goal, dict) or goal["current"] != "true":
       raise RuntimeError(f"keyboard goal selection diverged: {goal}")
 
+    page.evaluate(
+      "document.querySelector('#goal-x').value = '10';"
+      "document.querySelector('#goal-y').value = '10';"
+      "document.querySelector('#set-goal').focus()"
+    )
+    press_enter(page)
+    page.wait_for(
+      "document.querySelector('#summary').textContent.includes("
+      "'Goal (10, 10)')"
+    )
+
   with open_page(browser, url, 390, 844, timeout) as page:
     page.command(
       "Emulation.setEmulatedMedia",
@@ -354,6 +367,7 @@ def test_flow_steering(
       "label: document.querySelector('#pause').textContent.trim(),"
       "matches: matchMedia("
       "'(prefers-reduced-motion: reduce)').matches,"
+      "distanceLabels: document.documentElement.dataset.distanceLabels,"
       "noOverflow: document.documentElement.scrollWidth <= innerWidth"
       "}))()"
     )
@@ -362,6 +376,7 @@ def test_flow_steering(
       or reduced["step"] != 0
       or reduced["label"] != "Step"
       or not reduced["matches"]
+      or reduced["distanceLabels"] != "false"
       or not reduced["noOverflow"]
     ):
       raise RuntimeError(f"flow steering reduced motion diverged: {reduced}")

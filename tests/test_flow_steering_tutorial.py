@@ -114,13 +114,21 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
 
   assert 'id="pause"' in html
   assert 'id="reset"' in html
+  assert 'id="goal-x"' in html
+  assert 'id="goal-y"' in html
+  assert 'id="set-goal"' in html
   assert 'data-goal-preset=' in html
+  assert html.count(" disabled") >= 8
   assert 'aria-live="polite"' in html
   assert 'aria-label="Flow-style steering grid"' in html
   assert "Independent agents may overlap" in html
   assert "At goal" in html
   assert "Unreachable" in html
   assert "matchMedia(\"(prefers-reduced-motion: reduce)\")" in app
+  assert "canvas.getBoundingClientRect().width" in app
+  assert "dataset.distanceLabels" in app
+  assert "control.disabled = false" in app
+  assert 'canvas.removeAttribute("aria-disabled")' in app
   assert "data.tessFlowSteering = \"ready\"" in app
   assert "requestAnimationFrame" in app
   assert "ResizeObserver" not in app
@@ -130,6 +138,8 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
   assert 'flow-steering/?browser-test=1' in interactions
   assert "prefers-reduced-motion" in interactions
   assert "data-goal-preset" in interactions
+  assert "#set-goal" in interactions
+  assert "distanceLabels" in interactions
   assert "noOverflow" in interactions
   assert "frameOverflow" in interactions
 
@@ -142,4 +152,5 @@ def test_ci_schedules_static_native_wasm_and_browser_checks():
   assert "tests/test_flow_steering_tutorial.py" in ci
   assert "bash tools/build_web_demo.sh build/site/demo" in pages
   assert "python3 tools/test_web_demo_interactions.py" in pages
+  assert "if [[ -d examples/web_flow_steering ]]" in pages
   assert "test -d docs/demo/flow-steering" in pages

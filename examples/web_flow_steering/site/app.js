@@ -9,6 +9,12 @@ const movingStatus = document.querySelector("#moving");
 const goalStatus = document.querySelector("#at-goal");
 const unreachableStatus = document.querySelector("#unreachable");
 const presetButtons = [...document.querySelectorAll("[data-goal-preset]")];
+const goalXInput = document.querySelector("#goal-x");
+const goalYInput = document.querySelector("#goal-y");
+const setGoalButton = document.querySelector("#set-goal");
+const interactiveControls = [
+  ...document.querySelectorAll("button, input"),
+];
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const unreachableDistance = 0xffffffff;
@@ -44,6 +50,10 @@ function readAgents() {
 function draw() {
   const tileWidth = canvas.width / api.width();
   const tileHeight = canvas.height / api.height();
+  const displayTileWidth = canvas.getBoundingClientRect().width / api.width();
+  const showDistanceLabels = displayTileWidth >= 24;
+  document.documentElement.dataset.distanceLabels =
+    String(showDistanceLabels);
   context.fillStyle = "#111827";
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.font = "12px ui-monospace, monospace";
@@ -62,7 +72,7 @@ function draw() {
       context.strokeStyle = "rgba(148, 163, 184, 0.12)";
       context.strokeRect(left, top, tileWidth, tileHeight);
       const distance = api.tileDistance(x, y) >>> 0;
-      if (distance !== unreachableDistance && tileWidth >= 24) {
+      if (distance !== unreachableDistance && showDistanceLabels) {
         context.fillStyle = "rgba(148, 163, 184, 0.58)";
         context.fillText(String(distance), left + tileWidth / 2,
           top + tileHeight / 2);
@@ -131,10 +141,15 @@ function animate(timestamp) {
 }
 
 function chooseGoal(x, y) {
+  if (!api) {
+    return;
+  }
   if (!api.setGoal(x, y)) {
     summary.textContent = `(${x}, ${y}) is blocked; choose a passable tile.`;
     return;
   }
+  goalXInput.value = String(x);
+  goalYInput.value = String(y);
   for (const button of presetButtons) {
     button.setAttribute("aria-current",
       button.dataset.goalPreset === `${x},${y}` ? "true" : "false");
@@ -168,7 +183,14 @@ for (const button of presetButtons) {
   });
 }
 
+setGoalButton.addEventListener("click", () => {
+  chooseGoal(Number(goalXInput.value), Number(goalYInput.value));
+});
+
 canvas.addEventListener("pointerdown", (event) => {
+  if (!api) {
+    return;
+  }
   const bounds = canvas.getBoundingClientRect();
   const x = Math.floor((event.clientX - bounds.left) / bounds.width *
     api.width());
@@ -180,6 +202,12 @@ canvas.addEventListener("pointerdown", (event) => {
 reducedMotion.addEventListener("change", () => {
   paused = true;
   setPauseLabel();
+});
+
+window.addEventListener("resize", () => {
+  if (api) {
+    draw();
+  }
 });
 
 createTessFlowSteering().then((module) => {
@@ -200,6 +228,12 @@ createTessFlowSteering().then((module) => {
     tileDistance: bind(module, "tile_distance", "number",
       ["number", "number"]),
   };
+  goalXInput.max = String(api.width() - 1);
+  goalYInput.max = String(api.height() - 1);
+  for (const control of interactiveControls) {
+    control.disabled = false;
+  }
+  canvas.removeAttribute("aria-disabled");
   api.reset();
   chooseGoal(api.goalX(), api.goalY());
   setPauseLabel();
