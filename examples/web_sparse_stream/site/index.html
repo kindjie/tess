@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#111827">
+    <title>Procedural sparse stream · tess</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="logo.svg" alt="tess" width="112" height="39">
+        <div>
+          <h1>Procedural sparse stream</h1>
+          <p>A bounded world with a 32-page resident set.</p>
+        </div>
+      </header>
+
+      <section class="controls" aria-label="Streaming controls">
+        <button id="pause" type="button" disabled>Start</button>
+        <button id="reset" type="button" disabled>Reset</button>
+      </section>
+
+      <canvas id="stream-world" width="960" height="540"
+        aria-label="Camera window and sparse chunk residency"
+        aria-disabled="true"></canvas>
+
+      <section class="status">
+        <p id="summary">Loading the WebAssembly model…</p>
+        <ul class="legend" aria-label="Chunk state legend">
+          <li><span class="key required"></span>Required</li>
+          <li><span class="key newly"></span>New</li>
+          <li><span class="key retained"></span>Retained</li>
+          <li><span class="key evicted"></span>Evicted</li>
+        </ul>
+        <p id="residency-status">Waiting for residency state.</p>
+        <p id="agent-status">Waiting for agent state.</p>
+      </section>
+      <p id="announcement" class="visually-hidden" aria-live="polite"
+        aria-atomic="true"></p>
+    </main>
+
+    <script src="tess-sparse-stream.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

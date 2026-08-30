@@ -68,6 +68,10 @@ DEMO_DESCRIPTIONS = {
     "Interactive tess flow-style steering tutorial using public distance "
     "labels and deterministic next-step selection."
   ),
+  "sparse-stream": (
+    "Procedural sparse-world demo: tess streams deterministic terrain "
+    "through a bounded 32-page resident set in WebAssembly."
+  ),
   "": (
     "Interactive tess demos: pathfinding, colony simulation, congestion "
     "pricing, and a 3D tower, all running the C++ library in WebAssembly."

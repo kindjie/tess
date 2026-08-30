@@ -43,6 +43,10 @@ separate starting point:
   [distance-label tutorial](tutorial/flow-steering.md), its self-checking
   native [`web_flow_steering` model][web_flow_steering_src], and the embedded
   WebAssembly presentation.
+- **Procedural sparse streaming** connects the
+  [bounded-world tutorial](tutorial/procedural-sparse-stream.md), the native
+  [`web_sparse_stream` model][web_sparse_stream_src], and its camera-followed
+  WebAssembly presentation.
 
 ### Colony composition map
 
@@ -68,6 +72,8 @@ The fractional coordinates never return to simulation state.
   with deterministic simulation state and presentation-only interpolation.
 - [Live diagnostics](../demo/diagnostics/) — Dear ImGui path, queued-phase,
   timing, trace, and consumer allocation panels with mirrored HTML controls.
+- [Procedural sparse stream](../demo/sparse-stream/) — a 4,096×4,096 bounded
+  world shown through a 32-page LRU resident set and deterministic generator.
 - [Congestion Lab](../demo/congestion/) — the colony workload with supported,
   rejected, and experimental pricing variants identified by the guide.
 - [Traffic Lab](../demo/traffic/) — a deterministic 1024×512 crowd overview
@@ -172,6 +178,9 @@ previews retain only the inexpensive live exponential averages.
 - [`web_diagnostics`][web_diagnostics] — a separately compiled diagnostics
   host over the shared colony model, with a native self-check and the Dear
   ImGui GLFW/WebGL2 [browser tutorial](../demo/diagnostics/).
+- [`web_sparse_stream`][web_sparse_stream_src] — deterministic terrain,
+  bounded sparse residency, native invariants, a narrow Wasm adapter, and an
+  accessible camera-following presentation.
 
 [quickstart]: https://github.com/kindjie/tess/blob/main/examples/quickstart.cc
 [colony_2d]: https://github.com/kindjie/tess/blob/main/examples/colony_2d.cc
@@ -193,3 +202,4 @@ previews retain only the inexpensive live exponential averages.
 [web_pathfinder]: https://github.com/kindjie/tess/tree/main/examples/web_pathfinder
 [web_flow_steering_src]: https://github.com/kindjie/tess/tree/main/examples/web_flow_steering
 [web_diagnostics]: https://github.com/kindjie/tess/tree/main/examples/web_diagnostics
+[web_sparse_stream_src]: https://github.com/kindjie/tess/tree/main/examples/web_sparse_stream

@@ -87,6 +87,7 @@ nav:
           - Tutorials: tutorials.md
           - Flow-style steering: tutorial/flow-steering.md
           - Colony composition: tutorial/colony-composition.md
+          - Procedural sparse stream: tutorial/procedural-sparse-stream.md
       - Examples: examples.md
   - Guides:
       - Guides: guide/README.md
