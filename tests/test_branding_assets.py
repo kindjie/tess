@@ -30,6 +30,12 @@ def same_origin(url: str) -> bool:
   return (urlsplit(url).hostname or "").lower() == SITE_HOST
 
 
+def canonical_api_url(url: str) -> bool:
+  """Whether publication can localize an authored generated-API URL."""
+  parsed = urlsplit(url)
+  return same_origin(url) and parsed.path.startswith("/api/")
+
+
 def contrast_ratio(foreground: str, background: str) -> float:
   def luminance(color: str) -> float:
     channels = [
@@ -237,11 +243,13 @@ def test_current_public_links_use_stable_root_urls():
 def test_versioned_pages_do_not_link_out_of_their_own_version():
   """Documentation under `docs/` is published into every version tree.
 
-  An absolute same-origin link inside it escapes that tree: a reader on
-  `/dev/` who clicks one silently lands on released content, and a link
-  to a page that exists only in the newer tree 404s until a release
-  catches up. That is how the tower demo's link broke. Relative links
-  resolve within whichever tree served the page, so they cannot.
+  An arbitrary absolute same-origin link inside it escapes that tree: a reader
+  on `/main/` who clicks one silently lands on released content, and a link to
+  a page that exists only in the newer tree 404s until a release catches up.
+  Relative links resolve within whichever tree served the page, so they
+  cannot. Canonical `/api/` symbol links are the narrow exception: assembled
+  site validation proves their targets and publication localizes them into
+  each tree when that generated page exists.
 
   The README is excluded deliberately: it is read on GitHub, outside any
   version tree, where a relative documentation link has no meaning.
@@ -252,11 +260,15 @@ def test_versioned_pages_do_not_link_out_of_their_own_version():
       continue
     for number, line in enumerate(path.read_text().splitlines(), start=1):
       urls: list[str] = URL_PATTERN.findall(line)
-      if any(same_origin(url) for url in urls):
+      if any(
+        same_origin(url) and not canonical_api_url(url)
+        for url in urls
+      ):
         offenders.append(f"{path.relative_to(ROOT)}:{number}")
   assert not offenders, (
-    "use a relative link inside versioned documentation; these escape "
-    "their own version tree: " + ", ".join(offenders)
+    "use a relative link inside versioned documentation, except for a "
+    "canonical generated-API target; these escape their own version tree: "
+    + ", ".join(offenders)
   )
 
 

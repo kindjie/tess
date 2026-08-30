@@ -18,6 +18,16 @@ The pieces form one dirty-driven data flow. Callers own the queue, schedule,
 agent storage, and presentation state; tess connects those objects without
 owning an engine loop.
 
+!!! info "API used"
+
+    Worlds: [`tess::Shape`][api-shape],
+    [`tess::FieldSchema`][api-field-schema], [`tess::World`][api-world].
+    Composition: [`tess::OperationBatch`][api-operation-batch],
+    [`tess::astar_path`][api-astar-path],
+    [`tess::RegionGraphT`][api-region-graph],
+    [`tess::Schedule`][api-schedule], and
+    [`tess::DeltaFrame`][api-delta-frame].
+
 ```mermaid
 flowchart TB
   accTitle: End-to-end simulation data flow
@@ -299,6 +309,14 @@ publishing again. The `header` is a value and stays valid regardless.
   rebuilding a shadow grid)
 
 [render-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/render-delta-presentation-bridge.md
+[api-shape]: https://tess.owx.dev/api/structtess_1_1Shape.html
+[api-field-schema]: https://tess.owx.dev/api/structtess_1_1FieldSchema.html
+[api-world]: https://tess.owx.dev/api/classtess_1_1World.html
+[api-operation-batch]: https://tess.owx.dev/api/classtess_1_1OperationBatch.html
+[api-astar-path]: https://tess.owx.dev/api/classtess_1_1PathScratch.html#a7b7d735ab95ab0db2275b679188873b4
+[api-region-graph]: https://tess.owx.dev/api/classtess_1_1RegionGraphT.html
+[api-schedule]: https://tess.owx.dev/api/classtess_1_1Schedule.html
+[api-delta-frame]: https://tess.owx.dev/api/classtess_1_1DeltaFrame.html
 
 ## Where next
 

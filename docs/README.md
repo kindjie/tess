@@ -87,9 +87,13 @@ truth.
 
 The public authored site is built with MkDocs. A CMake-driven Doxygen target
 generates the API reference published under `/api/`; it excludes
-`tess::detail` and treats documentation errors as build failures. Every C++
-fence in maintained Markdown is copied from a named region in a compiled
-example or test;
+`tess::detail` and treats documentation errors as build failures. Its
+version-relative navigation returns to the matching Docs, Learn, and Reference
+pages in root, development, release-line, and exact prerelease trees. Authored
+symbol links use canonical same-origin API URLs; publication localizes them
+when the generated target exists in that version tree. Every C++ fence in
+maintained Markdown is copied from a named region in a compiled example or
+test;
 `tools/check_doc_snippets.py` rejects drift and unbacked fences. Historical
 design and planning records are exempt because they are non-authoritative.
 `tools/check_doc_versions.py` keeps the development and latest-release

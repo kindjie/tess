@@ -365,7 +365,7 @@ if(TESS_BUILD_FUZZING)
 endif()
 
 if(TESS_BUILD_DOCS)
-  find_package(Doxygen REQUIRED)
+  find_package(Doxygen 1.17 REQUIRED)
   set(DOXYGEN_PROJECT_NUMBER "${TESS_DOC_VERSION_LABEL}")
   # Keep implementation namespaces out of the published reference. The
   # repository's own gate enforces namespace-scope public API comments;
@@ -387,6 +387,8 @@ if(TESS_BUILD_DOCS)
   # Ship the vendored stylesheets' MIT permission notice with the copies.
   set(DOXYGEN_HTML_EXTRA_FILES
       "${CMAKE_CURRENT_SOURCE_DIR}/docs/doxygen-awesome/LICENSE")
+  set(DOXYGEN_LAYOUT_FILE
+      "${CMAKE_CURRENT_SOURCE_DIR}/docs/doxygen-layout.xml")
   set(DOXYGEN_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/docs")
   set(DOXYGEN_PROJECT_LOGO
       "${CMAKE_CURRENT_SOURCE_DIR}/docs/assets/tess-symbol.svg")

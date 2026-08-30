@@ -46,7 +46,8 @@ workflow or design choice.
     ---
 
     Doxygen pages for the supported public C++ surface of this documentation
-    version.
+    version. Authored symbol links and API return navigation stay within the
+    current documentation version.
 
     [:octicons-arrow-right-24: API reference](../api/)
 

@@ -9,6 +9,8 @@
   `/latest/` and `/dev/` compatibility redirects; retained
   non-HTML compatibility assets; root-only sitemap URLs; version-tree
   `noindex` metadata; owned-path pruning; and fail-closed collision handling.
+  Canonical generated-API symbol links retain their fragments when localized
+  into a version tree whose generated target exists.
   It also pins the API-response filtering used by the lossless publication
   turn: polling is bounded to active statuses, and actual attempt start time
   orders normal runs and reruns while pull requests remain excluded. The
