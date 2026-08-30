@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#111827">
+    <title>Flow-style steering · tess</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="logo.svg" alt="tess" width="112" height="39">
+        <div>
+          <h1>Flow-style steering</h1>
+          <p>Follow public distance labels without retaining directions.</p>
+        </div>
+      </header>
+
+      <section class="controls" aria-label="Steering controls">
+        <button id="pause" type="button" disabled>Start</button>
+        <button id="reset" type="button" disabled>Reset</button>
+        <fieldset>
+          <legend>Goal preset</legend>
+          <button type="button" data-goal-preset="27,4"
+            disabled>Northeast</button>
+          <button type="button" data-goal-preset="3,12"
+            disabled>West</button>
+          <button type="button" data-goal-preset="21,21"
+            disabled>South</button>
+        </fieldset>
+        <fieldset class="coordinate-goal">
+          <legend>Goal coordinate</legend>
+          <label for="goal-x">X</label>
+          <input id="goal-x" type="number" min="0" max="31" step="1"
+            value="27" required disabled>
+          <label for="goal-y">Y</label>
+          <input id="goal-y" type="number" min="0" max="23" step="1"
+            value="4" required disabled>
+          <button id="set-goal" type="button" disabled>Set goal</button>
+        </fieldset>
+      </section>
+
+      <canvas id="world" width="960" height="720"
+        aria-label="Flow-style steering grid" aria-disabled="true"></canvas>
+
+      <section class="status">
+        <p id="summary">Loading the WebAssembly model…</p>
+        <ul>
+          <li>
+            <span class="key moving"></span>
+            <span id="moving">Moving: 0</span>
+          </li>
+          <li>
+            <span class="key goal"></span>
+            <span id="at-goal">At goal: 0</span>
+          </li>
+          <li>
+            <span class="key unreachable"></span>
+            <span id="unreachable">Unreachable: 0</span>
+          </li>
+        </ul>
+        <p>Independent agents may overlap. This global guidance does not
+          perform collision avoidance.</p>
+      </section>
+      <p id="announcement" class="visually-hidden" aria-live="polite"
+        aria-atomic="true"></p>
+    </main>
+
+    <script src="tess-flow-steering.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

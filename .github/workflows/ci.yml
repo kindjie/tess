@@ -238,7 +238,7 @@ jobs:
           # floor of 13 passed while one of them silently stopped building.
           # Bump this when adding an example -- a failure here means either
           # a new example or a missing one, and both want a human.
-          test "$ran" -eq 22
+          test "$ran" -eq 23
 
       # Documented example output is copied from real program runs; drift
       # between the docs and the compiled quickstart fails the build.
@@ -475,8 +475,8 @@ jobs:
             ran=$((ran + 1))
           done
           # This preset disables the two optional ECS integrations, so its
-          # controlled inventory is the other 20 example executables.
-          test "$ran" -eq 20
+          # controlled inventory is the other 21 example executables.
+          test "$ran" -eq 21
 
       - name: Exception-free installed consumer
         env:
@@ -551,6 +551,7 @@ jobs:
           tests/test_docs_navigation.py
           tests/test_check_doxygen_navigation.py
           tests/test_doxygen_integration.py
+          tests/test_flow_steering_tutorial.py
           tests/test_measure_traffic_lab.py
           tests/test_browser_demo_resources.py
           tests/test_compatibility_snapshots.py

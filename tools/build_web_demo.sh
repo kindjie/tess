@@ -43,6 +43,41 @@ em++ \
   -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
   -o "$output/tess-demo.js"
 
+# Flow-style steering: a dense distance product and independent agents,
+# published under $output/flow-steering/.
+flow_steering="$output/flow-steering"
+mkdir -p "$flow_steering"
+cp "$root/examples/web_flow_steering/site/index.html" "$flow_steering/"
+cp "$root/examples/web_flow_steering/site/style.css" "$flow_steering/"
+cp "$root/examples/web_flow_steering/site/app.js" "$flow_steering/"
+cp "$root/examples/web_pathfinder/site/favicon.svg" "$flow_steering/"
+cp "$root/docs/assets/tess-logo-dark.svg" "$flow_steering/logo.svg"
+
+flow_exports='["_tess_flow_width","_tess_flow_height"'
+flow_exports+=',"_tess_flow_reset","_tess_flow_tick"'
+flow_exports+=',"_tess_flow_set_goal","_tess_flow_goal_x"'
+flow_exports+=',"_tess_flow_goal_y","_tess_flow_agent_count"'
+flow_exports+=',"_tess_flow_agent_x","_tess_flow_agent_y"'
+flow_exports+=',"_tess_flow_agent_state","_tess_flow_tile_passable"'
+flow_exports+=',"_tess_flow_tile_distance"]'
+
+em++ \
+  -std=c++20 \
+  -O3 \
+  -DNDEBUG \
+  -I"$root/include" \
+  -I"$config/generated/include" \
+  "$root/examples/web_flow_steering/flow_steering_model.cc" \
+  "$root/examples/web_flow_steering/flow_steering_wasm.cc" \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sENVIRONMENT=web \
+  -sFILESYSTEM=0 \
+  -sMODULARIZE=1 \
+  -sEXPORT_NAME=createTessFlowSteering \
+  -sEXPORTED_FUNCTIONS="$flow_exports" \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
+  -o "$flow_steering/tess-flow-steering.js"
+
 # Pathfinding strategy comparison: the native example's shared C++ model with
 # a read-only browser adapter, published under $output/strategies/.
 strategies="$output/strategies"
