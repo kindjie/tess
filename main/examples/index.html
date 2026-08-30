@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://tess.owx.dev/main/examples/">
       
       
-        <link rel="prev" href="../tutorials/">
+        <link rel="prev" href="../tutorial/flow-steering/">
       
       
         <link rel="next" href="../guide/">
@@ -561,6 +561,67 @@
   
   
   
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../tutorials/" class="md-nav__link">
         
@@ -578,6 +639,42 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/flow-steering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Flow-style steering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2196,7 +2293,7 @@ additionally need their ECS gates, which the <code>dev</code> preset turns on):<
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>./build/examples/examples/tess_quickstart
 </code></pre></div>
 <h2 id="guided-tutorials">Guided tutorials</h2>
-<p>The <a href="../tutorials/">tutorials index</a> connects related artifacts into four
+<p>The <a href="../tutorials/">tutorials index</a> connects related artifacts into five
 learning paths instead of presenting each model, host, and article as a
 separate starting point:</p>
 <ul>
@@ -2215,6 +2312,10 @@ separate starting point:</p>
   <a href="https://github.com/kindjie/tess/tree/main/examples/web_congestion"><code>web_congestion</code> model</a>, the
   <a href="../guide/congestion/">decision guide</a>, and
   <a href="../demo/congestion/">Congestion Lab</a>.</li>
+<li><strong>Flow-style steering</strong> connects the
+  <a href="../tutorial/flow-steering/">distance-label tutorial</a>, its self-checking
+  native <a href="https://github.com/kindjie/tess/tree/main/examples/web_flow_steering"><code>web_flow_steering</code> model</a>, and the embedded
+  WebAssembly presentation.</li>
 </ul>
 <h3 id="colony-composition-map">Colony composition map</h3>
 <p>The colony model labels five reusable composition patterns directly in the
@@ -2232,6 +2333,8 @@ The fractional coordinates never return to simulation state.</p>
 <li><a href="../demo/strategies/">Live strategy comparison</a> — four call shapes over one
   obstacle course with C++-reported paths and reuse counters, without browser
   timing claims.</li>
+<li><a href="../demo/flow-steering/">Flow-style steering</a> — independent agents descend
+  one shared dense distance product using a documented direction order.</li>
 <li><a href="../demo/colony/">Live colony</a> — up to 1,024 agents replanning around walls,
   with deterministic simulation state and presentation-only interpolation.</li>
 <li><a href="../demo/diagnostics/">Live diagnostics</a> — Dear ImGui path, queued-phase,
@@ -2318,6 +2421,8 @@ previews retain only the inexpensive live exponential averages.</p>
   pawns (built when <code>TESS_ENABLE_FLECS</code> is on).</li>
 <li><a href="https://github.com/kindjie/tess/tree/main/examples/web_pathfinder"><code>web_pathfinder</code></a> — the source of the live demo above:
   a single-threaded WebAssembly build with a small JavaScript shell.</li>
+<li><a href="https://github.com/kindjie/tess/tree/main/examples/web_flow_steering"><code>web_flow_steering</code></a> — a shared native model, narrow
+  Wasm adapter, and DOM-controlled presentation for distance-label steering.</li>
 <li><a href="https://github.com/kindjie/tess/tree/main/examples/web_colony"><code>web_colony</code></a> — the colony model, native check, Wasm
   adapter, browser controller, and page kept in separate layers.</li>
 <li><a href="https://github.com/kindjie/tess/tree/main/examples/web_congestion"><code>web_congestion</code></a> — screened congestion policies over
@@ -2366,7 +2471,7 @@ previews retain only the inexpensive live exponential averages.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../tutorials/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Tutorials">
+          <a href="../tutorial/flow-steering/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Flow-style steering">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2376,7 +2481,7 @@ previews retain only the inexpensive live exponential averages.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Tutorials
+                Flow-style steering
               </div>
             </div>
           </a>

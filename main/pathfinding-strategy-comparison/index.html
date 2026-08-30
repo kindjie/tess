@@ -556,6 +556,64 @@
   
   
   
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../tutorials/" class="md-nav__link">
         
@@ -573,6 +631,42 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/flow-steering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Flow-style steering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2762,7 +2856,7 @@ start then reconstructs a path from that field instead of running another A*.</p
 <div class="admonition info">
 <p class="admonition-title">Distance fields and flow fields</p>
 <p>A <abbr title="Retained shortest-distance data built from one or more goals for repeated path reads.">distance field</abbr> gives each reachable cell its remaining cost to the goal.
-A <abbr title="Per-cell movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr> adds a direction at each cell, usually pointing to a
+A <abbr title="Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.">flow field</abbr> adds a direction at each cell, usually pointing to a
 neighboring cell with a lower remaining cost. An agent can repeatedly
 sample those directions instead of requesting a complete path. Tess
 provides the distance data and full-path reconstruction shown here; it does
