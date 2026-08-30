@@ -2327,6 +2327,14 @@ every path request genuinely independent? tess exposes a different call shape
 for each case, letting an application reuse only the work its own workload
 repeats.</p>
 <div class="admonition info">
+<p class="admonition-title">API used</p>
+<p><a href="https://tess.owx.dev/api/classtess_1_1PathScratch.html#a7b7d735ab95ab0db2275b679188873b4"><code>tess::astar_path</code></a>,
+<a href="https://tess.owx.dev/api/classtess_1_1PathScratch.html#aa95ff184a9767db00624e49b36b8d090"><code>tess::cached_astar_path</code></a>,
+<a href="https://tess.owx.dev/api/classtess_1_1DistanceFieldScratch.html#a2578c1d6fe0cee9d288168f7d9821811"><code>tess::weighted_path_batch</code></a>,
+<a href="https://tess.owx.dev/api/classtess_1_1DistanceFieldProduct.html"><code>tess::DistanceFieldProduct</code></a>, and
+<a href="https://tess.owx.dev/api/classtess_1_1FieldProductCache.html"><code>tess::FieldProductCache</code></a>.</p>
+</div>
+<div class="admonition info">
 <p class="admonition-title">What a request means</p>
 <p>A <strong>request</strong> is one path query: one start, one goal, and one resulting
 path or failure. It is not the same thing as an agent. One agent can issue

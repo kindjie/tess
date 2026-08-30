@@ -2212,6 +2212,14 @@
 and other headless spatial systems. It provides optimal unit-cost and weighted
 A* over caller-owned tile data, plus reuse strategies for workloads with many
 agents or repeated goals. It does not require an engine, renderer, or ECS.</p>
+<div class="admonition info">
+<p class="admonition-title">API used</p>
+<p><a href="https://tess.owx.dev/api/classtess_1_1PathScratch.html#a7b7d735ab95ab0db2275b679188873b4"><code>tess::astar_path</code></a>,
+<a href="https://tess.owx.dev/api/classtess_1_1PathScratch.html#aa95ff184a9767db00624e49b36b8d090"><code>tess::cached_astar_path</code></a>,
+<a href="https://tess.owx.dev/api/classtess_1_1DistanceFieldScratch.html#a2578c1d6fe0cee9d288168f7d9821811"><code>tess::weighted_path_batch</code></a>,
+<a href="https://tess.owx.dev/api/classtess_1_1DistanceFieldProduct.html"><code>tess::DistanceFieldProduct</code></a>, and
+<a href="https://tess.owx.dev/api/classtess_1_1FieldProductCache.html"><code>tess::FieldProductCache</code></a>.</p>
+</div>
 <h2 id="start-with-a">Start with A*</h2>
 <p><a href="../../packaging/">Install tess</a>, include <code>&lt;tess/pathfinding.h&gt;</code>, define a world
 and passability field, then reuse one scratch object across queries:</p>

@@ -2239,6 +2239,16 @@ self-checking binary built by the <code>examples</code> and <code>dev</code> pre
 <p>The pieces form one dirty-driven data flow. Callers own the queue, schedule,
 agent storage, and presentation state; tess connects those objects without
 owning an engine loop.</p>
+<div class="admonition info">
+<p class="admonition-title">API used</p>
+<p>Worlds: <a href="https://tess.owx.dev/api/structtess_1_1Shape.html"><code>tess::Shape</code></a>,
+<a href="https://tess.owx.dev/api/structtess_1_1FieldSchema.html"><code>tess::FieldSchema</code></a>, <a href="https://tess.owx.dev/api/classtess_1_1World.html"><code>tess::World</code></a>.
+Composition: <a href="https://tess.owx.dev/api/classtess_1_1OperationBatch.html"><code>tess::OperationBatch</code></a>,
+<a href="https://tess.owx.dev/api/classtess_1_1PathScratch.html#a7b7d735ab95ab0db2275b679188873b4"><code>tess::astar_path</code></a>,
+<a href="https://tess.owx.dev/api/classtess_1_1RegionGraphT.html"><code>tess::RegionGraphT</code></a>,
+<a href="https://tess.owx.dev/api/classtess_1_1Schedule.html"><code>tess::Schedule</code></a>, and
+<a href="https://tess.owx.dev/api/classtess_1_1DeltaFrame.html"><code>tess::DeltaFrame</code></a>.</p>
+</div>
 <pre class="mermaid"><code>flowchart TB
   accTitle: End-to-end simulation data flow
   accDescr: Queued edits update the world and dirty metadata, which drives topology, paths, movement, and versioned render deltas.

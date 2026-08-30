@@ -129,8 +129,41 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('index.html',''
 </div><!--header-->
 <div class="contents">
 <div class="textblock"><p><a class="anchor" id="md_docs_2api-main"></a></p>
-<p>This reference documents the supported C++ API generated from the installed headers. Start with the <a href="../">authored documentation</a> for installation, tutorials, architectural guidance, and complete examples.</p>
-<p>tess is pre-1.0; see the <a href="../support/">stability policy</a>. </p>
+<p>This reference documents the supported C++ API generated from the installed headers. Use the version-relative navigation above to return to the authored documentation, its learning paths, or the reference map.</p>
+<p>tess is pre-1.0; see the <a href="../support/">stability policy</a>.</p>
+<h1 class="doxsection"><a class="anchor" id="autotoc_md1"></a>
+Core worlds</h1>
+<ul>
+<li><a class="el" href="structtess_1_1Shape.html" title="tess::Shape"><span class="tt">tess::Shape</span></a> fixes the world, chunk, and lattice dimensions at compile time.</li>
+<li><a class="el" href="structtess_1_1FieldSchema.html" title="tess::FieldSchema"><span class="tt">tess::FieldSchema</span></a> declares the typed fields in each chunk page.</li>
+<li><a class="el" href="classtess_1_1World.html" title="tess::World"><span class="tt">tess::World</span></a> combines shape, schema, and dense or sparse residency.</li>
+</ul>
+<h1 class="doxsection"><a class="anchor" id="autotoc_md2"></a>
+Pathfinding</h1>
+<ul>
+<li><a class="el" href="structtess_1_1PathRequest.html" title="tess::PathRequest"><span class="tt">tess::PathRequest</span></a> carries one start and goal.</li>
+<li><a class="el" href="classtess_1_1PathScratch.html" title="tess::PathScratch"><span class="tt">tess::PathScratch</span></a> owns reusable A* work storage.</li>
+<li><a class="el" href="classtess_1_1DistanceFieldProduct.html" title="tess::DistanceFieldProduct"><span class="tt">tess::DistanceFieldProduct</span></a> retains a dense multi-goal distance product for reuse.</li>
+</ul>
+<h1 class="doxsection"><a class="anchor" id="autotoc_md3"></a>
+Simulation</h1>
+<ul>
+<li><a class="el" href="classtess_1_1OperationBatch.html" title="tess::OperationBatch"><span class="tt">tess::OperationBatch</span></a> collects declared world edits for validation and execution.</li>
+<li><a class="el" href="classtess_1_1Schedule.html" title="tess::Schedule"><span class="tt">tess::Schedule</span></a> runs deterministic phase-ordered tasks.</li>
+<li><a class="el" href="classtess_1_1DeltaFrame.html" title="tess::DeltaFrame"><span class="tt">tess::DeltaFrame</span></a> publishes versioned changes to a consumer-owned presentation layer.</li>
+</ul>
+<h1 class="doxsection"><a class="anchor" id="autotoc_md4"></a>
+Diagnostics</h1>
+<ul>
+<li><a class="el" href="structtess_1_1diagnostics_1_1DiagnosticsSnapshot.html" title="tess::diagnostics::DiagnosticsSnapshot"><span class="tt">tess::diagnostics::DiagnosticsSnapshot</span></a> captures path, queued-phase, timing, trace, and allocation state.</li>
+<li><a class="el" href="structtess_1_1diagnostics_1_1FlowAccounting.html" title="tess::diagnostics::FlowAccounting"><span class="tt">tess::diagnostics::FlowAccounting</span></a> accounts lifecycle admission, retention, and terminal outcomes.</li>
+</ul>
+<h1 class="doxsection"><a class="anchor" id="autotoc_md5"></a>
+Optional integrations</h1>
+<ul>
+<li><a class="el" href="classtess_1_1EnttTilePositionAdapter.html" title="tess::EnttTilePositionAdapter"><span class="tt">tess::EnttTilePositionAdapter</span></a> and <a class="el" href="classtess_1_1FlecsTilePositionAdapter.html" title="tess::FlecsTilePositionAdapter"><span class="tt">tess::FlecsTilePositionAdapter</span></a> bind external entity storage without transferring ownership.</li>
+<li><a class="el" href="classtess_1_1gpu_1_1WebGpuBackend.html" title="tess::gpu::WebGpuBackend"><span class="tt">tess::gpu::WebGpuBackend</span></a> implements the optional GPU transport boundary; pathfinding remains on the CPU. </li>
+</ul>
 </div></div><!-- PageDoc -->
 <a href="doxygen_crawl.html"></a>
 </div><!-- contents -->
