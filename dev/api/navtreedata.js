@@ -25,7 +25,10 @@
 var NAVTREE =
 [
   [ "tess", "index.html", [
-    [ "tess API reference", "index.html", null ],
+    [ "Docs", "../", null ],
+    [ "Learn", "../getting-started/", null ],
+    [ "Reference", "../reference/", null ],
+    [ "tess API reference", "index.html", "index" ],
     [ "Concepts", "concepts.html", "concepts" ],
     [ "Classes", "annotated.html", [
       [ "Class List", "annotated.html", "annotated_dup" ],
@@ -46,10 +49,10 @@ var NAVTREE =
 
 var NAVTREEINDEX =
 [
-"adapter_8h_source.html",
-"classtess_1_1World_3_01Shape_00_01Schema_00_01AlwaysResident_01_4.html#abae5ff97b88cd1862a3ab0c6c3b89949",
-"queued_8h_source.html",
-"structtess_1_1diagnostics_1_1QueuedPhaseCounters.html"
+"../",
+"classtess_1_1World_3_01Shape_00_01Schema_00_01AlwaysResident_01_4.html#aa5709566c27041082710f9d8313616c3",
+"path__view_8h_source.html",
+"structtess_1_1diagnostics_1_1FlowCounters.html#adf4c88dee1952115c5993c07c9a830f4"
 ];
 
 const SYNCONMSG = 'click to disable panel synchronization';
