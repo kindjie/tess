@@ -63,8 +63,9 @@ void generate_chunk(StreamWorld& world, tess::ChunkKey key,
   auto field = world.template field_span<PassableTag>(key);
   for (int local_y = 0; local_y < chunk_size; ++local_y) {
     for (int local_x = 0; local_x < chunk_size; ++local_x) {
-      const auto index =
-          static_cast<std::size_t>(local_y * chunk_size + local_x);
+      const auto index = static_cast<std::size_t>(local_y) *
+                             static_cast<std::size_t>(chunk_size) +
+                         static_cast<std::size_t>(local_x);
       const auto global_x = static_cast<std::uint64_t>(chunk.x) * chunk_size +
                             static_cast<std::uint64_t>(local_x);
       const auto global_y = static_cast<std::uint64_t>(chunk.y) * chunk_size +
@@ -105,7 +106,8 @@ struct SparseStreamModel::Impl {
   explicit Impl(std::size_t page_capacity, std::uint64_t selected_seed)
       : world(tess::ResidencyConfig{page_capacity * World::page_byte_size}),
         seed(selected_seed) {
-    required.reserve(camera_window_width * camera_window_width);
+    required.reserve(static_cast<std::size_t>(camera_window_width) *
+                     static_cast<std::size_t>(camera_window_width));
     newly_generated.reserve(camera_window_width);
     retained.reserve(resident_capacity);
     evicted.reserve(camera_window_width);
