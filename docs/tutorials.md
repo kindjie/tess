@@ -1,7 +1,7 @@
 ---
 title: Tutorials and Learning Paths
 description: >-
-  Follow tess learning paths for basic pathfinding, flow-style steering,
+  Follow tess learning paths for basic pathfinding, flow field steering,
   colony simulation, strategy selection, and congestion-aware movement.
 ---
 
@@ -13,13 +13,13 @@ the same core query runs in WebAssembly. Together they are the basic
 pathfinding learning path; this page does not introduce a competing beginner
 sequence.
 
-## Flow-style steering
+## Flow field steering
 
-The [flow-style steering tutorial](tutorial/flow-steering.md) builds one
+The [flow field steering tutorial](tutorial/flow-steering.md) builds one
 dense distance product for a shared goal, then moves independent agents by
-reading public distance labels. Its compiled native model and embedded
-WebAssembly view demonstrate deterministic next-step selection, goal rebuilds,
-and explicit at-goal and unreachable states.
+reading public distance labels rather than retained directions. Its compiled
+native model and embedded WebAssembly view demonstrate deterministic next-step
+selection, goal rebuilds, and explicit at-goal and unreachable states.
 
 Use this path after basic pathfinding when many independent agents share a
 destination and retaining complete paths would duplicate guidance.

@@ -1,4 +1,4 @@
-"""Contracts for the flow-style steering tutorial and live example."""
+"""Contracts for the flow field steering tutorial and live example."""
 
 from __future__ import annotations
 
@@ -79,6 +79,11 @@ def test_tutorial_teaches_the_supported_boundary_and_embeds_accessibly():
   nav = read("mkdocs.yml")
   index = read("docs/tutorials.md")
   examples = read("docs/examples.md")
+  docs_readme = read("docs/README.md")
+
+  assert "title: Flow Field Steering from Distance Labels" in tutorial
+  assert "Build flow field steering in tess" in tutorial
+  assert "# Flow field steering from distance labels" in tutorial
 
   for phrase in (
     "distance labels",
@@ -100,15 +105,19 @@ def test_tutorial_teaches_the_supported_boundary_and_embeds_accessibly():
   )
   assert 'class="flow-steering-frame"' in tutorial
   assert 'src="../../demo/flow-steering/"' in tutorial
-  assert 'title="Interactive flow-style steering tutorial"' in tutorial
-  assert "Open the steering example in a separate page" in tutorial
+  assert 'title="Interactive flow field steering tutorial"' in tutorial
+  assert "Open the flow field steering example" in tutorial
   assert ".flow-steering-frame" in styles
   assert "height:" in styles
-  assert "Flow-style steering: tutorial/flow-steering.md" in nav
-  assert "flow-style steering" in index.lower()
+  assert "Flow field steering: tutorial/flow-steering.md" in nav
+  assert "## Flow field steering" in index
+  assert "flow field steering tutorial" in index.lower()
+  assert "**Flow field steering**" in examples
+  assert "[Flow field steering]" in examples
+  assert "flow field steering" in docs_readme.lower()
   assert "web_flow_steering" in examples
-  assert "flow-style steering" in terminology
-  assert "flow-style steering" in abbreviations
+  assert "flow field steering" in terminology
+  assert "flow field steering" in abbreviations
   assert "lifecycle flow accounting" in terminology
   assert "transition_cost(current, neighbour)" in tutorial
   assert "entry_cost(neighbour)" in tutorial
@@ -121,7 +130,11 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
   html = read("examples/web_flow_steering/site/index.html")
   app = read("examples/web_flow_steering/site/app.js")
   interactions = read("tools/test_web_demo_interactions.py")
+  finalizer = read("tools/finalize_generated_pages.py")
 
+  assert "<title>Flow field steering · tess</title>" in html
+  assert "<h1>Flow field steering</h1>" in html
+  assert "Interactive tess flow field steering tutorial" in finalizer
   assert 'id="pause"' in html
   assert 'id="reset"' in html
   assert 'id="goal-x"' in html
@@ -133,7 +146,7 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
   assert html.count('aria-live="polite"') == 1
   assert 'class="status" aria-live=' not in html
   assert "aria-pressed" not in html
-  assert 'aria-label="Flow-style steering grid"' in html
+  assert 'aria-label="Flow field steering grid"' in html
   assert "Independent agents may overlap" in html
   assert "At goal" in html
   assert "Unreachable" in html

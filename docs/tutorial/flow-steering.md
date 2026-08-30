@@ -1,16 +1,22 @@
 ---
-title: Flow-style Steering from Distance Labels
+title: Flow Field Steering from Distance Labels
 description: >-
-  Build one tess distance product and steer independent agents by reading
-  deterministic next steps from its public distance labels.
+  Build flow field steering in tess from one DistanceFieldProduct, choosing
+  deterministic next steps from public distance labels without retaining
+  directions.
 ---
 
-# Flow-style steering from distance labels
+# Flow field steering from distance labels
 
-When many agents share one destination, calculating a complete path for each
-agent repeats useful work. A single `DistanceFieldProduct` labels every
-reachable tile with its unit-cost distance to the goal. Each agent can then
-choose its next step on demand.
+When many agents share one destination, flow field steering lets them reuse
+global guidance instead of calculating a complete path for each agent. This
+tutorial builds that steering from a single `DistanceFieldProduct`, which
+labels every reachable tile with its unit-cost distance to the goal. Each
+agent chooses its next step on demand.
+
+Tess retains distance labels here, not the per-tile directions of a
+conventional flow field. The result demonstrates the same shared-goal
+steering pattern while keeping tie-breaking visible and configurable.
 
 This tutorial uses a dense, unit-cost, orthogonal 32×24 world. The native
 self-check and the browser view run the same C++ model. The presentation
@@ -24,13 +30,14 @@ starts paused; choose **Start**, a goal preset, or a passable tile in the grid.
 
 <iframe class="flow-steering-frame"
   src="../../demo/flow-steering/"
-  title="Interactive flow-style steering tutorial">
+  title="Interactive flow field steering tutorial">
   <p>Your browser cannot embed this example.
-    <a href="../../demo/flow-steering/">Open the steering example in a
-    separate page</a>.</p>
+    <a href="../../demo/flow-steering/">Open the flow field steering example
+    in a separate page</a>.</p>
 </iframe>
 
-[Open the steering example in a separate page](../../demo/flow-steering/).
+[Open the flow field steering example in a separate
+page](../../demo/flow-steering/).
 
 The two agents starting on the same tile overlap deliberately. A shared field
 provides global guidance; it does not coordinate occupancy.
@@ -99,7 +106,7 @@ agent stores only its current tile and state. A complete path remains useful
 when a consumer needs to inspect, reserve, serialize, or compare the whole
 route before movement begins.
 
-## Distance labels are not retained directions
+## Distance labels are not a retained flow field
 
 A retained direction field stores the chosen outgoing direction at every
 tile. That saves neighbour reads during movement, but consumes additional

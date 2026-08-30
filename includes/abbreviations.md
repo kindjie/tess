@@ -7,7 +7,7 @@
 *[residency generation]: The identity of one interval during which a sparse chunk remains resident.
 *[movement class]: A compile-time definition of passability, entry cost, and allowed steps.
 *[distance field]: Retained shortest-distance data built from one or more goals for repeated path reads.
-*[flow-style steering]: On-demand local steps selected from retained distance labels; distinct from a retained flow field and lifecycle flow accounting diagnostics.
+*[flow field steering]: On-demand local steps selected from retained distance labels; Tess derives directions at read time instead of retaining a conventional flow field.
 *[flow field]: Per-tile movement directions derived from distance-to-goal data for repeated local steering; designed, not currently shipped.
 *[lifecycle flow accounting]: Admission, terminal-outcome, outstanding-inventory, residence, and bounded-work accounting for one work lifecycle; distinct from a pathfinding flow field.
 *[route cache]: Capacity-bounded retained storage for reusable route results.

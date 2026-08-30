@@ -10,7 +10,7 @@ Published on the documentation site:
 - [Getting Started](getting-started.md): tutorial from shapes and schemas
   to the schedule loop and render bridge.
 - [Tutorials](tutorials.md): connected learning paths for pathfinding,
-  flow-style steering, colony composition, strategy selection, and congestion
+  flow field steering, colony composition, strategy selection, and congestion
   pricing.
 - [Decision guide](guide/README.md): one page per architectural decision
   — branches, criteria, and links into the tutorial and concept notes.

@@ -39,8 +39,8 @@ separate starting point:
   [`web_congestion` model][web_congestion_src], the
   [decision guide](guide/congestion.md), and
   [Congestion Lab](../demo/congestion/).
-- **Flow-style steering** connects the
-  [distance-label tutorial](tutorial/flow-steering.md), its self-checking
+- **Flow field steering** connects the
+  [flow field tutorial](tutorial/flow-steering.md), its self-checking
   native [`web_flow_steering` model][web_flow_steering_src], and the embedded
   WebAssembly presentation.
 - **Procedural sparse streaming** connects the
@@ -66,7 +66,7 @@ The fractional coordinates never return to simulation state.
 - [Live strategy comparison](../demo/strategies/) — four call shapes over one
   obstacle course with C++-reported paths and reuse counters, without browser
   timing claims.
-- [Flow-style steering](../demo/flow-steering/) — independent agents descend
+- [Flow field steering](../demo/flow-steering/) — independent agents descend
   one shared dense distance product using a documented direction order.
 - [Live colony](../demo/colony/) — up to 1,024 agents replanning around walls,
   with deterministic simulation state and presentation-only interpolation.
