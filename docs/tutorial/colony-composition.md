@@ -128,11 +128,16 @@ merely an optimization hint.
 
 ## 3. Bound planning work
 
-New and invalidated goals enter caller-owned queues. Each fixed tick admits at
-most eight exact queries across the optional route-spreading queues, canonical
-replans, and recovery probes. A count budget does not cap the cost of one
-search, but it prevents an unbounded number of searches from landing in one
-tick.
+New and invalidated goals enter caller-owned queues. The retained-route modes
+admit at most eight exact queries per fixed tick across the optional
+route-spreading queues, canonical replans, and recovery probes. A count budget
+does not cap the cost of one search, but it prevents an unbounded number of
+searches from landing in one tick.
+
+The standalone `replan every tick` comparison deliberately drops retained
+routes and synchronously queries every active agent. In that mode, the
+eight-query limit applies only to recovery classification, not the all-agent
+comparison pass.
 
 Agents whose query has not reached the front of the FIFO wait with textual
 `pending plans` state. The model never fabricates a path to keep the picture

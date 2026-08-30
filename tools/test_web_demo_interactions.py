@@ -372,6 +372,49 @@ def test_colony_article(
     press_enter(page)
     page.wait_for("!window.tessColonyTest.wallBuilt(64, 48)")
 
+    click_cell(page, 64, 48)
+    page.wait_for("window.tessColonyTest.wallBuilt(64, 48)")
+    if page.evaluate(
+      "document.querySelector('#article-wall').textContent.trim()"
+    ) != "Remove centre wall":
+      raise RuntimeError("canvas edit left the centre-wall label stale")
+    click_cell(page, 64, 48)
+    page.wait_for("!window.tessColonyTest.wallBuilt(64, 48)")
+
+    page.command(
+      "Emulation.setEmulatedMedia",
+      {
+        "features": [
+          {"name": "prefers-reduced-motion", "value": "no-preference"}
+        ]
+      },
+    )
+    page.wait_for(
+      "!matchMedia('(prefers-reduced-motion: reduce)').matches && "
+      "document.querySelector('#pause').textContent.trim() === 'Resume'"
+    )
+    page.evaluate("document.querySelector('#pause').focus()")
+    press_enter(page)
+    page.wait_for(
+      "document.querySelector('#pause').textContent.trim() === 'Pause'"
+    )
+    page.command(
+      "Emulation.setEmulatedMedia",
+      {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]},
+    )
+    page.wait_for(
+      "matchMedia('(prefers-reduced-motion: reduce)').matches && "
+      "document.querySelector('#pause').textContent.trim() === 'Step'"
+    )
+    frozen_ticks = page.evaluate(
+      "Number(document.documentElement.dataset.tickUpdates)"
+    )
+    time.sleep(0.3)
+    if page.evaluate(
+      "Number(document.documentElement.dataset.tickUpdates)"
+    ) != frozen_ticks:
+      raise RuntimeError("live reduced-motion change did not pause the colony")
+
     page.evaluate("document.querySelector('#pause').focus()")
     press_enter(page)
     page.wait_for(
@@ -380,6 +423,18 @@ def test_colony_article(
     if page.evaluate("document.querySelector('#pause').textContent.trim()") \
         != "Step":
       raise RuntimeError("reduced-motion colony step action changed mode")
+    if page.evaluate("window.tessColonyTest.renderAlpha()") != 1:
+      raise RuntimeError("reduced-motion step did not render current endpoints")
+
+    if page.evaluate(
+      "(() => { window.tessColonyTest.setAgentCount(1); "
+      "return window.tessColonyTest.advanceToTurnaround(); })()"
+    ) is not True:
+      raise RuntimeError("could not reach colony turnaround in browser test")
+    paused_leg = page.evaluate("window.tessColonyTest.leg()")
+    time.sleep(1.2)
+    if page.evaluate("window.tessColonyTest.leg()") != paused_leg:
+      raise RuntimeError("paused colony relaunched without another step")
 
     page.evaluate("document.querySelector('#reset').focus()")
     press_enter(page)

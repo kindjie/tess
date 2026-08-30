@@ -39,9 +39,10 @@ let lastTile = null;
 let strokeBuilt = true;
 let lastTimestamp = 0;
 let leg = 1;
-let turnaroundSince = 0;
+let turnaroundElapsed = 0;
 let paused = reducedMotion.matches;
 let stepRequested = false;
+let renderedAlpha = 1;
 const walls = new Set();
 
 function updatePauseLabel() {
@@ -92,6 +93,9 @@ function setWall(x, y, built) {
   } else {
     walls.delete(key);
   }
+  if (articleMode) {
+    updateArticleWallLabel();
+  }
   return true;
 }
 
@@ -139,7 +143,7 @@ function reset() {
   tickUpdates = 0;
   document.documentElement.dataset.tickUpdates = String(tickUpdates);
   leg = api.leg();
-  turnaroundSince = 0;
+  turnaroundElapsed = 0;
   lastTimestamp = 0;
   updateArticleWallLabel();
 }
@@ -179,7 +183,8 @@ function draw() {
   const currentAgentsPtr = api.agents();
   const previousAgentsPtr = api.previousAgents();
   const count = api.agentCount();
-  const alpha = api.interpolationAlpha();
+  const alpha = paused ? 1 : api.interpolationAlpha();
+  renderedAlpha = alpha;
   const tiles = module.HEAPU8.subarray(tilesPtr, tilesPtr + width * height);
   const currentAgents = module.HEAP16.subarray(
       currentAgentsPtr / 2,
@@ -252,15 +257,14 @@ function frame(timestamp) {
     const advancedLastTick = api.advancedLastTick();
     const movementWaitsLastTick = api.movementWaitsLastTick();
     const turnaroundReady = api.turnaroundReady() === 1;
-    if (turnaroundReady) {
-      if (turnaroundSince === 0) {
-        turnaroundSince = timestamp;
-      } else if (timestamp - turnaroundSince > 1000) {
+    if (turnaroundReady && shouldTick) {
+      turnaroundElapsed += tickDt;
+      if (turnaroundElapsed >= 1) {
         leg = api.relaunch();
-        turnaroundSince = 0;
+        turnaroundElapsed = 0;
       }
-    } else {
-      turnaroundSince = 0;
+    } else if (!turnaroundReady) {
+      turnaroundElapsed = 0;
     }
     // A colony can stop dead with nobody durably blocked: two agents each
     // standing on the tile the other needs block each other forever. Reporting
@@ -380,6 +384,12 @@ createTessColony()
         lastTimestamp = 0;
         updatePauseLabel();
       });
+      reducedMotion.addEventListener('change', () => {
+        paused = true;
+        stepRequested = false;
+        lastTimestamp = 0;
+        updatePauseLabel();
+      });
       articleWallButton.addEventListener('click', toggleArticleWall);
       resetButton.addEventListener('click', reset);
       clearButton.addEventListener('click', () => {
@@ -422,6 +432,17 @@ createTessColony()
       if (browserTestMode) {
         window.tessColonyTest = {
           wallBuilt: (x, y) => walls.has(y * width + x),
+          renderAlpha: () => renderedAlpha,
+          leg: () => api.leg(),
+          advanceToTurnaround: () => {
+            for (let tick = 0; tick < width * 4; tick += 1) {
+              api.tick(1 / ticksPerSecond);
+              if (api.turnaroundReady() === 1) {
+                return true;
+              }
+            }
+            return false;
+          },
           setAgentCount: (value) => {
             slider.value = String(value);
             reset();

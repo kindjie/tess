@@ -53,6 +53,8 @@ def test_tutorial_teaches_the_existing_composition_and_boundaries():
     "integer-tile",
     "browser-only",
     "128×128",
+    "retained-route modes",
+    "replan every tick",
   ):
     assert phrase in tutorial
   assert '!!! info "API used"' in tutorial
@@ -85,6 +87,9 @@ def test_article_mode_is_responsive_accessible_and_presentation_only():
   assert "function resizeCanvas" in app
   assert "function drawTileGrid" in app
   assert "function toggleArticleWall" in app
+  assert "reducedMotion.addEventListener('change'" in app
+  assert "advanceToTurnaround" in app
+  assert "renderAlpha" in app
   assert "control.disabled = false" in app
   assert "dataset.tickUpdates" in app
   assert "article-mode" in demo_styles
