@@ -29,6 +29,34 @@ target_link_libraries(tess_documentation PRIVATE tess::tess)
 tess_apply_project_options(tess_documentation)
 
 add_executable(
+  tess_web_flow_steering_model
+  web_flow_steering/flow_steering_model.cc
+  web_flow_steering/flow_steering_native.cc
+)
+target_link_libraries(tess_web_flow_steering_model PRIVATE tess::tess)
+tess_apply_project_options(tess_web_flow_steering_model)
+if(BUILD_TESTING)
+  add_test(
+    NAME tess_web_flow_steering_self_check
+    COMMAND tess_web_flow_steering_model
+  )
+  set_tests_properties(
+    tess_web_flow_steering_self_check
+    PROPERTIES
+      LABELS "target:tess_web_flow_steering_model;subsystem:path;subsystem:sim"
+      PASS_REGULAR_EXPRESSION "flow steering model: ok"
+  )
+endif()
+
+add_library(
+  tess_web_flow_steering_wasm_adapter OBJECT
+  web_flow_steering/flow_steering_model.cc
+  web_flow_steering/flow_steering_wasm.cc
+)
+target_link_libraries(tess_web_flow_steering_wasm_adapter PRIVATE tess::tess)
+tess_apply_project_options(tess_web_flow_steering_wasm_adapter)
+
+add_executable(
   tess_web_congestion_model
   web_congestion/congestion_model.cc
   web_congestion/congestion_native.cc

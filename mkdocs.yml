@@ -83,7 +83,9 @@ nav:
   - Learn:
       - Getting started: getting-started.md
       - Installation: packaging.md
-      - Tutorials: tutorials.md
+      - Tutorials:
+          - Tutorials: tutorials.md
+          - Flow-style steering: tutorial/flow-steering.md
       - Examples: examples.md
   - Guides:
       - Guides: guide/README.md

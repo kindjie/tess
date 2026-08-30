@@ -64,6 +64,10 @@ API_NOINDEX_PATTERNS = (
 # added without an entry fails the build here rather than shipping with
 # the generic site description.
 DEMO_DESCRIPTIONS = {
+  "flow-steering": (
+    "Interactive tess flow-style steering tutorial using public distance "
+    "labels and deterministic next-step selection."
+  ),
   "": (
     "Interactive tess demos: pathfinding, colony simulation, congestion "
     "pricing, and a 3D tower, all running the C++ library in WebAssembly."

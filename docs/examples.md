@@ -19,7 +19,7 @@ cmake --build --preset examples
 
 ## Guided tutorials
 
-The [tutorials index](tutorials.md) connects related artifacts into four
+The [tutorials index](tutorials.md) connects related artifacts into five
 learning paths instead of presenting each model, host, and article as a
 separate starting point:
 
@@ -38,6 +38,10 @@ separate starting point:
   [`web_congestion` model][web_congestion_src], the
   [decision guide](guide/congestion.md), and
   [Congestion Lab](../demo/congestion/).
+- **Flow-style steering** connects the
+  [distance-label tutorial](tutorial/flow-steering.md), its self-checking
+  native [`web_flow_steering` model][web_flow_steering_src], and the embedded
+  WebAssembly presentation.
 
 ### Colony composition map
 
@@ -57,6 +61,8 @@ The fractional coordinates never return to simulation state.
 - [Live strategy comparison](../demo/strategies/) — four call shapes over one
   obstacle course with C++-reported paths and reuse counters, without browser
   timing claims.
+- [Flow-style steering](../demo/flow-steering/) — independent agents descend
+  one shared dense distance product using a documented direction order.
 - [Live colony](../demo/colony/) — up to 1,024 agents replanning around walls,
   with deterministic simulation state and presentation-only interpolation.
 - [Live diagnostics](../demo/diagnostics/) — Dear ImGui path, queued-phase,
@@ -154,6 +160,8 @@ previews retain only the inexpensive live exponential averages.
   pawns (built when `TESS_ENABLE_FLECS` is on).
 - [`web_pathfinder`][web_pathfinder] — the source of the live demo above:
   a single-threaded WebAssembly build with a small JavaScript shell.
+- [`web_flow_steering`][web_flow_steering_src] — a shared native model, narrow
+  Wasm adapter, and DOM-controlled presentation for distance-label steering.
 - [`web_colony`][web_colony_src] — the colony model, native check, Wasm
   adapter, browser controller, and page kept in separate layers.
 - [`web_congestion`][web_congestion_src] — screened congestion policies over
@@ -182,4 +190,5 @@ previews retain only the inexpensive live exponential averages.
 [flecs_pawns]: https://github.com/kindjie/tess/blob/main/examples/flecs_pawns.cc
 [render_delta]: https://github.com/kindjie/tess/blob/main/examples/render_delta_consumer.cc
 [web_pathfinder]: https://github.com/kindjie/tess/tree/main/examples/web_pathfinder
+[web_flow_steering_src]: https://github.com/kindjie/tess/tree/main/examples/web_flow_steering
 [web_diagnostics]: https://github.com/kindjie/tess/tree/main/examples/web_diagnostics

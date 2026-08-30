@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the built colony and Traffic Lab pages in headless Chrome."""
+"""Exercise built interactive examples and documentation in Chrome."""
 
 from __future__ import annotations
 
@@ -52,6 +52,7 @@ class BrowserPage:
           url,
         ],
         stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
       )
       port = browser_state._wait_for_debug_port(
         self.process, profile, self.deadline
@@ -198,7 +199,10 @@ def press_enter(page: BrowserPage) -> None:
     "code": "Enter",
     "windowsVirtualKeyCode": 13,
   }
-  page.command("Input.dispatchKeyEvent", {"type": "keyDown", **params})
+  page.command(
+    "Input.dispatchKeyEvent",
+    {"type": "keyDown", "text": "\r", "unmodifiedText": "\r", **params},
+  )
   page.command("Input.dispatchKeyEvent", {"type": "keyUp", **params})
 
 
@@ -280,6 +284,115 @@ def test_colony(browser: str, base_url: str, timeout: float) -> None:
     drag_cells(page, start, end)
     if not all(wall_state(page, x, y) for x, y in bresenham(start, end)):
       raise RuntimeError("fast drag did not interpolate every wall tile")
+
+
+def test_flow_steering(
+  browser: str,
+  base_url: str,
+  docs_url: str,
+  timeout: float,
+) -> None:
+  """Verify flow steering state, controls, motion, and embedding."""
+  url = f"{base_url.rstrip('/')}/flow-steering/?browser-test=1"
+  with open_page(browser, url, 1366, 768, timeout) as page:
+    page.wait_for(
+      "document.documentElement.dataset.tessFlowSteering === 'ready'"
+    )
+    initial = page.evaluate(
+      "(() => ({"
+      "step: Number(document.documentElement.dataset.step),"
+      "paused: document.querySelector('#pause').getAttribute("
+      "'aria-pressed'),"
+      "states: document.querySelector('.status').textContent,"
+      "keyboard: [...document.querySelectorAll('button')].every("
+      "(button) => button.tabIndex >= 0),"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth"
+      "}))()"
+    )
+    if (
+      not isinstance(initial, dict)
+      or initial["step"] != 0
+      or initial["paused"] != "true"
+      or not initial["keyboard"]
+      or not initial["noOverflow"]
+      or "At goal" not in initial["states"]
+      or "Unreachable" not in initial["states"]
+    ):
+      raise RuntimeError(f"flow steering initial state diverged: {initial}")
+
+    page.evaluate("document.querySelector('#pause').focus()")
+    press_enter(page)
+    page.wait_for("Number(document.documentElement.dataset.step) > 0")
+    page.evaluate(
+      "document.querySelector('[data-goal-preset=\"3,12\"]').focus()"
+    )
+    press_enter(page)
+    goal = page.evaluate(
+      "(() => ({"
+      "text: document.querySelector('#summary').textContent,"
+      "current: document.querySelector("
+      "'[data-goal-preset=\"3,12\"]'"
+      ").getAttribute('aria-current')"
+      "}))()"
+    )
+    if not isinstance(goal, dict) or goal["current"] != "true":
+      raise RuntimeError(f"keyboard goal selection diverged: {goal}")
+
+  with open_page(browser, url, 390, 844, timeout) as page:
+    page.command(
+      "Emulation.setEmulatedMedia",
+      {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]},
+    )
+    page.command("Page.reload", {"ignoreCache": True})
+    page.wait_for(
+      "document.documentElement.dataset.tessFlowSteering === 'ready'"
+    )
+    time.sleep(0.4)
+    reduced = page.evaluate(
+      "(() => ({"
+      "step: Number(document.documentElement.dataset.step),"
+      "label: document.querySelector('#pause').textContent.trim(),"
+      "matches: matchMedia("
+      "'(prefers-reduced-motion: reduce)').matches,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth"
+      "}))()"
+    )
+    if (
+      not isinstance(reduced, dict)
+      or reduced["step"] != 0
+      or reduced["label"] != "Step"
+      or not reduced["matches"]
+      or not reduced["noOverflow"]
+    ):
+      raise RuntimeError(f"flow steering reduced motion diverged: {reduced}")
+    page.evaluate("document.querySelector('#pause').click()")
+    page.wait_for("Number(document.documentElement.dataset.step) === 1")
+
+  article_url = f"{docs_url.rstrip('/')}/tutorial/flow-steering/"
+  with open_page(browser, article_url, 390, 844, timeout) as page:
+    page.wait_for(
+      "document.querySelector('.flow-steering-frame')?.contentDocument?."
+      "documentElement.dataset.tessFlowSteering === 'ready'"
+    )
+    embedded = page.evaluate(
+      "(() => {"
+      "const frame = document.querySelector('.flow-steering-frame');"
+      "const root = frame.contentDocument?.documentElement;"
+      "const frameOverflow = root ? "
+      "root.scrollWidth > root.clientWidth || "
+      "root.scrollHeight > root.clientHeight : true;"
+      "return {"
+      "title: frame.title, frameOverflow,"
+      "noOverflow: document.documentElement.scrollWidth <= innerWidth};"
+      "})()"
+    )
+    if (
+      not isinstance(embedded, dict)
+      or embedded["title"] != "Interactive flow-style steering tutorial"
+      or embedded["frameOverflow"]
+      or not embedded["noOverflow"]
+    ):
+      raise RuntimeError(f"flow steering iframe diverged: {embedded}")
 
 
 def test_docs_homepage(
@@ -428,6 +541,9 @@ def main() -> int:
     args.browser, args.docs_url, 390, 844, True, False, args.timeout
   )
   test_colony(args.browser, args.base_url, args.timeout)
+  test_flow_steering(
+    args.browser, args.base_url, args.docs_url, args.timeout
+  )
   test_traffic_layout(
     args.browser, args.base_url, 1366, 768, "aligned", args.timeout
   )

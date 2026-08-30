@@ -445,6 +445,7 @@ jobs:
           cp -R "$GITHUB_WORKSPACE/build/generated/demo" docs/demo
           test -f docs/api/index.html
           test -d docs/demo/colony
+          test -d docs/demo/flow-steering
 
       - name: Deploy version tree
         working-directory: build/source
