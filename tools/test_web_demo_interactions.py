@@ -373,6 +373,21 @@ def test_flow_steering(
       "document.querySelector('#announcement').textContent.includes("
       "'whole-number coordinates')"
     )
+    time.sleep(0.4)
+    rejection = page.evaluate(
+      "(() => ({"
+      "summary: document.querySelector('#summary').textContent,"
+      "action: document.querySelector('#pause').textContent.trim()"
+      "}))()"
+    )
+    if (
+      not isinstance(rejection, dict)
+      or "whole-number coordinates" not in rejection["summary"]
+      or rejection["action"] != "Start"
+    ):
+      raise RuntimeError(
+        f"flow steering rejection did not persist: {rejection}"
+      )
 
     page.evaluate(
       "document.querySelector('#goal-x').value = '32';"

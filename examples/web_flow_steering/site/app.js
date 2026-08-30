@@ -35,6 +35,13 @@ function setPauseLabel() {
     : paused ? "Start" : "Pause";
 }
 
+function reportGoalRejection(message) {
+  paused = true;
+  setPauseLabel();
+  summary.textContent = message;
+  announcement.textContent = message;
+}
+
 function readAgents() {
   const agents = [];
   for (let index = 0; index < api.agentCount(); ++index) {
@@ -149,20 +156,17 @@ function chooseGoal(x, y, announceChange = true) {
   if (!Number.isInteger(x) || !Number.isInteger(y) ||
       x < 0 || x >= api.width() || y < 0 || y >= api.height()) {
     const message = `Coordinate (${x}, ${y}) is outside the world.`;
-    summary.textContent = message;
-    announcement.textContent = message;
+    reportGoalRejection(message);
     return;
   }
   if (!api.tilePassable(x, y)) {
     const message = `Tile (${x}, ${y}) is impassable; choose a passable tile.`;
-    summary.textContent = message;
-    announcement.textContent = message;
+    reportGoalRejection(message);
     return;
   }
   if (!api.setGoal(x, y)) {
     const message = `The goal at (${x}, ${y}) could not be rebuilt.`;
-    summary.textContent = message;
-    announcement.textContent = message;
+    reportGoalRejection(message);
     return;
   }
   goalXInput.value = String(x);
@@ -221,8 +225,7 @@ setGoalButton.addEventListener("click", () => {
   if (invalidNumber || (!inputsValid && !outOfRange)) {
     const message = `Enter whole-number coordinates: X 0–${api.width() - 1} ` +
       `and Y 0–${api.height() - 1}.`;
-    summary.textContent = message;
-    announcement.textContent = message;
+    reportGoalRejection(message);
     return;
   }
   chooseGoal(x, y);

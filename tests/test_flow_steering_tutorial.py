@@ -134,6 +134,7 @@ def test_browser_surface_is_accessible_responsive_and_motion_aware():
   assert "checkValidity()" in app
   assert "is outside the world" in app
   assert "is impassable" in app
+  assert "function reportGoalRejection" in app
   assert 'canvas.addEventListener("click"' in app
   assert 'canvas.addEventListener("pointerdown"' not in app
   assert "aria-pressed" not in app
