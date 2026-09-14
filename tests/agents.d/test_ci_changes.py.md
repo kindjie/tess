@@ -9,3 +9,7 @@
 - The change-point dispatch assertion keeps every known verdict explicit:
   partial coverage warns and exits before issue commands, while an empty or
   unknown verdict reaches the non-zero catch-all.
+
+- Main pushes retain baseline quality plus unconditional TSan, while weekly
+  and manual events select the full analysis matrix. CLI expectations preserve
+  per-commit performance baseline selection.

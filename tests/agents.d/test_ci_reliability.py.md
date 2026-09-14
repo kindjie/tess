@@ -8,3 +8,7 @@
   ccache probes must be host-independent; the checksummed installer and
   package helper fail closed; and runner-image tools are version-checked
   instead of redundantly installed.
+
+- Full-matrix routing preserves weekly/manual platform floors and verifies
+  the aggregate gate distinguishes their intentional main-push skips. The
+  per-commit advisory benchmark baseline remains push-only.

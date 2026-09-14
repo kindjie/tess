@@ -112,15 +112,27 @@ section 5): pull requests block on the dev, GCC, hook-backstop, ASan,
 cppcheck, Windows, and benchmark compile+smoke jobs, plus a diff-scoped
 clang-tidy job (`tools/clang_tidy_changed.py`) and a TSan job that runs
 when concurrency-sensitive paths change (`tools/ci_changes.py`). Pushes
-to main, the weekly scheduled run, and manual dispatches additionally
-run werror, release, TSan, macOS, the full-tree clang-tidy sweep, and
-the benchmark threshold gates; a failed non-PR run files or extends a
+to main retain the baseline plus unconditional TSan and one advisory benchmark
+baseline per merged SHA. The weekly schedule and manual dispatch add werror,
+release, macOS, full-tree clang-tidy, compatibility floors, and benchmark
+threshold gates; a failed non-PR run files or extends a
 rolling `ci-failure` issue. A successful retry closes that issue only when the
 bot's unedited report for an earlier attempt of the same run remains the latest
 issue activity; ambiguous or human-owned activity is left open. Full reruns
 reconcile in the CI workflow, while successful failed-job-only reruns of
 default-branch CI reconcile from a no-checkout completion workflow with the
 same ownership rules and serialized issue access.
+
+New tests should stay in the fast deterministic unit suite unless their cost
+or required environment warrants a separate tier. Use existing `slow` and
+benchmark targets for endurance/exhaustive evidence, and document cadence in
+the test's `tests/agents.d/` entry. Keep regression assertions intact; moving a
+test does not waive running it for changes that affect its behavior. Broader
+platform, full-tree analysis and calibrated performance campaigns belong in
+the weekly/manual jobs. Hardware-specific campaigns remain on demand on the
+required runner. Before release, dispatch the complete ref/version/SHA tuple;
+an ordinary successful PR is not release evidence. Scheduled failures retain
+the existing failure-report and recovery workflow.
 
 Pull requests touching perf-sensitive paths also run a **shadow-mode
 paired sentinel benchmark job** (`tools/paired_bench.py` over
@@ -250,8 +262,10 @@ otherwise easy to read as "my pull request was checked by all of this":
 - **[PR]** runs on every code-affecting pull request, and blocks the merge.
 - **[PR when triggered]** runs on a pull request only when the change
   classifier selects it (`tools/ci_changes.py`).
-- **[main]** runs on pushes to `main`, the weekly schedule, and manual
-  dispatches — *not* on pull requests.
+- **[scheduled]** runs weekly and on manual dispatch, not on PRs or main
+  pushes. Main still runs baseline checks and unconditional TSan.
+- **[main]** per-commit advisory baseline collection; retained for change-point
+  history rather than moved to a schedule that would lose commit attribution.
 - **[advisory]** runs but never blocks a merge.
 
 - **[PR]** Dev build and unit tests: `cmake --build --preset dev`,
@@ -265,10 +279,10 @@ otherwise easy to read as "my pull request was checked by all of this":
   (`tools/check_public_surface.py` against
   `docs/architecture/surface.json`; required since 2026-07-07)
 - **[PR]** Installed-header namespace-scope Doxygen gate: `tools/check_public_docs.py`
-- **[main]** Warnings-as-errors build and tests: preset `dev-werror`
+- **[scheduled]** Warnings-as-errors build and tests: preset `dev-werror`
 - **[PR]** ASan/UBSan build and tests (UBSan findings are fatal): preset
   `dev-asan`
-- **[PR when triggered]** **[main]** TSan build and tests
+- **[PR when triggered]** **[main and scheduled]** TSan build and tests
   (`TSAN_OPTIONS=halt_on_error=1`): preset `dev-tsan`. On a pull request
   this runs only when `tools/ci_changes.py` classifies the diff as
   concurrency-sensitive; on main it always runs. The preset excludes tests
@@ -276,14 +290,14 @@ otherwise easy to read as "my pull request was checked by all of this":
   with no race surface. All targets still compile under TSan. The Dev,
   GCC 12/14, ASan, Windows, and coverage gates retain the Traffic Lab's
   512/1,600-tick crowd checkpoints. The required optimized benchmark gate and
-  main Release floors own its 2,048 exact route comparisons. Remove the TSan
+  scheduled Release floors own its 2,048 exact route comparisons. Remove the TSan
   exemption if concurrency enters an exempt model or harness.
-- **[main]** Release build and tests: preset `release`
-- **[main]** macOS build, tests, and install smoke on `macos-15`: presets `dev` and
+- **[scheduled]** Release build and tests: preset `release`
+- **[scheduled]** macOS build, tests, and install smoke on `macos-15`: presets `dev` and
   `dev-asan` (no benchmark gates there; thresholds are Linux-calibrated)
 - **[PR]** Windows MSVC build, tests, and install smoke on `windows-2025`:
   preset `windows-msvc` (required gate since 2026-07-07)
-- **[main]** Strict full-tree clang-tidy gate: `cmake --build --preset
+- **[scheduled]** Strict full-tree clang-tidy gate: `cmake --build --preset
   dev-clang-tidy`. Pull requests instead run a diff-scoped clang-tidy job
   (`tools/clang_tidy_changed.py`), which checks only changed lines
 - **[PR]** cppcheck gate: `cmake --build --preset dev-cppcheck`
@@ -300,10 +314,10 @@ otherwise easy to read as "my pull request was checked by all of this":
   `dev-werror` built with GCC
 - **[PR]** Required libc++ compile-only portability check: preset
   `dev-werror` built with Clang and `-stdlib=libc++`. macOS also builds
-  against libc++, but macOS is main-only, so before this cell a
+  against libc++, but macOS is scheduled, so before this cell a
   libc++-specific failure reached main before anyone saw it
 - **[PR]** Benchmark build and smoke tests: preset `bench`
-- **[main]** Benchmark threshold gates, one per suite (CPU time except parallel wall
+- **[scheduled]** Benchmark threshold gates, one per suite (CPU time except parallel wall
   time). Run one suite with
   `cmake --build --preset bench --target tess_bench_<suite>_thresholds`,
   or every suite the way CI does:
