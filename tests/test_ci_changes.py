@@ -324,7 +324,7 @@ def test_tsan_range_fails_closed_on_git_failure():
 # --- Quality-gate preset selection per event ---
 
 
-@pytest.mark.parametrize("event", ("push", "schedule", "workflow_dispatch"))
+@pytest.mark.parametrize("event", ("schedule", "workflow_dispatch"))
 def test_full_tier_events_run_every_quality_preset(event):
   assert ci_changes.quality_presets(event, tsan_required=False) == (
     "dev-werror",
@@ -333,6 +333,12 @@ def test_full_tier_events_run_every_quality_preset(event):
     "dev-cppcheck",
     "dev-clang-tidy",
     "release",
+  )
+
+
+def test_main_push_keeps_sanitizers_without_full_analysis_matrix():
+  assert ci_changes.quality_presets("push", tsan_required=True) == (
+    "dev-asan", "dev-cppcheck", "dev-tsan",
   )
 
 
@@ -368,7 +374,7 @@ def test_cli_emits_all_outputs_for_pull_request(monkeypatch, capsys):
   )
 
 
-def test_cli_fails_closed_for_full_tier_events(monkeypatch, capsys):
+def test_cli_main_push_keeps_tsan_and_perf_baselines(monkeypatch, capsys):
   monkeypatch.setattr(
     ci_changes,
     "changed_paths",
@@ -381,8 +387,7 @@ def test_cli_fails_closed_for_full_tier_events(monkeypatch, capsys):
     "code_required=false\n"
     "tsan_required=true\n"
     "perf_required=true\n"
-    'quality_presets=["dev-werror", "dev-asan", "dev-tsan", '
-    '"dev-cppcheck", "dev-clang-tidy", "release"]\n'
+    'quality_presets=["dev-asan", "dev-cppcheck", "dev-tsan"]\n'
   )
 
 

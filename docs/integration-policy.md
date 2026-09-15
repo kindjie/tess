@@ -345,7 +345,7 @@ provide two layers of evidence:
 - Ubuntu 24.04 with GCC 12 and 14 performs warning-clean builds and full
   runtime tests on code changes.
 - macOS 15 with AppleClang builds, tests, sanitizes, and consumes an install on
-  non-PR full-tier runs. Release runs select Xcode 16.0 and add no-RTTI runtime
+  weekly scheduled and manually dispatched full-tier runs. Release runs select Xcode 16.0 and add no-RTTI runtime
   evidence.
 - Windows 2025 with current MSVC is a required PR build-and-test gate. Release
   runs use Windows 2022 to verify Visual Studio 2022 17.14/MSVC 19.44 and add
@@ -356,8 +356,9 @@ provide two layers of evidence:
 
 Consequences worth knowing before you depend on a platform:
 
-- A macOS regression can merge and only surface on the next main,
-  scheduled, or dispatched run.
+- A macOS regression can merge and only surface on the next weekly
+  scheduled or manually dispatched run. Dispatch before merging changes that
+  specifically affect macOS support.
 - Benchmarks and coverage run on Ubuntu only.
 - Every platform job is skipped for documentation-only changes, and
   pull-request thread sanitizer coverage is path-filtered rather than

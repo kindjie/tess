@@ -561,3 +561,20 @@ def test_runner_image_tools_are_verified_instead_of_reinstalled():
   for body in (quality, tidy, advisory):
     assert "apt-get install" not in body or "clang-tidy-18" not in body
     assert "clang-tidy-18 --version" in body
+
+
+def test_full_matrix_is_scheduled_or_dispatched_not_repeated_on_push():
+  workflow = (Path(__file__).resolve().parents[1] /
+              '.github/workflows/ci.yml').read_text()
+  for name in ('macos', 'release-linux-floors', 'release-macos-floor',
+               'release-windows-floor', 'release-cmake-floor'):
+    condition = _job_body(workflow, name).split('runs-on:', 1)[0]
+    assert "github.event_name == 'schedule'" in condition
+    assert "github.event_name == 'workflow_dispatch'" in condition
+    assert "github.event_name != 'pull_request'" not in condition
+  gate = _job_body(workflow, 'ci-gate')
+  assert '[ "$EVENT_NAME" = schedule ]' in gate
+  assert '[ "$EVENT_NAME" = workflow_dispatch ]' in gate
+  assert 'needs.macos.result' in gate
+  baseline = _job_body(workflow, 'bench-baselines')
+  assert "github.event_name == 'push'" in baseline

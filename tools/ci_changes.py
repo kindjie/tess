@@ -173,7 +173,7 @@ def classify_tsan_paths(paths: Iterable[str]) -> TsanClassification:
 
 def quality_presets(event: str, *, tsan_required: bool) -> tuple[str, ...]:
   """Return the quality-gate matrix presets for an event tier."""
-  if event == "pull_request":
+  if event in {"pull_request", "push"}:
     if tsan_required:
       return PULL_REQUEST_QUALITY_PRESETS + ("dev-tsan",)
     return PULL_REQUEST_QUALITY_PRESETS
@@ -294,7 +294,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
   parser.add_argument(
     "--event",
     default="",
-    help="GitHub event name; anything but pull_request runs the full tier",
+    help="GitHub event name; PR/push run baseline quality; other events run full quality",
   )
   return parser.parse_args(argv)
 
@@ -305,7 +305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
   if args.event == "pull_request":
     tsan = classify_tsan_range(args.base, args.head)
   else:
-    tsan = TsanClassification(True, "full-tier event runs TSan directly")
+    tsan = TsanClassification(True, "non-PR event runs TSan directly")
   presets = quality_presets(args.event, tsan_required=tsan.tsan_required)
   if args.event == "pull_request":
     perf = classify_perf_range(args.base, args.head)

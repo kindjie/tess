@@ -30,3 +30,7 @@
   push run of the same workflow and branch exists. Real job failures,
   timeouts, dispatches, unrelated newer runs, and unconfirmed supersession
   remain reportable.
+
+- Broad compiler floors and calibrated thresholds run weekly/manual; main
+  retains per-commit advisory baselines. Release identity and aggregation
+  remain mandatory even as automatic cadence changes.

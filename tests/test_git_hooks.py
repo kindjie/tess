@@ -852,7 +852,8 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   for job in release_jobs[:4]:
     body = _job_body(workflow, job)
     assert "needs.changes.outputs.code_required == 'true'" in body
-    assert "github.event_name != 'pull_request'" in body
+    assert "github.event_name == 'schedule'" in body
+    assert "github.event_name == 'workflow_dispatch'" in body
 
   fuzz = _job_body(workflow, "release-fuzz")
   assert "needs.changes.outputs.release_mode == 'true'" in fuzz
@@ -1060,7 +1061,8 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
     "  macos:\n"
     "    needs: changes\n"
     "    if: >-\n"
-    "      ${{ github.event_name != 'pull_request' &&\n"
+    "      ${{ (github.event_name == 'schedule' ||\n"
+    "           github.event_name == 'workflow_dispatch') &&\n"
     "          needs.changes.outputs.code_required == 'true' }}\n"
     in workflow
   )
@@ -1184,7 +1186,8 @@ def test_non_gating_benchmark_baselines_run_only_on_main():
 
   thresholds = bench.split("      - name: Benchmark thresholds\n", 1)[1]
   assert thresholds.startswith(
-    "        if: github.event_name != 'pull_request'\n"
+    "        if: github.event_name == 'schedule' || "
+    "github.event_name == 'workflow_dispatch'\n"
   )
 
 

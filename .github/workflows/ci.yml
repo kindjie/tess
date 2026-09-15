@@ -1,14 +1,9 @@
 name: CI
 
-# Tiered per docs/planning/test-and-benchmark-redesign.md section 5 and
-# docs/planning/ci-failure-classification-2026-07-28.md: pull requests
-# run the blocking set (dev, GCC, hooks, ASan, cppcheck, Windows, bench
-# compile+smoke, diff-scoped clang-tidy, path-filtered TSan); pushes to
-# main, the weekly schedule, and manual dispatches additionally run the
-# full matrix (werror, TSan, full-tree clang-tidy, release, macOS) and
-# the benchmark threshold gates; baseline artifact collection runs on
-# main pushes only, in its own non-gating job, so change-point sees
-# exactly one artifact set per merged commit's run.
+# PRs run the blocking baseline and path-selected TSan. Main pushes retain
+# baseline checks plus unconditional TSan and benchmark baselines per completed main run.
+# Weekly and manual runs add full analysis, macOS, compatibility floors and
+# calibrated thresholds. Release tuple validation remains independent.
 on:
   pull_request:
   push:
@@ -311,7 +306,7 @@ jobs:
         run: tools/report_ccache_stats.sh
 
   # CI10: on a pull request the library was never COMPILED against libc++.
-  # macOS covers it, but macOS is main-only, so a libc++-specific failure
+  # macOS covers it weekly/on demand, so a libc++-specific failure
   # reached main before anyone saw it. Compile-only, mirroring the gcc
   # portability cell's cost profile rather than adding a second test run.
   libcxx:
@@ -728,7 +723,7 @@ jobs:
   # Blocking diff-scoped clang-tidy for pull requests: changed sources go
   # through the compilation database, changed headers through synthesized
   # translation units. The job's exit status is the signal; the full-tree
-  # sweep runs on main in the quality matrix.
+  # sweep runs weekly and on demand in the quality matrix.
   tidy-diff:
     needs: changes
     if: >-
@@ -775,11 +770,12 @@ jobs:
   # calibrated against the Linux ubuntu-24.04 runner family and would
   # misfire on Apple Silicon runners. Full tier only: macOS has never
   # failed independently of the Linux jobs (see the 2026-07-28 failure
-  # classification), so a regression surfaces one merge later on main.
+  # classification); run on demand for affected platform changes.
   macos:
     needs: changes
     if: >-
-      ${{ github.event_name != 'pull_request' &&
+      ${{ (github.event_name == 'schedule' ||
+           github.event_name == 'workflow_dispatch') &&
           needs.changes.outputs.code_required == 'true' }}
     name: macOS Build And Tests (${{ matrix.preset }})
     runs-on: macos-15
@@ -1064,7 +1060,7 @@ jobs:
       # still never gate, with every test passing. --parallel 1 is
       # load-bearing: these are timing gates and must not run concurrently.
       - name: Benchmark thresholds
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: >-
           cmake --build --preset bench --parallel 1
           --target tess_bench_all_thresholds
@@ -1287,10 +1283,14 @@ jobs:
             test "${{ needs.bench.result }}" = success
             if [ "$EVENT_NAME" = pull_request ]; then
               test "${{ needs.tidy-diff.result }}" = success
-              test "${{ needs.macos.result }}" = skipped
             else
               test "${{ needs.tidy-diff.result }}" = skipped
+            fi
+            if [ "$EVENT_NAME" = schedule ] || \
+                [ "$EVENT_NAME" = workflow_dispatch ]; then
               test "${{ needs.macos.result }}" = success
+            else
+              test "${{ needs.macos.result }}" = skipped
             fi
           else
             test "${{ needs.dev.result }}" = skipped
@@ -1310,7 +1310,8 @@ jobs:
     needs: changes
     if: >-
       ${{ needs.changes.outputs.code_required == 'true' &&
-          github.event_name != 'pull_request' }}
+          (github.event_name == 'schedule' ||
+           github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -1367,7 +1368,8 @@ jobs:
     needs: changes
     if: >-
       ${{ needs.changes.outputs.code_required == 'true' &&
-          github.event_name != 'pull_request' }}
+          (github.event_name == 'schedule' ||
+           github.event_name == 'workflow_dispatch') }}
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -1410,7 +1412,8 @@ jobs:
     needs: changes
     if: >-
       ${{ needs.changes.outputs.code_required == 'true' &&
-          github.event_name != 'pull_request' }}
+          (github.event_name == 'schedule' ||
+           github.event_name == 'workflow_dispatch') }}
     # windows-2025 moved to Visual Studio 2026 in June 2026. GitHub directs
     # Visual Studio 2022 users to windows-2022, which carries the 17.14/MSVC
     # 19.44 floor verified below.
@@ -1452,7 +1455,8 @@ jobs:
     needs: changes
     if: >-
       ${{ needs.changes.outputs.code_required == 'true' &&
-          github.event_name != 'pull_request' }}
+          (github.event_name == 'schedule' ||
+           github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
