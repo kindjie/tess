@@ -2068,10 +2068,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#released-in-v0130" class="md-nav__link">
+  <a href="#released-in-v100" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Released in v0.13.0
+        Released in v1.0.0
       
     </span>
   </a>
@@ -2079,10 +2079,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#release-gated-next-steps" class="md-nav__link">
+  <a href="#the-10-release" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Release-gated next steps
+        The 1.0 release
       
     </span>
   </a>
@@ -2210,10 +2210,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#released-in-v0130" class="md-nav__link">
+  <a href="#released-in-v100" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Released in v0.13.0
+        Released in v1.0.0
       
     </span>
   </a>
@@ -2221,10 +2221,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#release-gated-next-steps" class="md-nav__link">
+  <a href="#the-10-release" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Release-gated next steps
+        The 1.0 release
       
     </span>
   </a>
@@ -2279,8 +2279,8 @@ The <a href="../support/">support policy</a> governs
 stability; architecture documents describe the current checkout, the
 <a href="https://github.com/kindjie/tess/blob/main/docs/planning/roadmap-completion.md">completion record</a> preserves the historical v0.5-v0.12
 sequence, and the <a href="https://github.com/kindjie/tess/blob/main/docs/releasing.md">release process</a> owns the path to 1.0.</p>
-<h2 id="released-in-v0130">Released in v0.13.0</h2>
-<p><code>v0.13.0</code> provides the following tested machinery. The
+<h2 id="released-in-v100">Released in v1.0.0</h2>
+<p><code>v1.0.0</code> provides the following tested machinery. The
 <a href="../architecture/">Concepts</a> pages document this released checkout:
 compile-time shapes and
 field schemas, dense and sparse residency, queued operations with result
@@ -2322,28 +2322,19 @@ surface schema changes as explicit migration requirements, and invalidate
 derived products. Optional Dear ImGui helpers inspect dense and sparse world
 state and return caller-applied boolean field intents without introducing a
 core UI dependency or direct editor mutation.</p>
-<p>This final breaking-change release also adds explicit content-version
+<p>The final breaking 0.x release added explicit content-version
 notification, retained and queue-produced route overlays, the 1.0 migration
 spellings documented in the <a href="../upgrade-1.0/">upgrade guide</a>, and calibrated
 budgeted-progress and maintenance evidence. The
 <a href="https://github.com/kindjie/tess/blob/main/docs/planning/budgeted-progress-benchmarks.md">budgeted-progress record</a> preserves its staged design and
 acceptance evidence.</p>
-<h2 id="release-gated-next-steps">Release-gated next steps</h2>
-<ul>
-<li>The bounded pathfinding, movement, execution, and synthesis
-  dispositions in the <a href="https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md">v0.13-to-v1.0 execution plan</a> are
-  complete: every candidate is dispositioned with retained evidence
-  (<code>docs/planning/evidence/v1.0/</code>), no new library authority was
-  accepted, and the accepted test suites and caller-recipe
-  documentation have landed.</li>
-<li><code>v1.0.0-rc.1</code> is in its candidate phase: the immutable compatibility
-  snapshot, a substantial downstream evaluation of the resulting
-  surface, and the assembled release records are on <code>main</code>, and the tag
-  follows a passing release-mode CI run on the exact candidate commit.</li>
-<li>Publish <code>v1.0.0</code> only after the candidate observation period and the final
-  exact-commit release checks described in the release process.</li>
-</ul>
-<p>These are evidence gates, not promised dates.</p>
+<h2 id="the-10-release">The 1.0 release</h2>
+<p>The <a href="https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md">v0.13-to-v1.0 execution plan</a> records the completed
+prototype dispositions and the release checks. The RC.1 and 1.0.0
+compatibility snapshots protect the stable surface. The 1.x compatibility
+promise is defined in the <a href="../support/">support policy</a>.</p>
+<p>The maintained <a href="https://github.com/kindjie/tess/blob/main/docs/releasing.md">release process</a> owns publication checks,
+including the one-time v1.0.0 observation decision and exact-commit evidence.</p>
 <h2 id="future-and-deferred-extensions">Future and deferred extensions</h2>
 <p>The foundations named below may be released or landed on <code>main</code>, but the
 extensions themselves do not exist as supported APIs. Do not build consumer
