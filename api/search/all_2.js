@@ -39,13 +39,14 @@ var searchData=
   ['constantcost_36',['ConstantCost',['../structtess_1_1movement_1_1ConstantCost.html',1,'tess::movement']]],
   ['consume_5fall_37',['consume_all',['../classtess_1_1EventStream.html#ab959f5cc628469d6a8b4e9d939a4a8b8',1,'tess::EventStream']]],
   ['consumed_5fwork_5funits_38',['consumed_work_units',['../structtess_1_1diagnostics_1_1FlowCounters.html#a46dece216fa88f14cf386f9d18470e1b',1,'tess::diagnostics::FlowCounters']]],
-  ['contains_39',['contains',['../classtess_1_1World_3_01Shape_00_01Schema_00_01SparseResident_01_4.html#a93366f92a35438665596e0770d0df433',1,'tess::World&lt; Shape, Schema, SparseResident &gt;']]],
+  ['contains_39',['contains',['../classtess_1_1PathAgentReplanQueue.html#a09583e6a60862303a2c7d24dc492f0dd',1,'tess::PathAgentReplanQueue::contains()'],['../classtess_1_1World_3_01Shape_00_01Schema_00_01SparseResident_01_4.html#a93366f92a35438665596e0770d0df433',1,'tess::World&lt; Shape, Schema, SparseResident &gt;::contains()']]],
   ['contentversion_40',['ContentVersion',['../structtess_1_1ContentVersion.html',1,'tess']]],
   ['contentversiondependencies_41',['ContentVersionDependencies',['../classtess_1_1ContentVersionDependencies.html',1,'tess']]],
   ['contentversiondependency_42',['ContentVersionDependency',['../structtess_1_1ContentVersionDependencies_1_1ContentVersionDependency.html',1,'tess::ContentVersionDependencies']]],
   ['coord2_43',['Coord2',['../structtess_1_1Coord2.html',1,'tess']]],
   ['coord3_44',['Coord3',['../structtess_1_1Coord3.html',1,'tess']]],
-  ['counters_45',['counters',['../structtess_1_1diagnostics_1_1FlowAccounting.html#acfa9a5010cd56d4ad40ac7085d0281c6',1,'tess::diagnostics::FlowAccounting::counters'],['../structtess_1_1diagnostics_1_1FlowHealthSnapshot.html#a1525cf85bbcb3431d1a43d6a9909e3a9',1,'tess::diagnostics::FlowHealthSnapshot::counters']]],
-  ['create_46',['create',['../classtess_1_1PlannedOperation.html#a597aa97c1760803854fadbc29ac4a568',1,'tess::PlannedOperation']]],
-  ['current_47',['current',['../classtess_1_1experimental_1_1maintenance_1_1ChunkMaintenanceAdapter.html#a17364e6e4b5385cdb567591a347c6e68',1,'tess::experimental::maintenance::ChunkMaintenanceAdapter']]]
+  ['core_20worlds_45',['Core worlds',['../index.html#autotoc_md1',1,'']]],
+  ['counters_46',['counters',['../structtess_1_1diagnostics_1_1FlowAccounting.html#acfa9a5010cd56d4ad40ac7085d0281c6',1,'tess::diagnostics::FlowAccounting::counters'],['../structtess_1_1diagnostics_1_1FlowHealthSnapshot.html#a1525cf85bbcb3431d1a43d6a9909e3a9',1,'tess::diagnostics::FlowHealthSnapshot::counters']]],
+  ['create_47',['create',['../classtess_1_1PlannedOperation.html#a597aa97c1760803854fadbc29ac4a568',1,'tess::PlannedOperation']]],
+  ['current_48',['current',['../classtess_1_1experimental_1_1maintenance_1_1ChunkMaintenanceAdapter.html#a17364e6e4b5385cdb567591a347c6e68',1,'tess::experimental::maintenance::ChunkMaintenanceAdapter']]]
 ];

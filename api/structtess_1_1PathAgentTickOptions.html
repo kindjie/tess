@@ -25,6 +25,11 @@ mermaid.initialize({ startOnLoad: true, theme: theme });
 <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
 <link href="doxygen-awesome-sidebar-only.css" rel="stylesheet" type="text/css"/>
 <link href="tess-theme.css" rel="stylesheet" type="text/css"/>
+<link rel="canonical" href="https://tess.owx.dev/api/structtess_1_1PathAgentTickOptions.html">
+<meta name="description" content="tess C++ API reference: tess::PathAgentTickOptions Struct Reference.">
+<meta property="og:title" content="tess: tess::PathAgentTickOptions Struct Reference">
+<meta property="og:url" content="https://tess.owx.dev/api/structtess_1_1PathAgentTickOptions.html">
+<meta property="og:image" content="https://tess.owx.dev/assets/tess-social-preview.png">
 </head>
 <body>
 <div id="top"><!-- do not remove this div, it is closed by doxygen! -->
@@ -34,7 +39,7 @@ mermaid.initialize({ startOnLoad: true, theme: theme });
  <tr id="projectrow">
   <td id="projectlogo"><img alt="Logo" src="tess-symbol.svg"/></td>
   <td id="projectalign">
-   <div id="projectname">tess<span id="projectnumber">&#160;0.13.0</span>
+   <div id="projectname">tess<span id="projectnumber">&#160;1.0.0</span>
    </div>
    <div id="projectbrief">Performance-first tile and path simulation substrate</div>
   </td>
@@ -171,7 +176,7 @@ std::size_t&#160;</td><td class="memItemRight"><b>max_steps</b> = 1</td></tr>
       </table>
 </div><div class="memdoc">
 <p>Budget of consecutive ticks spent retrying a Blocked agent.</p>
-<p>Occupied and reserved destinations retry the retained step without an occupancy-blind search; route-invalidating failures re-path. The first movement failure records the block, and each following tick consumes one attempt until a successful move resets the count. At exhaustion the policy below either keeps the agent blocked without further path processing, or preserves the historical terminal transition. </p>
+<p>Occupied and reserved destinations retry the retained step without an occupancy-blind search; route-invalidating failures re-search. The first movement failure records the block, and each following tick consumes one attempt until a successful move resets the count. At exhaustion the policy below either keeps the agent blocked without further path processing, or preserves the historical terminal transition. </p>
 
 </div>
 </div>

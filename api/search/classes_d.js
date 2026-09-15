@@ -9,5 +9,6 @@ var searchData=
   ['ophandle_6',['OpHandle',['../structtess_1_1OpHandle.html',1,'tess']]],
   ['opid_7',['OpId',['../structtess_1_1OpId.html',1,'tess']]],
   ['orthogonal_8',['Orthogonal',['../structtess_1_1lattice_1_1Orthogonal.html',1,'tess::lattice']]],
-  ['ownedchunkdomain_9',['OwnedChunkDomain',['../classtess_1_1OwnedChunkDomain.html',1,'tess']]]
+  ['overlaycost_9',['OverlayCost',['../structtess_1_1movement_1_1OverlayCost.html',1,'tess::movement']]],
+  ['ownedchunkdomain_10',['OwnedChunkDomain',['../classtess_1_1OwnedChunkDomain.html',1,'tess']]]
 ];

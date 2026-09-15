@@ -8,17 +8,6 @@
     "library_version",
     "version"
   ],
-  "docs/architecture/no-exceptions.md": [
-    "NoThrowScopedThreadPhaseExecutor",
-    "NoThrowWorkerPoolPhaseExecutor",
-    "PortalSegmentStoreStatus",
-    "ReserveStatus",
-    "ScheduleNoThrowTaskFn",
-    "ScopedThreadPhaseExecutorImpl",
-    "TESS_HAS_EXCEPTIONS",
-    "WorkerPoolPhaseExecutorImpl",
-    "has_exceptions"
-  ],
   "docs/architecture/block.md": [
     "BlockCtx",
     "BlockDiagnostics",
@@ -217,6 +206,17 @@
     "RegisteredScheduler",
     "ReleaseResult",
     "ScheduleResult"
+  ],
+  "docs/architecture/no-exceptions.md": [
+    "NoThrowScopedThreadPhaseExecutor",
+    "NoThrowWorkerPoolPhaseExecutor",
+    "PortalSegmentStoreStatus",
+    "ReserveStatus",
+    "ScheduleNoThrowTaskFn",
+    "ScopedThreadPhaseExecutorImpl",
+    "TESS_HAS_EXCEPTIONS",
+    "WorkerPoolPhaseExecutorImpl",
+    "has_exceptions"
   ],
   "docs/architecture/path.md": [
     "ContentVersionDependencies",
@@ -563,8 +563,9 @@
     "TacticalScore",
     "assign_tactical_candidates_greedy",
     "build_area_index",
-    "resolve_local_moves",
-    "invalid_area_id"
+    "invalid_area_id",
+    "request_replans_for_route_crossings",
+    "resolve_local_moves"
   ],
   "docs/architecture/storage.md": [
     "ActiveMask",
@@ -612,6 +613,7 @@
     "MovementClassFor",
     "Not",
     "NotZero",
+    "OverlayCost",
     "ReachabilityResult",
     "ReachabilityStatus",
     "RegionGraph",

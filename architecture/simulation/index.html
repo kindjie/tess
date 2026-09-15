@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+        <meta name="description" content="The tess simulation loop: schedules, movement commit, joint admission, and the opt-in PIBT tier for contested moves.">
       
       
       
@@ -57,14 +57,14 @@
     <meta property="og:type" content="website">
   <meta property="og:site_name" content="tess">
   <meta property="og:title" content="Simulation and scheduling - tess">
-  <meta property="og:description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+  <meta property="og:description" content="The tess simulation loop: schedules, movement commit, joint admission, and the opt-in PIBT tier for contested moves.">
   <meta property="og:url" content="https://tess.owx.dev/architecture/simulation/">
   <meta property="og:image" content="https://tess.owx.dev/assets/tess-social-preview.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1280">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Simulation and scheduling - tess">
-  <meta name="twitter:description" content="Header-only C++20 library for grid pathfinding, tile-world storage, and deterministic simulation">
+  <meta name="twitter:description" content="The tess simulation loop: schedules, movement commit, joint admission, and the opt-in PIBT tier for contested moves.">
   <meta name="twitter:image" content="https://tess.owx.dev/assets/tess-social-preview.png">
 
   </head>
@@ -263,7 +263,7 @@
   
     
   
-  Getting started
+  Learn
 
         </a>
       </li>
@@ -285,7 +285,7 @@
   
     
   
-  Decision guide
+  Guides
 
         </a>
       </li>
@@ -303,13 +303,13 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+        <a href="../../reference/" class="md-tabs__link">
           
   
   
     
   
-  Concepts
+  Reference
 
         </a>
       </li>
@@ -322,55 +322,20 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="https://tess.owx.dev/api/" class="md-tabs__link">
-        
-  
-  
     
-  
-  API reference
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../../performance/" class="md-tabs__link">
-        
+    
+      <li class="md-tabs__item">
+        <a href="../../performance/" class="md-tabs__link">
+          
   
   
     
   
   Performance
 
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../../use-cases/" class="md-tabs__link">
-        
-  
-  
+        </a>
+      </li>
     
-  
-  Use cases
-
-      </a>
-    </li>
   
 
       
@@ -382,7 +347,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../integration-policy/" class="md-tabs__link">
+        <a href="../../use-cases/" class="md-tabs__link">
           
   
   
@@ -482,6 +447,8 @@
       
         
       
+        
+      
     
     
     
@@ -505,7 +472,7 @@
   <span class="md-ellipsis">
     
   
-    Getting started
+    Learn
   
 
     
@@ -521,7 +488,7 @@
             <span class="md-nav__icon md-icon"></span>
             
   
-    Getting started
+    Learn
   
 
           </label>
@@ -578,6 +545,188 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/flow-steering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Flow field steering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/colony-composition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Colony composition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/procedural-sparse-stream/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Procedural sparse stream
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -671,7 +820,7 @@
   <span class="md-ellipsis">
     
   
-    Decision guide
+    Guides
   
 
     
@@ -693,7 +842,7 @@
             <span class="md-nav__icon md-icon"></span>
             
   
-    Decision guide
+    Guides
   
 
           </label>
@@ -792,14 +941,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../pathfinding-strategy-comparison/" class="md-nav__link">
+      <a href="../../guide/congestion/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Interactive comparison
+    Congestion pricing
   
 
     
@@ -944,7 +1093,11 @@
     
       
         
+      
+        
           
+        
+      
         
       
         
@@ -1008,7 +1161,7 @@
   <span class="md-ellipsis">
     
   
-    Concepts
+    Reference
   
 
     
@@ -1030,11 +1183,39 @@
             <span class="md-nav__icon md-icon"></span>
             
   
-    Concepts
+    Reference
   
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
             
               
             
@@ -1749,15 +1930,8 @@
 
               
             
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
+              
+                
   
   
   
@@ -1782,6 +1956,14 @@
     </li>
   
 
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
     
       
       
@@ -1789,9 +1971,31 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../performance/" class="md-nav__link">
+    
+    
+      
         
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
@@ -1805,26 +2009,35 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Performance
   
 
-    
-      
-      
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
   
   
   
   
     <li class="md-nav__item">
-      <a href="../../use-cases/" class="md-nav__link">
+      <a href="../../performance/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Use cases
+    Performance overview
   
 
     
@@ -1836,6 +2049,42 @@
     </li>
   
 
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pathfinding-strategy-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Strategy comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
     
       
       
@@ -1845,6 +2094,8 @@
   
     
     
+      
+        
       
         
       
@@ -1869,10 +2120,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
@@ -1890,8 +2141,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1900,6 +2151,34 @@
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../use-cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
             
               
                 
@@ -2303,7 +2582,7 @@ deltas.</p>
   coordinates.</li>
 <li><code>is_transient_movement_failure(status)</code> classifies failures: blocked,
   occupied, reserved, and stale statuses are transient (the world can
-  legitimately change under a routed agent; re-path and retry), while
+  legitimately change under a routed agent; re-search and retry), while
   invalid endpoints and non-adjacent steps indicate a caller bug and are
   terminal.</li>
 <li><code>MovementFailureCounts</code> aggregates failures into <code>invalid</code>, <code>impassable</code>,
@@ -2655,7 +2934,8 @@ frame through the lost-update-safe observe/clear-observed protocol.</p>
   search result: <code>Idle</code> (no goal or arrived), <code>NeedsPath</code> (goal assigned, no
   route yet), <code>Following</code> (walking a <code>Found</code> route), <code>Blocked</code> (transient
   failure; retained-step contention waits, while route-invalidating failures
-  re-path until the shared retry budget and exhaustion policy take effect),
+  re-search until the shared retry budget and exhaustion policy take
+  effect),
   and <code>Unreachable</code> (structural failure or explicitly terminal exhaustion;
   terminal until a new goal is assigned).</li>
 <li><code>set_path_agent_goal(agent, goal)</code> arms the lifecycle (<code>NeedsPath</code>, retry
@@ -2663,8 +2943,13 @@ frame through the lost-update-safe observe/clear-observed protocol.</p>
 <li><code>PathAgentFrameStats</code> counts submitted and completed work; every
   <code>PathStatus</code> outcome (<code>found</code>, <code>invalid_start</code>, <code>invalid_goal</code>, <code>no_path</code>,
   <code>indeterminate</code>, <code>cost_overflow</code>, <code>not_computed</code>, and <code>no_candidate</code>);
-  <code>precheck_ruled_out</code>; advanced steps; arrivals; blocked waits; and a
-  <code>MovementFailureCounts</code>.
+  <code>precheck_ruled_out</code>; <code>expanded_nodes</code>; advanced steps; arrivals; blocked
+  waits; and a <code>MovementFailureCounts</code>.
+  <code>expanded_nodes</code> totals the search nodes expanded by the completed results a
+  call applied. A replan budget still bounds the number of searches rather than
+  the work inside one, so this counter is what a caller reads to bound planning
+  by search effort instead: it is deterministic, so a budget derived from it
+  replays exactly, which a wall-clock budget would not.
   <code>precheck_ruled_out</code> is the number of agents whose goal an optional topology
   precheck proved unreachable before A* (a subset of <code>no_path</code>; see the path
   runtime's <code>precheck_ruled_out</code>). <code>add_path_agent_stats(lhs, rhs)</code> accumulates
@@ -2708,7 +2993,10 @@ frame through the lost-update-safe observe/clear-observed protocol.</p>
   proves unreachable are resolved without A* and surfaced in
   <code>PathAgentFrameStats::precheck_ruled_out</code>.</li>
 <li><code>PathAgentReplanQueue</code> is an opt-in, caller-owned FIFO for replans. Pending
-  agent indices deduplicate. <code>process_path_agent_replans</code> invokes a synchronous
+  agent indices deduplicate, and <code>contains(index)</code> reports that pending set —
+  membership begins at an accepted <code>request</code> and ends at the matching
+  <code>pop_front</code> or at <code>clear</code>, so a caller can skip building a request that
+  would only be refused. <code>process_path_agent_replans</code> invokes a synchronous
   caller planner at most its supplied request count and copies each borrowed
   result into retained routes; the generic drain deliberately does not certify
   path legality or optimality. <code>process_unit_path_agent_replans</code> and
@@ -3010,13 +3298,13 @@ without a world edit. Planner failures and transient movement failures both
 land in <code>Blocked</code>; each following tick consumes one of
 <code>max_blocked_retries</code> when movement is enabled; <code>max_steps == 0</code> pauses the
 budget. Occupancy and reservations retry the retained step, while
-route-invalidating failures re-path. Successful movement resets the
+route-invalidating failures re-search. Successful movement resets the
 consecutive-block count. Exhaustion remains <code>Blocked</code> by default; callers that
 need the historical terminal timeout select <code>MarkUnreachable</code> explicitly.
 Structural movement failures (invalid endpoints, non-adjacent steps) skip the
 retry budget entirely. A missing edge under a special-transition provider is
 <code>StaleTopology</code>, because a provider revision can legitimately remove it, and
-therefore requests a bounded re-path. Only a new goal re-arms an
+therefore requests a bounded re-search. Only a new goal re-arms an
 <code>Unreachable</code> agent.
 Clearing a goal returns any active lifecycle state to <code>Idle</code>; those equivalent
 edges are omitted from the diagram to keep the failure paths legible.</p>
@@ -3054,7 +3342,7 @@ accounting: <code>PathAgentTickState</code> carries an optional caller-owned
 <code>FlowAccounting</code>, and every transition is counted where it happens.
 Arming a goal through the tick-state <code>set_path_agent_goal</code> is an
 admission; replacing a goal that <code>path_agent_goal_outstanding</code> still
-reports as live terminalizes it as superseded, while re-arming after a
+reports as live terminalizes it as superseded, while re-<abbr title="Enabling a mechanism or recipe for a run, as the armed arm against the canonical arm.">arming</abbr> after a
 terminal outcome is a fresh admission. The tick-state
 <code>clear_path_agent_goal</code> cancels a live goal. <code>arrive_path_agent</code>
 completes the lifecycle at the arrival transition inside the advance
@@ -3082,6 +3370,9 @@ around this narrow helper until the movement vocabulary is expanded.</p>
 
 
 
+
+  
+  
 
 
 

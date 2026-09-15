@@ -1,10 +1,5 @@
 [
   {
-    "version": "main",
-    "title": "main (unreleased)",
-    "aliases": []
-  },
-  {
     "version": "1.0",
     "title": "1.0.0",
     "aliases": [
@@ -12,13 +7,21 @@
     ]
   },
   {
-    "version": "1.0.0-rc.1",
-    "title": "1.0.0-rc.1",
+    "version": "main",
+    "title": "main (unreleased)",
     "aliases": []
   },
   {
     "version": "0.13",
     "title": "0.13",
     "aliases": []
+  },
+  {
+    "version": "1.0.0-rc.1",
+    "title": "1.0.0-rc.1",
+    "aliases": [],
+    "properties": {
+      "hidden": true
+    }
   }
 ]

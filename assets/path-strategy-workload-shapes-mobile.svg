@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 450 860"
+     role="img"
+     aria-labelledby="title description">
+  <title id="title">Four pathfinding workload shapes</title>
+  <desc id="description">
+    Four stacked panels compare one independent request, a repeated route or
+    route suffix, weighted requests arriving together, and many starts sharing
+    one goal.
+  </desc>
+  <defs>
+    <marker id="arrow"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b4bb7"/>
+    </marker>
+    <marker id="arrow-teal"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#087f8c"/>
+    </marker>
+    <style>
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+      .heading { fill: #172033; font: 600 18px sans-serif; }
+      .subheading { fill: #526076; font: 14px sans-serif; }
+      .label { fill: #172033; font: 600 13px sans-serif; }
+      .detail { fill: #526076; font: 13px sans-serif; }
+      .route { fill: none; stroke: #5b4bb7; stroke-width: 4; }
+      .shared { fill: none; stroke: #087f8c; stroke-width: 6; }
+      .guide { fill: none; stroke: #b8c1d1; stroke-width: 2; }
+      .agent { fill: #5b4bb7; }
+      .agent-alt { fill: #087f8c; }
+      .goal { fill: #f59e0b; stroke: #9a5b05; stroke-width: 1.5; }
+      .weight { fill: #e8e4ff; stroke: #5b4bb7; stroke-width: 1.5; }
+      .field { fill: none; stroke: #087f8c; stroke-width: 2; opacity: .4; }
+    </style>
+  </defs>
+
+  <rect width="450" height="860" rx="12" fill="#f6f8fb"/>
+
+  <g aria-label="Independent request">
+    <rect class="panel" x="15" y="15" width="420" height="195" rx="10"/>
+    <text class="heading" x="35" y="47">1 · Independent request</text>
+    <text class="subheading" x="35" y="70">One start · one goal</text>
+    <path class="route"
+          d="M 67 125 L 130 125 L 180 98 L 260 98 L 310 125 L 380 125"
+          marker-end="url(#arrow)"/>
+    <circle class="agent" cx="59" cy="125" r="13"/>
+    <text class="label" x="59" y="130" text-anchor="middle" fill="#fff">A</text>
+    <path class="goal" d="M 395 109 L 411 125 L 395 141 L 379 125 Z"/>
+    <text class="label" x="395" y="130" text-anchor="middle">G</text>
+    <text class="label" x="35" y="170">Independent A*</text>
+    <text class="detail" x="170" y="170">Nothing beyond scratch repeats.</text>
+  </g>
+
+  <g aria-label="Repeated route or suffix">
+    <rect class="panel" x="15" y="225" width="420" height="195" rx="10"/>
+    <text class="heading" x="35" y="257">2 · Repeated route or suffix</text>
+    <text class="subheading" x="35" y="280">A later request reuses a stored tail</text>
+    <path class="route"
+          d="M 60 335 L 120 335 L 170 305 L 250 305 L 305 335 L 380 335"/>
+    <path class="shared"
+          d="M 170 305 L 250 305 L 305 335 L 380 335"
+          marker-end="url(#arrow-teal)"/>
+    <circle class="agent" cx="52" cy="335" r="13"/>
+    <text class="label" x="52" y="340" text-anchor="middle" fill="#fff">A</text>
+    <circle class="agent-alt" cx="162" cy="305" r="13"/>
+    <text class="label" x="162" y="310" text-anchor="middle" fill="#fff">B</text>
+    <path class="goal" d="M 395 319 L 411 335 L 395 351 L 379 335 Z"/>
+    <text class="label" x="395" y="340" text-anchor="middle">G</text>
+    <text class="label" x="35" y="380">Route cache</text>
+    <text class="detail" x="145" y="380">Retain exact routes and suffixes.</text>
+  </g>
+
+  <g aria-label="Weighted requests arriving together">
+    <rect class="panel" x="15" y="435" width="420" height="195" rx="10"/>
+    <text class="heading" x="35" y="467">3 · Weighted requests arrive together</text>
+    <text class="subheading" x="35" y="490">Group once · return one result per request</text>
+    <circle class="agent" cx="52" cy="525" r="11"/>
+    <circle class="agent" cx="52" cy="557" r="11"/>
+    <circle class="agent" cx="52" cy="589" r="11"/>
+    <text class="label" x="52" y="530" text-anchor="middle" fill="#fff">A</text>
+    <text class="label" x="52" y="562" text-anchor="middle" fill="#fff">B</text>
+    <text class="label" x="52" y="594" text-anchor="middle" fill="#fff">C</text>
+    <path class="guide" d="M 68 525 C 150 525 205 545 300 557"/>
+    <path class="guide" d="M 68 557 L 300 557"/>
+    <path class="guide" d="M 68 589 C 150 589 205 570 300 557"/>
+    <rect class="weight" x="135" y="513" width="28" height="24" rx="4"/>
+    <text class="label" x="149" y="530" text-anchor="middle">2</text>
+    <rect class="weight" x="205" y="545" width="28" height="24" rx="4"/>
+    <text class="label" x="219" y="562" text-anchor="middle">5</text>
+    <path class="route" d="M 300 557 L 380 557" marker-end="url(#arrow)"/>
+    <path class="goal" d="M 395 541 L 411 557 L 395 573 L 379 557 Z"/>
+    <text class="label" x="395" y="562" text-anchor="middle">G</text>
+    <text class="label" x="285" y="605">Weighted batch</text>
+  </g>
+
+  <g aria-label="Many starts sharing one goal">
+    <rect class="panel" x="15" y="645" width="420" height="200" rx="10"/>
+    <text class="heading" x="35" y="677">4 · Many starts share one goal</text>
+    <text class="subheading" x="35" y="700">Build one reverse field · reconstruct many paths</text>
+    <circle class="field" cx="330" cy="770" r="28"/>
+    <circle class="field" cx="330" cy="770" r="55"/>
+    <circle class="field" cx="330" cy="770" r="82"/>
+    <circle class="agent-alt" cx="52" cy="735" r="11"/>
+    <circle class="agent-alt" cx="70" cy="770" r="11"/>
+    <circle class="agent-alt" cx="52" cy="807" r="11"/>
+    <text class="label" x="52" y="740" text-anchor="middle" fill="#fff">A</text>
+    <text class="label" x="70" y="775" text-anchor="middle" fill="#fff">B</text>
+    <text class="label" x="52" y="812" text-anchor="middle" fill="#fff">C</text>
+    <path class="guide"
+          d="M 68 735 C 155 735 220 745 304 763"
+          marker-end="url(#arrow-teal)"/>
+    <path class="guide"
+          d="M 86 770 L 302 770"
+          marker-end="url(#arrow-teal)"/>
+    <path class="guide"
+          d="M 68 807 C 155 807 220 795 304 777"
+          marker-end="url(#arrow-teal)"/>
+    <path class="goal" d="M 330 754 L 346 770 L 330 786 L 314 770 Z"/>
+    <text class="label" x="330" y="775" text-anchor="middle">G</text>
+    <text class="label" x="355" y="824">Distance field</text>
+  </g>
+</svg>

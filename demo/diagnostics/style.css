@@ -63,6 +63,17 @@ input {
   font: inherit;
 }
 
+button {
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  color: inherit;
+  border: 1px solid #9b87bc;
+  border-radius: 0.35rem;
+  background: #2b2240;
+  font: inherit;
+  cursor: pointer;
+}
+
 input[type="number"] {
   width: 100%;
   padding: 0.4rem;
@@ -77,6 +88,32 @@ input[type="number"] {
   min-height: 44rem;
   border-radius: 0.35rem;
   background: #0e0b15;
+}
+
+.state {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.5rem 0 0;
+}
+
+.state div {
+  min-width: 0;
+}
+
+.state dt {
+  color: #c7b5e5;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.state dd {
+  margin: 0.1rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  color: #c7b5e5;
+  font-size: 0.9rem;
 }
 
 footer {
@@ -95,6 +132,6 @@ a {
   }
 
   #canvas {
-    min-height: 36rem;
+    min-height: min(36rem, 72vh);
   }
 }

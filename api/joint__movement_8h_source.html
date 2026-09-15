@@ -25,6 +25,11 @@ mermaid.initialize({ startOnLoad: true, theme: theme });
 <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
 <link href="doxygen-awesome-sidebar-only.css" rel="stylesheet" type="text/css"/>
 <link href="tess-theme.css" rel="stylesheet" type="text/css"/>
+<link rel="canonical" href="https://tess.owx.dev/api/joint__movement_8h_source.html">
+<meta name="description" content="tess C++ API reference: include/tess/sim/joint_movement.h Source File.">
+<meta property="og:title" content="tess: include/tess/sim/joint_movement.h Source File">
+<meta property="og:url" content="https://tess.owx.dev/api/joint__movement_8h_source.html">
+<meta property="og:image" content="https://tess.owx.dev/assets/tess-social-preview.png">
 </head>
 <body>
 <div id="top"><!-- do not remove this div, it is closed by doxygen! -->
@@ -34,7 +39,7 @@ mermaid.initialize({ startOnLoad: true, theme: theme });
  <tr id="projectrow">
   <td id="projectlogo"><img alt="Logo" src="tess-symbol.svg"/></td>
   <td id="projectalign">
-   <div id="projectname">tess<span id="projectnumber">&#160;0.13.0</span>
+   <div id="projectname">tess<span id="projectnumber">&#160;1.0.0</span>
    </div>
    <div id="projectbrief">Performance-first tile and path simulation substrate</div>
   </td>
@@ -386,7 +391,7 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('joint__movemen
 <div class="line"><a id="l00271" name="l00271"></a><span class="lineno">  271</span>        <span class="keywordflow">continue</span>;</div>
 <div class="line"><a id="l00272" name="l00272"></a><span class="lineno">  272</span>      }</div>
 <div class="line"><a id="l00273" name="l00273"></a><span class="lineno">  273</span>      <span class="keyword">const</span> <span class="keyword">auto</span>&amp; route = routes.routes[i];</div>
-<div class="line"><a id="l00274" name="l00274"></a><span class="lineno">  274</span>      <span class="keywordflow">if</span> (route.empty() || agent.path_index + 1 &gt;= route.size()) {</div>
+<div class="line"><a id="l00274" name="l00274"></a><span class="lineno">  274</span>      <span class="keywordflow">if</span> (!detail::has_next_step(agent.path_index, route.size())) {</div>
 <div class="line"><a id="l00275" name="l00275"></a><span class="lineno">  275</span>        <span class="keywordflow">continue</span>;</div>
 <div class="line"><a id="l00276" name="l00276"></a><span class="lineno">  276</span>      }</div>
 <div class="line"><a id="l00277" name="l00277"></a><span class="lineno">  277</span>      <span class="keyword">const</span> <span class="keyword">auto</span> to = route[agent.path_index + 1];</div>
@@ -698,9 +703,9 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('joint__movemen
 <div class="ttc" id="astructtess_1_1JointMoveStats_html_ae5753153a32b9069410262d3d73f8a9d"><div class="ttname"><a href="structtess_1_1JointMoveStats.html#ae5753153a32b9069410262d3d73f8a9d">tess::JointMoveStats::chained</a></div><div class="ttdeci">std::size_t chained</div><div class="ttdoc">Moves admitted only because their destination was vacated this tick.</div><div class="ttdef"><b>Definition</b> joint_movement.h:69</div></div>
 <div class="ttc" id="astructtess_1_1JointMoveStats_html_af17f94bf3f5cf79e29ebdd08d3591886"><div class="ttname"><a href="structtess_1_1JointMoveStats.html#af17f94bf3f5cf79e29ebdd08d3591886">tess::JointMoveStats::rotations</a></div><div class="ttdeci">std::size_t rotations</div><div class="ttdoc">Cycles of length &gt;= 3 rotated one place.</div><div class="ttdef"><b>Definition</b> joint_movement.h:71</div></div>
 <div class="ttc" id="astructtess_1_1MovementIntent_html"><div class="ttname"><a href="structtess_1_1MovementIntent.html">tess::MovementIntent</a></div><div class="ttdoc">Describes an adjacent move and any versions it expects to remain current.</div><div class="ttdef"><b>Definition</b> movement.h:41</div></div>
-<div class="ttc" id="astructtess_1_1PathAgentAdvanceOptions_html"><div class="ttname"><a href="structtess_1_1PathAgentAdvanceOptions.html">tess::PathAgentAdvanceOptions</a></div><div class="ttdoc">Configures bounded direct movement and the dirty bits it emits.</div><div class="ttdef"><b>Definition</b> path_agent.h:74</div></div>
+<div class="ttc" id="astructtess_1_1PathAgentAdvanceOptions_html"><div class="ttname"><a href="structtess_1_1PathAgentAdvanceOptions.html">tess::PathAgentAdvanceOptions</a></div><div class="ttdoc">Configures bounded direct movement and the dirty bits it emits.</div><div class="ttdef"><b>Definition</b> path_agent.h:78</div></div>
 <div class="ttc" id="astructtess_1_1PathAgentFrameStats_html"><div class="ttname"><a href="structtess_1_1PathAgentFrameStats.html">tess::PathAgentFrameStats</a></div><div class="ttdoc">Summarizes path submission, results, movement, and failure outcomes.</div><div class="ttdef"><b>Definition</b> path_agent.h:50</div></div>
-<div class="ttc" id="astructtess_1_1PathAgentRoutes_html"><div class="ttname"><a href="structtess_1_1PathAgentRoutes.html">tess::PathAgentRoutes</a></div><div class="ttdoc">Owns index-paired route copies retained across scoped processing passes.</div><div class="ttdef"><b>Definition</b> path_agent.h:111</div></div>
+<div class="ttc" id="astructtess_1_1PathAgentRoutes_html"><div class="ttname"><a href="structtess_1_1PathAgentRoutes.html">tess::PathAgentRoutes</a></div><div class="ttdoc">Owns index-paired route copies retained across scoped processing passes.</div><div class="ttdef"><b>Definition</b> path_agent.h:115</div></div>
 <div class="ttc" id="astructtess_1_1Shape_html"><div class="ttname"><a href="structtess_1_1Shape.html">tess::Shape</a></div><div class="ttdef"><b>Definition</b> shape.h:296</div></div>
 <div class="ttc" id="astructtess_1_1diagnostics_1_1FlowAccounting_html"><div class="ttname"><a href="structtess_1_1diagnostics_1_1FlowAccounting.html">tess::diagnostics::FlowAccounting</a></div><div class="ttdef"><b>Definition</b> diagnostics.h:505</div></div>
 </div><!-- fragment --></div><!-- contents -->
