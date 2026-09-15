@@ -4,8 +4,8 @@ This reference documents the supported C++ API generated from the installed
 headers. Use the version-relative navigation above to return to the authored
 documentation, its learning paths, or the reference map.
 
-tess is pre-1.0; see the
-[stability policy](../support/).
+The 1.x release line preserves the documented stable source API. See the
+[stability policy](../support/) for its scope.
 
 ## Core worlds
 

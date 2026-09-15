@@ -10,6 +10,46 @@ entries from 2026-07-09 through 2026-07-10 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-09-14 - Preserve RC.1 observation for unchanged library headers
+
+- Accepted: for v1.0.0 only, retain the observation window of the published
+  RC.1 despite later demo and tooling changes. The entire `include/` tree is
+  unchanged between RC.1 and the preparation base. The current adoption
+  evidence is sufficient without waiting for a complete downstream product.
+- Required: recheck header continuity on the final GA commit, rerun release
+  mode on the same RC SHA after observation, and validate the exact GA SHA.
+  This decision does not waive any platform, package, fuzzing, or publication
+  gate and does not change the default policy for future releases.
+- Retained: MIT licensing. README and documentation Home request optional
+  acknowledgment or logo credit in research and products, with suggested
+  pathfinding wording and existing SVG assets. No new navigation entry or
+  mandatory attribution condition is introduced.
+
+## 2026-08-29 - Publish exact candidates and name the development tree `main`
+
+This supersedes the 2026-08-21 policy that published development documentation
+at `/dev/` and skipped prerelease tags, while preserving the 2026-08-26 decision
+that the newest stable documentation remains canonical at root URLs.
+
+Main pushes publish a mutable, non-indexed `/main/` tree titled `main
+(unreleased)`. `/dev/` remains as a path-preserving HTML redirect tree with its
+legacy non-HTML assets retained. Stable tags continue to replace their
+`/<major>.<minor>/` release line and move the root only when they are the newest
+stable version. RC tags publish immutable exact SemVer trees without moving the
+root or `/latest/`.
+
+The selector orders the newest stable release first, then unsuperseded RCs,
+`main`, and older stable lines. Superseded RCs are hidden rather than deleted,
+so immutable URLs survive both a newer candidate and GA. Manual republishing is
+allowed only from the trusted `main` workflow and checks out the exact requested
+tag as documentation source; current workflow tooling retains publication
+authority.
+
+GitHub Pages remains a static host. `/latest/` and `/dev/` therefore use tested
+meta-refresh and JavaScript redirects rather than claiming unavailable HTTP 301
+semantics. An edge service remains deferred until a separate requirement
+justifies its operational cost.
+
 ## 2026-08-26 - Restore stable documentation at root URLs
 
 The canonical documentation returns to stable root paths such as `/guide/`

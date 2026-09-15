@@ -17,10 +17,9 @@ topology-aware pathfinding, and deterministic simulation updates. It supplies
 the spatial substrate while leaving rendering, physics, and entity ownership
 to your application.
 
-This site documents the unreleased `v1.0.0` development API (release
-candidate `v1.0.0-rc.1`) and the path to 1.0 in the
-[roadmap](roadmap.md). tess is pre-1.0 — see
-[support and compatibility](support.md) for the stability policy.
+This site documents the `v1.0.0` release. The 1.x release line preserves
+the documented stable source API. See [support and compatibility](support.md)
+for the stability policy and the [roadmap](roadmap.md) for future work.
 { .tess-version }
 
 [Get started](getting-started.md){ .md-button .md-button--primary }
@@ -230,3 +229,19 @@ compile definitions.
     [:octicons-arrow-right-24: Benchmarks](performance.md)
 
 </div>
+
+## Optional credit
+
+If you use tess in research or a product, we'd appreciate an acknowledgment,
+a link to the project, or the tess logo. You could include this in your
+paper's acknowledgments, documentation, about page, or credits.
+
+Suggested credit: "Pathfinding powered by tess" or "This work uses tess for
+pathfinding and grid-based simulation."
+
+Attribution beyond the notices required by the MIT License is entirely
+optional.
+
+[tess project](https://github.com/kindjie/tess) ·
+[Logo for light backgrounds](assets/tess-logo.svg) ·
+[Logo for dark backgrounds](assets/tess-logo-dark.svg)

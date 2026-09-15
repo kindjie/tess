@@ -32,6 +32,67 @@ entries from 2026-07-13 through 2026-07-31 are in
 entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-09-14 - Separate merge CI from broad periodic campaigns
+
+- **Hypothesis:** repeating the complete analysis and platform matrix after
+  every merge spends runner time on overlapping evidence; retaining the PR
+  baseline and unconditional main TSan should preserve prompt regression
+  feedback while broader campaigns run weekly or on demand.
+- **Controlled change:** main pushes select baseline quality presets. Full
+  warnings, release, analysis, macOS, compiler floors and calibrated benchmark
+  thresholds move to weekly/manual runs. Release identity validation remains
+  independent. Advisory benchmark history stays on completed main runs;
+  cancellation can still leave gaps between merged commits.
+- **Method and evidence:** workflow/classifier/hook regression tests verify
+  PR, push, scheduled and manual selection plus exact release identity.
+  Local validation passed 382 Python checks. The pre-push CTest run passed
+  with no failures across 1,645 discovered cases in 146.70 seconds (one
+  platform-inapplicable case skipped). These establish correctness, not a
+  controlled hosted speedup. Hosted job evidence is retained on
+  [PR #312](https://github.com/kindjie/tess/pull/312).
+- **Result and decision:** accept removing the duplicate broad matrix from
+  each main push. PR gates, main TSan and baseline collection remain. Detection
+  of macOS, floor-toolchain and full-analysis regressions may now take until
+  the weekly run; dispatch those checks for affected changes before merging.
+- **Deferred:** measure comparable completed main runs before claiming a
+  runtime or runner-cost percentage. Reconsider cadence when a periodic job
+  finds regressions missed by the retained baseline. Closing cancellation
+  gaps in benchmark history is separate work; this change does not promise
+  evidence for every merged SHA.
+
+## 2026-08-28 - Characterize path-strategy crossover envelopes
+
+- **Hypothesis:** cold route caches, shared-goal fields, and weighted batches
+  repay setup at platform- and workload-specific request counts that a fixed
+  100-request comparison cannot reveal.
+- **Controlled change:** added an isolated `lab/` benchmark sweep that pairs
+  identical worlds and request arrays across counts and validates status,
+  legality, endpoints, and cost outside timing.
+- **Evidence:** exact-commit runs completed all 91 primary cells and the
+  bounded capacity ladders on an Apple M3 Max and Steam Deck. The public
+  [`path-strategy-crossover`](../evidence/v1.0/path-strategy-crossover/README.md)
+  record retains the method, normalized samples, counters, environments, and
+  controlled stop details. All Deck primary cells met the 5% variation limit;
+  40 M3 cells did not and remain excluded from crossover calculation.
+- **Result:** room-portal field construction crossed between 10 and 16
+  requests on M3 and 4 and 8 on Deck. Deck exact and suffix caches crossed
+  between 2 and 8, while M3 showed accepted cache wins by 4 and 8 without an
+  accepted lower boundary. One-goal weighted batching crossed between 2 and 4
+  on Deck and showed a qualified win by 8 on M3. Eight-goal batching first won
+  materially at 10 on both; all-distinct fallback remained inconclusive.
+- **Capacity result:** after the 4,096x4,096 preflight showed headroom, the
+  opt-in envelope was extended through 16,384x16,384 and 131,072 requests.
+  Most Deck grid ladders completed 8,192x8,192 before a controlled 16,384x16,384
+  stop; most M3 ladders completed the 16,384x16,384 ceiling. Reuse-heavy
+  request ladders reached 131,072 on both, so that figure is a tested floor,
+  not a platform maximum.
+- **Decision:** keep logically cold population/build work in the measured
+  operation while pre-reserving reusable storage, and publish per-platform,
+  workload-specific brackets. Keep the campaign advisory and warm replay in
+  the existing cache and field-product families. Defer a
+  worker-owned multithreaded throughput campaign; require a real GPU path
+  provider before claiming GPU pathfinding measurements.
+
 ## 2026-08-27 - Two provisional 2x ceilings recalibrated to the file's own bootstrap convention
 
 **Question:** `path/weighted_batch_planner_100_neargoal_open_512x512`
