@@ -5,7 +5,6 @@
 - [Public roadmap](../roadmap.md)
 - [Release process](../releasing.md)
 - [Upgrade to 1.0](../upgrade-1.0.md)
-- [v0.13 to v1.0 execution plan](v0.13-to-v1.0-execution-plan.md)
 - [Discrepancy-aware allocation experiments](discrepancy-allocation-experiments.md)
 - [Benchmark plan](benchmark-plan.md)
 - [Benchmark calibration](benchmark-calibration.md)
@@ -16,6 +15,7 @@
 
 ## Implementation and completion records
 
+- [v0.13 to v1.0 execution plan](v0.13-to-v1.0-execution-plan.md)
 - [Initial milestone plan](initial-milestone-plan.md)
 - [Post-v0.4 roadmap completion record](roadmap-completion.md)
 - [Concurrency rollout record](concurrency-plan.md)
