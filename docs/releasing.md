@@ -90,6 +90,33 @@ reference, demos, `noindex`
 metadata, selector title, and that `/`, `/latest/`, and `/main/` remain on their
 respective stable, compatibility, and development content.
 
+## One-time v1.0.0 observation decision
+
+For v1.0.0 only, the maintainer accepts the unchanged stable library headers
+as sufficient continuity with the observed `v1.0.0-rc.1` candidate. The
+candidate was published on 2026-08-28 at
+`566234100187769fe4d7b083448f5e844a0c1f85`. Comparison with the preparation
+base `b70c1e6f0d93d636907f17900ff35c147b9b954c` shows no changes under
+`include/`, including optional, experimental, and implementation headers.
+Later demo, benchmark, documentation, and tooling changes do not restart this
+observation window. Clearing the prerelease metadata for GA is expected.
+
+This is a bounded exception to the code-change rule above, not a general
+relaxation for later releases. Recheck the header comparison on the final GA
+commit; any library-header change requires reconsidering this decision.
+The same-RC-SHA post-observation rerun and the complete exact-GA-SHA release
+run remain required. Successful ordinary CI is not a substitute for either.
+The [downstream follow-up][ga-downstream]
+records the additional live-consumer evidence and its limits.
+
+The post-observation RC run's CMake-floor download returned HTTP 403. If its
+retry remains blocked, the maintainer accepts the
+[recorded supplemental check][ga-supplement] against the unchanged RC source
+with the checksum-identical CMake binary from Kitware's official mirror.
+Every other required RC check must pass. Preserve both the failed hosted
+job log and passing supplemental log. This substitution does not apply to
+the GA run, which must pass the complete workflow using the corrected URL.
+
 ## 1.0 general availability
 
 For GA, clear `TESS_VERSION_PRERELEASE`, assemble all three fragment streams,
@@ -108,3 +135,6 @@ preservation; API links and demos; and path-preserving `/latest/` redirects.
 The vcpkg overlay remains checkout-based through GA. Publish a central-registry
 recipe and its release-archive hash only after the archive exists; neither is a
 self-fetching in-tree release gate.
+
+[ga-downstream]: planning/evidence/v1.0/rc1-downstream/README.md#pre-ga-follow-up-2026-09-14
+[ga-supplement]: planning/evidence/v1.0/ga-release.md

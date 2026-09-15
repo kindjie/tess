@@ -9,6 +9,96 @@ and their rationale are recorded separately in
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-14
+
+### Added
+
+- The generated API reference and demo pages now carry SEO metadata
+  (issue #287): a build-time pass stamps each with a canonical URL, a
+  page-specific description, and Open Graph tags, marks Doxygen's
+  utility and index surfaces `noindex, follow` from an explicit list,
+  and extends the sitemap with exactly the stamped set. The pass runs
+  on every pull-request build and fails when a page falls outside the
+  stamped-or-listed partition or a demo lacks a registered description,
+  so new page shapes cannot ship unclassified.
+- Every maintained documentation page now carries its own description
+  (issue #287); thirty-one indexable pages had shared the generic site
+  fallback, making search snippets and social cards interchangeable.
+  A new build-time check reads the BUILT site and fails on a missing,
+  duplicated, or generic description -- mkdocs falls back silently, so
+  source front matter alone proves nothing about what ships, and the
+  built-site check indeed caught two section index pages the source
+  sweep had missed.
+
+### Changed
+
+- Release v1.0.0 with the stable source-compatibility contract, unchanged
+  library headers from RC.1, and versioned CMake package discovery enabled.
+  The checkout-based vcpkg overlay now declares version 1.0.0.
+
+### Fixed
+
+- Fetch the pinned CMake 3.25.3 release-floor binary from Kitware's official
+  GitHub mirror after the original download returned HTTP 403. The archive's
+  pinned SHA-256 and all release-floor checks are unchanged.
+- Correct documentation publication so `main`, stable release lines, and exact
+  release candidates receive distinct version trees while the newest stable
+  release remains canonical at root URLs. Preserve path-compatible `/latest/`
+  and `/dev/` redirects, normalize selector ordering, and reject stale root
+  identity metadata.
+- Make the distance-label steering tutorial discoverable under the common
+  “flow field” term while preserving its retained-distance versus
+  retained-direction distinction.
+- Fixed trusted documentation republishing so exact historical tags use the
+  current artifact tooling without replacing or retroactively applying checks
+  to their authored documentation, examples, dependencies, or build scripts.
+- Preserve an accessible name for the procedural sparse-stream tutorial frame
+  after Material converts its authored title into tooltip metadata.
+- Prevent nested vertical scrollbars in sidebar-constrained strategy and
+  diagnostics tutorial embeds, and cover every authored iframe at that
+  desktop layout in the publication browser checks.
+- Served version trees are now fully isolated for retirement (issue
+  #287): the Pages artifact drops each tree's `sitemap.xml`,
+  `sitemap.xml.gz`, `llms.txt`, and nested `robots.txt` (storage keeps
+  them); same-origin anchors localize into their own tree when the
+  target exists there, with the bare-origin escape hatch and deliberate
+  cross-version links preserved; a frozen release's head metadata stops
+  claiming `/latest/` (including the malformed social-image URL); the
+  artifact check walks every page of every tree instead of each index
+  alone and cannot pass vacuously; the documentation link checker
+  resolves same-origin absolute URLs instead of skipping them; and the
+  two demo pages that linked absolutely to the performance page link
+  relatively.
+
+### Documentation
+
+- Add an embedded colony composition tutorial over the existing 128×128
+  native and WebAssembly model, with a compact high-DPI article presentation.
+- Replaced the synthetic diagnostics demo with a colony-backed tutorial that
+  captures real path, queued, timing, allocation, and lifecycle-flow evidence
+  without adding a public panel API.
+- Reorganize the documentation into Learn, Guides, Reference, Performance,
+  and Project sections, with tutorial and reference landing pages, clearer
+  example families, and a focused three-action homepage.
+- Connect authored learning pages and the generated C++ API with curated
+  entry points, explicit symbol links, compact API-used summaries, and
+  version-relative return navigation validated in every current site build.
+- Add a self-checking flow-style steering tutorial and WebAssembly example
+  that derive deterministic agent steps from public distance labels.
+- Add optional research and product credit wording and links to the existing
+  light- and dark-background SVG logos in the README and documentation Home.
+  MIT license requirements are unchanged; no navigation item is added.
+- Polished the pathfinding strategy comparison by removing the scaling chart's
+  residual scrollbar and adding scannable explanations of requests, distance
+  fields, and flow fields.
+- Added an evidence-backed C++ grid pathfinding comparison with reviewed cold
+  crossover results, reproducible Apple Silicon and Steam Deck controls, and a
+  bounded grid/request capacity envelope.
+- Add a self-checking procedural sparse-stream tutorial and WebAssembly demo
+  over a deterministic bounded 4,096×4,096 world, with a 32-page LRU budget,
+  ordered camera-window residency, indeterminate-route retries, and accessible
+  pause, step, and reset controls.
+
 ## [1.0.0-rc.1] - 2026-08-28
 
 ### Added

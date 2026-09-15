@@ -173,3 +173,17 @@ int main() {
   return 0;
 }
 ```
+
+## GA snapshot preparation: 2026-09-14
+
+The `compatibility/1.0.0` manifest and consumer CMake project were generated
+with the recorded Python program above after clearing the prerelease label.
+The source and archive consumer programs are copied unchanged from RC.1,
+because the library headers are unchanged. The archive fixtures were freshly
+produced by the recorded C++ generator compiled against the staged 1.0.0
+installation. The GA manifest identifies their producer as 1.0.0 and their
+wire format as 2. The historical RC.1 snapshot remains byte-for-byte intact.
+
+This is preparation provenance, not exact-commit release evidence. The
+release-mode workflow must compile and run both snapshots against the final
+candidate installation before publication.

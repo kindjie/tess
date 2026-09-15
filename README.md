@@ -139,10 +139,9 @@ fits your project.
 The [installation guide](https://tess.owx.dev/packaging/) has the exact
 commands and archive verification steps.
 
-The latest release is `v0.13.0`. This checkout documents the unreleased
-`v1.0.0` development API (release candidate `v1.0.0-rc.1`),
-including its portable `.zip` and `.tar.gz` header archives. Before 1.0, public
-APIs may change between minor versions. See
+The latest release is `v1.0.0`. This checkout documents the `v1.0.0` release,
+including its portable `.zip` and `.tar.gz` header archives. The 1.x release
+line preserves the documented stable source API. See
 [support and compatibility](https://tess.owx.dev/support/) and the
 [roadmap](https://tess.owx.dev/roadmap/).
 
@@ -181,3 +180,19 @@ benchmarks, and documentation tooling. Install the local hooks first with
 ## License
 
 Licensed under the [MIT License](LICENSE).
+
+## Optional credit
+
+If you use tess in research or a product, we'd appreciate an acknowledgment,
+a link to the project, or the tess logo. You could include this in your
+paper's acknowledgments, documentation, about page, or credits.
+
+Suggested credit: "Pathfinding powered by tess" or "This work uses tess for
+pathfinding and grid-based simulation."
+
+Attribution beyond the notices required by the MIT License is entirely
+optional.
+
+[tess project](https://github.com/kindjie/tess) ·
+[Logo for light backgrounds](docs/assets/tess-logo.svg) ·
+[Logo for dark backgrounds](docs/assets/tess-logo-dark.svg)

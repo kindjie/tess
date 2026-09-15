@@ -158,3 +158,42 @@ consumer required a surface change, so the "final breaking release"
 claim stands untouched. The deferred items are the documentation
 improvements (F5), the result-type unification (F3), and the outside
 read (F6).
+
+## Pre-GA follow-up: 2026-09-14
+
+The reference consumer now has maintained usage beyond the storage probe.
+This supplements the historical evaluation above; it does not rewrite the
+retired-harness findings or claim independent adoption.
+
+- Admission routing projects semantic floors and crossings into bounded tess
+  distance fields. Complete runs are compared with an independent graph
+  solver across 32 edited layouts, including closed gates, translated
+  coordinates, projection limits, diagonal gaps, and retained-route lifetime.
+  The recorded validation includes 15 native admission cases, 31 installed
+  consumer sanitizer cases, 15 threaded WebAssembly admission cases, and
+  1,342 full native tests.
+- Two-level access supplies explicit bidirectional semantic transitions to
+  a fresh distance field. Tests cover stair entry and landing links, stacked
+  floors without implicit connections, overlapping-wall opening identities,
+  bounds, owned routes, and stale evidence after edits and undo. The recorded
+  local validation includes 1,449 warnings-as-errors tests, 58 focused
+  ASan/UBSan cases, and 42 installed-consumer access, levels, admission, and
+  probe cases. Native, sanitizer, and threaded-browser CI passed against tess
+  `0370d0c0b52c166ad3cca403e0645c06b52da577`; the PR's dedicated installed
+  consumer jobs were skipped, so the 42 cases are local evidence.
+
+The source and CI records were inspected during GA preparation; these counts
+are retained downstream reports, not a newly rerun integration campaign.
+The private consumer's source and CI records remain private. The public
+record intentionally contains no private project identifiers or links.
+
+The access preview is bounded to a 128-by-128 span and two consecutive
+levels. It does not establish persistent-cache invalidation, queued
+maintenance, sparse streaming, archive persistence, or worker-pool coverage.
+Those still rely on the original targeted evaluation and library tests.
+Native/browser storage-probe parity does not establish parity for every
+routing feature. Human acceptance of preview readability and the outside
+cold-read supplement remain open; neither is represented as completed.
+
+The maintainer accepts this combined evidence as sufficient downstream
+coverage for v1.0.0. Exact-commit release validation remains required.

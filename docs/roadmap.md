@@ -12,9 +12,9 @@ stability; architecture documents describe the current checkout, the
 [completion record][completion-plan] preserves the historical v0.5-v0.12
 sequence, and the [release process][release-process] owns the path to 1.0.
 
-## Released in v0.13.0
+## Released in v1.0.0
 
-`v0.13.0` provides the following tested machinery. The
+`v1.0.0` provides the following tested machinery. The
 [Concepts](architecture/README.md) pages document this released checkout:
 compile-time shapes and
 field schemas, dense and sparse residency, queued operations with result
@@ -57,29 +57,22 @@ derived products. Optional Dear ImGui helpers inspect dense and sparse world
 state and return caller-applied boolean field intents without introducing a
 core UI dependency or direct editor mutation.
 
-This final breaking-change release also adds explicit content-version
+The final breaking 0.x release added explicit content-version
 notification, retained and queue-produced route overlays, the 1.0 migration
 spellings documented in the [upgrade guide](upgrade-1.0.md), and calibrated
 budgeted-progress and maintenance evidence. The
 [budgeted-progress record][budgeted-progress] preserves its staged design and
 acceptance evidence.
 
-## Release-gated next steps
+## The 1.0 release
 
-- The bounded pathfinding, movement, execution, and synthesis
-  dispositions in the [v0.13-to-v1.0 execution plan][pre-rc-plan] are
-  complete: every candidate is dispositioned with retained evidence
-  (`docs/planning/evidence/v1.0/`), no new library authority was
-  accepted, and the accepted test suites and caller-recipe
-  documentation have landed.
-- `v1.0.0-rc.1` is in its candidate phase: the immutable compatibility
-  snapshot, a substantial downstream evaluation of the resulting
-  surface, and the assembled release records are on `main`, and the tag
-  follows a passing release-mode CI run on the exact candidate commit.
-- Publish `v1.0.0` only after the candidate observation period and the final
-  exact-commit release checks described in the release process.
+The [v0.13-to-v1.0 execution plan][pre-rc-plan] records the completed
+prototype dispositions and the release checks. The RC.1 and 1.0.0
+compatibility snapshots protect the stable surface. The 1.x compatibility
+promise is defined in the [support policy](support.md).
 
-These are evidence gates, not promised dates.
+The maintained [release process][release-process] owns publication checks,
+including the one-time v1.0.0 observation decision and exact-commit evidence.
 
 ## Future and deferred extensions
 

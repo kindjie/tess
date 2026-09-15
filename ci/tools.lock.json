@@ -2,7 +2,7 @@
   "cmake": {
     "version": "3.25.3",
     "linux_x86_64":
-        "https://cmake.org/files/v3.25/cmake-3.25.3-linux-x86_64.tar.gz",
+        "https://github.com/Kitware/CMake/releases/download/v3.25.3/cmake-3.25.3-linux-x86_64.tar.gz",
     "sha256": "d4d2ba83301b215857d3b6590cd4434a414fa151c5807693abe587bd6c03581e"
   },
   "ccache": {

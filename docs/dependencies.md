@@ -4,12 +4,15 @@
 
 - Version: `3.25.3`
 - Documentation: https://cmake.org/cmake/help/v3.25/
-- Release files and checksums: https://cmake.org/files/v3.25/
+- Release files and checksums:
+  https://github.com/Kitware/CMake/releases/tag/v3.25.3
 
 The release-floor job downloads Kitware's Linux x86-64 archive and verifies
 the URL and SHA-256 digest pinned in `ci/tools.lock.json`. It performs a real
 configure, install, package discovery, consumer build, and execution rather
-than relying on syntax compatibility alone.
+than relying on syntax compatibility alone. The official GitHub mirror serves
+the same pinned archive; the former cmake.org download returned HTTP 403
+during GA preparation.
 
 ## ccache CI binary
 

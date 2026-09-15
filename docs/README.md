@@ -37,7 +37,7 @@ Published on the documentation site:
 - [Roadmap](roadmap.md): released vs landed-but-unreleased vs release-gated,
   deferred, and out-of-scope work.
 - [Support](support.md): adopter help, issue, and compatibility guidance;
-  the canonical pre-1.0 stability statement.
+  the canonical 1.x source-compatibility contract.
 - [For agents](for-agents.md): machine-adoption recipe; `llms.txt` is
   the site-root page map for LLM tooling.
 
