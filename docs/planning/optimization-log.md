@@ -70,7 +70,7 @@ entries from 2026-07-12 and earlier are in
   legality, endpoints, and cost outside timing.
 - **Evidence:** exact-commit runs completed all 91 primary cells and the
   bounded capacity ladders on an Apple M3 Max and Steam Deck. The public
-  [`path-strategy-crossover`](../evidence/v1.0/path-strategy-crossover/README.md)
+  [`path-strategy-crossover`](evidence/v1.0/path-strategy-crossover/README.md)
   record retains the method, normalized samples, counters, environments, and
   controlled stop details. All Deck primary cells met the 5% variation limit;
   40 M3 cells did not and remain excluded from crossover calculation.
