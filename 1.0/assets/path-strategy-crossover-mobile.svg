@@ -1,0 +1,217 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 450 1010"
+     role="img"
+     aria-labelledby="title description">
+  <title id="title">
+    Cold strategy results across request counts on a 512x512 grid
+  </title>
+  <desc id="description">
+    Two compact request-count ladders compare Apple M3 Max and Steam Deck.
+    Purple circles mark accepted A-star wins, green diamonds mark accepted
+    reuse wins, gray lines mark inconclusive or unavailable lower bounds, and
+    a gray cross marks a variance-rejected cell.
+  </desc>
+  <style>
+    .background { fill: #fff; }
+    .panel { fill: #f8f9fa; }
+    .stripe { fill: #f1f3f5; }
+    .axis, .grid { stroke: #d8dadd; stroke-width: 1; }
+    .grid { stroke-dasharray: 2 4; }
+    .foreground { fill: #202124; }
+    .muted { fill: #5f6368; }
+    .baseline-fill { fill: #7357c9; }
+    .reuse-fill { fill: #16825d; }
+    .neutral-fill { fill: #7b8087; }
+    .baseline-line {
+      fill: none;
+      stroke: #7357c9;
+      stroke-linecap: round;
+      stroke-width: 4;
+    }
+    .neutral-line {
+      fill: none;
+      stroke: #8b9097;
+      stroke-dasharray: 5 5;
+      stroke-width: 2;
+    }
+    text {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 15px;
+    }
+    .title { font-size: 20px; font-weight: 650; }
+    .panel-title { font-size: 18px; font-weight: 650; }
+    .label { font-weight: 600; }
+    .small { font-size: 14px; }
+    .tiny { font-size: 13px; }
+    @media (prefers-color-scheme: dark) {
+      .background { fill: #17181a; }
+      .panel { fill: #1d1f22; }
+      .stripe { fill: #24262a; }
+      .axis, .grid { stroke: #3a3d42; }
+      .foreground { fill: #eceff1; }
+      .muted { fill: #b0b5bd; }
+      .baseline-fill { fill: #b7a7ff; }
+      .reuse-fill { fill: #66d3aa; }
+      .neutral-fill { fill: #a7adb5; }
+      .baseline-line { stroke: #b7a7ff; }
+      .neutral-line { stroke: #8e949c; }
+    }
+  </style>
+
+  <defs>
+    <g id="reuse-marker">
+      <path class="reuse-fill" d="M 0 -8 L 8 0 L 0 8 L -8 0 Z"/>
+    </g>
+    <g id="baseline-marker">
+      <circle class="baseline-fill" r="7"/>
+    </g>
+    <g id="neutral-marker">
+      <circle class="neutral-fill" r="6"/>
+    </g>
+    <g id="rejected-marker">
+      <path class="neutral-line" d="M -6 -6 L 6 6 M 6 -6 L -6 6"/>
+    </g>
+  </defs>
+
+  <rect class="background" width="450" height="1010"/>
+  <text class="foreground title" x="18" y="30">
+    Cold strategy results as requests increase
+  </text>
+  <text class="muted small" x="18" y="54">512x512 grid · setup remains timed</text>
+
+  <use href="#baseline-marker" transform="translate(26 82)"/>
+  <text class="foreground small" x="40" y="87">A* faster</text>
+  <use href="#reuse-marker" transform="translate(149 82)"/>
+  <text class="foreground small" x="164" y="87">reuse faster</text>
+  <line class="neutral-line" x1="275" y1="82" x2="303" y2="82"/>
+  <text class="foreground small" x="313" y="87">unresolved</text>
+
+  <g aria-label="Apple M3 Max results">
+    <rect class="panel" x="12" y="108" width="426" height="418" rx="7"/>
+    <text class="foreground panel-title" x="26" y="136">Apple M3 Max</text>
+    <text class="muted tiny" x="200" y="158">measured requests</text>
+    <line class="axis" x1="200" y1="164" x2="416" y2="164"/>
+    <g class="muted tiny" text-anchor="middle">
+      <text x="200" y="181">1</text>
+      <text x="236" y="181">4</text>
+      <text x="290" y="181">16</text>
+      <text x="380" y="181">256</text>
+      <text x="416" y="181">1k</text>
+    </g>
+    <g class="grid">
+      <line x1="200" y1="164" x2="200" y2="512"/>
+      <line x1="236" y1="164" x2="236" y2="512"/>
+      <line x1="290" y1="164" x2="290" y2="512"/>
+      <line x1="380" y1="164" x2="380" y2="512"/>
+      <line x1="416" y1="164" x2="416" y2="512"/>
+    </g>
+
+    <rect class="stripe" x="20" y="190" width="410" height="44"/>
+    <rect class="stripe" x="20" y="278" width="410" height="44"/>
+    <rect class="stripe" x="20" y="366" width="410" height="44"/>
+    <rect class="stripe" x="20" y="454" width="410" height="44"/>
+
+    <g class="foreground label">
+      <text x="28" y="217">Open-map field</text>
+      <text x="28" y="261">Room-portal field</text>
+      <text x="28" y="305">Exact route cache</text>
+      <text x="28" y="349">Same-goal suffix</text>
+      <text x="28" y="393">Batch, one goal</text>
+      <text x="28" y="437">Batch, eight goals</text>
+      <text x="28" y="481">Batch, distinct goals</text>
+    </g>
+
+    <line class="baseline-line" x1="200" y1="212" x2="398" y2="212"/>
+    <use href="#baseline-marker" transform="translate(398 212)"/>
+    <use href="#rejected-marker" transform="translate(416 212)"/>
+
+    <line class="neutral-line" x1="272" y1="256" x2="290" y2="256"/>
+    <use href="#baseline-marker" transform="translate(272 256)"/>
+    <use href="#reuse-marker" transform="translate(290 256)"/>
+
+    <line class="neutral-line" x1="200" y1="300" x2="236" y2="300"/>
+    <use href="#reuse-marker" transform="translate(236 300)"/>
+
+    <line class="neutral-line" x1="200" y1="344" x2="254" y2="344"/>
+    <use href="#reuse-marker" transform="translate(254 344)"/>
+
+    <line class="neutral-line" x1="200" y1="388" x2="254" y2="388"/>
+    <use href="#reuse-marker" transform="translate(254 388)"/>
+
+    <line class="neutral-line" x1="200" y1="432" x2="272" y2="432"/>
+    <use href="#neutral-marker" transform="translate(254 432)"/>
+    <use href="#reuse-marker" transform="translate(272 432)"/>
+
+    <line class="neutral-line" x1="200" y1="476" x2="416" y2="476"/>
+    <use href="#neutral-marker" transform="translate(416 476)"/>
+  </g>
+
+  <g aria-label="Steam Deck results">
+    <rect class="panel" x="12" y="542" width="426" height="418" rx="7"/>
+    <text class="foreground panel-title" x="26" y="570">Steam Deck</text>
+    <text class="muted tiny" x="200" y="592">measured requests</text>
+    <line class="axis" x1="200" y1="598" x2="416" y2="598"/>
+    <g class="muted tiny" text-anchor="middle">
+      <text x="200" y="615">1</text>
+      <text x="236" y="615">4</text>
+      <text x="290" y="615">16</text>
+      <text x="380" y="615">256</text>
+      <text x="416" y="615">1k</text>
+    </g>
+    <g class="grid">
+      <line x1="200" y1="598" x2="200" y2="946"/>
+      <line x1="236" y1="598" x2="236" y2="946"/>
+      <line x1="290" y1="598" x2="290" y2="946"/>
+      <line x1="380" y1="598" x2="380" y2="946"/>
+      <line x1="416" y1="598" x2="416" y2="946"/>
+    </g>
+
+    <rect class="stripe" x="20" y="624" width="410" height="44"/>
+    <rect class="stripe" x="20" y="712" width="410" height="44"/>
+    <rect class="stripe" x="20" y="800" width="410" height="44"/>
+    <rect class="stripe" x="20" y="888" width="410" height="44"/>
+
+    <g class="foreground label">
+      <text x="28" y="651">Open-map field</text>
+      <text x="28" y="695">Room-portal field</text>
+      <text x="28" y="739">Exact route cache</text>
+      <text x="28" y="783">Same-goal suffix</text>
+      <text x="28" y="827">Batch, one goal</text>
+      <text x="28" y="871">Batch, eight goals</text>
+      <text x="28" y="915">Batch, distinct goals</text>
+    </g>
+
+    <line class="baseline-line" x1="200" y1="646" x2="416" y2="646"/>
+    <use href="#baseline-marker" transform="translate(416 646)"/>
+
+    <line class="neutral-line" x1="236" y1="690" x2="254" y2="690"/>
+    <use href="#baseline-marker" transform="translate(236 690)"/>
+    <use href="#reuse-marker" transform="translate(254 690)"/>
+
+    <line class="neutral-line" x1="218" y1="734" x2="254" y2="734"/>
+    <use href="#baseline-marker" transform="translate(218 734)"/>
+    <use href="#reuse-marker" transform="translate(254 734)"/>
+
+    <line class="neutral-line" x1="218" y1="778" x2="254" y2="778"/>
+    <use href="#baseline-marker" transform="translate(218 778)"/>
+    <use href="#reuse-marker" transform="translate(254 778)"/>
+
+    <line class="neutral-line" x1="218" y1="822" x2="236" y2="822"/>
+    <use href="#baseline-marker" transform="translate(218 822)"/>
+    <use href="#reuse-marker" transform="translate(236 822)"/>
+
+    <line class="neutral-line" x1="200" y1="866" x2="272" y2="866"/>
+    <use href="#neutral-marker" transform="translate(254 866)"/>
+    <use href="#reuse-marker" transform="translate(272 866)"/>
+
+    <line class="neutral-line" x1="200" y1="910" x2="416" y2="910"/>
+    <use href="#neutral-marker" transform="translate(416 910)"/>
+  </g>
+
+  <text class="muted tiny" x="18" y="982">
+    A marker pair brackets a crossover; a lone green diamond has no accepted
+  </text>
+  <text class="muted tiny" x="18" y="1000">
+    lower A* boundary. Exact wording and variance limits follow below.
+  </text>
+</svg>
