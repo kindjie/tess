@@ -1,0 +1,21 @@
+{
+  "commit": "af2b01e60c11abaafe5bbdb41c8d3b1d5571033e",
+  "event_name": "push",
+  "fingerprint": {
+    "bench_flags": "-DBENCHMARK_STATIC_DEFINE -DTESS_ENABLE_DIAGNOSTICS -DTESS_ENABLE_ENTT -DTESS_ENABLE_FLECS -Dflecs_STATIC -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Wold-style-cast -Woverloaded-virtual -Wformat=2 -Wundef -Wextra-semi -Werror",
+    "compiler": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+    "cpu_count": 4,
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+    "image_os": "ubuntu24",
+    "image_version": "20260907.300.1",
+    "key": "57ae9692f92b7235",
+    "usable": true
+  },
+  "generated_at_utc": "2026-09-15T03:21:54.184272+00:00",
+  "ref": "main",
+  "run_attempt": "1",
+  "run_id": "34921591956",
+  "run_number": "1180",
+  "runner_os": "Linux",
+  "workflow": "CI"
+}
