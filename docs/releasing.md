@@ -109,13 +109,10 @@ run remain required. Successful ordinary CI is not a substitute for either.
 The [downstream follow-up][ga-downstream]
 records the additional live-consumer evidence and its limits.
 
-The post-observation RC run's CMake-floor download returned HTTP 403. If its
-retry remains blocked, the maintainer accepts the
-[recorded supplemental check][ga-supplement] against the unchanged RC source
-with the checksum-identical CMake binary from Kitware's official mirror.
-Every other required RC check must pass. Preserve both the failed hosted
-job log and passing supplemental log. This substitution does not apply to
-the GA run, which must pass the complete workflow using the corrected URL.
+The post-observation RC run initially failed to download the CMake floor.
+Its hosted retry passed completely, so the authorized supplemental evidence
+substitution was not needed. The [release record][ga-supplement] preserves
+the failure, supplemental check, retry outcome, and final GA evidence.
 
 ## 1.0 general availability
 
@@ -124,6 +121,14 @@ and run the exact GA commit through release mode. Before tagging, verify there
 is no open, untriaged correctness, security, performance-gate, or
 release-process incident. Preserve the successful evidence artifact with the
 release records, then tag `v1.0.0`.
+
+The Pages environment currently permits deployment from `main` only. After
+pushing a release tag, dispatch `.github/workflows/pages.yml` from `main`
+with `publish_tag` set to that exact tag. The tag supplies the content, and
+`main` supplies the allowed deployment context and publication tooling.
+A tag-triggered build can pass while its deployment is rejected by this
+protection rule; verify the dispatched deployment rather than treating a
+successful build as publication.
 
 The stable tag replaces the `/<major>.<minor>/` line and the canonical root,
 and refreshes `/latest/` as exact redirects. Before tagging, run the publication
