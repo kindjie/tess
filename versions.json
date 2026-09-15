@@ -1,8 +1,10 @@
 [
   {
-    "version": "main",
-    "title": "main (unreleased)",
-    "aliases": []
+    "version": "0.13",
+    "title": "0.13",
+    "aliases": [
+      "latest"
+    ]
   },
   {
     "version": "1.0.0-rc.1",
@@ -10,10 +12,8 @@
     "aliases": []
   },
   {
-    "version": "0.13",
-    "title": "0.13",
-    "aliases": [
-      "latest"
-    ]
+    "version": "main",
+    "title": "main (unreleased)",
+    "aliases": []
   }
 ]
