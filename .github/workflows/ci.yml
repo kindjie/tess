@@ -1,7 +1,7 @@
 name: CI
 
 # PRs run the blocking baseline and path-selected TSan. Main pushes retain
-# baseline checks plus unconditional TSan and one benchmark baseline per SHA.
+# baseline checks plus unconditional TSan and benchmark baselines per completed main run.
 # Weekly and manual runs add full analysis, macOS, compatibility floors and
 # calibrated thresholds. Release tuple validation remains independent.
 on:
@@ -306,7 +306,7 @@ jobs:
         run: tools/report_ccache_stats.sh
 
   # CI10: on a pull request the library was never COMPILED against libc++.
-  # macOS covers it, but macOS is main-only, so a libc++-specific failure
+  # macOS covers it weekly/on demand, so a libc++-specific failure
   # reached main before anyone saw it. Compile-only, mirroring the gcc
   # portability cell's cost profile rather than adding a second test run.
   libcxx:

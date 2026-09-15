@@ -112,8 +112,8 @@ section 5): pull requests block on the dev, GCC, hook-backstop, ASan,
 cppcheck, Windows, and benchmark compile+smoke jobs, plus a diff-scoped
 clang-tidy job (`tools/clang_tidy_changed.py`) and a TSan job that runs
 when concurrency-sensitive paths change (`tools/ci_changes.py`). Pushes
-to main retain the baseline plus unconditional TSan and one advisory benchmark
-baseline per merged SHA. The weekly schedule and manual dispatch add werror,
+to main retain the baseline plus unconditional TSan and advisory benchmark
+baselines per completed main run (cancellation can leave gaps). The weekly schedule and manual dispatch add werror,
 release, macOS, full-tree clang-tidy, compatibility floors, and benchmark
 threshold gates; a failed non-PR run files or extends a
 rolling `ci-failure` issue. A successful retry closes that issue only when the
@@ -264,7 +264,7 @@ otherwise easy to read as "my pull request was checked by all of this":
   classifier selects it (`tools/ci_changes.py`).
 - **[scheduled]** runs weekly and on manual dispatch, not on PRs or main
   pushes. Main still runs baseline checks and unconditional TSan.
-- **[main]** per-commit advisory baseline collection; retained for change-point
+- **[main]** advisory baseline collection per completed main run; retained for change-point
   history rather than moved to a schedule that would lose commit attribution.
 - **[advisory]** runs but never blocks a merge.
 
