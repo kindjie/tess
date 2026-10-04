@@ -59,7 +59,9 @@ Env: DECK_HOST (default 'deck'), TESS_STEAMRT_IMAGE,
      TESS_STEAMRT_BUILD_IMAGE (build image, default 'tess-steamrt4:local'),
      TESS_STEAMRT_CONTAINER (container name, default 'tess-rt'),
      TESS_STEAMRT_BUILD_JOBS (default 1), BENCH_BIN (default tess_bench),
-     DECK_SSH_KEY, DECK_PRESET (override the per-command cmake preset).
+     DECK_SSH_KEY, DECK_PRESET (override the per-command cmake preset),
+     DECK_LEASE_DEVICE, DECK_LEASE=off (with an optional `steamos`
+     installed, bench and campaign runs need its shared Deck lease).
 EOF
 }
 
@@ -468,15 +470,41 @@ cmd_watch() {
     docker exec "$CONTAINER" sh -c \
     "cmake --build --preset '${preset}' && ctest --preset '${preset}' --output-on-failure"
 }
+# When an optional `steamos` device-lease command is installed, commands
+# that run on a shared Deck need its lease (`steamos lease take PURPOSE`).
+# DECK_LEASE_DEVICE names its configured device; DECK_LEASE=off skips the
+# check. Without `steamos` nothing changes.
+deck_lease_check() {
+  [ "${DECK_LEASE:-auto}" = off ] && return 0
+  command -v steamos >/dev/null 2>&1 || return 0
+  local device=()
+  [ -n "${DECK_LEASE_DEVICE:-}" ] && device=(--device "$DECK_LEASE_DEVICE")
+  local status=0
+  steamos ${device[@]+"${device[@]}"} lease check >&2 || status=$?
+  case "$status" in
+    0) ;;
+    1)
+      local take_command="steamos"
+      [ -n "${DECK_LEASE_DEVICE:-}" ] && take_command+=" --device $DECK_LEASE_DEVICE"
+      die "the Deck's shared lease is not yours: run '$take_command lease take PURPOSE' first, or set DECK_LEASE=off if no one else uses the Deck"
+      ;;
+    # 2: steamos is not configured; 3: it could not reach the device.
+    *) printf '\033[33m!! could not check the shared lease (steamos exit %s); continuing\033[0m\n' "$status" >&2 ;;
+  esac
+}
+
 cmd_bench() {
   local preset="${DECK_PRESET:-linux-bench}"
+  deck_lease_check
   ensure_container "$preset"
   PRESET="$preset" exec "${HERE}/deck-bench.sh" "$@"
 }
 cmd_campaign() {
+  [ "${1:-}" = run ] && deck_lease_check
   exec "${HERE}/deck-maintenance-campaign.sh" "$@"
 }
 cmd_path_campaign() {
+  [ "${1:-}" = run ] && deck_lease_check
   exec "${HERE}/deck-path-strategy-campaign.sh" "$@"
 }
 
