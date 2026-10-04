@@ -188,6 +188,18 @@ steamrt4 SDK image instead (ABI-guaranteed; needs the image pulled on the Deck).
 in their own binary dirs), so container and native builds never clobber each
 other. Both trees are git-ignored via `build/`.
 
+### A shared Deck
+When several people or agents share one Deck, agent-kit's `steamos` command
+keeps an advisory lease on it. With `steamos` installed, `deck bench` and the
+`campaign run` / `path-campaign run` commands refuse unless you hold that
+lease: run `steamos lease take 'tess bench'` first and `steamos lease release`
+afterwards. `DECK_LEASE_DEVICE` names the device in `steamos`'s configuration;
+`DECK_LEASE=off` skips the check. Without `steamos` nothing changes, and
+when `steamos` cannot check (not configured, or the Deck is unreachable) the
+command warns and continues. Calling
+`deck-bench.sh` directly bypasses the check, so prefer `deck bench` on a
+shared Deck.
+
 ### On-device correctness parity (optional)
 Run the suite on the Deck the same way `deck-bench.sh` runs the benchmark —
 build `linux-dev`, rsync `build/linux-dev/`, then on the Deck:

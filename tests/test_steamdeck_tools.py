@@ -696,3 +696,103 @@ def test_path_strategy_runner_avoids_redundant_privileged_governor_write():
   )
   assert '--timeout 60' in runner
   assert '--timeout 20' in runner
+
+
+def run_deck_entry(
+    tmp_path: Path, *args: str, steamos_code: int | None = None, **overrides
+) -> tuple[subprocess.CompletedProcess[str], str]:
+  """Run the deck entrypoint with logging fakes and a minimal PATH.
+
+  With steamos_code set, a fake agent-kit `steamos` command exits with it;
+  otherwise no `steamos` command is on PATH at all.
+  """
+  bin_dir = tmp_path / "bin"
+  bin_dir.mkdir(parents=True)
+  log = tmp_path / "commands.log"
+  log.touch()
+  commands = ["docker", "rsync", "scp", "ssh"]
+  if steamos_code is not None:
+    commands.append("steamos")
+  for command in commands:
+    code = steamos_code if command == "steamos" else 0
+    write_executable(
+        bin_dir / command,
+        f"""#!/usr/bin/env bash
+printf '{command} ' >> "$COMMAND_LOG"
+printf '%q ' "$@" >> "$COMMAND_LOG"
+printf '\\n' >> "$COMMAND_LOG"
+exit {code}
+""",
+    )
+  env = os.environ.copy()
+  env.update(
+      {
+          "PATH": f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin",
+          "COMMAND_LOG": str(log),
+          "USE_CONTAINER": "1",
+          "TESS_STEAMRT_IMAGE": "tess-steamrt4:local",
+      }
+  )
+  env.update(overrides)
+  result = subprocess.run(
+      [str(DECK), *args],
+      check=False,
+      capture_output=True,
+      text=True,
+      env=env,
+  )
+  return result, log.read_text(encoding="utf-8")
+
+
+def test_bench_requires_shared_lease_when_steamos_is_installed(tmp_path):
+  result, commands = run_deck_entry(tmp_path, "bench", steamos_code=1)
+
+  assert result.returncode != 0
+  assert "steamos lease take" in result.stderr
+  assert commands.splitlines() == ["steamos lease check "]
+
+
+def test_bench_proceeds_under_shared_lease(tmp_path):
+  result, commands = run_deck_entry(tmp_path, "bench", steamos_code=0)
+
+  assert result.returncode == 0, result.stderr
+  assert commands.splitlines()[0] == "steamos lease check "
+  assert "ssh deck" in commands
+
+
+def test_lease_device_and_opt_out_are_honoured(tmp_path):
+  result, commands = run_deck_entry(
+      tmp_path / "device", "bench", steamos_code=1, DECK_LEASE_DEVICE="box"
+  )
+  assert result.returncode != 0
+  assert commands.splitlines() == ["steamos --device box lease check "]
+
+  result, commands = run_deck_entry(
+      tmp_path / "off", "bench", steamos_code=1, DECK_LEASE="off"
+  )
+  assert result.returncode == 0, result.stderr
+  assert "steamos" not in commands
+
+
+def test_without_steamos_device_commands_are_unchanged(tmp_path):
+  result, commands = run_deck_entry(tmp_path, "bench")
+
+  assert result.returncode == 0, result.stderr
+  assert "ssh deck" in commands
+
+
+def test_host_only_commands_do_not_check_the_lease(tmp_path):
+  result, commands = run_deck_entry(tmp_path, "test", steamos_code=1)
+
+  assert result.returncode == 0, result.stderr
+  assert "steamos" not in commands
+
+
+def test_unconfigured_or_unreachable_steamos_warns_and_proceeds(tmp_path):
+  for code in (2, 3):
+    result, commands = run_deck_entry(
+        tmp_path / str(code), "bench", steamos_code=code
+    )
+    assert result.returncode == 0, result.stderr
+    assert "could not check the shared lease" in result.stderr
+    assert "ssh deck" in commands
