@@ -703,7 +703,7 @@ def run_deck_entry(
 ) -> tuple[subprocess.CompletedProcess[str], str]:
   """Run the deck entrypoint with logging fakes and a minimal PATH.
 
-  With steamos_code set, a fake agent-kit `steamos` command exits with it;
+  With steamos_code set, a fake `steamos` command exits with it;
   otherwise no `steamos` command is on PATH at all.
   """
   bin_dir = tmp_path / "bin"
@@ -725,6 +725,8 @@ exit {code}
 """,
     )
   env = os.environ.copy()
+  env.pop("DECK_LEASE", None)
+  env.pop("DECK_LEASE_DEVICE", None)
   env.update(
       {
           "PATH": f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin",
@@ -766,12 +768,22 @@ def test_lease_device_and_opt_out_are_honoured(tmp_path):
   )
   assert result.returncode != 0
   assert commands.splitlines() == ["steamos --device box lease check "]
+  assert "steamos --device box lease take PURPOSE" in result.stderr
 
   result, commands = run_deck_entry(
       tmp_path / "off", "bench", steamos_code=1, DECK_LEASE="off"
   )
   assert result.returncode == 0, result.stderr
   assert "steamos" not in commands
+
+
+def test_inherited_lease_opt_out_does_not_skip_check(tmp_path, monkeypatch):
+  monkeypatch.setenv("DECK_LEASE", "off")
+
+  result, commands = run_deck_entry(tmp_path, "bench", steamos_code=1)
+
+  assert result.returncode != 0
+  assert commands.splitlines() == ["steamos lease check "]
 
 
 def test_without_steamos_device_commands_are_unchanged(tmp_path):

@@ -189,10 +189,11 @@ in their own binary dirs), so container and native builds never clobber each
 other. Both trees are git-ignored via `build/`.
 
 ### A shared Deck
-When several people or agents share one Deck, agent-kit's `steamos` command
-keeps an advisory lease on it. With `steamos` installed, `deck bench` and the
-`campaign run` / `path-campaign run` commands refuse unless you hold that
-lease: run `steamos lease take 'tess bench'` first and `steamos lease release`
+When several people or agents share one Deck, an optional `steamos`
+device-lease command keeps an advisory lease on it. With `steamos` installed,
+`deck bench` and the `campaign run` / `path-campaign run` commands refuse
+unless you hold that lease: run `steamos lease take 'tess bench'` first and
+`steamos lease release`
 afterwards. `DECK_LEASE_DEVICE` names the device in `steamos`'s configuration;
 `DECK_LEASE=off` skips the check. Without `steamos` nothing changes, and
 when `steamos` cannot check (not configured, or the Deck is unreachable) the
