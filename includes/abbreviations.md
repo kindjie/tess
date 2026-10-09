@@ -14,3 +14,5 @@
 *[settle]: A movement-tier run to a no-progress fixpoint, classified after termination.
 *[terminal classification]: The five-way per-agent outcome a settle assigns: arrived, goal-occupied, sealed, wedged, or censored.
 *[arming]: Enabling a mechanism or recipe for a run, as the armed arm against the canonical arm.
+*[navigation domain]: One independently identified graph or grid representation in a composite navigation snapshot.
+*[shared guidance]: Remaining destination costs and selected forward transitions across a navigation composition.

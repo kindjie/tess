@@ -657,5 +657,27 @@
     "step_policy_identity_of",
     "step_policy_of",
     "update_region_graph"
+  ],
+  "docs/architecture/navigation.md": [
+    "NavigationAvailability",
+    "NavigationConnection",
+    "NavigationDomain",
+    "NavigationGoal",
+    "NavigationGraph",
+    "NavigationGrid",
+    "NavigationGuidance",
+    "NavigationLimits",
+    "NavigationLocalEdge",
+    "NavigationLocation",
+    "NavigationOutcome",
+    "NavigationPreparationDiagnostic",
+    "NavigationPreparationError",
+    "NavigationProof",
+    "NavigationQuery",
+    "NavigationRegularEdges",
+    "NavigationResult",
+    "NavigationSnapshot",
+    "NavigationTransition",
+    "navigation_route"
   ]
 }

@@ -468,6 +468,16 @@ if(TESS_ENABLE_FLECS)
   tess_apply_project_options(tess_flecs_pawns)
 endif()
 
+add_executable(tess_composable_navigation composable_navigation.cc)
+target_link_libraries(tess_composable_navigation PRIVATE tess::tess)
+tess_apply_project_options(tess_composable_navigation)
+if(BUILD_TESTING)
+  add_test(NAME tess_composable_navigation_example COMMAND tess_composable_navigation)
+  set_tests_properties(tess_composable_navigation_example PROPERTIES
+    LABELS "target:tess_composable_navigation;subsystem:navigation"
+    PASS_REGULAR_EXPRESSION "composable navigation: OK")
+endif()
+
 if(TESS_EXAMPLES_NO_EXCEPTIONS)
   get_property(example_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
   foreach(target IN LISTS example_targets)

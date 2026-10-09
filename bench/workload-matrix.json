@@ -1107,6 +1107,36 @@
         "worker_count": "1",
         "payload": "4096 per-chunk ops, one parallel phase; workload sets per-chunk work from ~11 ns to ~6473 ns"
       }
+    },
+    {
+      "family": "lab/navigation",
+      "pattern": "^lab/navigation/(route_end_to_end|shared_goal)_256$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "not_applicable",
+        "chunk_extent": "not_applicable",
+        "layout": "not_applicable",
+        "storage": "not_applicable",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "256 nodes, 510 directed edges; 1 route or 1 unique shared goal with 256 reads; snapshot setup included"
+      }
+    },
+    {
+      "family": "lab/navigation_composed",
+      "pattern": "^lab/navigation/composed_(routes|shared_goal)_32_(16x16)$",
+      "captures": {
+        "world_extent": 2
+      },
+      "defaults": {
+        "world_extent": "16x16",
+        "chunk_extent": "8x8",
+        "layout": "open",
+        "storage": "always_resident",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "32 requests, one destination, two grids plus two-node graph (514 states); different native schemas/costs, directed seams; snapshot setup included"
+      }
     }
   ],
   "unmeasured": [

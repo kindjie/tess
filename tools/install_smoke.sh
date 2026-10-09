@@ -53,9 +53,11 @@ if [[ -n "$config" ]]; then
   "$build/$config/tess_install_consumer"
   "$build/$config/tess_install_chunk_maintenance"
   "$build/$config/tess_install_maintenance_workflow"
+  "$build/$config/tess_install_navigation"
 else
   cmake --build "$build"
   "$build/tess_install_consumer"
   "$build/tess_install_chunk_maintenance"
   "$build/tess_install_maintenance_workflow"
+  "$build/tess_install_navigation"
 fi

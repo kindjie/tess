@@ -165,6 +165,13 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
   tess_apply_project_options(tess_no_exceptions_test)
   tess_target_disable_exceptions(tess_no_exceptions_test)
   tess_add_test(
+    TessNoExceptions.CompositeNavigationCheckedOutcomes
+    tess_no_exceptions_test
+    ARGUMENT CompositeNavigationCheckedOutcomes
+    CONFIGS noexceptions
+    LABELS navigation
+  )
+  tess_add_test(
     TessNoExceptions.AggregateHeaderRunsStorageAndBlockOperations
     tess_no_exceptions_test
     ARGUMENT AggregateHeaderRunsStorageAndBlockOperations
@@ -1502,3 +1509,33 @@ if(Python3_Interpreter_FOUND)
                LABELS "prepush:always"
   )
 endif()
+
+add_executable(tess_navigation_test tess_navigation_test.cc)
+target_link_libraries(
+  tess_navigation_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_navigation_test)
+tess_discover_tests(
+  tess_navigation_test LABELS core navigation ops path topology
+)
+
+add_executable(tess_navigation_oracle_test tess_navigation_oracle_test.cc)
+target_link_libraries(
+  tess_navigation_oracle_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_navigation_oracle_test)
+tess_discover_tests(
+  tess_navigation_oracle_test LABELS core navigation ops path topology
+)
+
+add_executable(tess_navigation_grid_test tess_navigation_grid_test.cc)
+target_link_libraries(
+  tess_navigation_grid_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_navigation_grid_test)
+tess_discover_tests(
+  tess_navigation_grid_test LABELS core navigation ops path storage topology
+)

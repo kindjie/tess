@@ -111,7 +111,10 @@
     ],
     "include/tess/topology/": [
       "topology/area_index_build_256_areas_512x512"
-    ]
+    ],
+    "include/tess/navigation/": {
+      "unrepresented": "new experimental surface has end-to-end lab workloads; no calibrated paired baseline exists yet"
+    }
   },
   "parameters": {
     "repetitions": 10,

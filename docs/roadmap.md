@@ -139,3 +139,10 @@ substrate; the application owns meaning, entities, and presentation.
 [tdd-gpu]: https://github.com/kindjie/tess/blob/main/docs/tdd/gpu-backend-interface.md
 [tdd-project]: https://github.com/kindjie/tess/blob/main/docs/tdd/project-design.md
 [tdd-layout]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_tile_layout_bench_takeaways.md
+
+## Experimental composable navigation
+
+Native graph/grid composition, bounded exact queries and shared downstream-cost
+guidance are under qualification. Stable promotion requires independent
+correctness, compatibility, package and downstream evidence. See the
+[experimental contract](architecture/navigation.md).

@@ -45,8 +45,11 @@ target_link_libraries(tess_install_chunk_maintenance PRIVATE tess::tess)
 add_executable(tess_install_maintenance_workflow maintenance_workflow.cc)
 target_link_libraries(tess_install_maintenance_workflow PRIVATE tess::tess)
 
+add_executable(tess_install_navigation navigation.cc)
+target_link_libraries(tess_install_navigation PRIVATE tess::tess)
+
 foreach(maintenance_consumer tess_install_chunk_maintenance
-        tess_install_maintenance_workflow)
+        tess_install_maintenance_workflow tess_install_navigation)
   if(MSVC)
     target_compile_options(${maintenance_consumer} PRIVATE /GR-)
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -80,7 +83,7 @@ if(TESS_NO_EXCEPTIONS)
   target_compile_definitions(
     tess_install_consumer PRIVATE TESS_EXPECT_NO_EXCEPTIONS=1)
   foreach(maintenance_consumer tess_install_chunk_maintenance
-          tess_install_maintenance_workflow)
+          tess_install_maintenance_workflow tess_install_navigation)
     if(MSVC)
       target_compile_options(${maintenance_consumer} PRIVATE /EHs-c-)
       target_compile_definitions(

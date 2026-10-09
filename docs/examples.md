@@ -157,6 +157,14 @@ previews retain only the inexpensive live exponential averages.
 - [`render_delta_consumer.cc`][render_delta] — a standalone consumer that
   rebuilds a shadow grid from published `DeltaFrame` values.
 
+## Experimental composition
+
+- [`composable_navigation.cc`][composable_navigation] connects an explicit
+  graph to two native grids with different schemas and cost scales. It checks
+  both travel directions and budget-one shared destination guidance. See the
+  [experimental contract](architecture/navigation.md) for snapshot ownership,
+  proof limits and host physical-motion responsibilities.
+
 ## Optional integrations
 
 - [`custom_ecs_min.cc`][custom_ecs] — the ECS adapter concepts implemented
@@ -203,3 +211,5 @@ previews retain only the inexpensive live exponential averages.
 [web_flow_steering_src]: https://github.com/kindjie/tess/tree/main/examples/web_flow_steering
 [web_diagnostics]: https://github.com/kindjie/tess/tree/main/examples/web_diagnostics
 [web_sparse_stream_src]: https://github.com/kindjie/tess/tree/main/examples/web_sparse_stream
+
+[composable_navigation]: https://github.com/kindjie/tess/blob/main/examples/composable_navigation.cc

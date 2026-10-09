@@ -15,6 +15,7 @@
 
 ## Implementation and completion records
 
+- [Composable navigation design](composable-navigation.md)
 - [v0.13 to v1.0 execution plan](v0.13-to-v1.0-execution-plan.md)
 - [Initial milestone plan](initial-milestone-plan.md)
 - [Post-v0.4 roadmap completion record](roadmap-completion.md)
