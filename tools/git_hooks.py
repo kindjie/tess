@@ -872,8 +872,8 @@ def read_push_refs() -> list[PushRef]:
 # downgrade to a build without tests.
 SUBSYSTEM_LABELS = frozenset((
   "block", "core", "debug", "diagnostics", "ecs", "experimental",
-  "gpu", "maintenance", "ops", "path", "persistence", "query", "sim",
-  "spatial", "storage", "topology",
+  "gpu", "maintenance", "navigation", "ops", "path", "persistence", "query",
+  "sim", "spatial", "storage", "topology",
 ))
 
 # core/ and the umbrella/aggregate headers reach everything; treat

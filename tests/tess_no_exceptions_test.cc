@@ -1,6 +1,7 @@
 #include <tess/core/config.h>
 #include <tess/experimental/maintenance.h>
 #include <tess/maintenance/scheduler.h>
+#include <tess/navigation/query.h>
 #include <tess/tess.h>
 
 #if !defined(_WIN32)
@@ -397,6 +398,26 @@ auto portal_cache_checked_reserves_reject_capacity() -> bool {
   return true;
 }
 
+auto composite_navigation_checked_outcomes() -> bool {
+  auto graph = std::make_shared<tess::NavigationGraph>(
+      3, std::vector<tess::NavigationLocalEdge>{{0, 1, 1, 0}, {1, 2, 2, 7}});
+  auto snapshot = std::make_shared<tess::NavigationSnapshot>(
+      std::vector<std::shared_ptr<const tess::NavigationDomain>>{graph});
+  auto result = tess::navigation_route(snapshot, graph->location(0),
+                                       graph->location(2), {3, 4, 3});
+  TESS_CHECK(result && result->outcome == tess::NavigationOutcome::Found);
+  TESS_CHECK(result->cost == 7 && result->route.size() == 2);
+  auto refused = tess::navigation_route(snapshot, graph->location(0),
+                                        graph->location(2), {1, 4, 3});
+  TESS_CHECK(refused &&
+             refused->outcome == tess::NavigationOutcome::CapacityExceeded &&
+             refused->route.empty());
+  auto invalid = tess::navigation_route(snapshot, {}, graph->location(2));
+  TESS_CHECK(invalid &&
+             invalid->outcome == tess::NavigationOutcome::InvalidInput);
+  return true;
+}
+
 using TestFunction = auto (*)() -> bool;
 
 struct TestCase {
@@ -405,6 +426,8 @@ struct TestCase {
 };
 
 constexpr TestCase cases[] = {
+    {"CompositeNavigationCheckedOutcomes",
+     composite_navigation_checked_outcomes},
     {"AggregateHeaderRunsStorageAndBlockOperations",
      aggregate_header_runs_storage_and_block_operations},
     {"CheckedBlockCapacityFailurePreservesStorage",

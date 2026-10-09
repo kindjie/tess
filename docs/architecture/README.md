@@ -130,6 +130,7 @@ Maintained notes for implemented areas:
 - [Maintenance scheduling](maintenance.md)
 - [Queued operations foundation](queued-operations.md)
 - [Topology foundation](topology.md)
+- [Experimental composable navigation](navigation.md)
 - [Path foundation](path.md)
 - [Spatial coordination](spatial-coordination.md)
 - [Simulation and scheduling](simulation.md)

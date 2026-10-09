@@ -44,6 +44,7 @@ CONCURRENCY_SENSITIVE_FILES = (
   "CMakeLists.txt",
   "CMakePresets.json",
   "include/tess/maintenance.h",
+  "include/tess/navigation/domain.h",
   "include/tess/sim/async_work_task.h",
   "include/tess/sim/auto_exec.h",
   "include/tess/sim/delta_frame.h",
@@ -82,12 +83,15 @@ PERF_SENSITIVE_PREFIXES = (
   "cmake/",
   "include/tess/",
 )
+# These surfaces have no representative calibrated paired sentinel. Navigation
+# lab workloads remain advisory until a baseline and sensitivity are established.
 PERF_INSENSITIVE_OVERRIDES = (
   "include/tess/debug/",
   "include/tess/diagnostics/",
   "include/tess/experimental/",
   "include/tess/gpu/",
   "include/tess/maintenance/",
+  "include/tess/navigation/",
 )
 PERF_SENSITIVE_FILES = (
   "CMakeLists.txt",

@@ -80,7 +80,10 @@
     "include/tess/experimental/chunk_maintenance.h",
     "include/tess/experimental/maintenance.h",
     "include/tess/experimental/path_agent_replan_selection.h",
-    "include/tess/experimental/registered_maintenance.h"
+    "include/tess/experimental/registered_maintenance.h",
+    "include/tess/navigation/domain.h",
+    "include/tess/navigation/grid.h",
+    "include/tess/navigation/query.h"
   ],
   "implementation-only": [
     "include/tess/core/fail_fast.h",

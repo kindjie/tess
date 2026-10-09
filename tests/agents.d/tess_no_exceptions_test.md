@@ -6,3 +6,4 @@
   handle/result lifecycle. The child-process marker deliberately contains a
   space to exercise Windows CRT spawn quoting. Every discovered case carries
   the `config:noexceptions` manifest label.
+- Composite navigation covers zero-cost joins and checked capacity/endpoint outcomes.

@@ -133,7 +133,8 @@ is needed at runtime comes from `tag_identity<T>()`, which returns the
 address of a per-type static — that facility exists precisely so the
 library does not depend on RTTI.
 
-Virtual declarations appear only in the experimental maintenance layer.
+Virtual declarations appear in the experimental maintenance and navigation
+layers.
 The stable `ImmediateScheduler` spelling shares that measured concrete
 implementation, but neither documents nor stabilizes the experimental
 `MaintenanceScheduler` base or polymorphic use. Virtuals need vtables, not

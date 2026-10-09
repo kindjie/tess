@@ -112,6 +112,7 @@ nav:
       - Spatial queries: architecture/query.md
       - Maintenance experiments: architecture/maintenance.md
       - Pathfinding: architecture/path.md
+      - Composable navigation: architecture/navigation.md
       - Topology: architecture/topology.md
       - Spatial coordination: architecture/spatial-coordination.md
       - Queued operations: architecture/queued-operations.md

@@ -25,6 +25,7 @@ add_executable(
   tess_maintenance_bench.cc
   tess_topology_bench.cc
   tess_transition_bench.cc
+  tess_navigation_bench.cc
 )
 target_link_libraries(tess_bench PRIVATE tess::tess benchmark::benchmark_main)
 tess_apply_project_options(tess_bench)
@@ -48,6 +49,7 @@ add_executable(
   tess_spatial_bench.cc
   tess_maintenance_bench.cc
   tess_transition_bench.cc
+  tess_navigation_bench.cc
   tess_diagnostics_bench.cc
   tess_diagnostics_alloc_hooks.cc
 )

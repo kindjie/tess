@@ -474,3 +474,13 @@ if(TESS_EXAMPLES_NO_EXCEPTIONS)
     tess_target_disable_exceptions(${target})
   endforeach()
 endif()
+
+add_executable(tess_composable_navigation composable_navigation.cc)
+target_link_libraries(tess_composable_navigation PRIVATE tess::tess)
+tess_apply_project_options(tess_composable_navigation)
+if(BUILD_TESTING)
+  add_test(NAME tess_composable_navigation_example COMMAND tess_composable_navigation)
+  set_tests_properties(tess_composable_navigation_example PROPERTIES
+    LABELS "target:tess_composable_navigation;subsystem:navigation"
+    PASS_REGULAR_EXPRESSION "composable navigation: OK")
+endif()

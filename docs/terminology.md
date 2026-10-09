@@ -154,3 +154,11 @@ suites:
   in the ECS adapter vocabulary.
 - For terrain, prefer **passable / impassable** here as everywhere;
   "open" remains reserved for search frontiers.
+
+## Composable navigation (experimental)
+
+A **navigation domain** is one independently identified immutable graph or grid
+representation. It is distinct from an operation's chunk domain. A **connection**
+is an explicit directed attachment between qualified locations. **Shared
+guidance** includes remaining destination cost across connections; it grants no
+occupancy or movement authority. See [navigation](architecture/navigation.md).

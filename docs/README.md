@@ -21,6 +21,7 @@ Published on the documentation site:
   headless-server framings of the shipped examples.
 - [Architecture](architecture/README.md): maintained design notes that should
   track implementation.
+- [Experimental composable navigation](architecture/navigation.md)
 - [Reference](reference.md): landing page for architecture, terminology,
   compatibility evidence, and generated API documentation.
 - [Terminology](terminology.md): canonical nouns, actions, states, time units,
