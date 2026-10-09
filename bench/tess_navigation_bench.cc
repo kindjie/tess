@@ -119,6 +119,8 @@ struct Composition {
   std::shared_ptr<const tess::NavigationSnapshot> snapshot;
   std::shared_ptr<const OriginGrid> origin;
   tess::NavigationLocation goal;
+  // Authored seam endpoints: exit -> road 0 (id 1), road 1 -> entry (id 3).
+  tess::NavigationLocation exit, road0, road1, entry;
 };
 // From origin (0, y): 30 - y unit origin steps, a zero-cost exit connection,
 // the cost-5 road edge, a zero-cost entry connection, then 30 weight-2
@@ -140,8 +142,14 @@ void check_composed_step(const tess::NavigationTransition& step,
   const auto origin = composition.origin->coordinate_location({0, 0, 0}).domain;
   const auto destination = composition.goal.domain;
   bench_check(step.availability == tess::NavigationAvailability::Legal);
+  bench_check(step.key == 0);
   if (step.connection) {
-    bench_check(step.cost == 0 && step.from.domain != step.to.domain);
+    // Only the two forward seams can lie on a route toward the goal.
+    bench_check(step.cost == 0 &&
+                ((step.from == composition.exit &&
+                  step.to == composition.road0 && step.id == 1) ||
+                 (step.from == composition.road1 &&
+                  step.to == composition.entry && step.id == 3)));
     return;
   }
   bench_check(step.from.domain == step.to.domain);
@@ -155,11 +163,24 @@ void check_composed_step(const tess::NavigationTransition& step,
                                                                           0};
     return table;
   }();
+  // A unit step whose id is the destination's ordinal among the source's
+  // in-bounds axial candidates (+x, -x, +y, -y), derived from geometry.
   const auto grid_step = [&] {
     const auto from = coordinates.find(step.from.node);
     const auto to = coordinates.find(step.to.node);
-    return from != coordinates.end() && to != coordinates.end() &&
-           unit_step(from->second, to->second);
+    if (from == coordinates.end() || to == coordinates.end() ||
+        !unit_step(from->second, to->second))
+      return false;
+    constexpr std::int64_t offsets[4][2]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    std::uint64_t ordinal = 0;
+    for (const auto& offset : offsets) {
+      const auto x = from->second.x + offset[0];
+      const auto y = from->second.y + offset[1];
+      if (x < 0 || y < 0 || x >= 16 || y >= 16) continue;
+      if (x == to->second.x && y == to->second.y) return step.id == ordinal;
+      ++ordinal;
+    }
+    return false;
   };
   if (step.from.domain == origin) {
     bench_check(step.cost == 1 && grid_step());
@@ -190,7 +211,13 @@ auto make_composition() -> Composition {
           {road->location(0), exit, 2, 0},
           {road->location(1), entry, 3, 0},
           {entry, road->location(1), 4, 0}});
-  return {snapshot, origin, destination->coordinate_location({15, 15, 0})};
+  return {snapshot,
+          origin,
+          destination->coordinate_location({15, 15, 0}),
+          exit,
+          road->location(0),
+          road->location(1),
+          entry};
 }
 void BM_navigation_composed(benchmark::State& state, bool shared) {
   std::uint64_t sum = 0;
