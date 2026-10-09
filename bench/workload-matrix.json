@@ -1137,6 +1137,38 @@
         "worker_count": "1",
         "payload": "32 requests, one destination, two grids plus two-node graph (514 states); different native schemas/costs, directed seams; snapshot setup included"
       }
+    },
+    {
+      "family": "lab/navigation_scale",
+      "pattern": "^lab/navigation/scale_(?:setup|(?:routes|routes_query|routes_extract|shared|shared_query|shared_warm|shared_replace|refused)_(32r_4g|256r_16g|1024r_64g))$",
+      "captures": {},
+      "composite": true,
+      "note": "heterogeneous composition, advisory only: 32x32 unit yard (16x16 chunks, scale 4), 32x32 weighted diagonal rubble (8x8 chunks, scale 1), 16x16 sparse-resident cellar with all 4 chunks resident (scale 3) and a 64-node directed road graph, joined by 41 directed attachments (one blocked); 2,368 positions, 2,199 legal states. Suffix NNNr_MMg = NNN requests over MM distinct goals; request i targets goal i % MM. routes = cold setup + per-request exact routes + complete extraction; shared = cold setup + MM reverse guidance fields + per-request successor walks. For the same requests both cases extract complete, legal, oracle-optimal ordered transitions with equal per-request cost, checked against an independent materialized Dijkstra oracle after timing; they often follow different equal-cost paths. *_query/_extract/_warm split a prepared snapshot into phases: routes_query includes production route reconstruction and allocation, routes_extract times only consumption of already-built routes, shared_query builds the fields, shared_warm times live successor lookups; shared_replace rebuilds the snapshot and fields each iteration. Cold cells (setup, routes, shared) and shared_query/shared_replace also time release of the previous iteration's retained snapshot and/or fields; refused uses limits {256,256,256} and expects CapacityExceeded with empty products; limits elsewhere {2560,16384,2560}",
+      "defaults": {
+        "world_extent": "not_applicable",
+        "chunk_extent": "not_applicable",
+        "layout": "not_applicable",
+        "storage": "not_applicable",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "mixed composition (2 always-resident grids, 1 fully resident sparse grid, 1 graph; 2,368 positions, 2,199 legal states); 32/256/1024 requests over 4/16/64 goals; snapshot setup included unless suffix says query/extract/warm"
+      }
+    },
+    {
+      "family": "lab/navigation_scale_admission",
+      "pattern": "^lab/navigation/scale_admission_(refused|admitted)_(256x256)$",
+      "captures": {
+        "world_extent": 2
+      },
+      "defaults": {
+        "world_extent": "256x256",
+        "chunk_extent": "16x16",
+        "layout": "open",
+        "storage": "always_resident",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "1 corner-to-corner request on an open unit grid; refused uses node/frontier/route-step limits 4096/8192/4096 and expects CapacityExceeded, admitted allows 65536/131072/65536 and checks the exact Manhattan route; world fill, adapter and snapshot setup included, as is release of the previous iteration's world and result"
+      }
     }
   ],
   "unmeasured": [

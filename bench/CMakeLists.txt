@@ -1183,4 +1183,18 @@ if(BUILD_TESTING)
       --benchmark_filter=diagnostics/trace_record
       --benchmark_min_time=0.001
   )
+
+  # Composable-navigation scale cells validate every extracted transition
+  # against an independent oracle after their timed loop, so one iteration
+  # of the smallest cold cells plus the admission-refusal cell is a
+  # correctness check, never a timing gate. Larger populations and the
+  # 256x256 admission cells stay out of CI smoke.
+  add_test(
+    NAME tess_bench_navigation_scale_smoke
+    COMMAND
+      tess_bench
+      "--benchmark_filter=^lab/navigation/scale_(routes|shared|shared_warm|refused)_32r_4g$"
+      --benchmark_min_time=0.001
+  )
+  set_tests_properties(tess_bench_navigation_scale_smoke PROPERTIES TIMEOUT 300)
 endif()

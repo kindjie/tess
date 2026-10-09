@@ -142,7 +142,14 @@ scratch and retained output. They establish correctness and deterministic work
 counts; they do not yet have calibrated paired performance thresholds. The
 source classifier therefore marks this experimental directory unrepresented
 in paired sentinels. Changes to shared storage, path or build infrastructure
-retain their existing performance selection. Before promotion, qualify
+retain their existing performance selection. The `scale_*` cells compose two
+always-resident grids, one fully resident sparse grid and a directed graph,
+then extract complete ordered transitions for the same requests from repeated
+routes and from shared guidance at 32, 256 and 1024 requests. Both are
+checked after timing against an independent materialized oracle for legality,
+termination and equal per-request optimal cost; they often follow different
+equal-cost paths. Separate cells expose setup, query, extraction, warm reuse,
+snapshot replacement and bounded admission refusal. Before promotion, qualify
 representative graph/grid compositions, query distributions and shared-goal
 reuse on controlled hardware, then select a representative sentinel and remove
 that directory exclusion together. An unrelated legacy path sentinel cannot
