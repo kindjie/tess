@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -23,6 +24,29 @@ auto make_snapshot() -> std::shared_ptr<const tess::NavigationSnapshot> {
 void bench_check(bool valid) {
   if (!valid) std::abort();
 }
+// Chained legal transitions from start to goal whose step costs sum to total.
+void check_route_chain(const std::vector<tess::NavigationTransition>& route,
+                       tess::NavigationLocation start,
+                       tess::NavigationLocation goal, std::uint64_t total) {
+  bench_check(!route.empty() && route.front().from == start &&
+              route.back().to == goal);
+  std::uint64_t sum = 0;
+  auto at = start;
+  for (const auto& step : route) {
+    bench_check(step.from == at && step.to != step.from &&
+                step.availability == tess::NavigationAvailability::Legal);
+    sum += step.cost;
+    at = step.to;
+  }
+  bench_check(sum == total);
+}
+// The 256-node line graph: forward edge i -> i + 1 has id 2i and cost 1.
+void check_line_step(const tess::NavigationTransition& step,
+                     std::uint64_t domain) {
+  bench_check(!step.connection && step.from.domain == domain &&
+              step.to.domain == domain && step.to.node == step.from.node + 1 &&
+              step.id == step.from.node * 2 && step.cost == 1);
+}
 void BM_navigation_route_end_to_end_256(benchmark::State& state) {
   std::shared_ptr<const tess::NavigationResult> result;
   for (auto _ : state) {
@@ -35,6 +59,9 @@ void BM_navigation_route_end_to_end_256(benchmark::State& state) {
   }
   bench_check(result && result->outcome == tess::NavigationOutcome::Found &&
               result->cost == 255 && result->route.size() == 255);
+  const auto line = result->snapshot->profile();
+  check_route_chain(result->route, {line, 0}, {line, 255}, 255);
+  for (const auto& step : result->route) check_line_step(step, line);
   state.counters["work_items"] = static_cast<double>(result->work_items);
   state.counters["payload_bytes"] =
       static_cast<double>(result->payload_bytes());
@@ -60,6 +87,15 @@ void BM_navigation_shared_goal_256(benchmark::State& state) {
   }
   bench_check(result && result->outcome == tess::NavigationOutcome::Found &&
               result->guidance.size() == 256 && sum == 32640);
+  const auto line = result->snapshot->profile();
+  for (std::uint64_t i = 0; i < 256; ++i) {
+    const auto* value = result->guidance_at({line, i});
+    bench_check(value != nullptr && value->cost == 255 - i &&
+                value->has_next == (i != 255));
+    if (!value->has_next) continue;
+    bench_check(value->next.from == tess::NavigationLocation{line, i});
+    check_line_step(value->next, line);
+  }
   state.counters["work_items"] = static_cast<double>(result->work_items);
   state.counters["payload_bytes"] =
       static_cast<double>(result->payload_bytes());
@@ -84,6 +120,57 @@ struct Composition {
   std::shared_ptr<const OriginGrid> origin;
   tess::NavigationLocation goal;
 };
+// From origin (0, y): 30 - y unit origin steps, a zero-cost exit connection,
+// the cost-5 road edge, a zero-cost entry connection, then 30 weight-2
+// destination steps.
+constexpr auto composed_cost(int y) -> std::uint64_t {
+  return static_cast<std::uint64_t>(95 - y);
+}
+constexpr auto composed_steps(int y) -> std::size_t {
+  return static_cast<std::size_t>(63 - y);
+}
+// One axial step within a single grid layer.
+auto unit_step(tess::Coord3 from, tess::Coord3 to) -> bool {
+  const auto dx = from.x > to.x ? from.x - to.x : to.x - from.x;
+  const auto dy = from.y > to.y ? from.y - to.y : to.y - from.y;
+  return from.z == to.z && dx + dy == 1;
+}
+void check_composed_step(const tess::NavigationTransition& step,
+                         const Composition& composition) {
+  const auto origin = composition.origin->coordinate_location({0, 0, 0}).domain;
+  const auto destination = composition.goal.domain;
+  bench_check(step.availability == tess::NavigationAvailability::Legal);
+  if (step.connection) {
+    bench_check(step.cost == 0 && step.from.domain != step.to.domain);
+    return;
+  }
+  bench_check(step.from.domain == step.to.domain);
+  // Both grids share GridShape, so one node-to-coordinate table built from
+  // the public coordinate_location inverts either grid's node keys.
+  static const auto coordinates = [&] {
+    std::map<std::uint64_t, tess::Coord3> table;
+    for (std::int64_t y = 0; y < 16; ++y)
+      for (std::int64_t x = 0; x < 16; ++x)
+        table[composition.origin->coordinate_location({x, y, 0}).node] = {x, y,
+                                                                          0};
+    return table;
+  }();
+  const auto grid_step = [&] {
+    const auto from = coordinates.find(step.from.node);
+    const auto to = coordinates.find(step.to.node);
+    return from != coordinates.end() && to != coordinates.end() &&
+           unit_step(from->second, to->second);
+  };
+  if (step.from.domain == origin) {
+    bench_check(step.cost == 1 && grid_step());
+  } else if (step.from.domain == destination) {
+    bench_check(step.cost == 2 && grid_step());
+  } else {
+    // The only selected road edge is 0 -> 1 (id 1, cost 5).
+    bench_check(step.from.node == 0 && step.to.node == 1 && step.id == 1 &&
+                step.cost == 5);
+  }
+}
 auto make_composition() -> Composition {
   auto first = std::make_shared<OriginWorld>();
   first->fill_field<Passable>(true);
@@ -139,14 +226,38 @@ void BM_navigation_composed(benchmark::State& state, bool shared) {
       if (shared) {
         const auto* entry = field->guidance_at(start);
         state.PauseTiming();
-        bench_check(entry != nullptr);
+        bench_check(entry != nullptr && entry->cost == composed_cost(i % 16));
+        {
+          // Follow guidance to the goal: chained legal steps whose costs
+          // account exactly for each label's remaining cost.
+          auto at = start;
+          const auto* label = entry;
+          std::size_t steps = 0;
+          while (label->has_next) {
+            const auto& next = label->next;
+            check_composed_step(next, composition);
+            const auto* following = field->guidance_at(next.to);
+            bench_check(next.from == at && following != nullptr &&
+                        following->cost + next.cost == label->cost &&
+                        ++steps <= composed_steps(i % 16));
+            at = next.to;
+            label = following;
+          }
+          bench_check(at == composition.goal && label->cost == 0 &&
+                      steps == composed_steps(i % 16));
+        }
         state.ResumeTiming();
         sum += entry->cost;
       } else {
         const auto route = tess::navigation_route(composition.snapshot, start,
                                                   composition.goal, limits);
         state.PauseTiming();
-        bench_check(route && route->outcome == tess::NavigationOutcome::Found);
+        bench_check(route && route->outcome == tess::NavigationOutcome::Found &&
+                    route->cost == composed_cost(i % 16) &&
+                    route->route.size() == composed_steps(i % 16));
+        check_route_chain(route->route, start, composition.goal, route->cost);
+        for (const auto& step : route->route)
+          check_composed_step(step, composition);
         state.ResumeTiming();
         sum += route->cost;
         work += route->work_items;
