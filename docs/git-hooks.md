@@ -52,7 +52,13 @@ py -3 tools/git_hooks.py install
 
 The installer prefers Git's config hook interface only when its
 `git hook list` feature probe succeeds. Otherwise it sets `core.hooksPath` to
-`tools/git-hooks`.
+`tools/git-hooks`. Configured commands resolve the runner from the active
+checkout, so removing a linked checkout does not strand other checkouts. The
+installer retains the compatibility hooks path until all config hooks have been
+registered; retrying installation replaces the same entries without duplicates.
+Install with an external Python interpreter that will outlive this repository's
+hook configuration. Interpreter symlinks are resolved; copied interpreters
+inside the checkout are rejected before config changes.
 
 ## Hooks
 

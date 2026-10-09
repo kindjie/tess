@@ -1179,20 +1179,26 @@ def supports_config_hooks() -> bool:
 
 def install_config_hooks() -> None:
   status("installing Git config hooks")
-  clear_compat_hooks_path()
+  interpreter = Path(sys.executable).resolve()
+  if interpreter.is_relative_to(REPO_ROOT.resolve()):
+    raise ValueError("install hooks using persistent Python outside the checkout")
   for name in HOOK_NAMES:
     key = f"hook.tess-{name}"
-    run(["git", "config", "--local", "--unset-all", f"{key}.event"])
-    run(["git", "config", "--local", "--unset-all", f"{key}.command"])
-    command = command_line([sys.executable, str(SCRIPT_PATH), name])
+    # Git invokes these hooks at the active checkout root. Do not bind shared
+    # repository configuration to a linked checkout that may later be removed.
+    script = SCRIPT_PATH.relative_to(REPO_ROOT).as_posix()
+    command = command_line([str(interpreter), script, name])
     run(
-      ["git", "config", "--local", f"{key}.command", command],
+      ["git", "config", "--local", "--replace-all", f"{key}.command", command],
       check=True,
     )
     run(
-      ["git", "config", "--local", "--append", f"{key}.event", name],
+      ["git", "config", "--local", "--replace-all", f"{key}.event", name],
       check=True,
     )
+  # Keep the compatibility hook active until every configured hook is installed.
+  # Replacing values also preserves existing events if an update fails midway.
+  clear_compat_hooks_path()
 
 
 def install_hooks_path() -> None:

@@ -20,6 +20,15 @@ import git_hooks  # noqa: E402
 import wait_for_browser_state  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def isolate_git_repository_environment(monkeypatch):
+  names = subprocess.check_output(
+    ["git", "rev-parse", "--local-env-vars"], text=True
+  ).splitlines()
+  for name in names:
+    monkeypatch.delenv(name, raising=False)
+
+
 def reader_for(files: dict[str, bytes]):
   return lambda path: files.get(path, b"")
 

@@ -34,3 +34,8 @@
 - Broad compiler floors and calibrated thresholds run weekly/manual; main
   retains per-commit advisory baselines. Release identity and aggregation
   remain mandatory even as automatic cadence changes.
+
+- Real installation, interpreter lifetime and Git dispatch coverage live in
+  `tests/test_git_hook_install.py`.
+- Real-repository tests clear inherited Git local environment variables so hook
+  invocation cannot read or modify the caller repository index.
