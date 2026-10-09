@@ -432,7 +432,8 @@ jobs:
               tess_sim_auto_exec_test \
               tess_sim_schedule_test \
               tess_storage_test \
-              tess_topology_test
+              tess_topology_test \
+              tess_navigation_test
 
       - name: Run exception-free behavior
         run: >-
@@ -944,6 +945,7 @@ jobs:
           tess_sim_schedule_test
           tess_storage_test
           tess_topology_test
+          tess_navigation_test
 
       - name: Test exception-free behavior
         run: >-

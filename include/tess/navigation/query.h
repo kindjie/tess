@@ -223,7 +223,7 @@ class NavigationQuery {
       return a > b;
     }
   };
-  enum class Phase {
+  enum class Phase : std::uint8_t {
     Init,
     Seed,
     Pop,
