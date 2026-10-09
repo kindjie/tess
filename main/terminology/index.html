@@ -1134,6 +1134,8 @@
       
         
       
+        
+      
     
     
     
@@ -1378,6 +1380,17 @@
     <span class="md-ellipsis">
       
         Movement outcomes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#composable-navigation-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Composable navigation (experimental)
       
     </span>
   </a>
@@ -1632,6 +1645,34 @@
     
   
     Pathfinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/navigation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Composable navigation
   
 
     
@@ -2363,6 +2404,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#composable-navigation-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Composable navigation (experimental)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2729,6 +2781,12 @@ suites:</p>
 <li>For terrain, prefer <strong>passable / impassable</strong> here as everywhere;
   "open" remains reserved for search frontiers.</li>
 </ul>
+<h2 id="composable-navigation-experimental">Composable navigation (experimental)</h2>
+<p>A <strong><abbr title="One independently identified graph or grid representation in a composite navigation snapshot.">navigation domain</abbr></strong> is one independently identified immutable graph or grid
+representation. It is distinct from an operation's chunk domain. A <strong>connection</strong>
+is an explicit directed attachment between qualified locations. <strong>Shared
+guidance</strong> includes remaining destination cost across connections; it grants no
+occupancy or movement authority. See <a href="../architecture/navigation/">navigation</a>.</p>
 
 
 

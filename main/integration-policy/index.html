@@ -1132,6 +1132,8 @@
       
         
       
+        
+      
     
     
     
@@ -1481,6 +1483,34 @@
     
   
     Pathfinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/navigation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Composable navigation
   
 
     
@@ -2476,7 +2506,8 @@ failure contract and standard-library operation inventory.</p>
 is needed at runtime comes from <code>tag_identity&lt;T&gt;()</code>, which returns the
 address of a per-type static — that facility exists precisely so the
 library does not depend on RTTI.</p>
-<p>Virtual declarations appear only in the experimental maintenance layer.
+<p>Virtual declarations appear in the experimental maintenance and navigation
+layers.
 The stable <code>ImmediateScheduler</code> spelling shares that measured concrete
 implementation, but neither documents nor stabilizes the experimental
 <code>MaintenanceScheduler</code> base or polymorphic use. Virtuals need vtables, not

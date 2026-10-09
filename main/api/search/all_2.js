@@ -45,8 +45,10 @@ var searchData=
   ['contentversiondependency_42',['ContentVersionDependency',['../structtess_1_1ContentVersionDependencies_1_1ContentVersionDependency.html',1,'tess::ContentVersionDependencies']]],
   ['coord2_43',['Coord2',['../structtess_1_1Coord2.html',1,'tess']]],
   ['coord3_44',['Coord3',['../structtess_1_1Coord3.html',1,'tess']]],
-  ['core_20worlds_45',['Core worlds',['../index.html#autotoc_md1',1,'']]],
-  ['counters_46',['counters',['../structtess_1_1diagnostics_1_1FlowAccounting.html#acfa9a5010cd56d4ad40ac7085d0281c6',1,'tess::diagnostics::FlowAccounting::counters'],['../structtess_1_1diagnostics_1_1FlowHealthSnapshot.html#a1525cf85bbcb3431d1a43d6a9909e3a9',1,'tess::diagnostics::FlowHealthSnapshot::counters']]],
-  ['create_47',['create',['../classtess_1_1PlannedOperation.html#a597aa97c1760803854fadbc29ac4a568',1,'tess::PlannedOperation']]],
-  ['current_48',['current',['../classtess_1_1experimental_1_1maintenance_1_1ChunkMaintenanceAdapter.html#a17364e6e4b5385cdb567591a347c6e68',1,'tess::experimental::maintenance::ChunkMaintenanceAdapter']]]
+  ['coordinate_5flocation_45',['coordinate_location',['../classtess_1_1NavigationGrid.html#afc2c23b650a953c66768077b07fd557b',1,'tess::NavigationGrid']]],
+  ['core_20worlds_46',['Core worlds',['../index.html#autotoc_md1',1,'']]],
+  ['cost_47',['cost',['../structtess_1_1NavigationResult.html#aded45af05612dae50de676dee40ba4d5',1,'tess::NavigationResult']]],
+  ['counters_48',['counters',['../structtess_1_1diagnostics_1_1FlowAccounting.html#acfa9a5010cd56d4ad40ac7085d0281c6',1,'tess::diagnostics::FlowAccounting::counters'],['../structtess_1_1diagnostics_1_1FlowHealthSnapshot.html#a1525cf85bbcb3431d1a43d6a9909e3a9',1,'tess::diagnostics::FlowHealthSnapshot::counters']]],
+  ['create_49',['create',['../classtess_1_1PlannedOperation.html#a597aa97c1760803854fadbc29ac4a568',1,'tess::PlannedOperation']]],
+  ['current_50',['current',['../classtess_1_1experimental_1_1maintenance_1_1ChunkMaintenanceAdapter.html#a17364e6e4b5385cdb567591a347c6e68',1,'tess::experimental::maintenance::ChunkMaintenanceAdapter']]]
 ];

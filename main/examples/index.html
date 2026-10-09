@@ -874,6 +874,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#experimental-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Experimental composition
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#optional-integrations" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1265,6 +1276,8 @@
       
         
       
+        
+      
     
     
     
@@ -1614,6 +1627,34 @@
     
   
     Pathfinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/navigation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Composable navigation
   
 
     
@@ -2314,6 +2355,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#experimental-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Experimental composition
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#optional-integrations" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2477,6 +2529,14 @@ previews retain only the inexpensive live exponential averages.</p>
   versioned derived summary with explicit immediate and deferred backends.</li>
 <li><a href="https://github.com/kindjie/tess/blob/main/examples/render_delta_consumer.cc"><code>render_delta_consumer.cc</code></a> — a standalone consumer that
   rebuilds a shadow grid from published <code>DeltaFrame</code> values.</li>
+</ul>
+<h2 id="experimental-composition">Experimental composition</h2>
+<ul>
+<li><a href="https://github.com/kindjie/tess/blob/main/examples/composable_navigation.cc"><code>composable_navigation.cc</code></a> connects an explicit
+  graph to two native grids with different schemas and cost scales. It checks
+  both travel directions and budget-one shared destination guidance. See the
+  <a href="../architecture/navigation/">experimental contract</a> for snapshot ownership,
+  proof limits and host physical-motion responsibilities.</li>
 </ul>
 <h2 id="optional-integrations">Optional integrations</h2>
 <ul>
