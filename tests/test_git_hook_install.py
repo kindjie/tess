@@ -163,3 +163,29 @@ def test_failed_config_hook_install_preserves_existing_enforcement(
       ["git", "config", "--local", "--get", f"hook.tess-{name}.event"],
       text=True,
     ).strip() == name
+
+
+def test_failed_config_hook_install_rolls_back_partial_registration(
+  tmp_path, monkeypatch
+):
+  # A failure after earlier events were registered must not leave those
+  # configured hooks active beside core.hooksPath, which would run each
+  # check twice; the configuration returns to its prior state instead.
+  _config_hook_repo(tmp_path, monkeypatch)
+  original_run = git_hooks.run
+
+  def fail_install(argv, **kwargs):
+    if "hook.tess-commit-msg.command" in argv and "--unset-all" not in argv:
+      raise subprocess.CalledProcessError(1, argv)
+    return original_run(argv, **kwargs)
+
+  monkeypatch.setattr(git_hooks, "run", fail_install)
+  with pytest.raises(subprocess.CalledProcessError):
+    git_hooks.install_config_hooks()
+  assert subprocess.check_output(
+    ["git", "config", "--local", "--get", "core.hooksPath"], text=True
+  ).strip() == "tools/git-hooks"
+  assert subprocess.run(
+    ["git", "config", "--local", "--get-regexp", r"^hook\.tess-"],
+    capture_output=True,
+  ).returncode == 1

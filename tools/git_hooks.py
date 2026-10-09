@@ -1182,23 +1182,48 @@ def install_config_hooks() -> None:
   interpreter = Path(sys.executable).resolve()
   if interpreter.is_relative_to(REPO_ROOT.resolve()):
     raise ValueError("install hooks using persistent Python outside the checkout")
-  for name in HOOK_NAMES:
-    key = f"hook.tess-{name}"
-    # Git invokes these hooks at the active checkout root. Do not bind shared
-    # repository configuration to a linked checkout that may later be removed.
-    script = SCRIPT_PATH.relative_to(REPO_ROOT).as_posix()
-    command = command_line([str(interpreter), script, name])
-    run(
-      ["git", "config", "--local", "--replace-all", f"{key}.command", command],
-      check=True,
-    )
-    run(
-      ["git", "config", "--local", "--replace-all", f"{key}.event", name],
-      check=True,
-    )
+  keys = [
+    f"hook.tess-{name}.{field}"
+    for name in HOOK_NAMES
+    for field in ("command", "event")
+  ]
+  previous = {key: config_values(key) for key in keys}
+  try:
+    for name in HOOK_NAMES:
+      key = f"hook.tess-{name}"
+      # Git invokes these hooks at the active checkout root. Do not bind
+      # shared repository configuration to a linked checkout that may later
+      # be removed.
+      script = SCRIPT_PATH.relative_to(REPO_ROOT).as_posix()
+      command = command_line([str(interpreter), script, name])
+      run(
+        ["git", "config", "--local", "--replace-all", f"{key}.command",
+         command],
+        check=True,
+      )
+      run(
+        ["git", "config", "--local", "--replace-all", f"{key}.event", name],
+        check=True,
+      )
+  except BaseException:
+    # Configured hooks run in addition to core.hooksPath, so a partial
+    # registration would run some checks twice. Restore the prior values.
+    restore_config_values(previous)
+    raise
   # Keep the compatibility hook active until every configured hook is installed.
-  # Replacing values also preserves existing events if an update fails midway.
   clear_compat_hooks_path()
+
+
+def config_values(key: str) -> list[str]:
+  result = run(["git", "config", "--local", "--get-all", key], capture=True)
+  return result.stdout.splitlines() if result.returncode == 0 else []
+
+
+def restore_config_values(previous: dict[str, list[str]]) -> None:
+  for key, values in previous.items():
+    run(["git", "config", "--local", "--unset-all", key])
+    for value in values:
+      run(["git", "config", "--local", "--add", key, value])
 
 
 def install_hooks_path() -> None:
