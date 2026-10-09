@@ -1,10 +1,25 @@
 var searchData=
 [
-  ['nearestbatchdesc_0',['NearestBatchDesc',['../structtess_1_1NearestBatchDesc.html',1,'tess']]],
-  ['nearestbatchhandle_1',['NearestBatchHandle',['../structtess_1_1NearestBatchHandle.html',1,'tess']]],
-  ['nearesttargetresult_2',['NearestTargetResult',['../structtess_1_1NearestTargetResult.html',1,'tess']]],
-  ['nogpubackend_3',['NoGpuBackend',['../structtess_1_1gpu_1_1NoGpuBackend.html',1,'tess::gpu']]],
-  ['not_4',['Not',['../structtess_1_1movement_1_1Not.html',1,'tess::movement']]],
-  ['notzero_5',['NotZero',['../structtess_1_1movement_1_1NotZero.html',1,'tess::movement']]],
-  ['nullwarningsink_6',['NullWarningSink',['../structtess_1_1diagnostics_1_1NullWarningSink.html',1,'tess::diagnostics']]]
+  ['navigationconnection_0',['NavigationConnection',['../structtess_1_1NavigationConnection.html',1,'tess']]],
+  ['navigationdomain_1',['NavigationDomain',['../classtess_1_1NavigationDomain.html',1,'tess']]],
+  ['navigationgoal_2',['NavigationGoal',['../structtess_1_1NavigationGoal.html',1,'tess']]],
+  ['navigationgraph_3',['NavigationGraph',['../classtess_1_1NavigationGraph.html',1,'tess']]],
+  ['navigationgrid_4',['NavigationGrid',['../classtess_1_1NavigationGrid.html',1,'tess']]],
+  ['navigationguidance_5',['NavigationGuidance',['../structtess_1_1NavigationGuidance.html',1,'tess']]],
+  ['navigationlimits_6',['NavigationLimits',['../structtess_1_1NavigationLimits.html',1,'tess']]],
+  ['navigationlocaledge_7',['NavigationLocalEdge',['../structtess_1_1NavigationLocalEdge.html',1,'tess']]],
+  ['navigationlocation_8',['NavigationLocation',['../structtess_1_1NavigationLocation.html',1,'tess']]],
+  ['navigationpreparationdiagnostic_9',['NavigationPreparationDiagnostic',['../structtess_1_1NavigationPreparationDiagnostic.html',1,'tess']]],
+  ['navigationquery_10',['NavigationQuery',['../classtess_1_1NavigationQuery.html',1,'tess']]],
+  ['navigationregularedges_11',['NavigationRegularEdges',['../structtess_1_1NavigationRegularEdges.html',1,'tess']]],
+  ['navigationresult_12',['NavigationResult',['../structtess_1_1NavigationResult.html',1,'tess']]],
+  ['navigationsnapshot_13',['NavigationSnapshot',['../classtess_1_1NavigationSnapshot.html',1,'tess']]],
+  ['navigationtransition_14',['NavigationTransition',['../structtess_1_1NavigationTransition.html',1,'tess']]],
+  ['nearestbatchdesc_15',['NearestBatchDesc',['../structtess_1_1NearestBatchDesc.html',1,'tess']]],
+  ['nearestbatchhandle_16',['NearestBatchHandle',['../structtess_1_1NearestBatchHandle.html',1,'tess']]],
+  ['nearesttargetresult_17',['NearestTargetResult',['../structtess_1_1NearestTargetResult.html',1,'tess']]],
+  ['nogpubackend_18',['NoGpuBackend',['../structtess_1_1gpu_1_1NoGpuBackend.html',1,'tess::gpu']]],
+  ['not_19',['Not',['../structtess_1_1movement_1_1Not.html',1,'tess::movement']]],
+  ['notzero_20',['NotZero',['../structtess_1_1movement_1_1NotZero.html',1,'tess::movement']]],
+  ['nullwarningsink_21',['NullWarningSink',['../structtess_1_1diagnostics_1_1NullWarningSink.html',1,'tess::diagnostics']]]
 ];

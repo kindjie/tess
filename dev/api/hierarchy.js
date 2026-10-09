@@ -150,6 +150,23 @@ var hierarchy =
     [ "tess::MovementIntent", "structtess_1_1MovementIntent.html", null ],
     [ "tess::MovementResult", "structtess_1_1MovementResult.html", null ],
     [ "tess::MovementVersionCheck", "structtess_1_1MovementVersionCheck.html", null ],
+    [ "tess::NavigationConnection", "structtess_1_1NavigationConnection.html", [
+      [ "tess::NavigationTransition", "structtess_1_1NavigationTransition.html", null ]
+    ] ],
+    [ "tess::NavigationDomain", "classtess_1_1NavigationDomain.html", [
+      [ "tess::NavigationGraph", "classtess_1_1NavigationGraph.html", null ],
+      [ "tess::NavigationGrid< World, MovementClass, EdgeFilter >", "classtess_1_1NavigationGrid.html", null ]
+    ] ],
+    [ "tess::NavigationGoal", "structtess_1_1NavigationGoal.html", null ],
+    [ "tess::NavigationGuidance", "structtess_1_1NavigationGuidance.html", null ],
+    [ "tess::NavigationLimits", "structtess_1_1NavigationLimits.html", null ],
+    [ "tess::NavigationLocalEdge", "structtess_1_1NavigationLocalEdge.html", null ],
+    [ "tess::NavigationLocation", "structtess_1_1NavigationLocation.html", null ],
+    [ "tess::NavigationPreparationDiagnostic", "structtess_1_1NavigationPreparationDiagnostic.html", null ],
+    [ "tess::NavigationQuery", "classtess_1_1NavigationQuery.html", null ],
+    [ "tess::NavigationRegularEdges", "structtess_1_1NavigationRegularEdges.html", null ],
+    [ "tess::NavigationResult", "structtess_1_1NavigationResult.html", null ],
+    [ "tess::NavigationSnapshot", "classtess_1_1NavigationSnapshot.html", null ],
     [ "tess::NearestBatchDesc", "structtess_1_1NearestBatchDesc.html", null ],
     [ "tess::NearestBatchHandle", "structtess_1_1NearestBatchHandle.html", null ],
     [ "tess::NearestTargetResult", "structtess_1_1NearestTargetResult.html", null ],

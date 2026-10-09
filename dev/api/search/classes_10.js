@@ -21,9 +21,10 @@ var searchData=
   ['residentchunkref_18',['ResidentChunkRef',['../structtess_1_1World_3_01Shape_00_01Schema_00_01SparseResident_01_4_1_1ResidentChunkRef.html',1,'tess::World&lt; Shape, Schema, SparseResident &gt;']]],
   ['resolvedtile_19',['ResolvedTile',['../structtess_1_1ResolvedTile.html',1,'tess']]],
   ['resolvedtransitionmodel_20',['ResolvedTransitionModel',['../classtess_1_1ResolvedTransitionModel.html',1,'tess']]],
-  ['resultchannel_21',['ResultChannel',['../classtess_1_1ResultChannel.html',1,'tess']]],
-  ['resultchannel_3c_20ack_20_3e_22',['ResultChannel&lt; Ack &gt;',['../classtess_1_1ResultChannel.html',1,'tess']]],
-  ['resumableworkqueue_23',['ResumableWorkQueue',['../classtess_1_1ResumableWorkQueue.html',1,'tess']]],
-  ['resumableworktask_24',['ResumableWorkTask',['../classtess_1_1ResumableWorkTask.html',1,'tess']]],
-  ['routeattachmentranking_25',['RouteAttachmentRanking',['../structtess_1_1RouteAttachmentRanking.html',1,'tess']]]
+  ['resolvedtransitionmodel_3c_20world_2c_20movementclass_20_3e_21',['ResolvedTransitionModel&lt; World, MovementClass &gt;',['../classtess_1_1ResolvedTransitionModel.html',1,'tess']]],
+  ['resultchannel_22',['ResultChannel',['../classtess_1_1ResultChannel.html',1,'tess']]],
+  ['resultchannel_3c_20ack_20_3e_23',['ResultChannel&lt; Ack &gt;',['../classtess_1_1ResultChannel.html',1,'tess']]],
+  ['resumableworkqueue_24',['ResumableWorkQueue',['../classtess_1_1ResumableWorkQueue.html',1,'tess']]],
+  ['resumableworktask_25',['ResumableWorkTask',['../classtess_1_1ResumableWorkTask.html',1,'tess']]],
+  ['routeattachmentranking_26',['RouteAttachmentRanking',['../structtess_1_1RouteAttachmentRanking.html',1,'tess']]]
 ];

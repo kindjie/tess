@@ -12,13 +12,14 @@ var searchData=
   ['operationbatch_9',['OperationBatch',['../classtess_1_1OperationBatch.html',1,'tess']]],
   ['operationreport_10',['OperationReport',['../structtess_1_1OperationReport.html',1,'tess']]],
   ['operator_20coord3_11',['operator Coord3',['../structtess_1_1Coord2.html#aab8c97953b04bc381378be77e1e388a9',1,'tess::Coord2']]],
-  ['operator_5b_5d_12',['operator[]',['../classtess_1_1PathView.html#aa57ef91944480084aa462d58715c511a',1,'tess::PathView']]],
-  ['ophandle_13',['OpHandle',['../structtess_1_1OpHandle.html',1,'tess']]],
-  ['opid_14',['OpId',['../structtess_1_1OpId.html',1,'tess']]],
-  ['optional_20integrations_15',['Optional integrations',['../index.html#autotoc_md5',1,'']]],
-  ['orthogonal_16',['Orthogonal',['../structtess_1_1lattice_1_1Orthogonal.html',1,'tess::lattice']]],
-  ['outstanding_5fcurrent_17',['outstanding_current',['../structtess_1_1diagnostics_1_1FlowCounters.html#a4b82ae74a780d999a3588f23dea67266',1,'tess::diagnostics::FlowCounters']]],
-  ['outstanding_5fhigh_5fwater_18',['outstanding_high_water',['../structtess_1_1diagnostics_1_1FlowCounters.html#abb1c24612f818f57952cc1f7b7839ac5',1,'tess::diagnostics::FlowCounters']]],
-  ['overlaycost_19',['OverlayCost',['../structtess_1_1movement_1_1OverlayCost.html',1,'tess::movement']]],
-  ['ownedchunkdomain_20',['OwnedChunkDomain',['../classtess_1_1OwnedChunkDomain.html',1,'tess']]]
+  ['operator_28_29_12',['operator()',['../classtess_1_1NavigationQuery.html#a91f6d6a576706d20e27447e847a0657b',1,'tess::NavigationQuery']]],
+  ['operator_5b_5d_13',['operator[]',['../classtess_1_1PathView.html#aa57ef91944480084aa462d58715c511a',1,'tess::PathView']]],
+  ['ophandle_14',['OpHandle',['../structtess_1_1OpHandle.html',1,'tess']]],
+  ['opid_15',['OpId',['../structtess_1_1OpId.html',1,'tess']]],
+  ['optional_20integrations_16',['Optional integrations',['../index.html#autotoc_md5',1,'']]],
+  ['orthogonal_17',['Orthogonal',['../structtess_1_1lattice_1_1Orthogonal.html',1,'tess::lattice']]],
+  ['outstanding_5fcurrent_18',['outstanding_current',['../structtess_1_1diagnostics_1_1FlowCounters.html#a4b82ae74a780d999a3588f23dea67266',1,'tess::diagnostics::FlowCounters']]],
+  ['outstanding_5fhigh_5fwater_19',['outstanding_high_water',['../structtess_1_1diagnostics_1_1FlowCounters.html#abb1c24612f818f57952cc1f7b7839ac5',1,'tess::diagnostics::FlowCounters']]],
+  ['overlaycost_20',['OverlayCost',['../structtess_1_1movement_1_1OverlayCost.html',1,'tess::movement']]],
+  ['ownedchunkdomain_21',['OwnedChunkDomain',['../classtess_1_1OwnedChunkDomain.html',1,'tess']]]
 ];
