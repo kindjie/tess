@@ -554,15 +554,38 @@ def check_inventory_counts() -> int:
     return fail(str(error))
   if not any(path in INVENTORY_TRIGGERS for path in paths):
     return 0
-  python = venv_tool("python3") or sys.executable
-  command = [python, "-m", "pytest", "-q", *INVENTORY_TESTS]
+  command = inventory_pytest_command()
+  if command is None:
+    return fail(
+      "inventory tests need pytest: create .venv from requirements-dev.txt, "
+      "install uv, or install pytest for the hook interpreter"
+    )
   completed = run(command, capture=True)
   if completed.returncode != 0:
     tail = "\n".join((completed.stdout or "").strip().splitlines()[-12:])
-    return fail(
-      "inventory counts do not match the declarations:\n" + tail
-    )
+    return fail("inventory tests failed:\n" + tail)
   return 0
+
+
+def module_available(name: str) -> bool:
+  import importlib.util
+
+  return importlib.util.find_spec(name) is not None
+
+
+def inventory_pytest_command() -> list[str] | None:
+  """Prefers pinned pytest: .venv, then the locked uv environment."""
+  args = ["-m", "pytest", "-q", *INVENTORY_TESTS]
+  # Every venv provides `python`; Windows venvs have no `python3.exe`.
+  python = venv_tool("python")
+  if python is not None:
+    return [python, *args]
+  uv = shutil.which("uv")
+  if uv is not None:
+    return uv_dev_command(uv, "python", *args)
+  if module_available("pytest"):
+    return [sys.executable, *args]
+  return None
 
 
 def check_cpp_format() -> int:
@@ -1154,7 +1177,16 @@ def diff_paths(
   )
 
 
+MINIMUM_PYTHON = (3, 10)
+
+
 def install_hooks() -> int:
+  if tuple(sys.version_info[:2]) < MINIMUM_PYTHON:
+    return fail(
+      "install hooks with Python "
+      + ".".join(map(str, MINIMUM_PYTHON))
+      + " or newer"
+    )
   identity = run(["git", "config", "--get", "user.name"], capture=True)
   if identity.returncode == 0 and identity.stdout.strip():
     try:
@@ -1173,15 +1205,27 @@ def install_hooks() -> int:
 
 
 def supports_config_hooks() -> bool:
-  result = run(["git", "hook", "list", "pre-commit"], capture=True)
+  # An empty hook list exits 1 even on Git that supports config hooks, so
+  # probe with a transient configured hook rather than the current config.
+  result = run(
+    [
+      "git",
+      "-c",
+      "hook.tess-probe.event=pre-commit",
+      "-c",
+      "hook.tess-probe.command=true",
+      "hook",
+      "list",
+      "pre-commit",
+    ],
+    capture=True,
+  )
   return result.returncode == 0
 
 
 def install_config_hooks() -> None:
   status("installing Git config hooks")
-  interpreter = Path(sys.executable).resolve()
-  if interpreter.is_relative_to(REPO_ROOT.resolve()):
-    raise ValueError("install hooks using persistent Python outside the checkout")
+  interpreter = hook_interpreter()
   keys = [
     f"hook.tess-{name}.{field}"
     for name in HOOK_NAMES
@@ -1212,6 +1256,88 @@ def install_config_hooks() -> None:
     raise
   # Keep the compatibility hook active until every configured hook is installed.
   clear_compat_hooks_path()
+
+
+def checkout_roots() -> tuple[Path, ...]:
+  """Returns every worktree path, as listed and resolved.
+
+  Hook configuration is shared by all worktrees of the repository, so an
+  interpreter inside any of them may disappear with that worktree.
+  """
+  roots = {REPO_ROOT, REPO_ROOT.resolve()}
+  listed = run(["git", "worktree", "list", "--porcelain"], capture=True)
+  if listed.returncode == 0:
+    for line in listed.stdout.splitlines():
+      if line.startswith("worktree "):
+        path = Path(line.removeprefix("worktree "))
+        roots.update((path, path.resolve()))
+  return tuple(roots)
+
+
+def hook_interpreter() -> Path:
+  """Returns the interpreter path to record in shared hook configuration.
+
+  Keep the path as invoked: package managers expose stable launchers that
+  symlink into versioned directories, and resolving them would pin a path
+  that a patch upgrade removes. Follow links one hop at a time only while
+  the path lies inside a worktree, so a checkout venv records the stable
+  base it was created from; a copied venv interpreter falls back to the
+  interpreter in its pyvenv.cfg home, then to the base executable. Reject
+  any interpreter that remains in or resolves into a worktree.
+  """
+  roots = checkout_roots()
+
+  def located(path: Path) -> Path:
+    # Resolve directories, not the final link, so symlinked parents and
+    # relative ".." targets are judged and followed as the filesystem does.
+    return path.parent.resolve() / path.name
+
+  def inside(path: Path) -> bool:
+    return any(located(path).is_relative_to(root) for root in roots)
+
+  interpreter = Path(sys.executable).absolute()
+  seen: set[Path] = set()
+  while inside(interpreter) and located(interpreter).is_symlink():
+    current = located(interpreter)
+    if current in seen:
+      break
+    seen.add(current)
+    # current.parent is real, so collapsing ".." here matches the filesystem
+    # while leaving the target's own links as invoked.
+    interpreter = Path(os.path.normpath(current.parent / os.readlink(current)))
+  if inside(interpreter):
+    base = venv_base_interpreter(interpreter)
+    if base is not None:
+      interpreter = base
+  if inside(interpreter) or inside(interpreter.resolve()):
+    raise ValueError("install hooks using persistent Python outside the checkout")
+  return interpreter
+
+
+def venv_base_interpreter(interpreter: Path) -> Path | None:
+  """Returns the base interpreter of a venv whose interpreter is a copy.
+
+  Prefer the venv's `home`, which records the launcher directory as
+  invoked, over the base executable, which may already be resolved into a
+  versioned directory.
+  """
+  home = None
+  try:
+    config = (Path(sys.prefix) / "pyvenv.cfg").read_text()
+  except OSError:
+    config = ""
+  for line in config.splitlines():
+    key, _, value = line.partition("=")
+    if key.strip() == "home" and value.strip():
+      home = Path(value.strip())
+  if home is not None:
+    minor = f"python{sys.version_info[0]}.{sys.version_info[1]}"
+    for name in (minor, interpreter.name, "python3", "python"):
+      candidate = home / name
+      if candidate.is_file():
+        return candidate
+  base = getattr(sys, "_base_executable", "")
+  return Path(base).absolute() if base else None
 
 
 def config_values(key: str) -> list[str]:

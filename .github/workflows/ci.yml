@@ -525,6 +525,7 @@ jobs:
           pytest
           tests/test_git_hooks.py
           tests/test_git_hook_install.py
+          tests/test_git_hook_inventory.py
           tests/test_pre_push_ranges.py
           tests/test_ci_reliability.py
           tests/test_ci_changes.py

@@ -50,15 +50,34 @@ On Windows:
 py -3 tools/git_hooks.py install
 ```
 
-The installer prefers Git's config hook interface only when its
-`git hook list` feature probe succeeds. Otherwise it sets `core.hooksPath` to
-`tools/git-hooks`. Configured commands resolve the runner from the active
-checkout, so removing a linked checkout does not strand other checkouts. The
-installer retains the compatibility hooks path until all config hooks have been
-registered; retrying installation replaces the same entries without duplicates.
-Install with an external Python interpreter that will outlive this repository's
-hook configuration. Interpreter symlinks are resolved; copied interpreters
-inside the checkout are rejected before config changes.
+The installer prefers Git's config hook interface when Git lists a transient
+probe hook supplied with `-c`, so a fresh clone with no hooks yet still uses
+config hooks. Otherwise it sets `core.hooksPath` to `tools/git-hooks`.
+Configured commands resolve the runner from the active checkout, so removing a
+linked checkout does not strand other checkouts. The installer retains the
+compatibility hooks path until all config hooks have been registered; retrying
+installation replaces the same entries without duplicates.
+
+Install with Python 3.10 or newer; older interpreters are refused before config
+changes. No specific Python version is pinned. The installer records the
+interpreter path as invoked, so a package manager's stable launcher, such as
+Homebrew's `opt` path, survives patch upgrades. Hook configuration is shared by
+every worktree, so a path inside any worktree, such as a `.venv` interpreter, is
+followed link by link only until it leaves the worktrees, judging directories
+by their real paths. Installing from a checkout venv therefore records the base
+interpreter it was created from; a venv holding a copied interpreter (Windows,
+or `--copies`) records the interpreter in its `pyvenv.cfg` `home` directory,
+falling back to the base executable.
+An interpreter that stays inside or resolves into a worktree is rejected
+before config changes. If the recorded interpreter is later removed, every
+hook fails until you rerun the install command; installations made before this
+behaviour keep their old recorded path until then.
+
+The inventory tests that run when CMake or CI declarations are staged take
+pinned pytest from `.venv/`, then from the locked `uv` environment, and only
+then from the hook interpreter, so the hook interpreter needs no extra
+packages when `.venv/` or `uv` is available. A failure reports the test output
+rather than presuming a count mismatch.
 
 ## Hooks
 
