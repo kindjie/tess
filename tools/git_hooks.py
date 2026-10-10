@@ -563,9 +563,7 @@ def check_inventory_counts() -> int:
   completed = run(command, capture=True)
   if completed.returncode != 0:
     tail = "\n".join((completed.stdout or "").strip().splitlines()[-12:])
-    return fail(
-      "inventory counts do not match the declarations:\n" + tail
-    )
+    return fail("inventory tests failed:\n" + tail)
   return 0
 
 
@@ -578,7 +576,8 @@ def module_available(name: str) -> bool:
 def inventory_pytest_command() -> list[str] | None:
   """Prefers pinned pytest: .venv, then the locked uv environment."""
   args = ["-m", "pytest", "-q", *INVENTORY_TESTS]
-  python = venv_tool("python3")
+  # Every venv provides `python`; Windows venvs have no `python3.exe`.
+  python = venv_tool("python")
   if python is not None:
     return [python, *args]
   uv = shutil.which("uv")
@@ -1259,25 +1258,48 @@ def install_config_hooks() -> None:
   clear_compat_hooks_path()
 
 
+def checkout_roots() -> tuple[Path, ...]:
+  """Returns every worktree path, as listed and resolved.
+
+  Hook configuration is shared by all worktrees of the repository, so an
+  interpreter inside any of them may disappear with that worktree.
+  """
+  roots = {REPO_ROOT, REPO_ROOT.resolve()}
+  listed = run(["git", "worktree", "list", "--porcelain"], capture=True)
+  if listed.returncode == 0:
+    for line in listed.stdout.splitlines():
+      if line.startswith("worktree "):
+        path = Path(line.removeprefix("worktree "))
+        roots.update((path, path.resolve()))
+  return tuple(roots)
+
+
 def hook_interpreter() -> Path:
   """Returns the interpreter path to record in shared hook configuration.
 
   Keep the path as invoked: package managers expose stable launchers that
   symlink into versioned directories, and resolving them would pin a path
-  that a patch upgrade removes. Resolve only a path inside the checkout,
-  which may itself be removed, and reject any interpreter that resolves
-  into the checkout.
+  that a patch upgrade removes. Follow links one hop at a time only while
+  the path lies inside a worktree, so a checkout venv records the stable
+  base it was created from, and reject any interpreter that remains in or
+  resolves into a worktree.
   """
-  interpreter = Path(sys.executable).absolute()
-  resolved = interpreter.resolve()
-  roots = (REPO_ROOT, REPO_ROOT.resolve())
+  roots = checkout_roots()
 
   def inside(path: Path) -> bool:
     return any(path.is_relative_to(root) for root in roots)
 
-  if inside(resolved):
+  interpreter = Path(sys.executable).absolute()
+  seen: set[Path] = set()
+  while inside(interpreter) and interpreter.is_symlink():
+    if interpreter in seen:
+      break
+    seen.add(interpreter)
+    target = Path(os.readlink(interpreter))
+    interpreter = Path(os.path.normpath(interpreter.parent / target))
+  if inside(interpreter) or inside(interpreter.resolve()):
     raise ValueError("install hooks using persistent Python outside the checkout")
-  return resolved if inside(interpreter) else interpreter
+  return interpreter
 
 
 def config_values(key: str) -> list[str]:

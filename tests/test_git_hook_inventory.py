@@ -57,3 +57,44 @@ def test_inventory_check_reports_missing_pytest_distinctly(
   error = capsys.readouterr().err
   assert "pytest" in error
   assert "do not match" not in error
+
+
+def test_inventory_check_uses_the_venv_python_on_every_platform(monkeypatch):
+  # Windows venvs provide python.exe but no python3.exe.
+  _inventory_staged(monkeypatch)
+  requested = []
+
+  def fake_venv_tool(name):
+    requested.append(name)
+    return "/venv/python" if name == "python" else None
+
+  monkeypatch.setattr(git_hooks, "venv_tool", fake_venv_tool)
+  commands = []
+  monkeypatch.setattr(
+    git_hooks,
+    "run",
+    lambda argv, **kwargs: commands.append(argv)
+    or subprocess.CompletedProcess(argv, 0, stdout="", stderr=""),
+  )
+  assert git_hooks.check_inventory_counts() == 0
+  assert commands[0][0] == "/venv/python"
+
+
+def test_inventory_failure_does_not_presume_a_count_mismatch(
+  monkeypatch, capsys
+):
+  # A .venv without pytest or an unbuildable uv environment fails the
+  # command too; report the output rather than asserting a mismatch.
+  _inventory_staged(monkeypatch)
+  monkeypatch.setattr(git_hooks, "venv_tool", lambda name: "/venv/python")
+  monkeypatch.setattr(
+    git_hooks,
+    "run",
+    lambda argv, **kwargs: subprocess.CompletedProcess(
+      argv, 1, stdout="/venv/python: No module named pytest\n"
+    ),
+  )
+  assert git_hooks.check_inventory_counts() == 1
+  error = capsys.readouterr().err
+  assert "No module named pytest" in error
+  assert "do not match" not in error

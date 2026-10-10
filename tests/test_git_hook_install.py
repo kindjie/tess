@@ -252,3 +252,62 @@ def test_config_hook_probe_succeeds_before_any_hook_exists(
     ["git", "config", "--local", "--unset", "core.hooksPath"], check=True
   )
   assert git_hooks.supports_config_hooks() == (_git_version() >= (2, 54))
+
+
+def _stable_launcher(tmp_path: Path) -> Path:
+  versioned = tmp_path / "cellar/python/3.0.1/bin/python3"
+  versioned.parent.mkdir(parents=True)
+  versioned.write_text("versioned interpreter placeholder")
+  stable = tmp_path / "opt/python/bin/python3"
+  stable.parent.mkdir(parents=True)
+  stable.symlink_to(versioned)
+  return stable
+
+
+def test_config_hooks_follow_checkout_venv_only_to_its_stable_base(
+  tmp_path, monkeypatch
+):
+  # A venv inside the checkout links to the base interpreter as invoked;
+  # follow links only while inside the checkout, then stop.
+  repo = _config_hook_repo(tmp_path, monkeypatch)
+  try:
+    stable = _stable_launcher(tmp_path)
+    venv = repo / ".venv/bin"
+    venv.mkdir(parents=True)
+    (venv / "python").symlink_to(stable)
+    (venv / "python3").symlink_to("python")
+  except OSError:
+    pytest.skip("platform does not permit an unprivileged symlink")
+  monkeypatch.setattr(git_hooks.sys, "executable", str(venv / "python3"))
+  git_hooks.install_config_hooks()
+  command = subprocess.check_output(
+    ["git", "config", "--local", "--get", "hook.tess-pre-commit.command"],
+    text=True,
+  ).strip()
+  assert git_hooks.command_line([str(stable)]) in command
+  assert "cellar" not in command
+
+
+def test_config_hooks_treat_other_worktrees_as_checkout(tmp_path, monkeypatch):
+  # Hook configuration is shared by every worktree, so an interpreter inside
+  # any of them may disappear with it.
+  repo = _config_hook_repo(tmp_path, monkeypatch)
+  subprocess.run(
+    ["git", "-c", "user.name=t", "-c", "user.email=t" + "@" + "example.invalid",
+     "commit", "-q", "--allow-empty", "-m", "base"],
+    check=True,
+  )
+  other = tmp_path / "other-worktree"
+  subprocess.run(
+    ["git", "worktree", "add", "-q", "--detach", str(other)], check=True
+  )
+  interpreter = other / ".venv/bin/python3"
+  interpreter.parent.mkdir(parents=True)
+  interpreter.write_text("copied interpreter placeholder")
+  monkeypatch.setattr(git_hooks.sys, "executable", str(interpreter))
+  with pytest.raises(ValueError, match="outside"):
+    git_hooks.install_config_hooks()
+  assert subprocess.run(
+    ["git", "config", "--local", "--get-regexp", r"^hook\.tess-"],
+    capture_output=True,
+  ).returncode == 1
