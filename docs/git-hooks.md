@@ -50,15 +50,25 @@ On Windows:
 py -3 tools/git_hooks.py install
 ```
 
-The installer prefers Git's config hook interface only when its
-`git hook list` feature probe succeeds. Otherwise it sets `core.hooksPath` to
-`tools/git-hooks`. Configured commands resolve the runner from the active
+The installer prefers Git's config hook interface when Git lists a transient
+probe hook supplied with `-c`, so a fresh clone with no hooks yet still uses
+config hooks. Otherwise it sets `core.hooksPath` to `tools/git-hooks`. Configured commands resolve the runner from the active
 checkout, so removing a linked checkout does not strand other checkouts. The
 installer retains the compatibility hooks path until all config hooks have been
 registered; retrying installation replaces the same entries without duplicates.
-Install with an external Python interpreter that will outlive this repository's
-hook configuration. Interpreter symlinks are resolved; copied interpreters
-inside the checkout are rejected before config changes.
+Install with an external Python 3.10 or newer interpreter that will outlive
+this repository's hook configuration; older interpreters are refused before
+config changes. The installer records the interpreter path as invoked, so a
+stable launcher such as a package manager's unversioned `opt` or `bin` path
+survives patch upgrades. Only a path inside the checkout is resolved, and an
+interpreter that resolves into the checkout is rejected before config changes.
+If the recorded interpreter is later removed, every hook fails until you rerun
+the install command.
+
+The inventory tests that run when CMake or CI declarations are staged take
+pinned pytest from `.venv/`, then from the locked `uv` environment, and only
+then from the hook interpreter, so the hook interpreter needs no extra
+packages when `.venv/` or `uv` is available.
 
 ## Hooks
 

@@ -108,23 +108,8 @@ def test_config_hooks_resolve_external_interpreter_symlink(tmp_path, monkeypatch
 
 def test_config_hooks_dispatch_all_events_from_checkout(tmp_path, monkeypatch):
   repo = _config_hook_repo(tmp_path, monkeypatch)
-  # Modern Git returns 1 for an empty hook list as well as unsupported Git.
-  # Seed a harmless event so capability probing cannot silently skip coverage.
-  subprocess.run(
-    ["git", "config", "--local", "hook.fixture-probe.event", "pre-commit"],
-    check=True,
-  )
-  subprocess.run(
-    ["git", "config", "--local", "hook.fixture-probe.command",
-     git_hooks.command_line([sys.executable, "-c", "pass"])],
-    check=True,
-  )
   if not git_hooks.supports_config_hooks():
     pytest.skip("installed Git does not support config-defined hooks")
-  subprocess.run(
-    ["git", "config", "--local", "--remove-section", "hook.fixture-probe"],
-    check=True,
-  )
   (repo / "tools").mkdir()
   (repo / "tools/git_hooks.py").write_text(
     "from pathlib import Path\nimport sys\n"
@@ -189,3 +174,81 @@ def test_failed_config_hook_install_rolls_back_partial_registration(
     ["git", "config", "--local", "--get-regexp", r"^hook\.tess-"],
     capture_output=True,
   ).returncode == 1
+
+
+def test_config_hooks_keep_stable_external_interpreter_path(
+  tmp_path, monkeypatch
+):
+  # Package managers expose stable launchers that symlink into versioned
+  # directories; resolving them pins a path that a patch upgrade removes.
+  repo = _config_hook_repo(tmp_path, monkeypatch)
+  versioned = tmp_path / "cellar/python/3.0.1/bin/python3"
+  versioned.parent.mkdir(parents=True)
+  versioned.write_text("versioned interpreter placeholder")
+  stable = tmp_path / "opt/python/bin/python3"
+  stable.parent.mkdir(parents=True)
+  try:
+    stable.symlink_to(versioned)
+  except OSError:
+    pytest.skip("platform does not permit an unprivileged symlink")
+  monkeypatch.setattr(git_hooks.sys, "executable", str(stable))
+  git_hooks.install_config_hooks()
+  command = subprocess.check_output(
+    ["git", "config", "--local", "--get", "hook.tess-pre-commit.command"],
+    text=True,
+  ).strip()
+  assert git_hooks.command_line([str(stable)]) in command
+  assert "cellar" not in command
+  assert str(repo) not in command
+
+
+def test_install_rejects_unsupported_python_before_config_writes(
+  tmp_path, monkeypatch
+):
+  _config_hook_repo(tmp_path, monkeypatch)
+  monkeypatch.setattr(git_hooks.sys, "version_info", (3, 9, 18))
+  assert git_hooks.install_hooks() != 0
+  assert subprocess.check_output(
+    ["git", "config", "--local", "--get", "core.hooksPath"], text=True
+  ).strip() == "tools/git-hooks"
+  assert subprocess.run(
+    ["git", "config", "--local", "--get-regexp", r"^hook\.tess-"],
+    capture_output=True,
+  ).returncode == 1
+
+
+def test_config_hooks_reject_external_link_into_checkout(tmp_path, monkeypatch):
+  repo = _config_hook_repo(tmp_path, monkeypatch)
+  interpreter = repo / ".venv/bin/python"
+  interpreter.parent.mkdir(parents=True)
+  interpreter.write_text("checkout interpreter placeholder")
+  link = tmp_path / "bin/python3"
+  link.parent.mkdir(parents=True)
+  try:
+    link.symlink_to(interpreter)
+  except OSError:
+    pytest.skip("platform does not permit an unprivileged symlink")
+  monkeypatch.setattr(git_hooks.sys, "executable", str(link))
+  with pytest.raises(ValueError, match="outside"):
+    git_hooks.install_config_hooks()
+  assert subprocess.run(
+    ["git", "config", "--local", "--get-regexp", r"^hook\.tess-"],
+    capture_output=True,
+  ).returncode == 1
+
+
+def _git_version() -> tuple[int, ...]:
+  text = subprocess.check_output(["git", "--version"], text=True)
+  return tuple(int(part) for part in text.split()[2].split(".")[:2])
+
+
+def test_config_hook_probe_succeeds_before_any_hook_exists(
+  tmp_path, monkeypatch
+):
+  # An empty `git hook list` exits 1 even where config hooks are supported,
+  # so a fresh clone must not fall back to the compatibility hooks path.
+  _config_hook_repo(tmp_path, monkeypatch)
+  subprocess.run(
+    ["git", "config", "--local", "--unset", "core.hooksPath"], check=True
+  )
+  assert git_hooks.supports_config_hooks() == (_git_version() >= (2, 54))

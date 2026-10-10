@@ -554,8 +554,12 @@ def check_inventory_counts() -> int:
     return fail(str(error))
   if not any(path in INVENTORY_TRIGGERS for path in paths):
     return 0
-  python = venv_tool("python3") or sys.executable
-  command = [python, "-m", "pytest", "-q", *INVENTORY_TESTS]
+  command = inventory_pytest_command()
+  if command is None:
+    return fail(
+      "inventory tests need pytest: create .venv from requirements-dev.txt, "
+      "install uv, or install pytest for the hook interpreter"
+    )
   completed = run(command, capture=True)
   if completed.returncode != 0:
     tail = "\n".join((completed.stdout or "").strip().splitlines()[-12:])
@@ -563,6 +567,26 @@ def check_inventory_counts() -> int:
       "inventory counts do not match the declarations:\n" + tail
     )
   return 0
+
+
+def module_available(name: str) -> bool:
+  import importlib.util
+
+  return importlib.util.find_spec(name) is not None
+
+
+def inventory_pytest_command() -> list[str] | None:
+  """Prefers pinned pytest: .venv, then the locked uv environment."""
+  args = ["-m", "pytest", "-q", *INVENTORY_TESTS]
+  python = venv_tool("python3")
+  if python is not None:
+    return [python, *args]
+  uv = shutil.which("uv")
+  if uv is not None:
+    return uv_dev_command(uv, "python", *args)
+  if module_available("pytest"):
+    return [sys.executable, *args]
+  return None
 
 
 def check_cpp_format() -> int:
@@ -1154,7 +1178,16 @@ def diff_paths(
   )
 
 
+MINIMUM_PYTHON = (3, 10)
+
+
 def install_hooks() -> int:
+  if tuple(sys.version_info[:2]) < MINIMUM_PYTHON:
+    return fail(
+      "install hooks with Python "
+      + ".".join(map(str, MINIMUM_PYTHON))
+      + " or newer"
+    )
   identity = run(["git", "config", "--get", "user.name"], capture=True)
   if identity.returncode == 0 and identity.stdout.strip():
     try:
@@ -1173,15 +1206,27 @@ def install_hooks() -> int:
 
 
 def supports_config_hooks() -> bool:
-  result = run(["git", "hook", "list", "pre-commit"], capture=True)
+  # An empty hook list exits 1 even on Git that supports config hooks, so
+  # probe with a transient configured hook rather than the current config.
+  result = run(
+    [
+      "git",
+      "-c",
+      "hook.tess-probe.event=pre-commit",
+      "-c",
+      "hook.tess-probe.command=true",
+      "hook",
+      "list",
+      "pre-commit",
+    ],
+    capture=True,
+  )
   return result.returncode == 0
 
 
 def install_config_hooks() -> None:
   status("installing Git config hooks")
-  interpreter = Path(sys.executable).resolve()
-  if interpreter.is_relative_to(REPO_ROOT.resolve()):
-    raise ValueError("install hooks using persistent Python outside the checkout")
+  interpreter = hook_interpreter()
   keys = [
     f"hook.tess-{name}.{field}"
     for name in HOOK_NAMES
@@ -1212,6 +1257,27 @@ def install_config_hooks() -> None:
     raise
   # Keep the compatibility hook active until every configured hook is installed.
   clear_compat_hooks_path()
+
+
+def hook_interpreter() -> Path:
+  """Returns the interpreter path to record in shared hook configuration.
+
+  Keep the path as invoked: package managers expose stable launchers that
+  symlink into versioned directories, and resolving them would pin a path
+  that a patch upgrade removes. Resolve only a path inside the checkout,
+  which may itself be removed, and reject any interpreter that resolves
+  into the checkout.
+  """
+  interpreter = Path(sys.executable).absolute()
+  resolved = interpreter.resolve()
+  roots = (REPO_ROOT, REPO_ROOT.resolve())
+
+  def inside(path: Path) -> bool:
+    return any(path.is_relative_to(root) for root in roots)
+
+  if inside(resolved):
+    raise ValueError("install hooks using persistent Python outside the checkout")
+  return resolved if inside(interpreter) else interpreter
 
 
 def config_values(key: str) -> list[str]:
