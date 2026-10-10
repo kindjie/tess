@@ -1,0 +1,21 @@
+{
+  "commit": "4f3c25e66264cebddebd1f2db786212ec3729120",
+  "event_name": "push",
+  "fingerprint": {
+    "bench_flags": "-DBENCHMARK_STATIC_DEFINE -DTESS_ENABLE_DIAGNOSTICS -DTESS_ENABLE_ENTT -DTESS_ENABLE_FLECS -Dflecs_STATIC -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Wold-style-cast -Woverloaded-virtual -Wformat=2 -Wundef -Wextra-semi -Werror",
+    "compiler": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+    "cpu_count": 4,
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "image_os": "ubuntu24",
+    "image_version": "20261004.327.1",
+    "key": "923e24206d144b6b",
+    "usable": true
+  },
+  "generated_at_utc": "2026-10-10T05:44:27.096491+00:00",
+  "ref": "main",
+  "run_attempt": "1",
+  "run_id": "38026520425",
+  "run_number": "1210",
+  "runner_os": "Linux",
+  "workflow": "CI"
+}
