@@ -63,12 +63,14 @@ changes. No specific Python version is pinned. The installer records the
 interpreter path as invoked, so a package manager's stable launcher, such as
 Homebrew's `opt` path, survives patch upgrades. Hook configuration is shared by
 every worktree, so a path inside any worktree, such as a `.venv` interpreter, is
-followed link by link only until it leaves the worktrees: installing from a
-checkout venv records the base interpreter it was created from. An interpreter
-that stays inside or resolves into a worktree is rejected before config
-changes. If the recorded interpreter is later removed, every hook fails until
-you rerun the install command; installations made before this behaviour keep
-their old recorded path until then.
+followed link by link only until it leaves the worktrees, judging directories
+by their real paths. Installing from a checkout venv therefore records the base
+interpreter it was created from; a venv holding a copied interpreter (Windows,
+or `--copies`) records the interpreter in its `pyvenv.cfg` `home` directory.
+An interpreter that stays inside or resolves into a worktree is rejected
+before config changes. If the recorded interpreter is later removed, every
+hook fails until you rerun the install command; installations made before this
+behaviour keep their old recorded path until then.
 
 The inventory tests that run when CMake or CI declarations are staged take
 pinned pytest from `.venv/`, then from the locked `uv` environment, and only

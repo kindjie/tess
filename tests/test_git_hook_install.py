@@ -77,6 +77,10 @@ def test_config_hooks_reject_copied_checkout_interpreter_before_writes(
   interpreter.parent.mkdir(parents=True)
   interpreter.write_text("copied interpreter placeholder")
   monkeypatch.setattr(git_hooks.sys, "executable", str(interpreter))
+  # No external base interpreter to fall back to.
+  monkeypatch.setattr(
+    git_hooks.sys, "_base_executable", str(interpreter), raising=False
+  )
   with pytest.raises(ValueError, match="outside"):
     git_hooks.install_config_hooks()
   assert subprocess.check_output(
@@ -305,9 +309,105 @@ def test_config_hooks_treat_other_worktrees_as_checkout(tmp_path, monkeypatch):
   interpreter.parent.mkdir(parents=True)
   interpreter.write_text("copied interpreter placeholder")
   monkeypatch.setattr(git_hooks.sys, "executable", str(interpreter))
+  monkeypatch.setattr(
+    git_hooks.sys, "_base_executable", str(interpreter), raising=False
+  )
   with pytest.raises(ValueError, match="outside"):
     git_hooks.install_config_hooks()
   assert subprocess.run(
     ["git", "config", "--local", "--get-regexp", r"^hook\.tess-"],
     capture_output=True,
   ).returncode == 1
+
+
+def _recorded_command() -> str:
+  return subprocess.check_output(
+    ["git", "config", "--local", "--get", "hook.tess-pre-commit.command"],
+    text=True,
+  ).strip()
+
+
+def test_config_hooks_follow_venv_reached_through_symlinked_parent(
+  tmp_path, monkeypatch
+):
+  # Worktree roots are real paths; a venv reached through a symlinked parent
+  # such as /tmp or /var must still count as inside the checkout.
+  repo = _config_hook_repo(tmp_path, monkeypatch)
+  try:
+    stable = _stable_launcher(tmp_path)
+    venv = repo / ".venv/bin"
+    venv.mkdir(parents=True)
+    (venv / "python3").symlink_to(stable)
+    alias = tmp_path / "alias"
+    alias.symlink_to(repo)
+  except OSError:
+    pytest.skip("platform does not permit an unprivileged symlink")
+  monkeypatch.setattr(
+    git_hooks.sys, "executable", str(alias / ".venv/bin/python3")
+  )
+  git_hooks.install_config_hooks()
+  assert git_hooks.command_line([str(stable)]) in _recorded_command()
+
+
+def test_config_hooks_follow_relative_links_as_the_filesystem_does(
+  tmp_path, monkeypatch
+):
+  repo = _config_hook_repo(tmp_path, monkeypatch)
+  try:
+    stable = _stable_launcher(tmp_path)
+    venv = repo / ".venv/bin"
+    venv.mkdir(parents=True)
+    (venv / "python3").symlink_to(stable)
+    (repo / "a/b/c").mkdir(parents=True)
+    (repo / "sub").symlink_to("a/b/c")
+    (repo / "sub/py").symlink_to("../../../.venv/bin/python3")
+  except OSError:
+    pytest.skip("platform does not permit an unprivileged symlink")
+  monkeypatch.setattr(git_hooks.sys, "executable", str(repo / "sub/py"))
+  git_hooks.install_config_hooks()
+  assert git_hooks.command_line([str(stable)]) in _recorded_command()
+
+
+def test_config_hooks_use_base_interpreter_of_copied_checkout_venv(
+  tmp_path, monkeypatch
+):
+  # Windows venvs and --copies venvs hold a copied interpreter; record the
+  # external base interpreter the venv was created from instead.
+  repo = _config_hook_repo(tmp_path, monkeypatch)
+  interpreter = repo / ".venv/bin/python"
+  interpreter.parent.mkdir(parents=True)
+  interpreter.write_text("copied interpreter placeholder")
+  base = tmp_path / "opt/python/bin/python3"
+  base.parent.mkdir(parents=True)
+  base.write_text("base interpreter placeholder")
+  monkeypatch.setattr(git_hooks.sys, "executable", str(interpreter))
+  monkeypatch.setattr(
+    git_hooks.sys, "_base_executable", str(base), raising=False
+  )
+  git_hooks.install_config_hooks()
+  assert git_hooks.command_line([str(base)]) in _recorded_command()
+
+
+def test_copied_venv_prefers_stable_home_from_pyvenv_cfg(tmp_path, monkeypatch):
+  # pyvenv.cfg records the stable launcher directory as `home`, while the
+  # base executable may already be resolved into a versioned directory.
+  repo = _config_hook_repo(tmp_path, monkeypatch)
+  venv = repo / ".venv"
+  interpreter = venv / "bin/python3"
+  interpreter.parent.mkdir(parents=True)
+  interpreter.write_text("copied interpreter placeholder")
+  home = tmp_path / "opt/python/bin"
+  home.mkdir(parents=True)
+  minor = f"python{sys.version_info[0]}.{sys.version_info[1]}"
+  (home / minor).write_text("stable launcher placeholder")
+  (venv / "pyvenv.cfg").write_text(f"home = {home}\nversion = 3.0.1\n")
+  monkeypatch.setattr(git_hooks.sys, "executable", str(interpreter))
+  monkeypatch.setattr(git_hooks.sys, "prefix", str(venv))
+  monkeypatch.setattr(
+    git_hooks.sys,
+    "_base_executable",
+    str(tmp_path / "cellar/python/3.0.1/bin" / minor),
+    raising=False,
+  )
+  git_hooks.install_config_hooks()
+  assert git_hooks.command_line([str(home / minor)]) in _recorded_command()

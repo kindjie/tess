@@ -6,9 +6,11 @@ events and compatibility hooks and roll back partial registration. Copied
 checkout-local interpreters, and external links that resolve into the checkout,
 refuse before writes, as do interpreters inside another worktree of the same
 repository. Local symlinks to external interpreters resolve safely; a checkout
-venv is followed link by link only to its stable external base, and stable
-external launchers are recorded as invoked rather than resolved into versioned
-directories. Python older than 3.10 is refused before writes.
+venv is followed link by link only to its stable external base, including
+through symlinked parents and relative `..` links, and a copied venv
+interpreter records its `pyvenv.cfg` home launcher. Stable external launchers
+are recorded as invoked rather than resolved into versioned directories.
+Python older than 3.10 is refused before writes.
 The capability probe succeeds on a fresh repository with no hooks whenever Git
 supports config hooks, and all three events then dispatch through Git itself.
 Global/system Git configuration is isolated so fixtures cannot invoke unrelated

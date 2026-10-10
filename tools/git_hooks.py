@@ -1281,25 +1281,61 @@ def hook_interpreter() -> Path:
   symlink into versioned directories, and resolving them would pin a path
   that a patch upgrade removes. Follow links one hop at a time only while
   the path lies inside a worktree, so a checkout venv records the stable
-  base it was created from, and reject any interpreter that remains in or
-  resolves into a worktree.
+  base it was created from; a copied venv interpreter falls back to the
+  base interpreter. Reject any interpreter that remains in or resolves into
+  a worktree.
   """
   roots = checkout_roots()
 
+  def located(path: Path) -> Path:
+    # Resolve directories, not the final link, so symlinked parents and
+    # relative ".." targets are judged and followed as the filesystem does.
+    return path.parent.resolve() / path.name
+
   def inside(path: Path) -> bool:
-    return any(path.is_relative_to(root) for root in roots)
+    return any(located(path).is_relative_to(root) for root in roots)
 
   interpreter = Path(sys.executable).absolute()
   seen: set[Path] = set()
-  while inside(interpreter) and interpreter.is_symlink():
-    if interpreter in seen:
+  while inside(interpreter) and located(interpreter).is_symlink():
+    current = located(interpreter)
+    if current in seen:
       break
-    seen.add(interpreter)
-    target = Path(os.readlink(interpreter))
-    interpreter = Path(os.path.normpath(interpreter.parent / target))
+    seen.add(current)
+    interpreter = current.parent / os.readlink(current)
+  if inside(interpreter):
+    base = venv_base_interpreter(interpreter)
+    if base is not None:
+      interpreter = base
   if inside(interpreter) or inside(interpreter.resolve()):
     raise ValueError("install hooks using persistent Python outside the checkout")
   return interpreter
+
+
+def venv_base_interpreter(interpreter: Path) -> Path | None:
+  """Returns the base interpreter of a venv whose interpreter is a copy.
+
+  Prefer the venv's `home`, which records the launcher directory as
+  invoked, over the base executable, which may already be resolved into a
+  versioned directory.
+  """
+  home = None
+  try:
+    config = (Path(sys.prefix) / "pyvenv.cfg").read_text()
+  except OSError:
+    config = ""
+  for line in config.splitlines():
+    key, _, value = line.partition("=")
+    if key.strip() == "home" and value.strip():
+      home = Path(value.strip())
+  if home is not None:
+    minor = f"python{sys.version_info[0]}.{sys.version_info[1]}"
+    for name in (minor, interpreter.name, "python3", "python"):
+      candidate = home / name
+      if candidate.is_file():
+        return candidate
+  base = getattr(sys, "_base_executable", "")
+  return Path(base).absolute() if base else None
 
 
 def config_values(key: str) -> list[str]:
