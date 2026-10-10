@@ -1282,8 +1282,8 @@ def hook_interpreter() -> Path:
   that a patch upgrade removes. Follow links one hop at a time only while
   the path lies inside a worktree, so a checkout venv records the stable
   base it was created from; a copied venv interpreter falls back to the
-  base interpreter. Reject any interpreter that remains in or resolves into
-  a worktree.
+  interpreter in its pyvenv.cfg home, then to the base executable. Reject
+  any interpreter that remains in or resolves into a worktree.
   """
   roots = checkout_roots()
 
@@ -1302,7 +1302,9 @@ def hook_interpreter() -> Path:
     if current in seen:
       break
     seen.add(current)
-    interpreter = current.parent / os.readlink(current)
+    # current.parent is real, so collapsing ".." here matches the filesystem
+    # while leaving the target's own links as invoked.
+    interpreter = Path(os.path.normpath(current.parent / os.readlink(current)))
   if inside(interpreter):
     base = venv_base_interpreter(interpreter)
     if base is not None:

@@ -23,6 +23,15 @@ def isolate_git_repository_environment(monkeypatch):
     monkeypatch.delenv(name, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def isolate_interpreter_prefix(tmp_path, monkeypatch):
+  # The installer reads pyvenv.cfg from sys.prefix; keep a test runner's own
+  # venv (as in CI) out of every fixture unless a test supplies one.
+  prefix = tmp_path / "interpreter-prefix"
+  prefix.mkdir()
+  monkeypatch.setattr(git_hooks.sys, "prefix", str(prefix))
+
+
 def _config_hook_repo(tmp_path, monkeypatch):
   monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
   monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
@@ -411,3 +420,26 @@ def test_copied_venv_prefers_stable_home_from_pyvenv_cfg(tmp_path, monkeypatch):
   )
   git_hooks.install_config_hooks()
   assert git_hooks.command_line([str(home / minor)]) in _recorded_command()
+
+
+def test_config_hooks_normalize_relative_link_leaving_the_checkout(
+  tmp_path, monkeypatch
+):
+  # A relative last hop must not record ".." segments through a worktree
+  # that may later be removed.
+  repo = _config_hook_repo(tmp_path, monkeypatch)
+  external = tmp_path / "ext/bin/python3"
+  external.parent.mkdir(parents=True)
+  external.write_text("external interpreter placeholder")
+  venv = repo / ".venv/bin"
+  venv.mkdir(parents=True)
+  try:
+    (venv / "python3").symlink_to("../../../ext/bin/python3")
+  except OSError:
+    pytest.skip("platform does not permit an unprivileged symlink")
+  monkeypatch.setattr(git_hooks.sys, "executable", str(venv / "python3"))
+  git_hooks.install_config_hooks()
+  command = _recorded_command()
+  assert ".." not in command
+  expected = external.parent.resolve() / "python3"
+  assert git_hooks.command_line([str(expected)]) in command

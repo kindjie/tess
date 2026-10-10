@@ -66,7 +66,8 @@ every worktree, so a path inside any worktree, such as a `.venv` interpreter, is
 followed link by link only until it leaves the worktrees, judging directories
 by their real paths. Installing from a checkout venv therefore records the base
 interpreter it was created from; a venv holding a copied interpreter (Windows,
-or `--copies`) records the interpreter in its `pyvenv.cfg` `home` directory.
+or `--copies`) records the interpreter in its `pyvenv.cfg` `home` directory,
+falling back to the base executable.
 An interpreter that stays inside or resolves into a worktree is rejected
 before config changes. If the recorded interpreter is later removed, every
 hook fails until you rerun the install command; installations made before this
