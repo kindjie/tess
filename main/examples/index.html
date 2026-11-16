@@ -2495,7 +2495,7 @@ Run that oracle locally in the same optimized configuration that owns it in
 pull requests:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>cmake<span class="w"> </span>--preset<span class="w"> </span>bench
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>bench<span class="w"> </span>--target<span class="w"> </span>tess_web_traffic_model
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>ctest<span class="w"> </span>--preset<span class="w"> </span>bench<span class="w"> </span>-L<span class="w"> </span><span class="s1">&#39;^config:optimized-exhaustive$&#39;</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>ctest<span class="w"> </span>--preset<span class="w"> </span>bench<span class="w"> </span>-L<span class="w"> </span><span class="s1">'^config:optimized-exhaustive$'</span>
 </code></pre></div>
 <p>Browser capture is also opt-in: append <code>?measure=1</code> to the Traffic Lab URL,
 then use <strong>Snapshot latency</strong> or call

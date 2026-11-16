@@ -2358,9 +2358,9 @@ tested together by the exact-commit release workflow:</p>
 and place the versioned root under the application's vendor directory:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nv">version</span><span class="o">=</span>RELEASE_VERSION
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>sha256sum<span class="w"> </span>--check<span class="w"> </span>SHA256SUMS
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>tar<span class="w"> </span>-xzf<span class="w"> </span><span class="s2">&quot;tess-</span><span class="nv">$version</span><span class="s2">-headers.tar.gz&quot;</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>tar<span class="w"> </span>-xzf<span class="w"> </span><span class="s2">"tess-</span><span class="nv">$version</span><span class="s2">-headers.tar.gz"</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>vendor
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>mv<span class="w"> </span><span class="s2">&quot;tess-</span><span class="nv">$version</span><span class="s2">&quot;</span><span class="w"> </span>vendor/tess
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>mv<span class="w"> </span><span class="s2">"tess-</span><span class="nv">$version</span><span class="s2">"</span><span class="w"> </span>vendor/tess
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>c++<span class="w"> </span>-std<span class="o">=</span>c++20<span class="w"> </span>-Ivendor/tess/include<span class="w"> </span>main.cc<span class="w"> </span>-o<span class="w"> </span>app
 </code></pre></div>
 <p>On macOS, <code>shasum -a 256</code> can verify each digest from <code>SHA256SUMS</code>. PowerShell
@@ -2394,13 +2394,13 @@ vendoring the source with <code>add_subdirectory</code>.</p>
 <p>The <code>consumer</code> preset configures a headers-only install: no tests, examples,
 benchmarks, warnings-as-errors, or network fetches.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>cmake<span class="w"> </span>--preset<span class="w"> </span>consumer
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>cmake<span class="w"> </span>--install<span class="w"> </span>build/consumer<span class="w"> </span>--prefix<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.local&quot;</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>cmake<span class="w"> </span>--install<span class="w"> </span>build/consumer<span class="w"> </span>--prefix<span class="w"> </span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/.local"</span>
 </code></pre></div>
 <p>Equivalently, without presets:
 <code>cmake -B build -DTESS_BUILD_TESTING=OFF -DTESS_BUILD_EXAMPLES=OFF</code> followed
 by <code>cmake --install build --prefix ...</code>.</p>
 <p>Point an application at a non-system prefix during its configure step:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.local&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/.local"</span>
 </code></pre></div>
 <p>Then consume the exported target:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">find_package</span><span class="p">(</span><span class="s">tess</span><span class="w"> </span><span class="s">1.0</span><span class="w"> </span><span class="s">CONFIG</span><span class="w"> </span><span class="s">REQUIRED</span><span class="p">)</span>
