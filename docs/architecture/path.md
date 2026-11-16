@@ -67,7 +67,7 @@ flowchart TB
 ## Public Surface
 
 - `PathRequest` contains a start and goal `Coord3`.
-- `PathTieBreak` optionally seeds deterministic tertiary ordering among A*
+- `PathTieBreak` optionally seeds deterministic tertiary ordering among A\*
   nodes with equal search cost and progress. A zero seed preserves canonical
   tile-index ordering; nonzero seeds can change route shape but not optimal
   cost or passability.
@@ -94,18 +94,18 @@ flowchart TB
   the search exhausts the resident set having skipped a non-resident neighbor.
   It is inert for dense (`AlwaysResident`) worlds, where every chunk is
   resident.
-- `precheck_path<ClassOrTag>` (in `tess/path/precheck.h`) is a cheap pre-A*
+- `precheck_path<ClassOrTag>` (in `tess/path/precheck.h`) is a cheap pre-A\*
   topology gate: it consults a `RegionGraph` built over the world for whether
   `start` can reach `goal` through region connectivity, without expanding the
   grid, and returns a `PrecheckStatus`. The explicit first template argument
   is the movement class the SEARCH uses (a raw passable tag normalizes to its
   `UnitCostFieldMovement` identity, exactly as in `astar_path`). Only `Unreachable` --
   the graph definitively rules out any route within known topology -- licenses
-  skipping A*, reported by `precheck_rules_out_path`. Every other status means
-  "run A*": `Reachable` (a region path exists; A* realizes it), `MissingChunk`
+  skipping A\*, reported by `precheck_rules_out_path`. Every other status means
+  "run A\*": `Reachable` (a region path exists; A\* realizes it), `MissingChunk`
   (the search reached a boundary exit into a non-resident chunk, so a route
   through non-resident space cannot be ruled out -- sparse worlds only),
-  `InvalidStart` / `InvalidGoal` (A* is authoritative on tile validity),
+  `InvalidStart` / `InvalidGoal` (A\* is authoritative on tile validity),
   `GraphStale` (the graph no longer matches the world OR was labeled for a
   different movement class or provider instance/revision), and `NoGraph` (no
   built graph supplied).
@@ -179,7 +179,7 @@ flowchart TB
 - `PathView` (in `tess/path/path_view.h`) is the non-owning view of a path that
   `PathResult` and the runtime's ticket accessors hand out. It carries the same
   lifetime contract as the underlying span -- valid only until the storage it
-  views is reused (A* scratch on the next query, the runtime's node buffer on
+  views is reused (A\* scratch on the next query, the runtime's node buffer on
   the next process/clear) -- and copying it never copies path data. It offers
   read-only span parity (`size`, `empty`, `operator[]`, `front`, `back`,
   `begin`/`end`, `data`), `span()` to recover the raw `std::span` where an API
@@ -194,7 +194,7 @@ flowchart TB
 - `DistanceFieldResult` returns the status and node counts for a reverse
   shared-goal field build.
 - `WeightedPathBatchStats` returns request count, unique-goal count, field
-  build count, A* fallback count, and copied path-node count for weighted batch
+  build count, A\* fallback count, and copied path-node count for weighted batch
   planning.
 - `PathScratch` owns reusable vectors for open nodes, visited records, and the
   returned path. `reserve_nodes(count)` prepares storage for allocation-free
@@ -265,7 +265,7 @@ flowchart TB
   content versions touched by that route. Replaying it succeeds only while
   those chunk content versions are unchanged.
 - `WeightedPortalRouteProduct` stores a supplied-waypoint weighted route
-  product. It stitches exact weighted A* segments through caller-provided
+  product. It stitches exact weighted A\* segments through caller-provided
   portal waypoints, stores the resulting path, and validates content versions
   on replay. It also supports an automatic chunk-boundary portal builder and
   reports candidate and boundary-scan counters for
@@ -395,11 +395,11 @@ flowchart TB
   configured request count. A successful blocked-agent replan keeps the retry
   streak until movement proves progress. Both mechanisms are externally
   synchronized and index-paired with the agent span. The replan budget does
-  not bound work within one synchronous callback or A*.
+  not bound work within one synchronous callback or A\*.
 - `astar_path<World, PassableTag>(world, request, scratch, policy)` runs
   optimized unit-cost deterministic pathfinding. The passability field is
   treated as boolean-like. It runs natively on sparse worlds, honoring
-  `MissingChunkPolicy` (the pre-A* fast-path scan is compiled out there).
+  `MissingChunkPolicy` (the pre-A\* fast-path scan is compiled out there).
   The tag parameter also accepts a `tess::movement` class: a raw tag
   normalizes to the byte-identical `UnitCostFieldMovement` identity class, and a
   composed class contributes its passability predicate (unit search ignores
@@ -408,7 +408,7 @@ flowchart TB
   disables regular direct-route shortcuts that could miss a cheaper special
   route.
 - `weighted_astar_path<World, Class>(world, request, scratch, policy)` runs
-  deterministic weighted A* over ONE movement class fusing the passability
+  deterministic weighted A\* over ONE movement class fusing the passability
   predicate and the u32-saturated entry-cost expression (0 = impassable). It
   includes exact unit-cost direct and blocked-axis detour fast paths when
   their local optimality proofs apply. Like `astar_path`, it is
@@ -445,11 +445,11 @@ flowchart TB
   route product if its chunk dependencies are still valid.
 - `weighted_path_batch<World, Class, MaxCost>(world, requests,
   scratch)` groups weighted requests by goal, builds bounded weighted fields
-  for repeated goals, uses weighted A* for singleton goals, and returns borrowed
+  for repeated goals, uses weighted A\* for singleton goals, and returns borrowed
   result spans backed by `WeightedPathBatchScratch` until its next mutation. A
   shared reverse field's
   `CostOverflow` is global rather than start-specific, so every member in that
-  group retries through weighted A* to preserve exact per-request statuses.
+  group retries through weighted A\* to preserve exact per-request statuses.
 - `PathRequestRuntime::process_unit_cached<World, ClassOrTag>(world, policy)`
   processes the current request set through `cached_astar_path`, optionally
   reuses unit distance-field products for repeated goals when
@@ -482,7 +482,7 @@ flowchart TB
   When `use_weighted_field_product_cache` is enabled on a dense world,
   repeated goals spanning the configured number of start chunks first use a
   persistent weighted product; remaining requests retain the bounded-field or
-  A* batch fallback. The product cache survives processing calls and uses the
+  A\* batch fallback. The product cache survives processing calls and uses the
   same world-change cadence for invalidation. Unit and weighted products share
   that one runtime-owned cache. Whichever processing pass runs most recently
   applies its corresponding policy byte budget to the combined footprint and
@@ -490,7 +490,7 @@ flowchart TB
   One movement class drives both the search and the precheck.
 - Both `process_unit_cached` and `process_weighted_batch` take an optional
   trailing `const RegionGraphT<World::residency_type>*` (default `nullptr`).
-  When a graph is supplied, a pre-A* pass runs `precheck_path` for each request
+  When a graph is supplied, a pre-A\* pass runs `precheck_path` for each request
   and resolves the ones it proves `Unreachable` to `NoPath` (zero expanded
   nodes) without searching, counting them in `PathRuntimeStats::precheck_ruled_out`
   -- a subset of `no_path`, so aggregate failure counts are unchanged. The unit
@@ -578,7 +578,7 @@ shortest paths.
 entry cost for each move. The start tile's cost is not charged, but start and
 goal costs must be positive. Zero-cost and negative signed-cost tiles are
 treated as blocked, and oversized integral costs saturate to the public
-32-bit path-cost range. Weighted A* uses a binary heap and the resolved
+32-bit path-cost range. Weighted A\* uses a binary heap and the resolved
 model's admissible heuristic in model ticks, so it preserves optimal weighted
 paths while skipping the unit-cost-only bucket queue and route cache. The
 default orthogonal model also includes an exact direct Manhattan fast path
@@ -588,13 +588,13 @@ straight line is blocked, it can also return a one-tile parallel detour when
 every entered detour tile has cost 1; any positive-cost path around the
 blocked line needs at least Manhattan+2 moves.
 
-Before entering open-set A*, the implementation probes direct Manhattan
+Before entering open-set A\*, the implementation probes direct Manhattan
 paths in the shape-relevant axis orders. If any route is fully passable, it
 returns that direct shortest path immediately. If a direct probe hits a blocked
 tile whose axis plane is fully blocked, it returns `NoPath` immediately because
 the plane separates start from goal under the current axis-adjacent movement
 model. For axis-aligned requests, a clear one-tile parallel detour is also
-returned before A* because its Manhattan+2 cost is optimal when the straight
+returned before A\* because its Manhattan+2 cost is optimal when the straight
 line is blocked. For top-down 2D requests blocked by a non-separating axis
 plane, the implementation can scan that plane for the cheapest passable gap and
 return a verified Manhattan route through it; the same logic applies to
@@ -603,9 +603,9 @@ the goal, scanning a barrier line only when the next progress step is blocked,
 and accepting only fully open lines or lines with exactly one passable gap. In
 3D, a blocked direct route can scan the blocked axis plane for the cheapest
 passable crossing and return a verified Manhattan route through it. Other
-non-separating blockers fall back to normal A*.
+non-separating blockers fall back to normal A\*.
 
-### Pre-A* scan cost model
+### Pre-A\* scan cost model
 
 The fast paths above are accepted with an O(world-slice) worst case
 (decision logged in `docs/planning/optimization-log.md`, 2026-07-06). The
@@ -614,13 +614,13 @@ probe triggers `is_full_axis_barrier`, which scans the impassable tile's full
 axis plane: one extent line in 2D, `size.y * size.z` (or the matching pair)
 tiles in 3D. The 2D plane-gap and forced-gap scans each walk one extent
 line per blocked step, and the 3D plane-gap scan walks the whole blocked
-plane. Every scan runs before any A* node is expanded, so a miss — the
-scans all fail and the query still floods A* — pays the full scan cost as
+plane. Every scan runs before any A\* node is expanded, so a miss — the
+scans all fail and the query still floods A\* — pays the full scan cost as
 pure overhead on top of the search. Two worst-case benchmarks pin this
 cost: `path/astar_plane_gap_miss_512x512` (direct blocked, sealed wall gap,
-falls through every 2D scan into a full-flood NoPath A*) and
+falls through every 2D scan into a full-flood NoPath A\*) and
 `path/astar_plane_gap_miss_3d_64x64x16` (the best-scoring 3D plane gap is
-sealed, so segment stitching fails and A* routes through a second gap).
+sealed, so segment stitching fails and A\* routes through a second gap).
 Their thresholds in `bench/thresholds/path.json` are deliberately generous
 (10x measured) documentation ceilings, not tuned gates: the scans stay
 accepted because hit rates on real layouts dwarf the miss cost, and a miss
@@ -668,7 +668,7 @@ general optimality-preserving weighted route cache.
 
 Weighted portal route products are also exact for the supplied waypoint route,
 not for arbitrary routing. The caller provides portal waypoints from a topology
-or room graph; the product verifies each segment with weighted A*, concatenates
+or room graph; the product verifies each segment with weighted A\*, concatenates
 the segment paths, and records content-version dependencies. This makes topology
 evidence measurable before the repository owns a full portal graph builder.
 The automatic chunk-boundary builder uses a deliberately bounded candidate
@@ -678,7 +678,7 @@ start chunk to the goal chunk through adjacent chunks for each candidate,
 scans each adjacent chunk boundary for passable crossings, chooses the
 crossing with the lowest Manhattan score to the current point and final goal,
 then keeps the lowest-scoring waypoint candidate and verifies every resulting
-segment with weighted A*. The greedy candidate can interleave progress axes
+segment with weighted A\*. The greedy candidate can interleave progress axes
 instead of exhausting one axis before the next. The builder still does not
 search non-Manhattan chunk routes or prove global portal optimality.
 
@@ -697,7 +697,7 @@ world cannot change while one runs. It changes no route, but
 happen.
 
 `WeightedPortalSegmentCache` can reuse previously verified segment paths for
-repeated supplied-waypoint portal builds. Cached hits avoid A* expansion for
+repeated supplied-waypoint portal builds. Cached hits avoid A\* expansion for
 the segment, but still rebuild the route-product path and dependencies.
 Every lookup and store goes through a movement-class-bound view. A class rebind
 clears the cache, is counted in `class_rebinds`, and makes stale retained views
@@ -759,7 +759,7 @@ is set. Runtime use is conservative: only repeated single-goal groups at or
 above the configured reuse threshold are candidates, starts must span the
 configured number of chunks, and stale products are rejected through their
 content-version dependencies before replay. Unit leftovers use route/suffix
-caching; weighted leftovers use the established bounded-field/A* batch.
+caching; weighted leftovers use the established bounded-field/A\* batch.
 
 When weighted entry costs are known to be small bounded positive integers,
 `build_bounded_weighted_distance_field` avoids binary heap traffic with a
@@ -771,13 +771,13 @@ the unbounded heap implementation so neither condition is silently discarded.
 
 `weighted_path_batch` makes the current weighted reuse policy explicit for
 callers. Repeated goals use one bounded weighted field per unique goal;
-singleton goals use normal weighted A*. Returned paths are copied into batch
+singleton goals use normal weighted A\*. Returned paths are copied into batch
 scratch so all result spans remain valid until the next batch call or scratch
 clear.
 
 The runtime adds an opt-in strategy on top of that fallback
 (`WeightedReplanStrategy`). The default, `ExactAStar`, leaves singleton
-goals on normal weighted A* and is optimal. `PortalFirst` first tries a
+goals on normal weighted A\* and is optimal. `PortalFirst` first tries a
 chunk-portal route stitched through the runtime's segment cache for
 eligible singletons (dense orthogonal-lattice worlds, default adjacent
 transitions, and explicit movement classes): accepted routes are verified and
@@ -819,16 +819,16 @@ automatically infer every dirty cause. Callers must mark the path-agent tick
 state dirty directly or run through the scheduler with accurate dirty masks
 when world movement data or agent goals change. The implementation uses
 reusable dense per-tile scratch arrays, a two-bucket monotone open set for the
-current unit-cost Manhattan A* fallback, exact route/suffix caches, dense
+current unit-cost Manhattan A\* fallback, exact route/suffix caches, dense
 reverse distance fields for shared-goal batches, weighted shared-goal fields
 with optional bounded-cost bucket construction, weighted batch grouping, exact
 unit-cost and weighted distance-field products with explicit LRU caching,
 coarse region paths and chunk corridors, weighted route products,
-supplied-waypoint and chunk-boundary portal route products, and weighted A*
+supplied-waypoint and chunk-boundary portal route products, and weighted A\*
 for positive integral entry costs.
 
-The unit-cost A* API is suitable for individual point-to-point queries and
-regression coverage. Weighted A* is suitable for correctness-first weighted
+The unit-cost A\* API is suitable for individual point-to-point queries and
+regression coverage. Weighted A\* is suitable for correctness-first weighted
 terrain queries, and weighted distance fields are suitable for weighted
 batches with substantial goal reuse. Shared-goal distance fields are suitable
 for batches with substantial goal reuse. Unit-cost and weighted distance-field
@@ -855,5 +855,5 @@ nodes.
 Sampling the 1024x1024 query shows time concentrated in neighbor processing:
 open-set maintenance, passability/world lookup for each accepted neighbor
 candidate, and fixed six-axis neighbor generation even for degenerate 2D
-shapes. Those are the first optimization targets before treating this A* path
+shapes. Those are the first optimization targets before treating this A\* path
 as suitable for hundreds of independent agents per tick.

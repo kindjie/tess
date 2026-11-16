@@ -5,7 +5,7 @@ description: >-
   weighted batches, and shared-goal distance fields in tess.
 ---
 
-# A* vs route caches, batches, and distance fields
+# A\* vs route caches, batches, and distance fields
 
 Pathfinding performance is rarely about choosing one universally fastest
 algorithm. It is about recognizing repeated work. Does the same route recur?
@@ -72,7 +72,7 @@ boundary and the full API selection tree.
 
 The interactive example sends three requests through one 16x16 obstacle
 course. Each card solves a comparable routing problem but organizes the work
-differently: independent A* repeats the search, the cache retains a route, the
+differently: independent A\* repeats the search, the cache retains a route, the
 batch groups requests arriving together, and the distance field labels the
 reachable world once for a shared goal. The cache card repeats its first
 request so its reuse is visible.
@@ -93,7 +93,7 @@ The example establishes what can be reused, but it cannot show when reuse is
 worth its setup cost. Building a field, populating a cache, or grouping a
 batch can cost more than it saves at low request counts. The benchmark
 campaign therefore repeats these workload shapes at increasing counts and
-records where reuse begins to outperform independent A*.
+records where reuse begins to outperform independent A\*.
 
 ## When reuse pays for itself
 
@@ -108,9 +108,9 @@ an affinity-pinned Steam Deck. It found small, workload-specific crossovers,
 not one agent-count rule:
 
 Read each lane from fewer to more requests. A purple circle marks an accepted
-count where independent A* was materially faster; a green diamond marks one
+count where independent A\* was materially faster; a green diamond marks one
 where the reuse strategy was materially faster. A pair brackets a crossover.
-A lone green diamond means that reuse won but no lower A* boundary was
+A lone green diamond means that reuse won but no lower A\* boundary was
 accepted, while a gray lane means that no material winner was established.
 
 <picture>
@@ -204,8 +204,8 @@ all-distinct request ladder is fixture-limited at 2,044 perimeter goals. At
 5.9 GiB on Deck, so the high-count results are throughput stress tests rather
 than frame-budget recommendations.
 
-Timing is accompanied by A* and unit-field expansions, reconstruction nodes,
-field builds, A* fallbacks, cache hits, suffix hits, unique-goal counts,
+Timing is accompanied by A\* and unit-field expansions, reconstruction nodes,
+field builds, A\* fallbacks, cache hits, suffix hits, unique-goal counts,
 retained cache entries and path nodes, and dense field-page bytes. Weighted
 batches do not expose field expansions, so the comparison does not pretend
 that every arm has a common expansion counter. The report distinguishes
@@ -314,9 +314,9 @@ constexpr auto kRequests = std::array{
 ```
 <!-- /tess-snippet -->
 
-### Independent A*: the default
+### Independent A\*: the default
 
-Plain A* is the baseline when requests do not share useful work. The example
+Plain A\* is the baseline when requests do not share useful work. The example
 runs all three requests independently and reuses only scratch storage; it does
 not reuse search results. Do not introduce a cache or field until measurements
 show repeated structure.
@@ -339,7 +339,7 @@ already below the application budget.
 ### Route cache: repeated paths on an unchanged map
 
 `cached_astar_path` stores exact routes and same-goal suffixes. A first request
-still performs A*; a repeat can return without expanding search nodes.
+still performs A\*; a repeat can return without expanding search nodes.
 
 <!-- tess-snippet: strategy-cache source=examples/pathfinding_strategies_model.cc -->
 ```cpp
@@ -362,7 +362,7 @@ different optimality contract. Read the
 ### Weighted batch: group work arriving together
 
 `weighted_path_batch` groups requests by goal. Repeated goals can share a
-bounded weighted field; distinct goals fall back to per-request weighted A*.
+bounded weighted field; distinct goals fall back to per-request weighted A\*.
 The API therefore preserves one result per input request while choosing the
 strategy inside the batch.
 
@@ -384,7 +384,7 @@ verify that a real request set contains the reuse the batch was meant to find.
 ### Distance field: many starts, one goal
 
 A reverse distance field builds one goal-rooted search tree. Every matching
-start then reconstructs a path from that field instead of running another A*.
+start then reconstructs a path from that field instead of running another A\*.
 
 <span id="distance-fields-and-flow-fields"></span>
 
@@ -419,7 +419,7 @@ world, use the separate `DistanceFieldProduct` and `FieldProductCache` family.
 ## Where these choices fit
 
 The examples above share a decision point; they are not four peer algorithms.
-A* and the reverse field builders perform graph search. Caches,
+A\* and the reverse field builders perform graph search. Caches,
 batches, and retained products decide when to reuse that work. Movement
 coordination resolves tile conflicts only after routes have been planned.
 
@@ -449,7 +449,7 @@ internal data structure is not a rejection of the broader research idea.
 
 - **Four-ary open-list heap** —
   <span class="strategy-status strategy-status--rejected">Experiment rejected</span>
-  It helped a few A* benchmark cases but substantially regressed weighted
+  It helped a few A\* benchmark cases but substantially regressed weighted
   field builds and failed the second-platform non-regression gate
   ([evidence][quad-heap-rejection]).
 - **Dynamic congestion prices in the colony demo** —
@@ -470,8 +470,8 @@ internal data structure is not a rejection of the broader research idea.
 
 The pre-RC screens in the [execution plan][execution-plan] rejected all three
 remaining classical candidates: gated 4-connected JPS on dense rubble maps
-([evidence][jps-rejection]), whole-query bidirectional A* on five of eight
-cells ([evidence][bidir-rejection]), and goal-keyed D* Lite at feasibility
+([evidence][jps-rejection]), whole-query bidirectional A\* on five of eight
+cells ([evidence][bidir-rejection]), and goal-keyed D\* Lite at feasibility
 ([evidence][dstar-rejection]). Each record has a scoped reconsideration
 condition; none is a verdict on other domains. Theta\* remains deferred until
 its supporting contracts exist.
