@@ -563,6 +563,40 @@ def test_runner_image_tools_are_verified_instead_of_reinstalled():
     assert "clang-tidy-18 --version" in body
 
 
+def test_advisory_clang_tidy_can_finish_within_its_limit():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  advisory = (root / ".github" / "workflows" / "advisory.yml").read_text()
+  quality = _job_body(workflow, "quality")
+
+  def enabled_checks(config: str) -> set[str]:
+    text = (root / config).read_text()
+    checks = text.split("Checks: >\n", 1)[1].split("WarningsAsErrors:", 1)[0]
+    return {item.strip() for item in checks.split(",") if item.strip()}
+
+  def time_limit(job: str) -> int:
+    match = re.search(r"^    timeout-minutes: (\d+)$", job, flags=re.M)
+    assert match is not None
+    return int(match.group(1))
+
+  # The advisory profile analyzes the same targets with a superset of the
+  # required checks, so it needs at least the required sweep's parallelism
+  # and time limit. A serial build under a lower limit was cancelled every
+  # week: it reported nothing and, being cancelled, never saved its cache.
+  required = enabled_checks(".clang-tidy")
+  disabled = {check for check in required if check.startswith("-")}
+  assert required - disabled <= enabled_checks(".clang-tidy-advisory")
+  assert (
+    '        run: cmake --build --preset "${{ matrix.preset }}" '
+    "--parallel 4\n" in quality
+  )
+  assert (
+    "        run: cmake --build --preset dev-clang-tidy-advisory "
+    "--parallel 4\n" in advisory
+  )
+  assert time_limit(advisory) >= time_limit(quality)
+
+
 def test_full_matrix_is_scheduled_or_dispatched_not_repeated_on_push():
   workflow = (Path(__file__).resolve().parents[1] /
               '.github/workflows/ci.yml').read_text()

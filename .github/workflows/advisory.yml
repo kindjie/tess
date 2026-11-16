@@ -26,7 +26,11 @@ jobs:
   clang-tidy:
     name: Advisory clang-tidy
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # 75, matching the required full-tree sweep in ci.yml: this profile
+    # analyzes the same targets with more checks. Under the earlier limit
+    # of 45 the then-serial build was cancelled every week; a cancelled job
+    # also saves no compiler cache, so every run started cold.
+    timeout-minutes: 75
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,5 +60,7 @@ jobs:
           cmake --preset dev-clang-tidy-advisory
           -DTESS_CLANG_TIDY_EXE=clang-tidy-18
 
-      - name: Build
-        run: cmake --build --preset dev-clang-tidy-advisory
+      # Same bound as the required sweep. The preset's default generator
+      # builds one translation unit at a time when no level is given.
+      - name: Build with bounded parallelism
+        run: cmake --build --preset dev-clang-tidy-advisory --parallel 4

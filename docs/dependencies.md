@@ -385,9 +385,10 @@ compilers, CMake, and preinstalled tools still roll. GitHub currently documents
 the public x64 Ubuntu runner as four CPUs with 16 GB of RAM; the clang-tidy cap
 matches those CPUs. The standard `macos-15` runner has three M1 CPUs and 7 GB
 of RAM, so its uncached release-floor build is capped at three compile jobs.
-The blocking Linux analysis jobs install and invoke `clang-tidy-18` explicitly;
-the weekly advisory job follows the runner's rolling unversioned `clang-tidy`
-package so newer diagnostics surface without changing the required baseline.
+The Linux analysis jobs, blocking and advisory alike, invoke the runner image's
+`clang-tidy-18` explicitly and verify its major version, so image drift fails
+instead of silently changing the analysis. The weekly advisory sweep uses the
+same four-way build and 75-minute limit as the required full-tree sweep.
 Other preinstalled tools still roll with the runner image. Benchmark baseline
 JSON is uploaded from CI artifacts so timing thresholds can be calibrated
 against the same runner family that will enforce them; benchmark gates
