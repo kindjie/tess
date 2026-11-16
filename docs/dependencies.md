@@ -347,15 +347,15 @@ runbook and the cleanup mechanisms.
 - Cache action version: `actions/cache@v6.1.0` (pinned to
   `55cc8345863c7cc4c66a329aec7e433d2d1c52a9`)
 - Cache documentation: https://github.com/actions/cache
-- Upload artifact action version: `actions/upload-artifact@v7.0.1` (pinned to
-  `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`)
+- Upload artifact action version: `actions/upload-artifact@v7.0.2` (pinned to
+  `cf430e030ddbb5b0abf93d22962f4752f3646cd9`)
 - Upload artifact documentation: https://github.com/actions/upload-artifact
-- Download artifact action version: `actions/download-artifact@v8.0.1` (pinned
-  to `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c`)
+- Download artifact action version: `actions/download-artifact@v8.0.2` (pinned
+  to `9000827ccba6bdab643e8b6fd33ac0654aef8333`)
 - Download artifact documentation:
   https://github.com/actions/download-artifact
-- Setup Python action version: `actions/setup-python@v7.0.0` (pinned to
-  `5fda3b95a4ea91299a34e894583c3862153e4b97`)
+- Setup Python action version: `actions/setup-python@v7.1.0` (pinned to
+  `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0`)
 - Setup Python documentation: https://github.com/actions/setup-python
 - Hosted runner documentation:
   https://docs.github.com/actions/reference/runners/github-hosted-runners
@@ -372,8 +372,8 @@ runbook and the cleanup mechanisms.
 - Upload Pages artifact action version:
   `actions/upload-pages-artifact@v5.0.0` (pinned to
   `fc324d3547104276b827a68afc52ff2a11cc49c9`)
-- Deploy Pages action version: `actions/deploy-pages@v5.0.0` (pinned to
-  `cd2ce8fcbc39b97be8ca5fce6e763baed58fa128`)
+- Deploy Pages action version: `actions/deploy-pages@v5.0.1` (pinned to
+  `368f82528645a54fb793d4d04e342629a3f51346`)
 - Pages custom-domain documentation:
   https://docs.github.com/pages/configuring-a-custom-domain-for-your-github-pages-site
 
