@@ -729,11 +729,13 @@ TEST(NavigationOracle, DomainDiagnosticsPrecedeAttachmentFailures) {
   for (const auto reason : {NavigationPreparationError::NullDomain,
                             NavigationPreparationError::InvalidDomain,
                             NavigationPreparationError::DuplicateDomain}) {
-    std::vector<std::shared_ptr<const NavigationDomain>> domains{graph};
-    domains.push_back(reason == NavigationPreparationError::NullDomain ? nullptr
-                      : reason == NavigationPreparationError::InvalidDomain
-                          ? invalid
-                          : graph);
+    // One exact-size construction, not a push_back that must reallocate:
+    // optimized GCC 14 reports -Warray-bounds for its unreachable in-place
+    // branch. AttachmentDiagnosticsIdentifyFirstFailure has the GCC 12 form.
+    const std::vector<std::shared_ptr<const NavigationDomain>> domains{
+        graph, reason == NavigationPreparationError::NullDomain      ? nullptr
+               : reason == NavigationPreparationError::InvalidDomain ? invalid
+                                                                     : graph};
     NavigationSnapshot snapshot(
         domains, {{graph->location(0), graph->location(1), 99, kReserved}});
     EXPECT_FALSE(snapshot.valid());
@@ -755,7 +757,6 @@ TEST(NavigationOracle, AttachmentDiagnosticsIdentifyFirstFailure) {
         NavigationPreparationError::InvalidConnectionTo,
         NavigationPreparationError::ReservedConnectionCost,
         NavigationPreparationError::DuplicateConnectionId}) {
-    auto connections = valid;
     auto broken = NavigationConnection{from, to, 71, 2};
     if (reason == NavigationPreparationError::InvalidConnectionFrom)
       broken.from.node = 9;
@@ -765,8 +766,11 @@ TEST(NavigationOracle, AttachmentDiagnosticsIdentifyFirstFailure) {
       broken.cost = kReserved;
     if (reason == NavigationPreparationError::DuplicateConnectionId)
       broken.id = 70;
-    connections.push_back(broken);
-    connections.push_back({from, to, 72, kReserved});
+    // One exact-size construction, not a copy grown by two push_back calls:
+    // optimized GCC 12 cannot prove that the second call must reallocate and
+    // reports -Wstringop-overflow for its unreachable in-place branch.
+    const std::vector<NavigationConnection> connections{
+        valid.front(), broken, {from, to, 72, kReserved}};
     auto snapshot = std::make_shared<NavigationSnapshot>(
         std::vector<std::shared_ptr<const NavigationDomain>>{graph},
         connections);
