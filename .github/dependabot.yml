@@ -9,9 +9,11 @@ updates:
   # Version updates are off for pip. requirements-dev.txt and
   # requirements-docs.txt are universal uv compiles with a fixed package-index
   # cutoff (docs/dependencies.md). Dependabot rewrites them for one platform,
-  # which drops the win32 and Python-version entries the lock tests require,
-  # so none of its lock updates can pass. Security updates are unaffected by
-  # this limit and still open; apply them by advancing the cutoff with
+  # so none of its lock updates matches what the wrappers produce: the
+  # development lock loses the win32 and Python-version entries its tests
+  # require, and the documentation lock, which has no such test, can pass CI
+  # with a single-platform resolve. Security updates are unaffected by this
+  # limit and still open; apply them by advancing the cutoff with
   # tools/compile_requirements.sh and tools/compile_docs_requirements.sh.
   - package-ecosystem: pip
     directory: /
