@@ -2202,7 +2202,7 @@ def test_compile_requirements_uses_pinned_uv_and_canonical_command(tmp_path):
     "--upgrade",
     "--generate-hashes",
     "--exclude-newer",
-    "2026-07-13T00:00:00Z",
+    "2026-10-28T00:00:00Z",
     "--custom-compile-command",
     "tools/compile_requirements.sh",
     "requirements-dev.in",
