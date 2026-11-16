@@ -24,7 +24,7 @@ uv pip compile \
   --python-version 3.10 \
   --upgrade \
   --generate-hashes \
-  --exclude-newer 2026-07-18T00:00:00Z \
+  --exclude-newer 2026-10-28T00:00:00Z \
   --custom-compile-command tools/compile_docs_requirements.sh \
   requirements-docs.in \
   -o "$output"

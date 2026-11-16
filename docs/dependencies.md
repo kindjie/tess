@@ -418,9 +418,9 @@ better fit than a filesystem-oriented command-line wrapper.
 
 - uv version: `0.11.28` (latest upstream release as of 2026-07-12)
 - uv documentation: https://docs.astral.sh/uv/
-- pytest version: `9.1.1`
+- pytest version: `9.2.0`
 - pytest documentation: https://docs.pytest.org/
-- clang-format Python package version: `22.1.8`
+- clang-format Python package version: `23.1.3`
 - clang-format documentation: https://clang.llvm.org/docs/ClangFormat.html
 - uv requirements locking:
   https://docs.astral.sh/uv/pip/compile/
@@ -443,14 +443,22 @@ tools/compile_requirements.sh
 ```
 
 The wrapper checks the uv version, enables upgrades, fixes the package-index
-cutoff at `2026-07-13T00:00:00Z`, and supplies a stable custom header. Pass an
+cutoff at `2026-10-28T00:00:00Z`, and supplies a stable custom header. Pass an
 optional output path to generate a comparison lock without replacing the
 checked-in file. Advance the cutoff deliberately when refreshing dependency
-pins.
+pins; `tools/compile_docs_requirements.sh` uses the same cutoff for the
+documentation lock.
 
 The lock includes hashes for every published artifact uv considers, so it
 remains portable across supported Python versions and platforms. The current
-lock is 30,877 bytes and 16,038 GPT-5 tokens, below the repository file limit.
+lock is 40,483 bytes and 21,047 GPT-5 tokens, and the documentation lock is
+22,770 tokens, both below the repository file limit. That limit now bounds
+the cutoff: several packages dropped Python 3.10 in early November 2026, so a
+later cutoff resolves them twice, once per Python range, and a
+`2026-11-09T00:00:00Z` cutoff yields 26,129 and 25,377 tokens. Compiling for
+Python 3.11 at that cutoff yields 17,174 and 23,162, so a later cutoff needs
+a higher `--python-version` in both wrappers or a separate size budget for
+generated locks.
 
 ## CMake clang-tidy Integration
 
