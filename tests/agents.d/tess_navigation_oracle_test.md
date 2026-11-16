@@ -25,3 +25,6 @@ from adapter enumeration; see the fixture comment for cost conventions.
 
 Same-storage reconstruction distinguishes lifetime identities from addresses.
 Preparation diagnostics retain the first rejected input and its reason/index/ID.
+Their small fixture vectors are built in one construction, never grown with
+`push_back`: optimized GCC rejects the growth form under warnings as errors
+(see the comments in the two diagnostics tests).
