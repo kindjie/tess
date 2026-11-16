@@ -420,7 +420,7 @@ better fit than a filesystem-oriented command-line wrapper.
 - uv documentation: https://docs.astral.sh/uv/
 - pytest version: `9.2.0`
 - pytest documentation: https://docs.pytest.org/
-- clang-format Python package version: `22.1.8`
+- clang-format Python package version: `23.1.3`
 - clang-format documentation: https://clang.llvm.org/docs/ClangFormat.html
 - uv requirements locking:
   https://docs.astral.sh/uv/pip/compile/
@@ -451,7 +451,7 @@ documentation lock.
 
 The lock includes hashes for every published artifact uv considers, so it
 remains portable across supported Python versions and platforms. The current
-lock is 40,483 bytes and 21,041 GPT-5 tokens, and the documentation lock is
+lock is 40,483 bytes and 21,047 GPT-5 tokens, and the documentation lock is
 22,770 tokens, both below the repository file limit. That limit now bounds
 the cutoff: several packages dropped Python 3.10 in early November 2026, so a
 later cutoff resolves them twice, once per Python range, and a
