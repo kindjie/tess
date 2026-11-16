@@ -7,7 +7,11 @@
   completion workflow must not execute repository content; missing and broken
   ccache probes must be host-independent; the checksummed installer and
   package helper fail closed; and runner-image tools are version-checked
-  instead of redundantly installed.
+  instead of redundantly installed. The weekly advisory clang-tidy sweep is
+  tied to the required full-tree sweep: the same bounded parallelism, at
+  least its time limit, and a check set that contains the required one. A
+  serial build under a lower limit was cancelled every week without
+  reporting anything.
 
 - Full-matrix routing preserves weekly/manual platform floors and verifies
   the aggregate gate distinguishes their intentional main-push skips. The
