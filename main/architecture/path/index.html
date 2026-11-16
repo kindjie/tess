@@ -2489,15 +2489,15 @@ any search and only skips it when connectivity is definitively unreachable.</p>
   the search exhausts the resident set having skipped a non-resident neighbor.
   It is inert for dense (<code>AlwaysResident</code>) worlds, where every chunk is
   resident.</li>
-<li><code>precheck_path&lt;ClassOrTag&gt;</code> (in <code>tess/path/precheck.h</code>) is a cheap pre-A<em>
+<li><code>precheck_path&lt;ClassOrTag&gt;</code> (in <code>tess/path/precheck.h</code>) is a cheap pre-A*
   topology gate: it consults a <code>RegionGraph</code> built over the world for whether
   <code>start</code> can reach <code>goal</code> through region connectivity, without expanding the
   grid, and returns a <code>PrecheckStatus</code>. The explicit first template argument
   is the <abbr title="A compile-time definition of passability, entry cost, and allowed steps.">movement class</abbr> the SEARCH uses (a raw passable tag normalizes to its
   <code>UnitCostFieldMovement</code> identity, exactly as in <code>astar_path</code>). Only <code>Unreachable</code> --
   the graph definitively rules out any route within known topology -- licenses
-  skipping A</em>, reported by <code>precheck_rules_out_path</code>. Every other status means
-  "run A<em>": <code>Reachable</code> (a region path exists; A</em> realizes it), <code>MissingChunk</code>
+  skipping A*, reported by <code>precheck_rules_out_path</code>. Every other status means
+  "run A*": <code>Reachable</code> (a region path exists; A* realizes it), <code>MissingChunk</code>
   (the search reached a boundary exit into a non-resident chunk, so a route
   through non-resident space cannot be ruled out -- sparse worlds only),
   <code>InvalidStart</code> / <code>InvalidGoal</code> (A* is authoritative on tile validity),
@@ -2840,11 +2840,11 @@ any search and only skips it when connectivity is definitively unreachable.</p>
   route product if its chunk dependencies are still valid.</li>
 <li><code>weighted_path_batch&lt;World, Class, MaxCost&gt;(world, requests,
   scratch)</code> groups weighted requests by goal, builds bounded weighted fields
-  for repeated goals, uses weighted A<em> for singleton goals, and returns borrowed
+  for repeated goals, uses weighted A* for singleton goals, and returns borrowed
   result spans backed by <code>WeightedPathBatchScratch</code> until its next mutation. A
   shared reverse field's
   <code>CostOverflow</code> is global rather than start-specific, so every member in that
-  group retries through weighted A</em> to preserve exact per-request statuses.</li>
+  group retries through weighted A* to preserve exact per-request statuses.</li>
 <li><code>PathRequestRuntime::process_unit_cached&lt;World, ClassOrTag&gt;(world, policy)</code>
   processes the current request set through <code>cached_astar_path</code>, optionally
   reuses unit distance-field products for repeated goals when
@@ -2976,13 +2976,13 @@ can beat that Manhattan lower bound. For axis-aligned routes where the
 straight line is blocked, it can also return a one-tile parallel detour when
 every entered detour tile has cost 1; any positive-cost path around the
 blocked line needs at least Manhattan+2 moves.</p>
-<p>Before entering open-set A<em>, the implementation probes direct Manhattan
+<p>Before entering open-set A*, the implementation probes direct Manhattan
 paths in the shape-relevant axis orders. If any route is fully passable, it
 returns that direct shortest path immediately. If a direct probe hits a blocked
 tile whose axis plane is fully blocked, it returns <code>NoPath</code> immediately because
 the plane separates start from goal under the current axis-adjacent movement
 model. For axis-aligned requests, a clear one-tile parallel detour is also
-returned before A</em> because its Manhattan+2 cost is optimal when the straight
+returned before A* because its Manhattan+2 cost is optimal when the straight
 line is blocked. For top-down 2D requests blocked by a non-separating axis
 plane, the implementation can scan that plane for the cheapest passable gap and
 return a verified Manhattan route through it; the same logic applies to
@@ -3000,13 +3000,13 @@ probe triggers <code>is_full_axis_barrier</code>, which scans the impassable til
 axis plane: one extent line in 2D, <code>size.y * size.z</code> (or the matching pair)
 tiles in 3D. The 2D plane-gap and forced-gap scans each walk one extent
 line per blocked step, and the 3D plane-gap scan walks the whole blocked
-plane. Every scan runs before any A<em> node is expanded, so a miss — the
-scans all fail and the query still floods A</em> — pays the full scan cost as
+plane. Every scan runs before any A* node is expanded, so a miss — the
+scans all fail and the query still floods A* — pays the full scan cost as
 pure overhead on top of the search. Two worst-case benchmarks pin this
 cost: <code>path/astar_plane_gap_miss_512x512</code> (direct blocked, sealed wall gap,
-falls through every 2D scan into a full-flood NoPath A<em>) and
+falls through every 2D scan into a full-flood NoPath A*) and
 <code>path/astar_plane_gap_miss_3d_64x64x16</code> (the best-scoring 3D plane gap is
-sealed, so segment stitching fails and A</em> routes through a second gap).
+sealed, so segment stitching fails and A* routes through a second gap).
 Their thresholds in <code>bench/thresholds/path.json</code> are deliberately generous
 (10x measured) documentation ceilings, not tuned gates: the scans stay
 accepted because hit rates on real layouts dwarf the miss cost, and a miss
@@ -3049,7 +3049,7 @@ a shorter route, so they support portal-route products rather than acting as a
 general optimality-preserving weighted <abbr title="Capacity-bounded retained storage for reusable route results.">route cache</abbr>.</p>
 <p>Weighted portal route products are also exact for the supplied waypoint route,
 not for arbitrary routing. The caller provides portal waypoints from a topology
-or room graph; the product verifies each segment with weighted A<em>, concatenates
+or room graph; the product verifies each segment with weighted A*, concatenates
 the segment paths, and records content-version dependencies. This makes topology
 evidence measurable before the repository owns a full portal graph builder.
 The automatic chunk-boundary builder uses a deliberately bounded candidate
@@ -3059,7 +3059,7 @@ start chunk to the goal chunk through adjacent chunks for each candidate,
 scans each adjacent chunk boundary for passable crossings, chooses the
 crossing with the lowest Manhattan score to the current point and final goal,
 then keeps the lowest-scoring waypoint candidate and verifies every resulting
-segment with weighted A</em>. The greedy candidate can interleave progress axes
+segment with weighted A*. The greedy candidate can interleave progress axes
 instead of exhausting one axis before the next. The builder still does not
 search non-Manhattan chunk routes or prove global portal optimality.</p>
 <p>The seven candidates overlap: they re-walk the same chunk seams from the
@@ -3190,15 +3190,15 @@ automatically infer every dirty cause. Callers must mark the path-agent tick
 state dirty directly or run through the scheduler with accurate dirty masks
 when world movement data or agent goals change. The implementation uses
 reusable dense per-tile scratch arrays, a two-bucket monotone open set for the
-current unit-cost Manhattan A<em> fallback, exact route/suffix caches, dense
+current unit-cost Manhattan A* fallback, exact route/suffix caches, dense
 reverse distance fields for shared-goal batches, weighted shared-goal fields
 with optional bounded-cost bucket construction, weighted batch grouping, exact
 unit-cost and weighted distance-field products with explicit LRU caching,
 coarse region paths and chunk corridors, weighted route products,
-supplied-waypoint and chunk-boundary portal route products, and weighted A</em>
+supplied-waypoint and chunk-boundary portal route products, and weighted A*
 for positive integral entry costs.</p>
-<p>The unit-cost A<em> API is suitable for individual point-to-point queries and
-regression coverage. Weighted A</em> is suitable for correctness-first weighted
+<p>The unit-cost A* API is suitable for individual point-to-point queries and
+regression coverage. Weighted A* is suitable for correctness-first weighted
 terrain queries, and weighted distance fields are suitable for weighted
 batches with substantial goal reuse. Shared-goal distance fields are suitable
 for batches with substantial goal reuse. Unit-cost and weighted distance-field

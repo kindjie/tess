@@ -2614,9 +2614,9 @@ untimed checks require matching status, endpoints, legal steps, and path cost.</
 an affinity-pinned Steam Deck. It found small, workload-specific crossovers,
 not one agent-count rule:</p>
 <p>Read each lane from fewer to more requests. A purple circle marks an accepted
-count where independent A<em> was materially faster; a green diamond marks one
+count where independent A* was materially faster; a green diamond marks one
 where the reuse strategy was materially faster. A pair brackets a crossover.
-A lone green diamond means that reuse won but no lower A</em> boundary was
+A lone green diamond means that reuse won but no lower A* boundary was
 accepted, while a gray lane means that no material winner was established.</p>
 <p><picture>
   <source media="(max-width: 600px)"
@@ -2765,8 +2765,8 @@ all-distinct request ladder is fixture-limited at 2,044 perimeter goals. At
 131,072 requests, the one-goal weighted batch peaked near 6.0 GiB on M3 and
 5.9 GiB on Deck, so the high-count results are throughput stress tests rather
 than frame-budget recommendations.</p>
-<p>Timing is accompanied by A<em> and unit-field expansions, reconstruction nodes,
-field builds, A</em> fallbacks, cache hits, suffix hits, unique-goal counts,
+<p>Timing is accompanied by A* and unit-field expansions, reconstruction nodes,
+field builds, A* fallbacks, cache hits, suffix hits, unique-goal counts,
 retained cache entries and path nodes, and dense field-page bytes. Weighted
 batches do not expose field expansions, so the comparison does not pretend
 that every arm has a common expansion counter. The report distinguishes
@@ -3053,8 +3053,8 @@ internal data structure is not a rejection of the broader research idea.</p>
 </ul>
 <p>The pre-RC screens in the <a href="https://github.com/kindjie/tess/blob/main/docs/planning/v0.13-to-v1.0-execution-plan.md">execution plan</a> rejected all three
 remaining classical candidates: gated 4-connected JPS on dense rubble maps
-(<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p3-jps/README.md">evidence</a>), whole-query bidirectional A<em> on five of eight
-cells (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p4-bidir/README.md">evidence</a>), and goal-keyed D</em> Lite at feasibility
+(<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p3-jps/README.md">evidence</a>), whole-query bidirectional A* on five of eight
+cells (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p4-bidir/README.md">evidence</a>), and goal-keyed D* Lite at feasibility
 (<a href="https://github.com/kindjie/tess/blob/main/docs/planning/evidence/v1.0/p5-dstar/README.md">evidence</a>). Each record has a scoped reconsideration
 condition; none is a verdict on other domains. Theta* remains deferred until
 its supporting contracts exist.</p>
