@@ -39,3 +39,6 @@
   `tests/test_git_hook_install.py`.
 - Real-repository tests clear inherited Git local environment variables so hook
   invocation cannot read or modify the caller repository index.
+
+- Both lock wrappers are exercised with their pinned uv versions and common
+  Python 3.11 floor/cutoff; Windows-only development dependencies remain.

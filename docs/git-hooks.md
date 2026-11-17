@@ -8,7 +8,8 @@ local path.
 ## Requirements
 
 - Git 2.54 or newer for config-defined hooks.
-- Python 3.10 or newer.
+- Python 3.11 or newer for repository tools and documentation. This does not
+  change the C++ library or consumer requirements.
 - `clang-format` and `git-clang-format` for C++ formatting checks. The dev
   requirements pin `clang-format` (and its bundled `git-clang-format`) on
   PyPI. The hooks prefer pinned binaries installed in `.venv/` and otherwise
@@ -58,7 +59,7 @@ linked checkout does not strand other checkouts. The installer retains the
 compatibility hooks path until all config hooks have been registered; retrying
 installation replaces the same entries without duplicates.
 
-Install with Python 3.10 or newer; older interpreters are refused before config
+Install with Python 3.11 or newer; older interpreters are refused before config
 changes. No specific Python version is pinned. The installer records the
 interpreter path as invoked, so a package manager's stable launcher, such as
 Homebrew's `opt` path, survives patch upgrades. Hook configuration is shared by
