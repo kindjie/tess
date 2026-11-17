@@ -1177,7 +1177,7 @@ def diff_paths(
   )
 
 
-MINIMUM_PYTHON = (3, 10)
+MINIMUM_PYTHON = (3, 11)
 
 
 def install_hooks() -> int:

@@ -21,10 +21,10 @@ esac
 output="${1:-requirements-dev.txt}"
 uv pip compile \
   --universal \
-  --python-version 3.10 \
+  --python-version 3.11 \
   --upgrade \
   --generate-hashes \
-  --exclude-newer 2026-10-28T00:00:00Z \
+  --exclude-newer 2026-11-09T00:00:00Z \
   --custom-compile-command tools/compile_requirements.sh \
   requirements-dev.in \
   -o "$output"

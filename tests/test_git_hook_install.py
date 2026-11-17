@@ -215,11 +215,12 @@ def test_config_hooks_keep_stable_external_interpreter_path(
   assert str(repo) not in command
 
 
+@pytest.mark.parametrize("version", [(3, 9, 18), (3, 10, 20)])
 def test_install_rejects_unsupported_python_before_config_writes(
-  tmp_path, monkeypatch
+  tmp_path, monkeypatch, version
 ):
   _config_hook_repo(tmp_path, monkeypatch)
-  monkeypatch.setattr(git_hooks.sys, "version_info", (3, 9, 18))
+  monkeypatch.setattr(git_hooks.sys, "version_info", version)
   assert git_hooks.install_hooks() != 0
   assert subprocess.check_output(
     ["git", "config", "--local", "--get", "core.hooksPath"], text=True

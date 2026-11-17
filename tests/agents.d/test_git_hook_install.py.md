@@ -10,7 +10,7 @@ venv is followed link by link only to its stable external base, including
 through symlinked parents and relative `..` links, and a copied venv
 interpreter records its `pyvenv.cfg` home launcher. Stable external launchers
 are recorded as invoked rather than resolved into versioned directories.
-Python older than 3.10 is refused before writes.
+Python older than 3.11 is refused before writes.
 The capability probe succeeds on a fresh repository with no hooks whenever Git
 supports config hooks, and all three events then dispatch through Git itself.
 Global/system Git configuration is isolated so fixtures cannot invoke unrelated

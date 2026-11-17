@@ -122,7 +122,7 @@ and representative API pages before publication.
 ## Documentation site
 
 - MkDocs version: `1.6.1`
-- Material for MkDocs version: `9.7.7`
+- Material for MkDocs version: `9.8.1`
 - mike version: `2.2.0` (versioned deployment: one tree per documented
   version plus the `latest` alias)
 - MkDocs documentation: https://www.mkdocs.org/
@@ -444,22 +444,20 @@ tools/compile_requirements.sh
 ```
 
 The wrapper checks the uv version, enables upgrades, fixes the package-index
-cutoff at `2026-10-28T00:00:00Z`, and supplies a stable custom header. Pass an
+cutoff at `2026-11-09T00:00:00Z`, and supplies a stable custom header. Pass an
 optional output path to generate a comparison lock without replacing the
 checked-in file. Advance the cutoff deliberately when refreshing dependency
 pins; `tools/compile_docs_requirements.sh` uses the same cutoff for the
 documentation lock.
 
-The lock includes hashes for every published artifact uv considers, so it
-remains portable across supported Python versions and platforms. The current
-lock is 40,483 bytes and 21,047 GPT-5 tokens, and the documentation lock is
-22,770 tokens, both below the repository file limit. That limit now bounds
-the cutoff: several packages dropped Python 3.10 in early November 2026, so a
-later cutoff resolves them twice, once per Python range, and a
-`2026-11-09T00:00:00Z` cutoff yields 26,129 and 25,377 tokens. Compiling for
-Python 3.11 at that cutoff yields 17,174 and 23,162, so a later cutoff needs
-a higher `--python-version` in both wrappers or a separate size budget for
-generated locks.
+Both locks target Python 3.11 or newer for repository tools and documentation;
+Material 9.8.1 requires this floor. The C++ library and consumer requirements
+are unchanged. Regenerate both owning locks together when advancing the
+cutoff. Keep their separate pinned uv versions when running the wrappers.
+The shared cutoff includes Material 9.8.1, released on November 7, while
+keeping the universal hash locks below the repository's 24,000-token limit.
+Hashes cover every published artifact considered by uv across supported
+Python versions and platforms.
 
 ## CMake clang-tidy Integration
 

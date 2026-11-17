@@ -2139,7 +2139,7 @@ def test_compiled_dev_requirements_keep_supported_environment_dependencies():
 
   assert "sys_platform == 'win32'" in requirement_lines["colorama"]
   for package in ("exceptiongroup", "tomli", "typing-extensions"):
-    assert "python_full_version < '3.11'" in requirement_lines[package]
+    assert package not in requirement_lines
 
 
 def test_documented_clang_format_version_matches_direct_pin():
@@ -2164,17 +2164,22 @@ def test_compiled_dev_requirements_records_reproducible_command():
   ]
 
 
-def test_compile_requirements_uses_pinned_uv_and_canonical_command(tmp_path):
+@pytest.mark.parametrize("kind, version", [("dev", "0.11.28"),
+                                         ("docs", "0.11.29")])
+def test_compile_requirements_uses_pinned_uv_and_canonical_command(
+  tmp_path, kind, version
+):
   root = Path(__file__).resolve().parents[1]
-  wrapper = root / "tools" / "compile_requirements.sh"
+  command = "tools/compile" + ("_docs" if kind == "docs" else "")
+  command += "_requirements.sh"
+  wrapper = root / command
   fake_uv = tmp_path / "uv"
   args_log = tmp_path / "uv-args"
-  output = tmp_path / "requirements-dev.txt"
+  output = tmp_path / f"requirements-{kind}.txt"
   fake_uv.write_text(
     "#!/bin/sh\n"
-    "set -eu\n"
     "if [ \"$1\" = --version ]; then\n"
-    "  printf 'uv 0.11.28\\n'\n"
+    f"  printf 'uv {version}\\n'\n"
     "  exit 0\n"
     "fi\n"
     "printf '%s\\n' \"$@\" > \"$UV_ARGS_LOG\"\n"
@@ -2189,25 +2194,13 @@ def test_compile_requirements_uses_pinned_uv_and_canonical_command(tmp_path):
     cwd=root,
     env=env,
     check=True,
-    text=True,
-    capture_output=True,
   )
 
   assert args_log.read_text().splitlines() == [
-    "pip",
-    "compile",
-    "--universal",
-    "--python-version",
-    "3.10",
-    "--upgrade",
-    "--generate-hashes",
-    "--exclude-newer",
-    "2026-10-28T00:00:00Z",
-    "--custom-compile-command",
-    "tools/compile_requirements.sh",
-    "requirements-dev.in",
-    "-o",
-    str(output),
+    *"pip compile --universal --python-version 3.11 --upgrade".split(),
+    *"--generate-hashes --exclude-newer 2026-11-09T00:00:00Z".split(),
+    "--custom-compile-command", command,
+    f"requirements-{kind}.in", "-o", str(output),
   ]
 
 
