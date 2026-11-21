@@ -677,11 +677,12 @@ def test_advisory_build_times_out_before_its_job(advisory_workflow):
     ("failure", (42, 17), ("label create", "issue list", "issue comment")),
     ("success", (42, 17), ("issue list", "issue close")),
     ("success", (), ("issue list",)),
-    ("cancelled", (42,), ()),
+    ("cancelled", (), ("label create", "issue list", "issue create")),
+    ("cancelled", (42,), ("label create", "issue list", "issue comment")),
     ("skipped", (42,), ()),
   ),
   ids=("create", "comment", "comment-oldest", "close-oldest", "no-open-issue",
-       "cancelled", "skipped"),
+       "ceiling-create", "ceiling-comment", "skipped"),
 )
 def test_advisory_reporter_runs_with_stub_gh(
   advisory_workflow, tmp_path, result, issues, expected
@@ -755,10 +756,12 @@ if args[:2] == ["issue", "list"]:
         assert args[args.index("--label") + 1] == "advisory-failure"
         assert "clang-tidy" in args[args.index("--body") + 1]
         assert run_url in args[args.index("--body") + 1]
+        assert result in args[args.index("--body") + 1]
       case ["issue", "comment"]:
         assert args[2] == str(issues[-1])
         assert "clang-tidy" in args[args.index("--body") + 1]
         assert run_url in args[args.index("--body") + 1]
+        assert result in args[args.index("--body") + 1]
       case ["issue", "close"]:
         assert args[2] == str(issues[-1])
         assert run_url in args[args.index("--comment") + 1]
