@@ -11,7 +11,9 @@
   tied to the required full-tree sweep: the same bounded parallelism, at
   least its time limit, and a check set that contains the required one. A
   serial build under a lower limit was cancelled every week without
-  reporting anything.
+  reporting anything. Run the embedded advisory reporter with a stub
+  `gh` first on a restricted PATH and an empty home. The fixture lists
+  issues newest first and models the CLI's oldest-first search.
 
 - Full-matrix routing preserves weekly/manual platform floors and verifies
   the aggregate gate distinguishes their intentional main-push skips. The
