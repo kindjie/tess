@@ -612,3 +612,156 @@ def test_full_matrix_is_scheduled_or_dispatched_not_repeated_on_push():
   assert 'needs.macos.result' in gate
   baseline = _job_body(workflow, 'bench-baselines')
   assert "github.event_name == 'push'" in baseline
+
+
+@pytest.fixture
+def advisory_workflow():
+  root = Path(__file__).resolve().parents[1]
+  return (root / ".github/workflows/advisory.yml").read_text()
+
+
+def test_advisory_reporter_is_scoped(advisory_workflow):
+  header = advisory_workflow.split("\njobs:", 1)[0]
+  assert re.search(r"^permissions:\n  contents: read\n\n", header, re.M)
+  assert re.search(r"^  report-failure:$", advisory_workflow, re.M)
+  reporter = _job_body(advisory_workflow, "report-failure")
+  assert re.search(r"^    permissions:\n      issues: write\n\n",
+                   reporter, re.M)
+  condition = " ".join(re.search(
+    r"^    if: (.*?)(?=^    [a-z-]+:)", reporter, re.M | re.S
+  )[1].split()).removeprefix(">- ")
+  assert condition == (
+    "${{ !cancelled() && github.ref == 'refs/heads/main' && "
+    "(github.event_name == 'schedule' || "
+    "github.event_name == 'workflow_dispatch') }}"
+  )
+  assert "    needs: [clang-tidy]\n" in reporter
+  assert (
+    "    concurrency:\n      group: advisory-failure-report\n"
+    "      queue: max\n"
+  ) in reporter
+  assert "uses:" not in reporter
+  for binding in (
+    "GH_TOKEN: ${{ github.token }}",
+    "ANALYSIS_RESULT: ${{ needs.clang-tidy.result }}",
+    "RUN_URL: ${{ github.server_url }}/${{ github.repository }}"
+    "/actions/runs/${{ github.run_id }}",
+  ):
+    assert f"          {binding}\n" in reporter
+  assert "    steps:\n      - name:" in reporter
+  assert reporter.count("      - name:") == 1
+
+
+def test_advisory_build_times_out_before_its_job(advisory_workflow):
+  root = Path(__file__).resolve().parents[1]
+  quality = _job_body(
+    (root / ".github/workflows/ci.yml").read_text(), "quality"
+  )
+  required = re.search(r"^    timeout-minutes: (\d+)$", quality, re.M)
+  job = _job_body(advisory_workflow, "clang-tidy")
+  job_minutes = re.search(r"^    timeout-minutes: (\d+)$", job, re.M)
+  step = job.split("      - name: Build with bounded parallelism\n", 1)[1]
+  step = step.split("\n      - ", 1)[0]
+  step_minutes = re.search(r"^        timeout-minutes: (\d+)$", step, re.M)
+  assert step_minutes, "the build step needs a reportable timeout"
+  # The build alone keeps the required sweep's whole allowance, and the
+  # step expires first so a slow sweep concludes as a reportable failure.
+  assert int(required[1]) <= int(step_minutes[1]) < int(job_minutes[1])
+
+
+@pytest.mark.parametrize(
+  ("result", "issues", "expected"),
+  (
+    ("failure", (), ("label create", "issue list", "issue create")),
+    ("failure", (42,), ("label create", "issue list", "issue comment")),
+    ("failure", (42, 17), ("label create", "issue list", "issue comment")),
+    ("success", (42, 17), ("issue list", "issue close")),
+    ("success", (), ("issue list",)),
+    ("cancelled", (), ("label create", "issue list", "issue create")),
+    ("cancelled", (42,), ("label create", "issue list", "issue comment")),
+    ("skipped", (42,), ()),
+  ),
+  ids=("create", "comment", "comment-oldest", "close-oldest", "no-open-issue",
+       "ceiling-create", "ceiling-comment", "skipped"),
+)
+def test_advisory_reporter_runs_with_stub_gh(
+  advisory_workflow, tmp_path, result, issues, expected
+):
+  assert re.search(r"^  report-failure:$", advisory_workflow, re.M)
+  reporter = _job_body(advisory_workflow, "report-failure")
+  source = _workflow_run_source(reporter.split("        run: |\n", 1)[1])
+
+  log = tmp_path / "calls.jsonl"
+  stub_bin = tmp_path / "bin"
+  stub_bin.mkdir()
+  stub_home = tmp_path / "home"
+  stub_home.mkdir()
+  system_path = "/usr/bin:/bin"
+  _write_executable(
+    stub_bin / "gh",
+    f"""#!{sys.executable}
+import json
+import os
+import sys
+
+args = sys.argv[1:]
+with open(os.environ["STUB_LOG"], "a") as log:
+  print(json.dumps(args), file=log)
+if args[:2] == ["issue", "list"]:
+  assert args[args.index("--search") + 1] == "sort:created-asc"
+  assert args[args.index("--limit") + 1] == "1"
+  assert args[args.index("--json") + 1] == "number"
+  assert args[args.index("--jq") + 1] == ".[].number"
+  issues = json.loads(os.environ["STUB_ISSUES"])
+  if issues:
+    print(issues[-1])
+""",
+  )
+  stub_path = f"{stub_bin}:{system_path}"
+  assert shutil.which("gh", path=stub_path) == str(stub_bin / "gh")
+  repository = "example/project"
+  run_url = "https://github.example/example/project/actions/runs/123"
+  subprocess.run(
+    ("/bin/bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", source),
+    check=True,
+    capture_output=True,
+    text=True,
+    env={
+      "PATH": stub_path,
+      "HOME": str(stub_home),
+      "GITHUB_REPOSITORY": repository,
+      "ANALYSIS_RESULT": result,
+      "RUN_URL": run_url,
+      "STUB_LOG": str(log),
+      "STUB_ISSUES": json.dumps(issues),
+    },
+  )
+
+  calls = [json.loads(line) for line in log.read_text().splitlines()] \
+    if log.exists() else []
+  assert tuple(" ".join(args[:2]) for args in calls) == expected
+  for args in calls:
+    assert args[args.index("--repo") + 1] == repository
+    match args[:2]:
+      case ["label", "create"]:
+        assert args[2] == "advisory-failure"
+        assert "--force" in args
+      case ["issue", "list"]:
+        assert args[args.index("--label") + 1] == "advisory-failure"
+        assert args[args.index("--state") + 1] == "open"
+      case ["issue", "create"]:
+        assert args[args.index("--title") + 1] == (
+          "Advisory analysis failing on main"
+        )
+        assert args[args.index("--label") + 1] == "advisory-failure"
+        assert "clang-tidy" in args[args.index("--body") + 1]
+        assert run_url in args[args.index("--body") + 1]
+        assert result in args[args.index("--body") + 1]
+      case ["issue", "comment"]:
+        assert args[2] == str(issues[-1])
+        assert "clang-tidy" in args[args.index("--body") + 1]
+        assert run_url in args[args.index("--body") + 1]
+        assert result in args[args.index("--body") + 1]
+      case ["issue", "close"]:
+        assert args[2] == str(issues[-1])
+        assert run_url in args[args.index("--comment") + 1]

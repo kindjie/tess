@@ -26,11 +26,12 @@ jobs:
   clang-tidy:
     name: Advisory clang-tidy
     runs-on: ubuntu-24.04
-    # 75, matching the required full-tree sweep in ci.yml: this profile
-    # analyzes the same targets with more checks. Under the earlier limit
-    # of 45 the then-serial build was cancelled every week; a cancelled job
-    # also saves no compiler cache, so every run started cold.
-    timeout-minutes: 75
+    # The build step gets 75 minutes, matching the required full-tree sweep
+    # in ci.yml: this profile analyzes the same targets with more checks.
+    # The job ceiling adds headroom for setup and cache saving. Under the
+    # earlier limit of 45 the then-serial build was cancelled every week; a
+    # cancelled job also saves no compiler cache, so every run started cold.
+    timeout-minutes: 85
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,5 +63,63 @@ jobs:
 
       # Same bound as the required sweep. The preset's default generator
       # builds one translation unit at a time when no level is given.
+      # Time out the build before the job ceiling so a slow sweep
+      # reports failure instead of being cancelled.
       - name: Build with bounded parallelism
+        timeout-minutes: 75
         run: cmake --build --preset dev-clang-tidy-advisory --parallel 4
+
+  report-failure:
+    name: Report advisory analysis failures
+    needs: [clang-tidy]
+    if: >-
+      ${{ !cancelled() && github.ref == 'refs/heads/main' &&
+          (github.event_name == 'schedule' ||
+           github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: advisory-failure-report
+      queue: max
+    permissions:
+      issues: write
+
+    steps:
+      - name: Update advisory failure issue
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANALYSIS_RESULT: ${{ needs.clang-tidy.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # The !cancelled() guard keeps superseded and hand-cancelled runs
+          # out. A cancelled analysis that still reaches here was cancelled
+          # on its own, as at its job ceiling, and is reported too.
+          case "$ANALYSIS_RESULT" in
+            failure|cancelled)
+              gh label create advisory-failure --force \
+                --description "Advisory analysis tooling failure or timeout" \
+                --color B60205 --repo "$GITHUB_REPOSITORY"
+              ;;
+            success) ;;
+            *) exit 0 ;;
+          esac
+
+          # If several issues are open, update the oldest.
+          issue=$(gh issue list --state open --label advisory-failure \
+            --search 'sort:created-asc' --limit 1 --json number \
+            --jq '.[].number' --repo "$GITHUB_REPOSITORY")
+          if [[ "$ANALYSIS_RESULT" == success ]]; then
+            if [[ -n "$issue" ]]; then
+              gh issue close "$issue" --comment "Advisory analysis passed: $RUN_URL" \
+                --repo "$GITHUB_REPOSITORY"
+            fi
+          else
+            body="Advisory analysis job \`clang-tidy\` ended with $ANALYSIS_RESULT: $RUN_URL"
+            if [[ -n "$issue" ]]; then
+              gh issue comment "$issue" --body "$body" --repo "$GITHUB_REPOSITORY"
+            else
+              gh issue create --title "Advisory analysis failing on main" \
+                --label advisory-failure --body "$body" --repo "$GITHUB_REPOSITORY"
+            fi
+          fi

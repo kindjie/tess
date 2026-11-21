@@ -122,6 +122,12 @@ issue activity; ambiguous or human-owned activity is left open. Full reruns
 reconcile in the CI workflow, while successful failed-job-only reruns of
 default-branch CI reconcile from a no-checkout completion workflow with the
 same ownership rules and serialized issue access.
+On main, scheduled and manually dispatched Advisory analysis runs report
+tooling failures and timeouts in a rolling issue labelled
+`advisory-failure` (lint findings remain informational). The workflow
+manages every open issue with that label: it comments on the oldest, and
+the next successful run on main closes it even if people have commented,
+so do not apply the label by hand.
 
 New tests should stay in the fast deterministic unit suite unless their cost
 or required environment warrants a separate tier. Use existing `slow` and
